@@ -1,2 +1,4 @@
 _obuild/
 ocp-build.root*
+.merlin
+build.ocp
