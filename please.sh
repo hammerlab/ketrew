@@ -8,16 +8,25 @@ setup() {
   quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
 
 cat << OCP_END > build.ocp
+begin library "threads"
+  generated = true
+  dirname = [ "%{OCAMLLIB}%/threads" ]
+  has_byte = false
+end
 begin  library "ketrew"
+  sort = true
   files = [
     $quoted_lib_files
   ]
   requires = [ $quoted_findlib_packages ]
-  asmcomp = [ "-g" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
 end
 begin program "ketrew-test"
   files = [ "src/test/main.ml" ]
-  requires = [ "ketrew" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
 end
 OCP_END
 
