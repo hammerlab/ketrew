@@ -27,6 +27,7 @@ begin program "ketrew-test"
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
+  install = false
 end
 OCP_END
 
@@ -40,10 +41,16 @@ for p in $findlib_packages ; do echo "PKG $p" >> .merlin ; done
 
 ocp-build root
 }
+usage () {
+  echo "usage: $0"
+  echo "       $0 {setup,build,clean,help}"
+}
 
 case $1 in
   "setup" ) setup ;;
-  "build" | "" ) ocp-build ketrew-test ;;
+  "build" | "" ) setup; ocp-build ketrew-test ;;
   "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
+  "help" )  usage ;;
+  * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
 esac
 
