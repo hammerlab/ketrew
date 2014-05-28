@@ -31,3 +31,31 @@ let failwithf fmt =
     ) fmt
 
 
+module Time = struct
+  let now () = Unix.gettimeofday ()
+
+  let to_filename f =
+    let open Unix in
+    let tm = gmtime f in
+    fmt "%04d-%02d-%02d-%02dh%02dm%02ds%03dms-UTC"
+      (tm.tm_year + 1900)
+      (tm.tm_mon + 1)
+      (tm.tm_mday)
+      (tm.tm_hour + 1)
+      (tm.tm_min + 1)
+      (tm.tm_sec)
+      ((f -. (floor f)) *. 1000. |> int_of_float)
+end
+
+
+module Unique_id = struct
+  (** Provide pseudo-unique identifiers. *)
+
+  type t = string
+  (** [string] seems to be the best-suited primitive *)
+
+  (** Create a fresh filename-compliant identifier. *)
+  let create () =
+    fmt "ketrew_%s_%09d"
+      Time.(now () |> to_filename) (Random.int 1_000_000_000)
+end
