@@ -21,7 +21,7 @@ module Log =
     let indent = 4
     let print_string = Printf.eprintf "%s%!"
     let do_nothing () = ()
-    let name = "emsop"
+    let name = "ketrew"
   end)
 
 let failwithf fmt =
