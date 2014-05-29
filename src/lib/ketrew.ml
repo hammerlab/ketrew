@@ -72,9 +72,10 @@ module Task = struct
   }
   let create
       ?name ?(persistance=`Input_data) ?(metadata=Metadata.empty)
-      ?(dependencies=[]) ?(make= Process.nop) ~target
+      ?(dependencies=[]) ?(make= Process.nop)
       ?(history=[])
-      id = 
+      target = 
+    let id = Unique_id.create () in
     { id; name = Option.value name ~default:id; persistance; metadata;
       dependencies; make; target; history }
 
@@ -225,21 +226,20 @@ module State = struct
       | `Not_done -> fail (`State (`Database_unavailable key))
     end
 
-  let add_task t task_fun =
-    let id = Unique_id.create () in
-    let actual_task = task_fun id in
+  let add_task t task =
     database t
     >>= fun db ->
-    begin Database.(act db (set id Task.(serialize actual_task)))
+    begin Database.(act db (set task.Task.id Task.(serialize task)))
       >>= function
       | `Done -> return ()
       | `Not_done ->
-        (* TODO: loop instead of error *) fail (`State (`Database_unavailable id))
+        (* TODO: try again a few times instead of error *)
+        fail (`State (`Database_unavailable task.Task.id))
     end
     >>= fun () ->
     get_persistent t
     >>= fun persistent ->
-    let new_persistent = Persistent_state.add persistent actual_task in
+    let new_persistent = Persistent_state.add persistent task in
     save_persistent t new_persistent (* TODO: remove task if this fails *)
 
   let current_tasks t =

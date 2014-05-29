@@ -75,8 +75,7 @@ let test_0 () =
     test_get_persistent ()
     >>= fun (state, persistent) ->
     State.add_task state 
-      Task.(create ~name:"First task"
-              ~target:Target.string_value)
+      Task.(create ~name:"First task" Target.string_value)
     >>= fun () ->
     begin State.current_tasks state
       >>= function
@@ -85,8 +84,7 @@ let test_0 () =
     end
     >>= fun () ->
     State.add_task state 
-      Task.(create ~name:"Second task"
-              ~target:Target.string_value)
+      Task.(create ~name:"Second task" Target.string_value)
     >>= fun () ->
     begin State.current_tasks state
       >>= function
