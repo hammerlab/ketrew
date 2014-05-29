@@ -148,7 +148,7 @@ end
 
 module Persistent_state = struct
   type t = {
-    current_tasks: Unique_id.t list;
+    current_tasks: Task.t Data.pointer list;
     (* keep db id of a list of all "archived" tasks *)
   }
   let create () = {current_tasks = [];}
@@ -158,7 +158,7 @@ module Persistent_state = struct
     try return (Marshal.from_string s 0 : t)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
-  let add t task = { current_tasks = task.Task.id :: t.current_tasks }
+  let add t task = { current_tasks = Task.pointer task :: t.current_tasks }
 
   let current_tasks t = t.current_tasks
 end
@@ -242,17 +242,20 @@ module State = struct
     let new_persistent = Persistent_state.add persistent task in
     save_persistent t new_persistent (* TODO: remove task if this fails *)
 
+  let follow_pointer db (p : 'a Data.pointer) (f: string -> ('a, _) Result.t) =
+    Database.get db p.Data.id
+    >>= function
+    | Some t -> of_result (f t)
+    | None ->
+      fail (`State (`Missing_data p.Data.id))
+
+
   let current_tasks t =
     database t >>= fun db ->
     get_persistent t >>= fun persistent ->
     let pointers = Persistent_state.current_tasks persistent in
-    Pvem_lwt_unix.Deferred_list.for_concurrent pointers ~f:(fun task_id ->
-        Database.get db task_id
-        >>= function
-        | Some t -> of_result (Task.deserialize t)
-        | None ->
-          fail (`State (`Database_unavailable (fmt "Task missing: %s" task_id)))
-      )
+    Pvem_lwt_unix.Deferred_list.for_concurrent pointers ~f:(fun task_pointer ->
+        follow_pointer db task_pointer Task.deserialize)
     >>= fun (tasks, errors) ->
     begin match errors with
     | [] -> return tasks
