@@ -70,12 +70,31 @@ let test_0 () =
       >>= fun engine ->
       return (state, engine)
     in
+    test_get_engine () >>= fun (state, engine) ->
+    State.save_engine  state engine >>= fun () ->
     test_get_engine ()
     >>= fun (state, engine) ->
-    State.save_engine  state engine
+    State.add_task state 
+      Task.(create ~name:"First task"
+              ~target:Target.string_value)
     >>= fun () ->
-    test_get_engine ()
-    >>= fun (state, engine) ->
+    begin State.current_tasks state
+      >>= function
+      | [one] when one.Task.name = "First task" -> return ()
+      | other -> Test.fail (fmt "too many tasks: %d" (List.length other)); return ()
+    end
+    >>= fun () ->
+    State.add_task state 
+      Task.(create ~name:"Second task"
+              ~target:Target.string_value)
+    >>= fun () ->
+    begin State.current_tasks state
+      >>= function
+      | [one; two] -> return ()
+      | other -> Test.fail (fmt "too many tasks: %d" (List.length other)); return ()
+    end
+    >>= fun () ->
+
     Pvem_lwt_unix.System.remove db_file
     >>= fun () ->
     return ()
