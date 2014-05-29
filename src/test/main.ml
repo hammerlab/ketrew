@@ -62,18 +62,18 @@ let test_0 () =
   let open Ketrew in
   let db_file = "/tmp/ketrew_test_database"  in
   Lwt_main.run begin
-    let test_get_engine () =
+    let test_get_persistent () =
       let configuration = Configuration.create db_file () in
       State.create configuration
       >>= fun state ->
-      State.get_engine state
-      >>= fun engine ->
-      return (state, engine)
+      State.get_persistent state
+      >>= fun persistent ->
+      return (state, persistent)
     in
-    test_get_engine () >>= fun (state, engine) ->
-    State.save_engine  state engine >>= fun () ->
-    test_get_engine ()
-    >>= fun (state, engine) ->
+    test_get_persistent () >>= fun (state, persistent) ->
+    State.save_persistent  state persistent >>= fun () ->
+    test_get_persistent ()
+    >>= fun (state, persistent) ->
     State.add_task state 
       Task.(create ~name:"First task"
               ~target:Target.string_value)

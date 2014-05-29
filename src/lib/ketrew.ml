@@ -145,7 +145,7 @@ module Database = struct
 
 end
 
-module Engine = struct
+module Persistent_state = struct
   type t = {
     current_tasks: Unique_id.t list;
     (* keep db id of a list of all "archived" tasks *)
@@ -155,7 +155,7 @@ module Engine = struct
   let serialize t = Marshal.to_string t []
   let unserialize s =
     try return (Marshal.from_string s 0 : t)
-    with e -> fail (`Engine (`Deserilization (Printexc.to_string e)))
+    with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
   let add t task = { current_tasks = task.Task.id :: t.current_tasks }
   let current_tasks t = t.current_tasks
 end
@@ -163,14 +163,15 @@ end
 module Configuration = struct
   type t = {
     database_parameters: string;
-    engine_key: string;
+    persistent_state_key: string;
   }
-  let default_engine_key = "ketrew_engine"
+  let default_persistent_state_key = "ketrew_persistent_state"
   let create 
-      ?(engine_key=default_engine_key) ~database_parameters () =
-    { database_parameters; engine_key }
+      ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
+    { database_parameters; persistent_state_key }
 end
 
+(** The “application” state *)
 module State = struct
   type t = {
     mutable database_handle: Database.t option;
@@ -196,21 +197,21 @@ module State = struct
           return db
       end
 
-  let get_engine t =
+  let get_persistent t =
     database t >>= fun db ->
-    begin Database.get db ~key:t.configuration.Configuration.engine_key
+    begin Database.get db ~key:t.configuration.Configuration.persistent_state_key
       >>= function
-      | Some engine_serialized ->
-        Engine.unserialize engine_serialized
+      | Some persistent_serialized ->
+        Persistent_state.unserialize persistent_serialized
       | None ->
-        let e = Engine.create () in
+        let e = Persistent_state.create () in
         return e
     end
 
-  let save_engine t engine =
+  let save_persistent t persistent =
     database t >>= fun db ->
-    let key = t.configuration.Configuration.engine_key in
-    let action = Database.(set ~key (Engine.serialize engine)) in
+    let key = t.configuration.Configuration.persistent_state_key in
+    let action = Database.(set ~key (Persistent_state.serialize persistent)) in
     begin Database.act db ~action
       >>= function
       | `Done -> return ()
@@ -229,15 +230,15 @@ module State = struct
         (* TODO: loop instead of error *) fail (`State (`Database_unavailable id))
     end
     >>= fun () ->
-    get_engine t
-    >>= fun engine ->
-    let new_engine = Engine.add engine actual_task in
-    save_engine t new_engine (* TODO: remove task if this fails *)
+    get_persistent t
+    >>= fun persistent ->
+    let new_persistent = Persistent_state.add persistent actual_task in
+    save_persistent t new_persistent (* TODO: remove task if this fails *)
 
   let current_tasks t =
     database t >>= fun db ->
-    get_engine t >>= fun engine ->
-    let pointers = Engine.current_tasks engine in
+    get_persistent t >>= fun persistent ->
+    let pointers = Persistent_state.current_tasks persistent in
     Pvem_lwt_unix.Deferred_list.for_concurrent pointers ~f:(fun task_id ->
         Database.get db task_id
         >>= function
