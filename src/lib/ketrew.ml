@@ -156,7 +156,9 @@ module Persistent_state = struct
   let unserialize s =
     try return (Marshal.from_string s 0 : t)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
+
   let add t task = { current_tasks = task.Task.id :: t.current_tasks }
+
   let current_tasks t = t.current_tasks
 end
 
@@ -179,6 +181,7 @@ module State = struct
   }
   let create configuration =
     return {database_handle = None; configuration}
+
   let database t =
     match t.database_handle with
     | Some db -> return db
@@ -189,11 +192,15 @@ module State = struct
         | `Regular_file _ ->
           Log.(s "Loading database at " % s path @ very_verbose);
           Database.load path
+          >>= fun db ->
+          t.database_handle <- Some db;
+          return db
         | _ -> 
           Log.(s "Creating new database at " % s path @ very_verbose);
           let db = Database.create path in
           Database.save db (* should create + save be in `Database`? *)
           >>= fun () ->
+          t.database_handle <- Some db;
           return db
       end
 
