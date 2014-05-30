@@ -3,6 +3,12 @@ open Ketrew_pervasives
 module Test = struct
   let failed_tests = ref []
   let fail s = failed_tests := s :: !failed_tests
+
+  let test_ssh_host =
+    let open Ketrew in
+    try
+      Host.ssh (Unix.getenv "ketrew_test_ssh")
+    with Not_found -> Host.ssh "localhost"
 end
 
 let mini_db_test () =
@@ -128,10 +134,23 @@ let test_0 () =
     begin count_targets state >>= function
       | `Successful 1, `Inactive 1, _, `Dead 1 -> return ()
       | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 2: %d %d %d" s i d); return ()
+        Test.fail (fmt "wrong counts 3rd: %d %d %d" s i d); return ()
     end
     >>= fun () ->
 
+    State.add_target state 
+      Target.(active ~name:"4th target, active, over SSH"
+                ~make:Process.(
+                    `Get_output Command.(shell ~host:Test.test_ssh_host "ls /"))
+                Artefact.string_value)
+    >>= fun () ->
+    State.step state >>= fun () ->
+    begin count_targets state >>= function
+      | `Successful 2, `Inactive 1, _, `Dead 1 -> return ()
+      | `Successful s, `Inactive i, _, `Dead d ->
+        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
+    end
+    >>= fun () ->
     System.remove db_file
     >>= fun () ->
     return ()
