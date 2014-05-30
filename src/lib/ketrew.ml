@@ -9,30 +9,9 @@ module File_tree = struct
 
 end
 
-type value
-type volume
-
-module Metadata = struct
-  type t = string
-  let empty = ""
-end
 
 module Host = struct
-(* from EFMP
-type connection = [
-  | Host_SSH of ssh
-  | Host_home
-] <ocaml repr="classic">
 
-type host = {
-  host_name: string;  
-  connection: connection;
-  playground: path option;
-  command_qsub: string option;
-  command_qstat: string option;
-  command_qdel: string option;
-}
-  *)
   module Ssh = struct
 
     let _configuration_ssh_batch_option = ref ""
@@ -132,8 +111,10 @@ module Data = struct
   type 'a pointer = { id: Unique_id.t }
   let pointer id = {id}
 
-  type value_type = [`String | `Number]
-  type value = [ `String of string | `Number of float ]
+  type value_type = [`Unit | `String | `Number]
+  type value = [ `Unit | `String of string | `Number of float ]
+  
+  let unit : value = `Unit
 
 end
 module Process = struct
@@ -178,14 +159,14 @@ module Target = struct
     id: Unique_id.t;
     name: string;
     persistance: [ `Input_data | `Recomputable of float | `Result ];
-    metadata: Metadata.t;
+    metadata: Data.value;
     dependencies: t Data.pointer list;
     make: Process.t;
     artefact: Artefact.specification;
     history: workflow_state;
   }
   let create
-      ?name ?(persistance=`Input_data) ?(metadata=Metadata.empty)
+      ?name ?(persistance=`Input_data) ?(metadata=Data.unit)
       ?(dependencies=[]) ?(make= Process.nop)
       artefact = 
     let history = `Created Time.(now ()) in
