@@ -195,57 +195,65 @@ module Data = struct
   type 'a pointer = { id: Unique_id.t }
   let pointer id = {id}
 
+end
+module Artifact_type = struct
+
   type value_type = [`Unit | `String | `Number]
-  type value = [ `Unit | `String of string | `Number of float ]
-  
-  let unit : value = `Unit
   let value_type_to_string = function
   | `Unit -> "Unit"
   | `String -> "String"
   | `Number -> "Number"
 
-end
-module Process = struct
-
   type t = [
-    | `Value of Data.value
-    | `Get_output of Command.t
-    | `Direct_command of Command.t
-  ]
-  let nop = `Value `Unit
-end
-
-module Artifact = struct
-  type specification = [
     (* | `Fresh_file *)
-    | `Value of Data.value_type
+    | `Value of value_type
     | `Volume of Volume.t
   ]
-  let value vt : specification = `Value vt
-  let string_value : specification = `Value `String
+  let value vt : t = `Value vt
+  let string_value : t = `Value `String
   let volume v = `Volume v
 
   let to_string = function
-  | `Value v -> fmt "Value %s" (Data.value_type_to_string v)
+  | `Value v -> fmt "Value %s" (value_type_to_string v)
   | `Volume v -> fmt "Volume %s" (Volume.to_string v)
+
+end
+module Artifact = struct
+
+  type value = [ `Unit | `String of string | `Number of float ]
+  
+  let unit : value = `Unit
 
   type t = [
     (* | `Tree of File_tree.t *)
     (* | `File of File_tree.file *)
-    | `Value of Data.value
+    | `Value of value
     | `Volume of Volume.t
   ]
 
+
+  (* TODO those two functions should more type-safe *)
   let is_ready specification =
     match specification with
     | `Value _ -> return false
     | `Volume v -> Volume.exists v
 
-  let specification_to_value: specification -> t = function
+  let of_type: Artifact_type.t -> t = function
   | `Value v -> invalid_argument_exn ~where:"Artifact" "specification_to_value"
   | `Volume v -> `Volume v
 
 end
+
+module Process = struct
+
+  type t = [
+    | `Artifact of Artifact.t
+    | `Get_output of Command.t
+    | `Direct_command of Command.t
+  ]
+  let nop = `Artifact (`Value `Unit)
+end
+
 
 module Target = struct
 
@@ -264,20 +272,20 @@ module Target = struct
     id: Unique_id.t;
     name: string;
     persistance: [ `Input_data | `Recomputable of float | `Result ];
-    metadata: Data.value;
+    metadata: Artifact.value;
     dependencies: t Data.pointer list;
     make: Process.t;
-    artifact: Artifact.specification;
+    result_type: Artifact_type.t;
     history: workflow_state;
   }
   let create
-      ?name ?(persistance=`Input_data) ?(metadata=Data.unit)
+      ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
       ?(dependencies=[]) ?(make= Process.nop)
-      artifact = 
+      result_type = 
     let history = `Created Time.(now ()) in
     let id = Unique_id.create () in
     { id; name = Option.value name ~default:id; persistance; metadata;
-      dependencies; make; artifact; history }
+      dependencies; make; result_type; history }
 
   (** Create a new  target but activated from a created one; 
     raises [Invalid_argument _] if current status is not [`Created _]. *)
@@ -516,13 +524,13 @@ module State = struct
                % s " is inactive" @ very_verbose);
           (* nothing to do *) return ()
         | `Activated _ ->
-          (* TODO check deps, and artifact *)
-          begin Artifact.is_ready target.Target.artifact
+          (* TODO check deps *)
+          begin Artifact.is_ready target.Target.result_type
             >>= function
             | false ->
               begin match target.Target.make with
-              | `Value v ->
-                add_or_update_target t Target.(make_succeed_exn target (`Value v))
+              | `Artifact a ->
+                add_or_update_target t Target.(make_succeed_exn target a)
               | `Get_output cmd ->
                 begin Command.get_output cmd
                   >>< function
@@ -541,16 +549,17 @@ module State = struct
                 begin Command.run cmd
                   >>< function
                   | `Ok () -> 
-                    begin Artifact.is_ready target.Target.artifact
+                    begin Artifact.is_ready target.Target.result_type
                       >>= function
                       | false ->
                         add_or_update_target t Target.(
                             make_fail_exn target  
                               ~msg:(fmt "command %S did not create %S" 
                                       (Command.to_string cmd)
-                                      (Artifact.to_string target.Target.artifact)))
+                                      (Artifact_type.to_string target.Target.result_type)))
                       | true ->
-                        let v = Artifact.specification_to_value target.Target.artifact in
+                        (* result_type must be a Volume: *)
+                        let v = Artifact.of_type target.Target.result_type in
                         add_or_update_target t Target.(make_succeed_exn target v)
                     end
                   | `Error (`Host (`Execution (where, out, err, msg))) ->
@@ -562,7 +571,8 @@ module State = struct
                 end
               end
             | true ->
-              let v = Artifact.specification_to_value target.Target.artifact in
+              (* result_type must be a Volume: *)
+              let v = Artifact.of_type target.Target.result_type in
               add_or_update_target t Target.(make_succeed_exn target v)
           end
           (* start or run *)
@@ -572,6 +582,7 @@ module State = struct
     return ()
 
 end
+
 module Error = struct
 
   let to_string = function
