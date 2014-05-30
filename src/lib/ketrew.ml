@@ -11,56 +11,97 @@ end
 
 type value
 type volume
+
 module Metadata = struct
   type t = string
   let empty = ""
 end
-type dependency
-type job = <
-  kind: string;
->
-type process = [
-  | `Get_command_output of string
-  | `Run_job of job
-]
-type target_value = [ `String of string | `Number of float ]
 
+module Host = struct
+
+  type t = [ `Localhost ]
+  let localhost : t = `Localhost
+
+  let to_string = function `Localhost -> "localhost"
+
+  let fail_exec t ?(out="") ?(err="") msg =
+    fail (`Host (`Execution (to_string t, out, err, msg)))
+
+  let get_shell_command_output t cmd =
+    match t with
+    | `Localhost ->
+      begin System.Shell.execute cmd
+        >>< function
+        | `Ok (out, err, `Exited 0) -> return (out, err)
+        | `Ok (out, err, other) -> 
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Shell _ as e) ->
+          fail_exec t (System.error_to_string e)
+      end
+end
+
+
+module Command = struct
+
+  type t = {
+    host: Host.t;
+    action: [ `Shell of string ];
+  }
+  let shell ?(host=Host.localhost) s = { host; action = `Shell s}
+
+  let get_output {host; action} =
+    match action with
+    | `Shell cmd ->
+      Host.get_shell_command_output host cmd
+
+end
 module Data = struct
 
   type 'a pointer = { id: Unique_id.t }
   let pointer id = {id}
 
   type value_type = [`String | `Number]
+  type value = [ `String of string | `Number of float ]
+
 end
 module Process = struct
 
-  type t = [ `Nop ]
+  type t = [
+    | `Nop
+    | `Get_output of Command.t
+  ]
   let nop = `Nop
 end
 
 module Artefact = struct
+  type specification = [
+    | `Tree of File_tree.t
+    | `File of File_tree.file
+    | `Fresh_file
+    | `Value of Data.value_type
+  ]
+  let value vt : specification = `Value vt
+  let string_value : specification = `Value `String
   type t = [
     | `Tree of File_tree.t
     | `File of File_tree.file
-    | `Value of Data.value_type
+    | `Value of Data.value
   ]
-  let value vt : t = `Value vt
-  let string_value : t = `Value `String
 end
 
 module Target = struct
 
-  type running_state = {
-    identification: string; (* job id ? *)
-    stdout: string option;
-    stderr: string option;
-  }
-  type workflow_state = [
-    | `Submitted
-    | `Started of running_state
-    | `Dead of running_state
-    | `Successful of target_value
+  type submitted_state = [`Created of Time.t]
+  type activated_state =
+    [`Activated of Time.t * submitted_state * [ `User | `Dependency ] ]
+  type run_history = (Time.t * string) list (* complexify *)
+  type running_state = [ `Running of run_history * activated_state ]
+  type death_reason = [`Killed of string | `Failed of string]
+  type finished_state = [ 
+    | `Dead of Time.t * [activated_state | running_state] * death_reason
+    | `Successful of Time.t * [activated_state | running_state ] * Artefact.t
   ]
+  type workflow_state = [ submitted_state | activated_state | running_state | finished_state]
   type t = {
     id: Unique_id.t;
     name: string;
@@ -68,17 +109,50 @@ module Target = struct
     metadata: Metadata.t;
     dependencies: t Data.pointer list;
     make: Process.t;
-    artefact: Artefact.t;
-    history: workflow_state list;
+    artefact: Artefact.specification;
+    history: workflow_state;
   }
   let create
       ?name ?(persistance=`Input_data) ?(metadata=Metadata.empty)
       ?(dependencies=[]) ?(make= Process.nop)
-      ?(history=[])
       artefact = 
+    let history = `Created Time.(now ()) in
     let id = Unique_id.create () in
     { id; name = Option.value name ~default:id; persistance; metadata;
       dependencies; make; artefact; history }
+
+  (** Create a new  target but activated from a created one; 
+    raises [Invalid_argument _] if current status is not [`Created _]. *)
+  let activate_exn t ~by = 
+    match t.history with 
+    | `Created _ as c ->
+      { t with history = `Activated (Time.now (), c, by) }
+    | _ -> raise (Invalid_argument "activate_exn")
+
+  let make_succeed_exn t artefact =
+    match t.history with
+    | `Activated _ | `Running _ as state -> 
+      { t with history = `Successful (Time.now (), state, artefact) }
+    | _ -> raise (Invalid_argument "make_succeed_exn")
+
+  let kill_exn ?(msg="") t =
+    match t.history with
+    | `Activated _ | `Running _ as state -> 
+      { t with history = `Dead (Time.now (), state, `Killed msg) }
+    | _ -> raise (Invalid_argument "kill_exn")
+
+  let make_fail_exn ?(msg="") t =
+    match t.history with
+    | `Activated _ | `Running _ as state -> 
+      { t with history = `Dead (Time.now (), state, `Failed msg) }
+    | _ -> raise (Invalid_argument "kill_exn")
+
+  let active 
+      ?name ?persistance ?metadata
+      ?dependencies ?make
+      artefact = 
+    activate_exn ~by:`User (create ?name ?persistance ?metadata
+                    ?dependencies ?make artefact)
 
   let pointer t : t Data.pointer = Data.pointer t.id
   let serialize t = Marshal.to_string t []
@@ -86,6 +160,8 @@ module Target = struct
     let open Result in
     try return (Marshal.from_string s 0)
     with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
+
+  let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
 
 end
 
@@ -227,7 +303,7 @@ module State = struct
       | `Not_done -> fail (`State (`Database_unavailable key))
     end
 
-  let add_target t target =
+  let add_or_update_target t target =
     database t
     >>= fun db ->
     begin Database.(act db (set target.Target.id Target.(serialize target)))
@@ -237,11 +313,15 @@ module State = struct
         (* TODO: try again a few times instead of error *)
         fail (`State (`Database_unavailable target.Target.id))
     end
+
+  let add_target t target =
+    add_or_update_target t target
     >>= fun () ->
     get_persistent t
     >>= fun persistent ->
     let new_persistent = Persistent_state.add persistent target in
-    save_persistent t new_persistent (* TODO: remove target if this fails *)
+    save_persistent t new_persistent
+      (* TODO: remove target if this fails, or put in same transaction *)
 
   let follow_pointer db (p : 'a Data.pointer) (f: string -> ('a, _) Result.t) =
     Database.get db p.Data.id
@@ -262,6 +342,44 @@ module State = struct
     | [] -> return targets
     | some :: more -> fail some (* TODO do not forget other errors *)
     end
+
+  let step t = (* TODO return a log of what happened *)
+    current_targets t
+    >>= fun targets ->
+    Deferred_list.while_sequential targets ~f:(fun target ->
+        match target.Target.history with
+        | `Created _ ->
+          Log.(s "Target " % Target.log target 
+               % s " is inactive" @ very_verbose);
+          (* nothing to do *) return ()
+        | `Activated _ ->
+          (* TODO check deps *)
+          begin match target.Target.make with
+          | `Nop ->
+            (* TODO if "result" is there succeed, if not fail *)
+            return ()
+          | `Get_output cmd ->
+            begin Command.get_output cmd
+              >>< function
+              | `Ok (out, _) ->
+                Log.(s "Cmd output: " % s out @ very_verbose);
+                let new_target =
+                  Target.make_succeed_exn target (`Value (`String out)) in
+                add_or_update_target t new_target
+              | `Error (`Host (`Execution (where, out, err, msg))) ->
+                Log.(s "Cmd error: " % s err @ very_verbose);
+                add_or_update_target t Target.(
+                    make_fail_exn target  
+                      ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" where out err msg))
+            end
+          end
+          (* start or run *)
+        | `Running _ -> (* check/update status *) return ()
+        | `Dead _ | `Successful _ -> return ())
+    >>= fun (_ : unit list) ->
+    return ()
+
+
 
 
 end
