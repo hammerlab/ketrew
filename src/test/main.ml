@@ -84,14 +84,51 @@ let test_0 () =
         Test.fail (fmt "too many targets: %d" (List.length other)); return ()
     end
     >>= fun () ->
-    State.add_target state 
-      Target.(create ~name:"Second target" Artefact.string_value)
-    >>= fun () ->
+    let second_target =
+      Target.(active ~name:"Second target, active"
+                ~make:Process.(`Get_output Command.(shell "ls /"))
+                Artefact.string_value) in
+    State.add_target state  second_target >>= fun () ->
     begin State.current_targets state
       >>= function
       | [one; two] -> return ()
       | other ->
         Test.fail (fmt "too many targets: %d" (List.length other)); return ()
+    end
+    >>= fun () ->
+    State.step state >>= fun () ->
+    let count_targets state =
+      State.current_targets state >>= fun targets ->
+      let count ~s ~i ~r ~d =
+        (`Successful s, `Inactive i, `Running r, `Dead d) in
+      let init = count 0 0 0 0 in
+      List.fold targets ~init ~f:(fun prev trgt ->
+          let `Successful s, `Inactive i, `Running r, `Dead d = prev in
+          match trgt.Target.history with
+          | `Created _ -> count ~s ~d ~r ~i:(i + 1)
+          | `Successful _ -> count ~s:(s + 1) ~d ~r ~i
+          | `Running _ -> count ~r:(r + 1) ~d ~s ~i
+          | `Dead _ -> count ~d:(d + 1) ~s ~r ~i
+          | `Activated _ -> prev)
+      |> return
+    in
+    begin count_targets state >>= function
+      | `Successful 1, `Inactive 1, _, _ -> return ()
+      | `Successful s, `Inactive i, _, _ ->
+        Test.fail (fmt "wrong counts 1: %d %d" s i); return ()
+    end
+    >>= fun () ->
+
+    State.add_target state 
+      Target.(active ~name:"3rd target, active, failing"
+                ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
+                Artefact.string_value)
+    >>= fun () ->
+    State.step state >>= fun () ->
+    begin count_targets state >>= function
+      | `Successful 1, `Inactive 1, _, `Dead 1 -> return ()
+      | `Successful s, `Inactive i, _, `Dead d ->
+        Test.fail (fmt "wrong counts 2: %d %d %d" s i d); return ()
     end
     >>= fun () ->
 
@@ -116,6 +153,6 @@ let () =
     Log.(s "No tests failed \\o/ " @ normal);
     exit 0
   | some ->
-    Log.(s "Some tests failed: " %n % s "" @ error);
+    Log.(s "Some tests failed: " %n % OCaml.list s some @ error);
     exit 3
   end
