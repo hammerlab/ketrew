@@ -33,7 +33,8 @@ let failwithf fmt =
 
 
 module Time = struct
-  let now () = Unix.gettimeofday ()
+  type t = float
+  let now () : t = Unix.gettimeofday ()
 
   let to_filename f =
     let open Unix in
