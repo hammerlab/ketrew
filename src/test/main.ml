@@ -68,6 +68,8 @@ let test_0 () =
   let open Ketrew in
   let db_file = "/tmp/ketrew_test_database"  in
   Lwt_main.run begin
+    begin System.remove db_file >>< fun _ -> return () end
+    >>= fun () ->
     let test_get_persistent () =
       let configuration = Configuration.create db_file () in
       State.create configuration
@@ -151,13 +153,31 @@ let test_0 () =
         Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
     end
     >>= fun () ->
+
+    let host = Test.test_ssh_host in
+    State.add_target state 
+      Target.(active ~name:"5th target, active, file creation over SSH"
+                ~make:Process.(`Direct_command 
+                                 Command.(shell ~host "ls / > /tmp/ketrew_test"))
+                (Artefact.volume 
+                   Volume.(create ~host ~root:"/tmp" (file "ketrew_test"))))
+    >>= fun () ->
+    State.step state >>= fun () ->
+    begin count_targets state >>= function
+      | `Successful 3, `Inactive 1, _, `Dead 1 -> return ()
+      | `Successful s, `Inactive i, _, `Dead d ->
+        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
+    end
+    >>= fun () ->
+
+
     System.remove db_file
     >>= fun () ->
     return ()
   end |> function
   | `Ok () -> ()
   | `Error e ->
-    Log.(s "test_0: ERROR: TODO " @ error);
+    Log.(s "test_0: Ketrew ERROR:  " %s (Error.to_string e) @ error);
     Test.fail "test_0 ends with error"
 
 
