@@ -31,6 +31,8 @@ let failwithf fmt =
       failwith str
     ) fmt
 
+let invalid_argument_exn ?(where="pervasives") what =
+  raise (Invalid_argument (fmt "[%S]: %s" where what))
 
 module Time = struct
   type t = float

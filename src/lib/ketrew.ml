@@ -2,13 +2,28 @@
 open Ketrew_pervasives
 
 
-module File_tree = struct
+module Path = struct
 
-  type file
-  type t
+  type abs
+  type rel
+  type 'a t = string
+  type relative = rel t
+  type absolute = abs t
+
+  let root : absolute = "/"
+  let absolute_exn s : absolute t =
+    if Filename.is_relative s
+    then invalid_argument_exn ~where:"Path" "absolute_exn"
+    else s
+  let relative_exn s : relative t =
+    if not (Filename.is_relative s)
+    then invalid_argument_exn ~where:"Path" "relative_exn"
+    else s
+  let concat: 'a t -> relative -> 'a t = Filename.concat 
+
+  let to_string: 'a t -> string = fun x -> x
 
 end
-
 
 module Host = struct
 
@@ -89,8 +104,35 @@ module Host = struct
                % s " failed: " %s msg @ verbose);
           fail_exec t msg
       end
-end
 
+  let do_files_exist t paths =
+    let cmd =
+      List.map paths ~f:(fmt "[ -f %S ]") |> String.concat ~sep:" && " in
+    match t.connection with
+    | `Localhost ->
+      begin System.Shell.execute cmd
+        >>< function
+        | `Ok (_, _, `Exited 0) -> return true
+        | `Ok (_, _, `Exited 1) -> return false
+        | `Ok (out, err, other) -> 
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Shell _ as e) -> fail_exec t (System.error_to_string e)
+      end
+    | `Ssh ssh ->
+      let ssh_cmd = Ssh.(do_ssh ssh cmd) in
+      begin Ketrew_unix_process.exec ssh_cmd
+        >>< function
+        | `Ok (_, _, `Exited 0) -> return true
+        | `Ok (_, _, `Exited 1) -> return false
+        | `Ok (out, err, other) -> 
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+end
 
 module Command = struct
 
@@ -100,12 +142,54 @@ module Command = struct
   }
   let shell ?(host=Host.localhost) s = { host; action = `Shell s}
 
+  let to_string {host; action = `Shell cmd} =
+    fmt "Shell[%S] on %s" cmd (Host.to_string host)
+
   let get_output {host; action} =
     match action with
     | `Shell cmd ->
       Host.get_shell_command_output host cmd
+  let run t =
+    get_output t (* TODO optimize to not record the output *)
+    >>= fun (_, _) ->
+    return ()
 
 end
+
+module Volume = struct
+
+  type structure =   
+    | File of string
+    | Directory of string * structure list
+
+  type t = {
+    host: Host.t;
+    root: Path.absolute;
+    structure: structure;
+  }
+  let create ~host ~root structure = {host; root; structure}
+  let file s = File s
+  let dir name contents = Directory (name, contents)
+
+  let rec all_structure_paths s =
+    match s with
+    | File s -> [Path.relative_exn s]
+    | Directory (name, children) ->
+      let children_paths = 
+        List.concat_map ~f:all_structure_paths children in
+      List.map ~f:(Path.concat name) children_paths
+
+  let all_paths t =
+    List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
+
+  let exists t = (* for now, like git, we check only files, not directories *)
+    let paths = all_paths t in
+    Host.do_files_exist t.host paths
+
+  let to_string {host; root; structure} =
+    fmt "Vol(%s:%s)" (Host.to_string host) (Path.to_string root)
+end
+
 module Data = struct
 
   type 'a pointer = { id: Unique_id.t }
@@ -115,31 +199,52 @@ module Data = struct
   type value = [ `Unit | `String of string | `Number of float ]
   
   let unit : value = `Unit
+  let value_type_to_string = function
+  | `Unit -> "Unit"
+  | `String -> "String"
+  | `Number -> "Number"
 
 end
 module Process = struct
 
   type t = [
-    | `Nop
+    | `Value of Data.value
     | `Get_output of Command.t
+    | `Direct_command of Command.t
   ]
-  let nop = `Nop
+  let nop = `Value `Unit
 end
 
 module Artefact = struct
   type specification = [
-    | `Tree of File_tree.t
-    | `File of File_tree.file
-    | `Fresh_file
+    (* | `Fresh_file *)
     | `Value of Data.value_type
+    | `Volume of Volume.t
   ]
   let value vt : specification = `Value vt
   let string_value : specification = `Value `String
+  let volume v = `Volume v
+
+  let to_string = function
+  | `Value v -> fmt "Value %s" (Data.value_type_to_string v)
+  | `Volume v -> fmt "Volume %s" (Volume.to_string v)
+
   type t = [
-    | `Tree of File_tree.t
-    | `File of File_tree.file
+    (* | `Tree of File_tree.t *)
+    (* | `File of File_tree.file *)
     | `Value of Data.value
+    | `Volume of Volume.t
   ]
+
+  let is_ready specification =
+    match specification with
+    | `Value _ -> return false
+    | `Volume v -> Volume.exists v
+
+  let specification_to_value: specification -> t = function
+  | `Value v -> invalid_argument_exn ~where:"Artefact" "specification_to_value"
+  | `Volume v -> `Volume v
+
 end
 
 module Target = struct
@@ -313,6 +418,11 @@ module State = struct
   let create configuration =
     return {database_handle = None; configuration}
 
+  let fail_state e = fail (`State e)
+  let not_implemented msg = 
+    Log.(s "Going through not implemented stuff: " % s msg @ verbose);
+    fail_state (`Not_implemented msg)
+
   let database t =
     match t.database_handle with
     | Some db -> return db
@@ -353,7 +463,7 @@ module State = struct
     begin Database.act db ~action
       >>= function
       | `Done -> return ()
-      | `Not_done -> fail (`State (`Database_unavailable key))
+      | `Not_done -> fail_state (`Database_unavailable key)
     end
 
   let add_or_update_target t target =
@@ -364,7 +474,7 @@ module State = struct
       | `Done -> return ()
       | `Not_done ->
         (* TODO: try again a few times instead of error *)
-        fail (`State (`Database_unavailable target.Target.id))
+        fail_state (`Database_unavailable target.Target.id)
     end
 
   let add_target t target =
@@ -381,7 +491,7 @@ module State = struct
     >>= function
     | Some t -> of_result (f t)
     | None ->
-      fail (`State (`Missing_data p.Data.id))
+      fail (`Missing_data p.Data.id)
 
 
   let current_targets t =
@@ -393,7 +503,7 @@ module State = struct
     >>= fun (targets, errors) ->
     begin match errors with
     | [] -> return targets
-    | some :: more -> fail some (* TODO do not forget other errors *)
+    | some :: more -> fail_state some (* TODO do not forget other errors *)
     end
 
   let step t = (* TODO return a log of what happened *)
@@ -406,25 +516,54 @@ module State = struct
                % s " is inactive" @ very_verbose);
           (* nothing to do *) return ()
         | `Activated _ ->
-          (* TODO check deps *)
-          begin match target.Target.make with
-          | `Nop ->
-            (* TODO if "result" is there succeed, if not fail *)
-            return ()
-          | `Get_output cmd ->
-            begin Command.get_output cmd
-              >>< function
-              | `Ok (out, _) ->
-                Log.(s "Cmd output: " % s out @ very_verbose);
-                let new_target =
-                  Target.make_succeed_exn target (`Value (`String out)) in
-                add_or_update_target t new_target
-              | `Error (`Host (`Execution (where, out, err, msg))) ->
-                Log.(s "Cmd error: " % s err @ very_verbose);
-                add_or_update_target t Target.(
-                    make_fail_exn target  
-                      ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" where out err msg))
-            end
+          (* TODO check deps, and artefact *)
+          begin Artefact.is_ready target.Target.artefact
+            >>= function
+            | false ->
+              begin match target.Target.make with
+              | `Value v ->
+                add_or_update_target t Target.(make_succeed_exn target (`Value v))
+              | `Get_output cmd ->
+                begin Command.get_output cmd
+                  >>< function
+                  | `Ok (out, _) ->
+                    Log.(s "Cmd output: " % s out @ very_verbose);
+                    let new_target =
+                      Target.make_succeed_exn target (`Value (`String out)) in
+                    add_or_update_target t new_target
+                  | `Error (`Host (`Execution (where, out, err, msg))) ->
+                    Log.(s "Cmd error: " % s err @ very_verbose);
+                    add_or_update_target t Target.(
+                        make_fail_exn target  
+                          ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" where out err msg))
+                end
+              | `Direct_command cmd ->
+                begin Command.run cmd
+                  >>< function
+                  | `Ok () -> 
+                    begin Artefact.is_ready target.Target.artefact
+                      >>= function
+                      | false ->
+                        add_or_update_target t Target.(
+                            make_fail_exn target  
+                              ~msg:(fmt "command %S did not create %S" 
+                                      (Command.to_string cmd)
+                                      (Artefact.to_string target.Target.artefact)))
+                      | true ->
+                        let v = Artefact.specification_to_value target.Target.artefact in
+                        add_or_update_target t Target.(make_succeed_exn target v)
+                    end
+                  | `Error (`Host (`Execution (where, out, err, msg))) ->
+                    Log.(s "Cmd error: " % s err @ very_verbose);
+                    add_or_update_target t Target.(
+                        make_fail_exn target  
+                          ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" 
+                                  where out err msg))
+                end
+              end
+            | true ->
+              let v = Artefact.specification_to_value target.Target.artefact in
+              add_or_update_target t Target.(make_succeed_exn target v)
           end
           (* start or run *)
         | `Running _ -> (* check/update status *) return ()
@@ -432,7 +571,23 @@ module State = struct
     >>= fun (_ : unit list) ->
     return ()
 
+end
+module Error = struct
 
-
+  let to_string = function
+  | `IO _ as io -> IO.error_to_string io
+  | `System _ as s -> System.error_to_string s
+  | `Database (`Load, path) -> fmt "DB-load: %S" path
+  | `Host (`Execution (one, two, three, four)) ->
+    fmt "Host-exec(%s, %s, %s, %s)" one two three four
+  | `Persistent_state (`Deserilization s) ->
+    fmt "Persistent_state-Deserilization: %S" s
+  | `State e ->
+    fmt "State(%s)"
+      (match e with
+       | `Database_unavailable s -> fmt "DB %s" s
+       | `Not_implemented s -> fmt "Not-impl %S" s
+       | `Missing_data p -> fmt "pointer: %s" p
+       | `Target (`Deserilization s)  -> fmt "target-deserialization: %s" s)
 
 end
