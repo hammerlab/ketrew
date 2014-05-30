@@ -1,6 +1,7 @@
 
 include Nonstd
 module Result = Pvem.Result
+include  Pvem_lwt_unix
 include  Pvem_lwt_unix.Deferred_result
 module String = struct
   include Sosa.Native_string

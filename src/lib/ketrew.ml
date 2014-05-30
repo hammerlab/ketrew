@@ -37,7 +37,8 @@ module Process = struct
   type t = [ `Nop ]
   let nop = `Nop
 end
-module Target = struct
+
+module Artefact = struct
   type t = [
     | `Tree of File_tree.t
     | `File of File_tree.file
@@ -47,7 +48,7 @@ module Target = struct
   let string_value : t = `Value `String
 end
 
-module Task = struct
+module Target = struct
 
   type running_state = {
     identification: string; (* job id ? *)
@@ -67,24 +68,24 @@ module Task = struct
     metadata: Metadata.t;
     dependencies: t Data.pointer list;
     make: Process.t;
-    target: Target.t;
+    artefact: Artefact.t;
     history: workflow_state list;
   }
   let create
       ?name ?(persistance=`Input_data) ?(metadata=Metadata.empty)
       ?(dependencies=[]) ?(make= Process.nop)
       ?(history=[])
-      target = 
+      artefact = 
     let id = Unique_id.create () in
     { id; name = Option.value name ~default:id; persistance; metadata;
-      dependencies; make; target; history }
+      dependencies; make; artefact; history }
 
   let pointer t : t Data.pointer = Data.pointer t.id
   let serialize t = Marshal.to_string t []
   let deserialize s : (t, _) Result.t =
     let open Result in
     try return (Marshal.from_string s 0)
-    with e -> fail (`Task (`Deserilization (Printexc.to_string e)))
+    with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 end
 
@@ -108,14 +109,14 @@ module Database = struct
   let create parameters = {db = []; parameters} 
 
   let load parameters =
-    Pvem_lwt_unix.IO.read_file parameters
+    IO.read_file parameters
     >>= fun content ->
     begin try return (Marshal.from_string content 0 : t) with
     | e -> fail (`Database (`Load, parameters))
     end
   let save t =
     let content = Marshal.to_string t [] in
-    Pvem_lwt_unix.IO.write_file t.parameters ~content
+    IO.write_file t.parameters ~content
 
   let get t ~key =
     List.find_map t.db ~f:(fun (k, v) -> if k = key then Some v else None)
@@ -148,19 +149,19 @@ end
 
 module Persistent_state = struct
   type t = {
-    current_tasks: Task.t Data.pointer list;
-    (* keep db id of a list of all "archived" tasks *)
+    current_targets: Target.t Data.pointer list;
+    (* keep db id of a list of all "archived" targets *)
   }
-  let create () = {current_tasks = [];}
+  let create () = {current_targets = [];}
 
   let serialize t = Marshal.to_string t []
   let unserialize s =
     try return (Marshal.from_string s 0 : t)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
-  let add t task = { current_tasks = Task.pointer task :: t.current_tasks }
+  let add t target = { current_targets = Target.pointer target :: t.current_targets }
 
-  let current_tasks t = t.current_tasks
+  let current_targets t = t.current_targets
 end
 
 module Configuration = struct
@@ -188,7 +189,7 @@ module State = struct
     | Some db -> return db
     | None -> 
       let path = t.configuration.Configuration.database_parameters in
-      begin Pvem_lwt_unix.System.file_info ~follow_symlink:true path
+      begin System.file_info ~follow_symlink:true path
         >>= function
         | `Regular_file _ ->
           Log.(s "Loading database at " % s path @ very_verbose);
@@ -226,21 +227,21 @@ module State = struct
       | `Not_done -> fail (`State (`Database_unavailable key))
     end
 
-  let add_task t task =
+  let add_target t target =
     database t
     >>= fun db ->
-    begin Database.(act db (set task.Task.id Task.(serialize task)))
+    begin Database.(act db (set target.Target.id Target.(serialize target)))
       >>= function
       | `Done -> return ()
       | `Not_done ->
         (* TODO: try again a few times instead of error *)
-        fail (`State (`Database_unavailable task.Task.id))
+        fail (`State (`Database_unavailable target.Target.id))
     end
     >>= fun () ->
     get_persistent t
     >>= fun persistent ->
-    let new_persistent = Persistent_state.add persistent task in
-    save_persistent t new_persistent (* TODO: remove task if this fails *)
+    let new_persistent = Persistent_state.add persistent target in
+    save_persistent t new_persistent (* TODO: remove target if this fails *)
 
   let follow_pointer db (p : 'a Data.pointer) (f: string -> ('a, _) Result.t) =
     Database.get db p.Data.id
@@ -250,15 +251,15 @@ module State = struct
       fail (`State (`Missing_data p.Data.id))
 
 
-  let current_tasks t =
+  let current_targets t =
     database t >>= fun db ->
     get_persistent t >>= fun persistent ->
-    let pointers = Persistent_state.current_tasks persistent in
-    Pvem_lwt_unix.Deferred_list.for_concurrent pointers ~f:(fun task_pointer ->
-        follow_pointer db task_pointer Task.deserialize)
-    >>= fun (tasks, errors) ->
+    let pointers = Persistent_state.current_targets persistent in
+    Deferred_list.for_concurrent pointers ~f:(fun target_pointer ->
+        follow_pointer db target_pointer Target.deserialize)
+    >>= fun (targets, errors) ->
     begin match errors with
-    | [] -> return tasks
+    | [] -> return targets
     | some :: more -> fail some (* TODO do not forget other errors *)
     end
 

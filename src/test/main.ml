@@ -74,26 +74,28 @@ let test_0 () =
     State.save_persistent  state persistent >>= fun () ->
     test_get_persistent ()
     >>= fun (state, persistent) ->
-    State.add_task state 
-      Task.(create ~name:"First task" Target.string_value)
+    State.add_target state 
+      Target.(create ~name:"First target" Artefact.string_value)
     >>= fun () ->
-    begin State.current_tasks state
+    begin State.current_targets state
       >>= function
-      | [one] when one.Task.name = "First task" -> return ()
-      | other -> Test.fail (fmt "too many tasks: %d" (List.length other)); return ()
+      | [one] when one.Target.name = "First target" -> return ()
+      | other ->
+        Test.fail (fmt "too many targets: %d" (List.length other)); return ()
     end
     >>= fun () ->
-    State.add_task state 
-      Task.(create ~name:"Second task" Target.string_value)
+    State.add_target state 
+      Target.(create ~name:"Second target" Artefact.string_value)
     >>= fun () ->
-    begin State.current_tasks state
+    begin State.current_targets state
       >>= function
       | [one; two] -> return ()
-      | other -> Test.fail (fmt "too many tasks: %d" (List.length other)); return ()
+      | other ->
+        Test.fail (fmt "too many targets: %d" (List.length other)); return ()
     end
     >>= fun () ->
 
-    Pvem_lwt_unix.System.remove db_file
+    System.remove db_file
     >>= fun () ->
     return ()
   end |> function
