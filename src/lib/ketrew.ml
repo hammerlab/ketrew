@@ -18,17 +18,78 @@ module Metadata = struct
 end
 
 module Host = struct
+(* from EFMP
+type connection = [
+  | Host_SSH of ssh
+  | Host_home
+] <ocaml repr="classic">
 
-  type t = [ `Localhost ]
-  let localhost : t = `Localhost
+type host = {
+  host_name: string;  
+  connection: connection;
+  playground: path option;
+  command_qsub: string option;
+  command_qstat: string option;
+  command_qdel: string option;
+}
+  *)
+  module Ssh = struct
 
-  let to_string = function `Localhost -> "localhost"
+    let _configuration_ssh_batch_option = ref ""
+
+    let configure_ssh_batch_option spec =
+      let op =
+        match spec with
+        | `Openssh -> "-oBatchMode=yes"
+        | `Dropbear -> "-s"
+        | `Custom s -> s
+      in
+      _configuration_ssh_batch_option := op
+
+    let () = configure_ssh_batch_option `Openssh
+
+    type t = {
+      address: string;
+      port: int option;
+      user: string option;
+    }
+
+    (** Generate a proper SSH command for the given host. *)
+    let do_ssh ssh command =
+      ["ssh"; !_configuration_ssh_batch_option]
+      @ (match ssh.port with
+        | Some p -> ["-p"; "port"]
+        | None -> [])
+      @ (match ssh.user with
+        | None -> [ssh.address]
+        | Some u -> [fmt "%s@%s" u ssh.address])
+      @ [command]
+
+  end
+  type connection = [
+    | `Localhost
+    | `Ssh of Ssh.t
+  ]
+  type t = {
+    name: string;
+    connection: connection;
+    playground: string option;
+  }
+  let create ?(connection=`Localhost) ?playground name =
+    {name; connection; playground}
+  let localhost = create "localhost"
+
+  let ssh ?playground ?port ?user ?name address =
+    create ?playground Option.(value name ~default:address)
+      ~connection:(`Ssh {Ssh. address; port; user})
+
+  let to_string t = t.name
 
   let fail_exec t ?(out="") ?(err="") msg =
     fail (`Host (`Execution (to_string t, out, err, msg)))
 
   let get_shell_command_output t cmd =
-    match t with
+    match t.connection with
     | `Localhost ->
       begin System.Shell.execute cmd
         >>< function
@@ -37,6 +98,17 @@ module Host = struct
           fail_exec t ~out ~err (System.Shell.status_to_string other)
         | `Error (`Shell _ as e) ->
           fail_exec t (System.error_to_string e)
+      end
+    | `Ssh ssh ->
+      let ssh_cmd = Ssh.(do_ssh ssh cmd) in
+      begin Ketrew_unix_process.succeed ssh_cmd
+        >>< function
+        | `Ok (out, err) -> return (out, err)
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
       end
 end
 
