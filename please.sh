@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
-lib_files=$(find src/lib/ -type f)
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix"
+
+
+lib_ml_files=$(find src/lib/ -type f -name '*.ml')
+lib_mli_files=$(find src/lib/ -type f -name '*.mli')
+lib_files="$lib_mli_files $lib_ml_files"
 
 setup() {
   quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
