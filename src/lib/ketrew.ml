@@ -215,7 +215,7 @@ module Process = struct
   let nop = `Value `Unit
 end
 
-module Artefact = struct
+module Artifact = struct
   type specification = [
     (* | `Fresh_file *)
     | `Value of Data.value_type
@@ -242,7 +242,7 @@ module Artefact = struct
     | `Volume v -> Volume.exists v
 
   let specification_to_value: specification -> t = function
-  | `Value v -> invalid_argument_exn ~where:"Artefact" "specification_to_value"
+  | `Value v -> invalid_argument_exn ~where:"Artifact" "specification_to_value"
   | `Volume v -> `Volume v
 
 end
@@ -257,7 +257,7 @@ module Target = struct
   type death_reason = [`Killed of string | `Failed of string]
   type finished_state = [ 
     | `Dead of Time.t * [activated_state | running_state] * death_reason
-    | `Successful of Time.t * [activated_state | running_state ] * Artefact.t
+    | `Successful of Time.t * [activated_state | running_state ] * Artifact.t
   ]
   type workflow_state = [ submitted_state | activated_state | running_state | finished_state]
   type t = {
@@ -267,17 +267,17 @@ module Target = struct
     metadata: Data.value;
     dependencies: t Data.pointer list;
     make: Process.t;
-    artefact: Artefact.specification;
+    artifact: Artifact.specification;
     history: workflow_state;
   }
   let create
       ?name ?(persistance=`Input_data) ?(metadata=Data.unit)
       ?(dependencies=[]) ?(make= Process.nop)
-      artefact = 
+      artifact = 
     let history = `Created Time.(now ()) in
     let id = Unique_id.create () in
     { id; name = Option.value name ~default:id; persistance; metadata;
-      dependencies; make; artefact; history }
+      dependencies; make; artifact; history }
 
   (** Create a new  target but activated from a created one; 
     raises [Invalid_argument _] if current status is not [`Created _]. *)
@@ -287,10 +287,10 @@ module Target = struct
       { t with history = `Activated (Time.now (), c, by) }
     | _ -> raise (Invalid_argument "activate_exn")
 
-  let make_succeed_exn t artefact =
+  let make_succeed_exn t artifact =
     match t.history with
     | `Activated _ | `Running _ as state -> 
-      { t with history = `Successful (Time.now (), state, artefact) }
+      { t with history = `Successful (Time.now (), state, artifact) }
     | _ -> raise (Invalid_argument "make_succeed_exn")
 
   let kill_exn ?(msg="") t =
@@ -308,9 +308,9 @@ module Target = struct
   let active 
       ?name ?persistance ?metadata
       ?dependencies ?make
-      artefact = 
+      artifact = 
     activate_exn ~by:`User (create ?name ?persistance ?metadata
-                    ?dependencies ?make artefact)
+                    ?dependencies ?make artifact)
 
   let pointer t : t Data.pointer = Data.pointer t.id
   let serialize t = Marshal.to_string t []
@@ -516,8 +516,8 @@ module State = struct
                % s " is inactive" @ very_verbose);
           (* nothing to do *) return ()
         | `Activated _ ->
-          (* TODO check deps, and artefact *)
-          begin Artefact.is_ready target.Target.artefact
+          (* TODO check deps, and artifact *)
+          begin Artifact.is_ready target.Target.artifact
             >>= function
             | false ->
               begin match target.Target.make with
@@ -541,16 +541,16 @@ module State = struct
                 begin Command.run cmd
                   >>< function
                   | `Ok () -> 
-                    begin Artefact.is_ready target.Target.artefact
+                    begin Artifact.is_ready target.Target.artifact
                       >>= function
                       | false ->
                         add_or_update_target t Target.(
                             make_fail_exn target  
                               ~msg:(fmt "command %S did not create %S" 
                                       (Command.to_string cmd)
-                                      (Artefact.to_string target.Target.artefact)))
+                                      (Artifact.to_string target.Target.artifact)))
                       | true ->
-                        let v = Artefact.specification_to_value target.Target.artefact in
+                        let v = Artifact.specification_to_value target.Target.artifact in
                         add_or_update_target t Target.(make_succeed_exn target v)
                     end
                   | `Error (`Host (`Execution (where, out, err, msg))) ->
@@ -562,7 +562,7 @@ module State = struct
                 end
               end
             | true ->
-              let v = Artefact.specification_to_value target.Target.artefact in
+              let v = Artifact.specification_to_value target.Target.artifact in
               add_or_update_target t Target.(make_succeed_exn target v)
           end
           (* start or run *)

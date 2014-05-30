@@ -83,7 +83,7 @@ let test_0 () =
     test_get_persistent ()
     >>= fun (state, persistent) ->
     State.add_target state 
-      Target.(create ~name:"First target" Artefact.string_value)
+      Target.(create ~name:"First target" Artifact.string_value)
     >>= fun () ->
     begin State.current_targets state
       >>= function
@@ -95,7 +95,7 @@ let test_0 () =
     let second_target =
       Target.(active ~name:"Second target, active"
                 ~make:Process.(`Get_output Command.(shell "ls /"))
-                Artefact.string_value) in
+                Artifact.string_value) in
     State.add_target state  second_target >>= fun () ->
     begin State.current_targets state
       >>= function
@@ -130,7 +130,7 @@ let test_0 () =
     State.add_target state 
       Target.(active ~name:"3rd target, active, failing"
                 ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
-                Artefact.string_value)
+                Artifact.string_value)
     >>= fun () ->
     State.step state >>= fun () ->
     begin count_targets state >>= function
@@ -144,7 +144,7 @@ let test_0 () =
       Target.(active ~name:"4th target, active, over SSH"
                 ~make:Process.(
                     `Get_output Command.(shell ~host:Test.test_ssh_host "ls /"))
-                Artefact.string_value)
+                Artifact.string_value)
     >>= fun () ->
     State.step state >>= fun () ->
     begin count_targets state >>= function
@@ -159,7 +159,7 @@ let test_0 () =
       Target.(active ~name:"5th target, active, file creation over SSH"
                 ~make:Process.(`Direct_command 
                                  Command.(shell ~host "ls / > /tmp/ketrew_test"))
-                (Artefact.volume 
+                (Artifact.volume 
                    Volume.(create ~host ~root:"/tmp" (file "ketrew_test"))))
     >>= fun () ->
     State.step state >>= fun () ->
