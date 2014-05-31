@@ -426,10 +426,9 @@ module State = struct
   let create configuration =
     return {database_handle = None; configuration}
 
-  let fail_state e = fail (`State e)
   let not_implemented msg = 
     Log.(s "Going through not implemented stuff: " % s msg @ verbose);
-    fail_state (`Not_implemented msg)
+    fail (`Not_implemented msg)
 
   let database t =
     match t.database_handle with
@@ -471,7 +470,7 @@ module State = struct
     begin Database.act db ~action
       >>= function
       | `Done -> return ()
-      | `Not_done -> fail_state (`Database_unavailable key)
+      | `Not_done -> fail (`Database_unavailable key)
     end
 
   let add_or_update_target t target =
@@ -482,7 +481,7 @@ module State = struct
       | `Done -> return ()
       | `Not_done ->
         (* TODO: try again a few times instead of error *)
-        fail_state (`Database_unavailable target.Target.id)
+        fail (`Database_unavailable target.Target.id)
     end
 
   let add_target t target =
@@ -499,7 +498,7 @@ module State = struct
     >>= function
     | Some t -> of_result (f t)
     | None ->
-      fail_state (`Missing_data p.Data.id)
+      fail (`Missing_data p.Data.id)
 
 
   let current_targets t =
@@ -511,26 +510,27 @@ module State = struct
     >>= fun (targets, errors) ->
     begin match errors with
     | [] -> return targets
-    | some :: more -> fail_state some (* TODO do not forget other errors *)
+    | some :: more -> fail some (* TODO do not forget other errors *)
     end
 
   let step t = (* TODO return a log of what happened *)
-    current_targets t >>= fun targets ->
-    database t >>= fun db ->
-    Deferred_list.while_sequential targets ~f:(fun target ->
-        match target.Target.history with
-        | `Created _ ->
-          Log.(s "Target " % Target.log target 
-               % s " is inactive" @ very_verbose);
-          (* nothing to do *) return ()
-        | `Activated _ ->
-          begin Artifact.is_ready target.Target.result_type
-            >>= function
-            | false ->
-              Deferred_list.while_sequential target.Target.dependencies
-                ~f:begin fun dep ->
-                  follow_pointer db dep Target.deserialize
-                  >>= fun dependency ->
+    begin
+      current_targets t >>= fun targets ->
+      database t >>= fun db ->
+      Deferred_list.while_sequential targets ~f:(fun target ->
+          match target.Target.history with
+          | `Created _ ->
+            Log.(s "Target " % Target.log target 
+                 % s " is inactive" @ very_verbose);
+            (* nothing to do *) return ()
+          | `Activated _ ->
+            begin Artifact.is_ready target.Target.result_type
+              >>= function
+              | false ->
+                Deferred_list.while_sequential target.Target.dependencies
+                  ~f:begin fun dep ->
+                    follow_pointer db dep Target.deserialize
+                    >>= fun dependency ->
                     match target.Target.history with
                     | `Created _  ->
                       let newdep =
@@ -541,76 +541,77 @@ module State = struct
                     | `Activated _ | `Running _ -> return `Wait
                     | `Dead _ -> return (`Die dep)
                     | `Successful _ -> return `Go
-                end
-              >>= fun statuses ->
-              begin match statuses with
-              | some_list when List.for_all some_list ~f:((=) `Go) ->
-                begin match target.Target.make with
-                | `Artifact a ->
-                  add_or_update_target t Target.(make_succeed_exn target a)
-                | `Get_output cmd ->
-                  begin Command.get_output cmd
-                    >>< function
-                    | `Ok (out, _) ->
-                      Log.(s "Cmd output: " % s out @ very_verbose);
-                      let new_target =
-                        Target.make_succeed_exn target (`Value (`String out)) in
-                      add_or_update_target t new_target
-                    | `Error (`Host (`Execution (where, out, err, msg))) ->
-                      Log.(s "Cmd error: " % s err @ very_verbose);
-                      add_or_update_target t Target.(
-                          make_fail_exn target  
-                            ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" where out err msg))
                   end
-                | `Direct_command cmd ->
-                  begin Command.run cmd
-                    >>< function
-                    | `Ok () -> 
-                      begin Artifact.is_ready target.Target.result_type
-                        >>= function
-                        | false ->
-                          add_or_update_target t Target.(
-                              make_fail_exn target  
-                                ~msg:(fmt "command %S did not create %S" 
-                                        (Command.to_string cmd)
-                                        (Artifact_type.to_string target.Target.result_type)))
-                        | true ->
-                          (* result_type must be a Volume: *)
-                          let v = Artifact.of_type target.Target.result_type in
-                          add_or_update_target t Target.(make_succeed_exn target v)
-                      end
-                    | `Error (`Host (`Execution (where, out, err, msg))) ->
-                      Log.(s "Cmd error: " % s err @ very_verbose);
-                      add_or_update_target t Target.(
-                          make_fail_exn target  
-                            ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" 
-                                    where out err msg))
+                >>= fun statuses ->
+                begin match statuses with
+                | some_list when List.for_all some_list ~f:((=) `Go) ->
+                  begin match target.Target.make with
+                  | `Artifact a ->
+                    add_or_update_target t Target.(make_succeed_exn target a)
+                  | `Get_output cmd ->
+                    begin Command.get_output cmd
+                      >>< function
+                      | `Ok (out, _) ->
+                        Log.(s "Cmd output: " % s out @ very_verbose);
+                        let new_target =
+                          Target.make_succeed_exn target (`Value (`String out)) in
+                        add_or_update_target t new_target
+                      | `Error (`Host (`Execution (where, out, err, msg))) ->
+                        Log.(s "Cmd error: " % s err @ very_verbose);
+                        add_or_update_target t Target.(
+                            make_fail_exn target  
+                              ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" where out err msg))
+                    end
+                  | `Direct_command cmd ->
+                    begin Command.run cmd
+                      >>< function
+                      | `Ok () -> 
+                        begin Artifact.is_ready target.Target.result_type
+                          >>= function
+                          | false ->
+                            add_or_update_target t Target.(
+                                make_fail_exn target  
+                                  ~msg:(fmt "command %S did not create %S" 
+                                          (Command.to_string cmd)
+                                          (Artifact_type.to_string target.Target.result_type)))
+                          | true ->
+                            (* result_type must be a Volume: *)
+                            let v = Artifact.of_type target.Target.result_type in
+                            add_or_update_target t Target.(make_succeed_exn target v)
+                        end
+                      | `Error (`Host (`Execution (where, out, err, msg))) ->
+                        Log.(s "Cmd error: " % s err @ very_verbose);
+                        add_or_update_target t Target.(
+                            make_fail_exn target  
+                              ~msg:(fmt "On %S, out: %S, err: %S, msg: %S" 
+                                      where out err msg))
+                    end
                   end
+                | some_dependency_died
+                  when List.exists some_dependency_died
+                      ~f:(function `Die _ -> true | _ -> false) ->
+                  let msg =
+                    List.filter_map some_dependency_died
+                      ~f:(function `Die d -> Some d.Data.id | _ -> None)
+                    |> String.concat ~sep:", "
+                  in
+                  add_or_update_target t Target.(
+                      make_fail_exn target  ~msg:(fmt "Dependencies died: %s" msg))
+                | no_death_not_all_go -> 
+                  (* there must be some `Wait :) *)
+                  return ()
                 end
-              | some_dependency_died
-                when List.exists some_dependency_died
-                    ~f:(function `Die _ -> true | _ -> false) ->
-                let msg =
-                  List.filter_map some_dependency_died
-                    ~f:(function `Die d -> Some d.Data.id | _ -> None)
-                  |> String.concat ~sep:", "
-                in
-                add_or_update_target t Target.(
-                    make_fail_exn target  ~msg:(fmt "Dependencies died: %s" msg))
-              | no_death_not_all_go -> 
-                (* there must be some `Wait :) *)
-                return ()
-              end
-            | true ->
-              (* result_type must be a Volume: *)
-              let v = Artifact.of_type target.Target.result_type in
-              add_or_update_target t Target.(make_succeed_exn target v)
-          end
-        (* start or run *)
-        | `Running _ -> (* check/update status *) return ()
-        | `Dead _ | `Successful _ -> return ())
-    >>= fun (_ : unit list) ->
-    return ()
+              | true ->
+                (* result_type must be a Volume: *)
+                let v = Artifact.of_type target.Target.result_type in
+                add_or_update_target t Target.(make_succeed_exn target v)
+            end
+          (* start or run *)
+          | `Running _ -> (* check/update status *) return ()
+          | `Dead _ | `Successful _ -> return ())
+      >>= fun (_ : unit list) ->
+      return ()
+    end 
 
 end
 
@@ -625,13 +626,8 @@ module Error = struct
   | `Persistent_state (`Deserilization s) ->
     fmt "Persistent_state-Deserilization: %S" s
   | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
-  | `State e ->
-    fmt "State(%s)"
-      (match e with
-       | `Database_unavailable s -> fmt "DB %s" s
-       | `Not_implemented s -> fmt "Not-impl %S" s
-       | `State (`Missing_data p) (* TODO fix that ! *)
-       | `Missing_data p -> fmt "pointer: %s" p
-       | `Target (`Deserilization s)  -> fmt "target-deserialization: %s" s)
+  | `Database_unavailable s -> fmt "DB %s" s
+  | `Not_implemented s -> fmt "Not-impl %S" s
+  | `Missing_data p -> fmt "pointer: %s" p
 
 end
