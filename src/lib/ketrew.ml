@@ -613,6 +613,12 @@ module State = struct
       return ()
     end 
 
+  let get_status t pointer =
+    database t >>= fun db ->
+    follow_pointer db pointer Target.deserialize
+    >>= fun target ->
+    return target.Target.history 
+
 end
 
 module Error = struct
