@@ -92,82 +92,48 @@ let test_0 () =
         Test.fail (fmt "too many targets: %d" (List.length other)); return ()
     end
     >>= fun () ->
-    let second_target =
-      Target.(active ~name:"Second target, active"
-                ~make:Process.(`Get_output Command.(shell "ls /"))
-                Artifact_type.string_value) in
-    State.add_target state  second_target >>= fun () ->
-    begin State.current_targets state
-      >>= function
-      | [one; two] -> return ()
-      | other ->
-        Test.fail (fmt "too many targets: %d" (List.length other)); return ()
-    end
-    >>= fun () ->
-    State.step state >>= fun () ->
-    let count_targets state =
-      State.current_targets state >>= fun targets ->
-      let count ~s ~i ~r ~d =
-        (`Successful s, `Inactive i, `Running r, `Dead d) in
-      let init = count 0 0 0 0 in
-      List.fold targets ~init ~f:(fun prev trgt ->
-          let `Successful s, `Inactive i, `Running r, `Dead d = prev in
-          match trgt.Target.history with
-          | `Created _ -> count ~s ~d ~r ~i:(i + 1)
-          | `Successful _ -> count ~s:(s + 1) ~d ~r ~i
-          | `Running _ -> count ~r:(r + 1) ~d ~s ~i
-          | `Dead _ -> count ~d:(d + 1) ~s ~r ~i
-          | `Activated _ -> prev)
-      |> return
+
+    let test_target_one_step ~state ~make ~spec name check =
+      let target = Target.(active ~name ~make spec) in
+      State.add_target state target
+      >>= fun () ->
+      begin State.get_status state (Target.pointer target)
+        >>= function
+        | `Activated _ -> return ()
+        | other -> Test.fail (fmt "T: %S: not activated" name); return ()
+      end
+      >>= fun () ->
+      State.step state >>= fun () ->
+      begin State.get_status state (Target.pointer target)
+        >>= function
+        | s when check s -> return ()
+        | other -> Test.fail (fmt "T: %S: wrong status" name); return ()
+      end
     in
-    begin count_targets state >>= function
-      | `Successful 1, `Inactive 1, _, _ -> return ()
-      | `Successful s, `Inactive i, _, _ ->
-        Test.fail (fmt "wrong counts 1: %d %d" s i); return ()
-    end
+    let target_succeeds = function `Successful _ -> true | _ -> false in
+    let target_fails = function `Dead _ -> true | _ -> false in
+
+    test_target_one_step ~state "ls /" target_succeeds
+      ~make:Process.(`Get_output Command.(shell "ls /"))
+      ~spec:Artifact_type.string_value
     >>= fun () ->
 
-    State.add_target state 
-      Target.(active ~name:"3rd target, active, failing"
-                ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
-                Artifact_type.string_value)
-    >>= fun () ->
-    State.step state >>= fun () ->
-    begin count_targets state >>= function
-      | `Successful 1, `Inactive 1, _, `Dead 1 -> return ()
-      | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 3rd: %d %d %d" s i d); return ()
-    end
-    >>= fun () ->
-
-    State.add_target state 
-      Target.(active ~name:"4th target, active, over SSH"
-                ~make:Process.(
-                    `Get_output Command.(shell ~host:Test.test_ssh_host "ls /"))
-                Artifact_type.string_value)
-    >>= fun () ->
-    State.step state >>= fun () ->
-    begin count_targets state >>= function
-      | `Successful 2, `Inactive 1, _, `Dead 1 -> return ()
-      | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
-    end
+    test_target_one_step ~state "ls /crazypath" target_fails
+      ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
+      ~spec:Artifact_type.string_value
     >>= fun () ->
 
     let host = Test.test_ssh_host in
-    State.add_target state 
-      Target.(active ~name:"5th target, active, file creation over SSH"
-                ~make:Process.(`Direct_command 
-                                 Command.(shell ~host "ls / > /tmp/ketrew_test"))
-                (Artifact_type.volume 
-                   Volume.(create ~host ~root:"/tmp" (file "ketrew_test"))))
+    test_target_one_step ~state "ls / over ssh" target_succeeds
+      ~make:Process.(`Get_output Command.(shell ~host "ls /"))
+      ~spec:Artifact_type.string_value
     >>= fun () ->
-    State.step state >>= fun () ->
-    begin count_targets state >>= function
-      | `Successful 3, `Inactive 1, _, `Dead 1 -> return ()
-      | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
-    end
+
+    test_target_one_step ~state "ls / > <file> over ssh" target_succeeds
+      ~make:Process.(`Direct_command 
+                       Command.(shell ~host "ls / > /tmp/ketrew_test"))
+      ~spec:(Artifact_type.volume 
+               Volume.(create ~host ~root:"/tmp" (file "ketrew_test")))
     >>= fun () ->
 
     (* A target that creates a more complex file structure *)
@@ -182,42 +148,18 @@ let test_0 () =
       Volume.(create ~host ~root:"/tmp" 
                 (dir "ketrew_test2" [file "ls"; dir "somedir" [file "psaux"]]))
     in
-    State.add_target state 
-      Target.(active ~name:"6th target, active, tree creation over SSH"
-                ~make:Process.(`Direct_command cmd)
-                (Artifact_type.volume vol))
-    >>= fun () ->
-    State.step state >>= fun () ->
-    begin count_targets state >>= function
-      | `Successful 4, `Inactive 1, _, `Dead 1 -> return ()
-      | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
-    end
+    test_target_one_step ~state "2 files, 2 dirs over ssh" target_succeeds
+      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     (* A target that fails to create a more complex file structure *)
-    let cmd = 
-      Command.(
-        shell ~host 
-          "mkdir -p /tmp/ketrew_test2/somedir && \
-           ls / > /tmp/ketrew_test2/ls && \
-           ps aux > /tmp/ketrew_test2/somedir/psaux ")
-    in
     let vol =
       Volume.(create ~host ~root:"/tmp" 
-                (dir "ketrew_test2" [file "ls"; dir "somedir_typo" [file "psaux"]]))
+                (dir "ketrew_test2" [file "ls";
+                                     dir "somedir_typo" [file "psaux"]]))
     in
-    State.add_target state 
-      Target.(active ~name:"6th target, active, tree creation over SSH"
-                ~make:Process.(`Direct_command cmd)
-                (Artifact_type.volume vol))
-    >>= fun () ->
-    State.step state >>= fun () ->
-    begin count_targets state >>= function
-      | `Successful 4, `Inactive 1, _, `Dead 2 -> return ()
-      | `Successful s, `Inactive i, _, `Dead d ->
-        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
-    end
+    test_target_one_step ~state "2 files, 2 dirs over ssh + typo" target_fails
+      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     System.remove db_file
