@@ -1,16 +1,18 @@
 Ketrew: Keep Track of Experimental Workflows
 ============================================
 
+This is **Work in Progress**, not ready for use.
+
 Build & Install
 ---------------
 
 Ketrew depends on
 `nonstd`, `pvem`, `docout`,  `sosa`,  `pvem_lwt_unix`
-and uses `ocp-build`:
+and uses the `ocp-build` build system:
 
     ./please.sh build
 
-You should install within Opam, but you can always:
+You should not install `ketrew` yet, but you can always call at your own risk:
 
     ocp-build install
 
@@ -24,5 +26,7 @@ Run the tests like this:
 where `<Host>` is often an entry in your `.ssh/config` file.
 
 The test will indeed look for the environment variable `ketrew_test_ssh`; if
-not defined it will use `"localhost"`, but for the test to succeed it should be
-a passwordless SSH host (the only command run on it is for now `ls /`).
+not defined it will use `"localhost"`. But for the test to succeed it should be
+an SSH host for which the user running the test does not need password.
+The test will run some commands on that host and create files and directories
+in its `/tmp` directory.
