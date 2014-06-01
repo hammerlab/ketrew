@@ -170,6 +170,55 @@ let test_0 () =
     end
     >>= fun () ->
 
+    (* A target that creates a more complex file structure *)
+    let cmd = 
+      Command.(
+        shell ~host 
+          "mkdir -p /tmp/ketrew_test2/somedir && \
+           ls / > /tmp/ketrew_test2/ls && \
+           ps aux > /tmp/ketrew_test2/somedir/psaux ")
+    in
+    let vol =
+      Volume.(create ~host ~root:"/tmp" 
+                (dir "ketrew_test2" [file "ls"; dir "somedir" [file "psaux"]]))
+    in
+    State.add_target state 
+      Target.(active ~name:"6th target, active, tree creation over SSH"
+                ~make:Process.(`Direct_command cmd)
+                (Artifact_type.volume vol))
+    >>= fun () ->
+    State.step state >>= fun () ->
+    begin count_targets state >>= function
+      | `Successful 4, `Inactive 1, _, `Dead 1 -> return ()
+      | `Successful s, `Inactive i, _, `Dead d ->
+        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
+    end
+    >>= fun () ->
+
+    (* A target that fails to create a more complex file structure *)
+    let cmd = 
+      Command.(
+        shell ~host 
+          "mkdir -p /tmp/ketrew_test2/somedir && \
+           ls / > /tmp/ketrew_test2/ls && \
+           ps aux > /tmp/ketrew_test2/somedir/psaux ")
+    in
+    let vol =
+      Volume.(create ~host ~root:"/tmp" 
+                (dir "ketrew_test2" [file "ls"; dir "somedir_typo" [file "psaux"]]))
+    in
+    State.add_target state 
+      Target.(active ~name:"6th target, active, tree creation over SSH"
+                ~make:Process.(`Direct_command cmd)
+                (Artifact_type.volume vol))
+    >>= fun () ->
+    State.step state >>= fun () ->
+    begin count_targets state >>= function
+      | `Successful 4, `Inactive 1, _, `Dead 2 -> return ()
+      | `Successful s, `Inactive i, _, `Dead d ->
+        Test.fail (fmt "wrong counts 4rth: %d %d %d" s i d); return ()
+    end
+    >>= fun () ->
 
     System.remove db_file
     >>= fun () ->
