@@ -93,25 +93,39 @@ let test_0 () =
     end
     >>= fun () ->
 
+    let test_targets ~name targets checks =
+      Deferred_list.while_sequential targets (State.add_target state)
+      >>= fun (_ : unit list) ->
+      Deferred_list.while_sequential checks ~f:(function
+        | `Dont_care -> State.step state >>= fun _ -> return ()
+        | `Happens check ->
+          State.step state >>= fun happening ->
+          begin match check happening with
+          | true -> return ()
+          | false -> 
+            Test.fail (fmt "T: %S: wrong happening: %s" name
+                         (List.map ~f:State.what_happened_to_string happening
+                          |> String.concat ~sep:",\n  "));
+            return ()
+          end
+        | `Status (id, check) ->
+          State.step state >>= fun _ ->
+          begin State.get_status state (Data.pointer id)
+            >>= function
+            | s when check s -> return ()
+            | other -> Test.fail (fmt "T: %S: wrong status" name); return ()
+          end)
+      >>= fun (_: unit list) ->
+      return ()
+    in
     let test_target_one_step ~state ~make ~spec name check =
       let target = Target.(active ~name ~make spec) in
-      State.add_target state target
-      >>= fun () ->
-      begin State.get_status state (Target.pointer target)
-        >>= function
-        | `Activated _ -> return ()
-        | other -> Test.fail (fmt "T: %S: not activated" name); return ()
-      end
-      >>= fun () ->
-      State.step state >>= fun what_happened ->
-      begin State.get_status state (Target.pointer target)
-        >>= function
-        | s when check s -> return ()
-        | other -> Test.fail (fmt "T: %S: wrong status" name); return ()
-      end
-    in
-    let target_succeeds = function `Successful _ -> true | _ -> false in
-    let target_fails = function `Dead _ -> true | _ -> false in
+      test_targets ~name [target] [check ~id:(Target.id target)] in
+    let target_succeeds ~id =
+      `Status (id, function `Successful _ -> true | _ -> false) in
+    let target_fails ~id = 
+      `Status (id, function `Dead _ -> true | _ -> false) in
+    let check_one_step ~id check = `Happens (check ~id) in
 
     test_target_one_step ~state "ls /" target_succeeds
       ~make:Process.(`Get_output Command.(shell "ls /"))
@@ -150,6 +164,14 @@ let test_0 () =
     in
     test_target_one_step ~state "2 files, 2 dirs over ssh" target_succeeds
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+    >>= fun () ->
+
+    (* doing it again should succeed for a good reason *)
+    test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
+      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+      (check_one_step (fun ~id -> function
+         | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
+         | _ -> false))
     >>= fun () ->
 
     (* A target that fails to create a more complex file structure *)
