@@ -126,6 +126,7 @@ let test_0 () =
     let target_fails ~id = 
       `Status (id, function `Dead _ -> true | _ -> false) in
     let check_one_step ~id check = `Happens (check ~id) in
+    let nothing_happens = `Happens (function [] -> true | _ -> false) in
 
     test_target_one_step ~state "ls /" target_succeeds
       ~make:Process.(`Get_output Command.(shell "ls /"))
@@ -183,6 +184,89 @@ let test_0 () =
     test_target_one_step ~state "2 files, 2 dirs over ssh + typo" target_fails
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
+
+    (*
+
+      This tests 3 cases, for target1 depending on target2:
+
+      - both may succeed consecutively
+      - target 1 may fail and make target2 fail because of dependency
+      - target 1 may succeed and target2 fail by itself
+
+    *)
+    let root = "/tmp" in
+    let two_targets (succeed1, succeed2) check =
+      let tmpfile = fmt "ketrew_test_%s" (Unique_id.create ()) in
+      let target1 =
+        let shell_command =
+          if succeed1 then (fmt "ls -l / > /tmp/%s" tmpfile) else "echo bouh"
+        in
+        Target.create ~name:"ls / > some tmp"
+          ~make:Process.(`Direct_command 
+                           Command.(shell ~host shell_command))
+          (Artifact_type.volume Volume.(create ~host ~root (file tmpfile)))
+      in
+      let target2 = 
+        let shell_command =
+          if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
+        Target.active ~name:"count lines of dependency"
+          ~dependencies:[ Target.pointer target1 ]
+          ~make:Process.(`Get_output Command.(shell ~host shell_command))
+          (Artifact_type.string_value)
+      in
+      let id1 = Target.id target1 in
+      let id2 = Target.id target2 in
+      let expected_status b = if b then "succeeds" else "fails" in
+      let name =
+        fmt "%s (%s) depends on %s (%s)"
+          id1 (expected_status succeed1)
+          id2 (expected_status succeed2)
+      in
+      test_targets ~name [target1; target2] (check ~id1 ~id2)
+    in
+    two_targets (true, true) (fun ~id1 ~id2 -> 
+      [ 
+        `Happens (function 
+         | [`Target_activated (i, `Dependency)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_succeeded (i, `Process_success)] when i = id2 -> true
+         | _ -> false);
+        nothing_happens
+      ])
+    >>= fun () ->
+    two_targets (false, true) (fun ~id1 ~id2 -> 
+      [ 
+        `Happens (function 
+         | [`Target_activated (i, `Dependency)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_died (i, `Process_failure)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_died (i, `Dependencies_died)] when i = id2 -> true
+         | _ -> false);
+        nothing_happens
+      ])
+    >>= fun () ->
+    two_targets (true, false) (fun ~id1 ~id2 -> 
+      [ 
+        `Happens (function 
+         | [`Target_activated (i, `Dependency)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
+         | _ -> false);
+        `Happens (function 
+         | [`Target_died (i, `Process_failure)] when i = id2 -> true
+         | _ -> false);
+        nothing_happens
+      ])
+    >>= fun () ->
+
 
     System.remove db_file
     >>= fun () ->
