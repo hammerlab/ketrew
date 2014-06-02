@@ -103,7 +103,7 @@ let test_0 () =
         | other -> Test.fail (fmt "T: %S: not activated" name); return ()
       end
       >>= fun () ->
-      State.step state >>= fun () ->
+      State.step state >>= fun what_happened ->
       begin State.get_status state (Target.pointer target)
         >>= function
         | s when check s -> return ()
