@@ -1,62 +1,7 @@
 
 open Ketrew_pervasives
+module Path = Ketrew_path
 
-
-module Path = struct
-
-  
-  type relative 
-  type absolute
-  type file
-  type directory
-  type 'c t =
-    {kind: [`File | `Directory]; path: string}
-    constraint 'c = <relativity: 'relativity; kind: 'file_kind>
-  type absolute_directory = <relativity : absolute; kind: directory> t
-  type absolute_file = <relativity : absolute; kind: file> t
-  type relative_directory = <relativity : relative; kind: directory> t
-  type relative_file = <relativity : relative; kind: file> t
-
-  let file path : <relativity : 'a; kind: file>  t =
-    {kind = `File; path}
-
-  let directory path : <relativity : 'a; kind: directory> t  =
-    {kind = `Directory; path}
-
-  let root : <relativity : absolute; kind: directory> t = directory "/"
-
-  let absolute_file_exn s : <relativity : absolute; kind: file> t =
-    if Filename.is_relative s
-    then invalid_argument_exn ~where:"Path" "absolute_file_exn"
-    else file s
-  let absolute_directory_exn s : <relativity : absolute; kind: directory> t =
-    if Filename.is_relative s
-    then invalid_argument_exn ~where:"Path" "absolute_directory_exn"
-    else directory s
-  let relative_directory_exn s : <relativity : relative; kind: directory> t =
-    if Filename.is_relative s
-    then directory s
-    else invalid_argument_exn ~where:"Path" "relative_directory_exn"
-  let relative_file_exn s : <relativity: relative; kind: file> t =
-    if Filename.is_relative s
-    then file s
-    else invalid_argument_exn ~where:"Path" "relative_file_exn"
-
-  let concat: <relativity: 'a; kind: directory> t ->
-    <relativity: relative; kind: 'b> t -> <relativity: 'a; kind: 'b> t =
-    fun x y ->
-      { kind = y.kind; path = Filename.concat x.path y.path}
-
-  let to_string: 'a t -> string = fun x -> x.path
-
-  let any_kind: <relativity: 'a; kind: 'b> t -> <relativity: 'a; kind: 'c> t =
-    fun x -> { x with kind = x.kind }
-
-  let exists_shell_condition = function
-  | {kind = `File; path } ->  fmt "[ -f %S ]" path
-  | {kind = `Directory; path } ->  fmt "[ -d %S ]" path
-
-end
 
 module Host = struct
 
@@ -92,6 +37,30 @@ module Host = struct
         | Some u -> [fmt "%s@%s" u ssh.address])
       @ [command]
 
+    (** Generate an SCP command for the given host with the destination
+        directory or file path. *)
+    let scp_push ssh ~src ~dest =
+      ["scp"; !_configuration_ssh_batch_option]
+      @ (match ssh.port with
+        | Some p -> ["-P"; "port"]
+        | None -> [])
+      @ src
+      @ (match ssh.user with
+        | None -> [fmt "%s:%s" ssh.address dest]
+        | Some u -> [fmt "%s@%s:%s" u ssh.address dest])
+
+    (** Generate an SCP command for the given host as source. *)
+    let scp_pull  ssh ~src ~dest =
+      ["scp"; !_configuration_ssh_batch_option]
+      @ (match ssh.port with
+        | Some p -> ["-P"; "port"]
+        | None -> [])
+      @ (List.map src ~f:(fun src_item ->
+          match ssh.user with
+          | None -> fmt "%s:%s" ssh.address src_item
+          | Some u -> fmt "%s@%s:%s" u ssh.address src_item))
+      @ [dest]
+
   end
   type connection = [
     | `Localhost
@@ -100,11 +69,13 @@ module Host = struct
   type t = {
     name: string;
     connection: connection;
-    playground: string option;
+    playground: Path.absolute_directory option;
   }
   let create ?(connection=`Localhost) ?playground name =
     {name; connection; playground}
-  let localhost = create "localhost"
+
+  let localhost = 
+    create ~playground:(Path.absolute_directory_exn "/tmp")  "localhost"
 
   let ssh ?playground ?port ?user ?name address =
     create ?playground Option.(value name ~default:address)
@@ -137,6 +108,35 @@ module Host = struct
                % s " failed: " %s msg @ verbose);
           fail_exec t msg
       end
+  let get_shell_command_return_value t cmd =
+    match t.connection with
+    | `Localhost ->
+      begin System.Shell.execute cmd
+        >>< function
+        | `Ok (out, err, `Exited n) -> return n
+        | `Ok (out, err, other) -> 
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Shell _ as e) ->
+          fail_exec t (System.error_to_string e)
+      end
+    | `Ssh ssh ->
+      let ssh_cmd = Ssh.(do_ssh ssh cmd) in
+      begin Ketrew_unix_process.exec ssh_cmd
+        >>< function
+        | `Ok (out, err, `Exited n) -> return n
+        | `Ok (out, err, other) -> 
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+
+  let run_shell_command t cmd =
+    get_shell_command_output t cmd
+    >>= fun (_, _) ->
+    return ()
 
   let do_files_exist t paths =
     let cmd =
@@ -166,6 +166,68 @@ module Host = struct
                % s " failed: " %s msg @ verbose);
           fail_exec t msg
       end
+
+  let get_fresh_playground t = 
+    let fresh = Unique_id.create () in
+    Option.map  t.playground (fun pg ->
+        Path.(concat pg (relative_directory_exn fresh)))
+
+  let ensure_directory t ~path =
+    match t.connection with
+    | `Localhost -> System.ensure_directory_path Path.(to_string path)
+    | `Ssh ssh ->
+      let cmd = fmt "mkdir -p %s" Path.(to_string_quoted path) in
+      let ssh_cmd = Ssh.(do_ssh ssh cmd) in
+      begin Ketrew_unix_process.succeed ssh_cmd
+        >>< function
+        | `Ok (out, err) -> return ()
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+
+  let put_file t ~path ~content =
+    match t.connection with
+    | `Localhost -> IO.write_file ~content Path.(to_string path)
+    | `Ssh ssh ->
+      let temp = Filename.temp_file "ketrew" "ssh_put_file" in
+      IO.write_file ~content temp
+      >>= fun () ->
+      let scp_cmd = Ssh.(scp_push ssh ~src:[temp] ~dest:(Path.to_string path)) in
+      begin Ketrew_unix_process.succeed scp_cmd
+        >>< function
+        | `Ok (out, err) -> return ()
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+
+  let get_file t ~path =
+    match t.connection with
+    | `Localhost -> 
+      begin IO.read_file Path.(to_string path)
+        >>< function
+        | `Ok c -> return c
+        | `Error _ -> 
+          fail (`Cannot_read_file ("localhost", Path.(to_string path)))
+      end
+    | `Ssh ssh ->
+      let temp = Filename.temp_file "ketrew" "ssh_get_file" in
+      let scp_cmd = Ssh.(scp_pull ssh ~dest:temp ~src:[Path.to_string path]) in
+      begin Ketrew_unix_process.succeed scp_cmd
+        >>< function
+        | `Ok (out, err) -> IO.read_file temp
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail (`Cannot_read_file (ssh.Ssh.address, Path.(to_string path)))
+      end
+
 end
 
 module Command = struct
@@ -176,7 +238,9 @@ module Command = struct
   }
   let shell ?(host=Host.localhost) s = { host; action = `Shell s}
 
-  let to_string {host; action = `Shell cmd} =
+  let get_host t = t.host
+
+  let to_string_hum {host; action = `Shell cmd} =
     fmt "Shell[%S] on %s" cmd (Host.to_string host)
 
   let get_output {host; action} =
@@ -187,6 +251,9 @@ module Command = struct
     get_output t (* TODO optimize to not record the output *)
     >>= fun (_, _) ->
     return ()
+
+  let to_monitored_script ~playground = function
+  | {action = `Shell c; _} -> Ketrew_monitored_script.create ~playground [c]
 
 end
 
@@ -261,7 +328,7 @@ module Artifact = struct
   ]
 
 
-  (* TODO those two functions should more type-safe *)
+  (* TODO those two functions should be more type-safe *)
   let is_ready specification =
     match specification with
     | `Value _ -> return false
@@ -279,6 +346,7 @@ module Process = struct
     | `Artifact of Artifact.t
     | `Get_output of Command.t
     | `Direct_command of Command.t
+    | `Long_running of string * string
   ]
   let nop = `Artifact (`Value `Unit)
 end
@@ -289,8 +357,9 @@ module Target = struct
   type submitted_state = [`Created of Time.t]
   type activated_state =
     [`Activated of Time.t * submitted_state * [ `User | `Dependency ] ]
-  type run_history = (Time.t * string) list (* complexify *)
-  type running_state = [ `Running of run_history * activated_state ]
+  type run_bookkeeping = 
+    { plugin_name: string; run_parameters: string; run_history: string list}
+  type running_state = [ `Running of run_bookkeeping * activated_state ]
   type death_reason = [`Killed of string | `Failed of string]
   type finished_state = [ 
     | `Dead of Time.t * [activated_state | running_state] * death_reason
@@ -342,6 +411,27 @@ module Target = struct
     | `Activated _ | `Running _ as state -> 
       { t with history = `Dead (Time.now (), state, `Failed msg) }
     | _ -> raise (Invalid_argument "kill_exn")
+
+  let set_running_exn t ~plugin_name ~run_parameters =
+    match t.history with
+    | `Activated _ as state -> 
+      { t with
+        history =
+          `Running ({plugin_name; run_parameters; run_history = []}, state)}
+    | _ -> invalid_argument_exn ~where:"Target" (fmt "set_running_exn")
+
+  let update_running_exn t ~run_parameters =
+    match t.history with
+    | `Running (bookkeeping, activation)  ->
+      { t with
+        history =
+          `Running ({bookkeeping with 
+                     run_parameters;
+                     run_history = 
+                       bookkeeping.run_parameters :: bookkeeping.run_history},
+                    activation)}
+    | _ -> invalid_argument_exn ~where:"Target" (fmt "update_running_exn")
+
 
   let active 
       ?name ?persistance ?metadata
@@ -447,14 +537,226 @@ module Configuration = struct
     { database_parameters; persistent_state_key }
 end
 
+module Error = struct
+
+  let to_string = function
+  | `IO _ as io -> IO.error_to_string io
+  | `System _ as s -> System.error_to_string s
+  | `Database (`Load, path) -> fmt "DB-load: %S" path
+  | `Host (`Execution (one, two, three, four)) ->
+    fmt "Host-exec(%s, %s, %s, %s)" one two three four
+  | `Persistent_state (`Deserilization s) ->
+    fmt "Persistent_state-Deserilization: %S" s
+  | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
+  | `Database_unavailable s -> fmt "DB %s" s
+  | `Not_implemented s -> fmt "Not-impl %S" s
+  | `Missing_data p -> fmt "missing data at id: %s" p
+  | `Long_running_failed_to_start (id, msg) ->
+    fmt "Long running %s failed to start: %s" id msg
+
+end
+module type LONG_RUNNING = sig
+
+  type run_parameters
+
+  val name: string
+
+  val serialize: run_parameters -> string
+  val deserialize_exn: string -> run_parameters
+
+  val start: run_parameters ->
+    (run_parameters, [>  `Failed_to_start of string]) Deferred_result.t
+  val update: run_parameters ->
+    ([`Succeeded of run_parameters
+     | `Failed of run_parameters * string
+     | `Still_running of run_parameters],
+     [> `Failed_to_update of string]) Deferred_result.t
+
+  val kill: run_parameters ->
+    ([`Killed of run_parameters],
+     [> `Failed_to_kill of string]) Deferred_result.t
+
+end
+module Nohup_setsid: sig
+  (* type t = Command.t *)
+  include LONG_RUNNING
+  val create: Command.t -> [> `Long_running of string * string ]
+end = struct
+
+  type runnning = {
+    pid: int option;
+    playground: Path.absolute_directory;
+    script: Ketrew_monitored_script.t;
+    host: Host.t;
+  }
+  type run_parameters = [
+    | `Created of Command.t
+    | `Running of runnning
+  ]
+  let running =
+    function `Running r -> r 
+           | _ -> invalid_argument_exn ~where:"Nohup_setsid" "running"
+  let created = 
+    function `Created c -> c
+           | _ -> invalid_argument_exn ~where:"Nohup_setsid" "created"
+
+  let serialize t = Marshal.to_string t []
+  let deserialize_exn s = (Marshal.from_string s 0 : run_parameters)
+
+  let name = "nohup-setsid"
+  let create cmd =
+    `Long_running (name, `Created cmd |> serialize)
+
+  let out_file_path ~playground =
+    Path.(concat playground (relative_file_exn "out"))
+  let err_file_path ~playground =
+    Path.(concat playground (relative_file_exn "err"))
+
+  let start rp =
+    (* let script = Command.monitored_script cmd in *)
+    let cmd = created rp in
+    let host = Command.get_host cmd in
+    begin match Host.get_fresh_playground host with
+    | None -> fail (`Failed_to_start "Missing playground")
+    | Some playground ->
+      let monitored_script = Command.to_monitored_script ~playground cmd in
+      let monitored_script_path =
+        Path.(concat playground (relative_file_exn "monitored_script")) in
+      Host.ensure_directory host playground
+      >>= fun () ->
+      let content = Ketrew_monitored_script.to_string monitored_script in
+      Host.put_file ~content host ~path:monitored_script_path
+      >>= fun () ->
+      let out = out_file_path ~playground in
+      let err = err_file_path ~playground in
+      let cmd =
+        (* TODO find a macosx-compliant version (?) harness tmux/screen? *)
+        fmt "nohup setsid bash %s > %s 2> %s &" 
+          (Path.to_string_quoted monitored_script_path)
+          (Path.to_string_quoted out) (Path.to_string_quoted err) in
+      Host.run_shell_command host cmd
+      >>= fun () ->
+      Log.(s "Nohup_setsid: Ran " % s cmd @ very_verbose);
+      return (`Running {pid = None; playground; 
+                        script = monitored_script; host})
+    end
+    >>< function
+    | `Ok o -> return o
+    | `Error e ->
+      begin match e with
+      | `Failed_to_start _ as e -> fail e
+      | `Host _ | `IO _ | `System _ as e -> 
+        fail (`Failed_to_start (Error.to_string e))
+      end
+
+  let _pid_and_log run_parameters =
+    let run = running run_parameters in
+    let log_file = Ketrew_monitored_script.log_file run.script in
+    let pid_file = Ketrew_monitored_script.pid_file run.script in
+    begin Host.get_file run.host ~path:log_file
+      >>< function
+      | `Ok c -> return (Some c)
+      | `Error (`Cannot_read_file _) -> return None
+      | `Error (`IO _ as e) -> fail e
+    end
+    >>= fun log_content ->
+    let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
+    begin Host.get_file run.host ~path:pid_file
+      >>< function
+      | `Ok c -> return (Int.of_string (String.strip ~on:`Both c))
+      | `Error (`Cannot_read_file _) -> return None
+      | `Error (`IO _ as e) -> fail e
+    end
+    >>= fun pid ->
+    Log.(s "Nohup_setsid.update: got " % indent (OCaml.option s log_content)
+         % s " log values and the Pid: " % OCaml.option i pid
+         % sp % brakets (s "pid file: " % s (Path.to_string pid_file))
+         @ very_verbose);
+    return (`Pid pid, `Log log)
+
+  let _update run_parameters =
+    _pid_and_log run_parameters
+    >>= fun (`Pid pid, `Log log) ->
+    let run = running run_parameters in
+    begin match pid with
+    | None ->
+      (* either it didn't start yet, or it already crashed …
+         should count the number of retries or compare dates and have a timeout
+      *)
+      (* fail (`Failed_to_update "Pid file empty") *)
+      return (`Still_running run_parameters)
+    | Some p ->
+      let cmd = fmt "ps -p %d" p in
+      Host.get_shell_command_return_value run.host cmd
+      >>= fun ps_return ->
+      begin match ps_return with
+      | 0 -> (* most likely still running *)
+        (* TOOD save pid + find other way of checking *)
+        return (`Still_running run_parameters)
+      | n -> (* not running, for “sure” *)
+        begin match Option.bind log List.last with
+        | None -> (* no log at all *)
+          return (`Failed (run_parameters, "no log file"))
+        | Some (`Failure (date, label, ret)) ->
+          return (`Failed (run_parameters, fmt "%s returned %s" label ret))
+        | Some (`Success  date) ->
+          return (`Succeeded run_parameters)
+        | Some other ->
+          return (`Still_running run_parameters)
+        end
+      end
+    end
+
+  let update run_parameters =
+    _update run_parameters
+    >>< function
+    | `Ok o -> return o
+    | `Error e ->
+      begin match e with
+      | `Failed_to_update _ as e -> fail e
+      | `Host _ | `IO _ | `System _ as e -> 
+        fail (`Failed_to_update (Error.to_string e))
+      end
+
+  let kill run_parameters =
+    begin
+      _pid_and_log run_parameters
+      >>= fun (`Pid pid, `Log log) ->
+      let run = running run_parameters in
+      begin match pid with
+      | None ->
+        (* either it didn't start yet, or it already crashed …
+           should count the number of retries or compare dates and have a timeout
+        *)
+        fail (`Failed_to_kill "Pid file empty")
+      | Some p ->
+        let cmd = fmt "kill -- -%d" p in
+        Host.run_shell_command run.host cmd
+        >>= fun () ->
+        return (`Killed run_parameters)
+      end
+    end
+    >>< function
+    | `Ok o -> return o
+    | `Error (`Host _ | `IO _ | `System _ as e) ->
+      fail (`Failed_to_kill (Error.to_string e))
+
+end
+
+
 (** The “application” state *)
 module State = struct
   type t = {
     mutable database_handle: Database.t option;
     configuration: Configuration.t;
+    long_running_plugins: (string * (module LONG_RUNNING)) list;
   }
-  let create configuration =
-    return {database_handle = None; configuration}
+  let default_plugins = [
+    Nohup_setsid.name, (module Nohup_setsid: LONG_RUNNING);
+  ]
+  let create ?(plugins=default_plugins) configuration =
+    return {database_handle = None; configuration;
+            long_running_plugins = plugins}
 
   let not_implemented msg = 
     Log.(s "Going through not implemented stuff: " % s msg @ verbose);
@@ -572,6 +874,20 @@ module State = struct
     | no_death_but_not_all_go -> return (`Wait, happenings)
     end
 
+  let with_plugin_or_kill_target t ~target ~plugin_name f =
+    begin match 
+      List.find t.long_running_plugins (fun (n, _) -> n = plugin_name)
+    with
+    | Some (_, m) ->
+      f m
+    | None -> 
+      add_or_update_target t Target.(
+          make_fail_exn target  
+            ~msg:(fmt "Plugin not found: %s" plugin_name))
+      >>= fun () ->
+      return [`Target_died (Target.id target, `Plugin_not_found plugin_name)]
+    end
+
   let _start_running_target t target =
     begin match target.Target.make with
     | `Artifact a ->
@@ -606,7 +922,7 @@ module State = struct
               add_or_update_target t Target.(
                   make_fail_exn target  
                     ~msg:(fmt "command %S did not create %S" 
-                            (Command.to_string cmd)
+                            (Command.to_string_hum cmd)
                             (Artifact_type.to_string target.Target.result_type)))
               >>= fun () ->
               return [`Target_died (Target.id target, `Process_failure)]
@@ -626,7 +942,69 @@ module State = struct
           >>= fun () ->
           return [`Target_died (Target.id target, `Process_failure)]
       end
+    | `Long_running (plugin_name, created_run_paramters) ->
+      with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
+          let module Long_running = (val m : LONG_RUNNING) in
+          let c = Long_running.deserialize_exn created_run_paramters in
+          begin Long_running.start c
+            >>< function
+            | `Ok run_parameters ->
+              let run_parameters = Long_running.serialize run_parameters in
+              add_or_update_target t Target.(
+                  set_running_exn target ~plugin_name ~run_parameters)
+              >>= fun () ->
+              return [`Target_started (Target.id target, plugin_name)]
+            | `Error (`Failed_to_start s) ->
+              add_or_update_target t Target.(
+                  make_fail_exn target  
+                    ~msg:(fmt "[%s] %s" plugin_name s))
+              >>= fun () ->
+              return [`Target_died (Target.id target,
+                                    `Failed_to_start (plugin_name, s))]
+          end)
     end
+
+  let _update_status t ~target ~bookkeeping =
+    let plugin_name = bookkeeping.Target.plugin_name in
+    with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
+        let module Long_running = (val m : LONG_RUNNING) in
+        let run_parameters =
+          Long_running.deserialize_exn bookkeeping.Target.run_parameters in
+        begin Long_running.update run_parameters
+            >>< function
+            | `Ok (`Still_running run_parameters) ->
+              let run_parameters = Long_running.serialize run_parameters in
+              add_or_update_target t Target.(
+                  update_running_exn target ~run_parameters)
+              >>= fun () ->
+              return []
+            | `Ok (`Succeeded run_parameters) ->
+              let run_parameters = Long_running.serialize run_parameters in
+              (* result_type must be a Volume: *)
+              let v = Artifact.of_type target.Target.result_type in
+              add_or_update_target t Target.(
+                  update_running_exn target ~run_parameters
+                  |> fun trgt ->  make_succeed_exn trgt v
+                )
+              >>= fun () ->
+              return [`Target_succeeded (Target.id target, `Process_success)]
+            | `Ok (`Failed (run_parameters, msg)) ->
+              let run_parameters = Long_running.serialize run_parameters in
+              (* result_type must be a Volume: *)
+              add_or_update_target t Target.(
+                  update_running_exn target ~run_parameters
+                  |> fun trgt ->  make_fail_exn trgt ~msg
+                )
+              >>= fun () ->
+              return [`Target_died (Target.id target, `Process_failure)]
+            | `Error (`Failed_to_update s) ->
+              add_or_update_target t Target.(
+                  make_fail_exn target  
+                    ~msg:(fmt "[%s] %s" plugin_name s))
+              >>= fun () ->
+              return [`Target_died (Target.id target,
+                                    `Failed_to_update (plugin_name, s))]
+        end)
 
   let log_what_happened =
     let open Log in
@@ -639,11 +1017,19 @@ module State = struct
         | `Artifact_ready -> s "Artifact_ready"
         | `Artifact_literal -> s "Artifact_literal"
         | `Process_success -> s "Process success")
+    | `Target_started (id, plugin_name) ->
+      s "Target " % s id % s " started " % parens (s plugin_name)
     | `Target_died (id, how) ->
       s "Target " % s id % s " died: " 
       % (match how with
         | `Dependencies_died -> s "Dependencies_died"
+        | `Failed_to_start (plugin_name, msg) -> 
+          sf "[%s] failed to start: %s" plugin_name msg
+        | `Failed_to_update (plugin_name, msg) ->
+          sf "[%s] failed to update: %s" plugin_name msg
+        | `Plugin_not_found p -> sf "Plugin %S not found" p
         | `Process_failure -> s "Process_failure")
+
   let what_happened_to_string w =
     Log.to_string ~indent:0 ~line_width:max_int (log_what_happened w)
 
@@ -680,7 +1066,8 @@ module State = struct
                 return [`Target_succeeded (Target.id target, `Artifact_ready)]
             end
           (* start or run *)
-          | `Running _ -> (* check/update status *) return []
+          | `Running (bookkeeping, _)  ->
+            _update_status t ~target ~bookkeeping
           | `Dead _ | `Successful _ -> return [])
       >>| List.concat
       >>= fun what_happened ->
@@ -696,19 +1083,3 @@ module State = struct
 
 end
 
-module Error = struct
-
-  let to_string = function
-  | `IO _ as io -> IO.error_to_string io
-  | `System _ as s -> System.error_to_string s
-  | `Database (`Load, path) -> fmt "DB-load: %S" path
-  | `Host (`Execution (one, two, three, four)) ->
-    fmt "Host-exec(%s, %s, %s, %s)" one two three four
-  | `Persistent_state (`Deserilization s) ->
-    fmt "Persistent_state-Deserilization: %S" s
-  | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
-  | `Database_unavailable s -> fmt "DB %s" s
-  | `Not_implemented s -> fmt "Not-impl %S" s
-  | `Missing_data p -> fmt "missing data at id: %s" p
-
-end

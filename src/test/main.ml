@@ -7,32 +7,36 @@ module Test = struct
   let test_ssh_host =
     let open Ketrew in
     try
-      Host.ssh (Unix.getenv "ketrew_test_ssh")
+      Host.ssh ~playground:Path.(absolute_directory_exn "/tmp")
+        (Unix.getenv "ketrew_test_ssh")
     with Not_found -> Host.ssh "localhost"
 
-  let test_targets ~state ~name targets checks =
+  let test_targets ?wait_between_steps ~state ~name targets checks =
     let open Ketrew in
     Deferred_list.while_sequential targets (State.add_target state)
     >>= fun (_ : unit list) ->
-    Deferred_list.while_sequential checks ~f:(function
-      | `Dont_care -> State.step state >>= fun _ -> return ()
-      | `Happens check ->
-        State.step state >>= fun happening ->
-        begin match check happening with
-        | true -> return ()
-        | false -> 
-          fail (fmt "T: %S: wrong happening: %s" name
-                  (List.map ~f:State.what_happened_to_string happening
-                   |> String.concat ~sep:",\n  "));
-          return ()
-        end
-      | `Status (id, check) ->
-        State.step state >>= fun _ ->
-        begin State.get_status state id
-          >>= function
-          | s when check s -> return ()
-          | other -> fail (fmt "T: %S: wrong status" name); return ()
-        end)
+    Deferred_list.while_sequential checks ~f:(fun check ->
+        Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
+        >>< fun _ ->
+        match check with
+        | `Dont_care -> State.step state >>= fun _ -> return ()
+        | `Happens check ->
+          State.step state >>= fun happening ->
+          begin match check happening with
+          | true -> return ()
+          | false -> 
+            fail (fmt "T: %S: wrong happening: %s" name
+                    (List.map ~f:State.what_happened_to_string happening
+                     |> String.concat ~sep:",\n  "));
+            return ()
+          end
+        | `Status (id, check) ->
+          State.step state >>= fun _ ->
+          begin State.get_status state id
+            >>= function
+            | s when check s -> return ()
+            | other -> fail (fmt "T: %S: wrong status" name); return ()
+          end)
     >>= fun (_: unit list) ->
     return ()
 
@@ -301,29 +305,45 @@ let test_long_running_nohup () =
     let configuration = Configuration.create db_file () in
     State.create configuration >>= fun state ->
 
-    begin
-      Test.test_targets  ~state ~name:"one" 
-        [Target.active ~name:"one"
-           ~make:(`Long_running ("bad_plugin", Command.shell "ls"))
-           Artifact_type.string_value
-        ]
-        [`Dont_care]
-      >>< function
-      | `Ok _ -> Test.fail "expected one to fail"; return ()
-      | `Error (`Plugin_not_found ("bad_plugin", _)) -> return ()
-      | `Error e ->
-        Test.fail (fmt "expected one to fail but not with: %s" (Error.to_string e));
-        return ()
-    end
+    Test.test_targets  ~state ~name:("one bad plugin")
+      [Target.active ~name:"one"
+         ~make:(`Long_running ("bad_plugin", "useless string"))
+         Artifact_type.string_value
+      ]
+      [`Happens (function
+         | [`Target_died (_, `Plugin_not_found "bad_plugin")] -> true
+         | _ -> false);
+       `Dont_care;
+       Test.nothing_happens;
+      ]
     >>= fun () ->
 
-    Test.test_targets  ~state ~name:"one" 
-      [Target.active ~name:"one"
-         ~make:(`Long_running (Nohup_setsid.name, Command.shell "ls"))
-           Artifact_type.string_value
-      ]
-      [`Dont_care]
-    >>= fun () ->
+    let root = Path.absolute_directory_exn "/tmp" in
+    (* Deferred_list.while_sequential [Host.localhost; Test.test_ssh_host] ~f:(fun host -> *)
+    Deferred_list.while_sequential [Test.test_ssh_host] ~f:(fun host ->
+        let name n = fmt "%s on %s" n Host.(to_string host) in
+        let new_name = Unique_id.create () in
+        Test.test_targets  ~state ~name:(name "good ls")
+          ~wait_between_steps:1.
+          [Target.active ~name:"one"
+             ~make:(Nohup_setsid.create 
+                      (Command.shell ~host (fmt "ls > /tmp/%s" new_name)))
+             (Artifact_type.volume
+                Volume.(create ~host ~root (file new_name)))
+          ]
+          [`Happens (function
+             | [`Target_started (_, _)] -> true
+             | _ -> false);
+           `Happens (function (* We hope that 1 second intervals are enough
+                                 but there is no good synchronization *)
+             | [`Target_succeeded _] -> true
+             | _ -> false);
+           Test.nothing_happens;
+          ]
+        >>= fun () ->
+
+        return ())
+    >>= fun (_ : unit list) ->
 
     System.remove db_file
     >>= fun () ->
