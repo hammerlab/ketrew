@@ -618,6 +618,8 @@ module State = struct
       % (match how with
         | `Dependencies_died -> s "Dependencies_died"
         | `Process_failure -> s "Process_failure")
+  let what_happened_to_string w =
+    Log.to_string ~indent:0 ~line_width:max_int (log_what_happened w)
 
   let step t =
     begin
