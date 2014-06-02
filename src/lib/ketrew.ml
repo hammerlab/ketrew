@@ -49,6 +49,9 @@ module Path = struct
 
   let to_string: 'a t -> string = fun x -> x.path
 
+  let any_kind: <relativity: 'a; kind: 'b> t -> <relativity: 'a; kind: 'c> t =
+    fun x -> { x with kind = x.kind }
+
   let exists_shell_condition = function
   | {kind = `File; path } ->  fmt "[ -f %S ]" path
   | {kind = `Directory; path } ->  fmt "[ -d %S ]" path
@@ -204,17 +207,17 @@ module Volume = struct
 
   let rec all_structure_paths s =
     match s with
-    | File s -> [Path.relative_file_exn s]
+    | File s -> [Path.relative_file_exn s |> Path.any_kind ]
     | Directory (name, children) ->
       let children_paths = 
         List.concat_map ~f:all_structure_paths children in
-      List.map ~f:(Path.concat (Path.relative_directory_exn name))
-        children_paths
+      let this_one = Path.relative_directory_exn name |> Path.any_kind in
+      this_one :: List.map ~f:(Path.concat this_one) children_paths
 
   let all_paths t =
     List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
 
-  let exists t = (* for now, like git, we check only files, not directories *)
+  let exists t =
     let paths = all_paths t in
     Host.do_files_exist t.host paths
 
