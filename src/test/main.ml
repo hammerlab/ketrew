@@ -110,7 +110,7 @@ let test_0 () =
           end
         | `Status (id, check) ->
           State.step state >>= fun _ ->
-          begin State.get_status state (Data.pointer id)
+          begin State.get_status state id
             >>= function
             | s when check s -> return ()
             | other -> Test.fail (fmt "T: %S: wrong status" name); return ()
@@ -210,7 +210,7 @@ let test_0 () =
         let shell_command =
           if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
         Target.active ~name:"count lines of dependency"
-          ~dependencies:[ Target.pointer target1 ]
+          ~dependencies:[ Target.id target1 ]
           ~make:Process.(`Get_output Command.(shell ~host shell_command))
           (Artifact_type.string_value)
       in

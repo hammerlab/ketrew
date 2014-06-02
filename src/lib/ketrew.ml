@@ -222,12 +222,6 @@ module Volume = struct
     fmt "Vol(%s:%s)" (Host.to_string host) (Path.to_string root)
 end
 
-module Data = struct
-
-  type 'a pointer = { id: Unique_id.t }
-  let pointer id = {id}
-
-end
 module Artifact_type = struct
 
   type value_type = [`Unit | `String | `Number]
@@ -300,12 +294,13 @@ module Target = struct
     | `Successful of Time.t * [activated_state | running_state ] * Artifact.t
   ]
   type workflow_state = [ submitted_state | activated_state | running_state | finished_state]
+  type id = Unique_id.t
   type t = {
-    id: Unique_id.t;
+    id: id;
     name: string;
     persistance: [ `Input_data | `Recomputable of float | `Result ];
     metadata: Artifact.value;
-    dependencies: t Data.pointer list;
+    dependencies: id list;
     make: Process.t;
     result_type: Artifact_type.t;
     history: workflow_state;
@@ -352,7 +347,6 @@ module Target = struct
     activate_exn ~by:`User (create ?name ?persistance ?metadata
                     ?dependencies ?make artifact)
 
-  let pointer t : t Data.pointer = Data.pointer t.id
   let id t : Unique_id.t = t.id
   let serialize t = Marshal.to_string t []
   let deserialize s : (t, _) Result.t =
@@ -424,7 +418,7 @@ end
 
 module Persistent_state = struct
   type t = {
-    current_targets: Target.t Data.pointer list;
+    current_targets: Target.id list;
     (* keep db id of a list of all "archived" targets *)
   }
   let create () = {current_targets = [];}
@@ -434,7 +428,7 @@ module Persistent_state = struct
     try return (Marshal.from_string s 0 : t)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
-  let add t target = { current_targets = Target.pointer target :: t.current_targets }
+  let add t target = { current_targets = Target.id target :: t.current_targets }
 
   let current_targets t = t.current_targets
 end
@@ -526,32 +520,29 @@ module State = struct
     save_persistent t new_persistent
       (* TODO: remove target if this fails, or put in same transaction *)
 
-  let follow_pointer db (p : 'a Data.pointer) (f: string -> ('a, _) Result.t) =
-    Database.get db p.Data.id
+  let get_target db id =
+    Database.get db id
     >>= function
-    | Some t -> of_result (f t)
-    | None ->
-      fail (`Missing_data p.Data.id)
-
+    | Some t -> of_result (Target.deserialize t)
+    | None -> fail (`Missing_data id)
 
   let current_targets t =
     database t >>= fun db ->
     get_persistent t >>= fun persistent ->
-    let pointers = Persistent_state.current_targets persistent in
-    Deferred_list.for_concurrent pointers ~f:(fun target_pointer ->
-        follow_pointer db target_pointer Target.deserialize)
+    let target_ids = Persistent_state.current_targets persistent in
+    Deferred_list.for_concurrent target_ids ~f:(get_target db)
     >>= fun (targets, errors) ->
     begin match errors with
     | [] -> return targets
     | some :: more -> fail some (* TODO do not forget other errors *)
     end
 
-  let _check_and_activate_dependencies ~t pointers =
+  let _check_and_activate_dependencies ~t ids =
     database t >>= fun db ->
     let what_happened = ref [] in
     let happened h = what_happened := h :: !what_happened in
-    Deferred_list.while_sequential pointers ~f:(fun dep ->
-        follow_pointer db dep Target.deserialize >>= fun dependency ->
+    Deferred_list.while_sequential ids ~f:(fun dep ->
+        get_target db dep >>= fun dependency ->
         match dependency.Target.history with
         | `Created _  ->
           let newdep =
@@ -573,7 +564,7 @@ module State = struct
           ~f:(function `Die _ -> true | _ -> false) ->
       return (`Some_dependencies_died
                 (List.filter_map some_dependency_died
-                   ~f:(function `Die d -> Some d.Data.id | _ -> None)),
+                   ~f:(function `Die d -> Some d | _ -> None)),
               happenings)
     | no_death_but_not_all_go -> return (`Wait, happenings)
     end
@@ -695,10 +686,9 @@ module State = struct
       return what_happened
     end 
 
-  let get_status t pointer =
+  let get_status t id =
     database t >>= fun db ->
-    follow_pointer db pointer Target.deserialize
-    >>= fun target ->
+    get_target db id >>= fun target ->
     return target.Target.history 
 
 end
@@ -716,6 +706,6 @@ module Error = struct
   | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
   | `Database_unavailable s -> fmt "DB %s" s
   | `Not_implemented s -> fmt "Not-impl %S" s
-  | `Missing_data p -> fmt "pointer: %s" p
+  | `Missing_data p -> fmt "missing data at id: %s" p
 
 end
