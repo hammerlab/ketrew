@@ -157,12 +157,14 @@ let test_0 () =
       Command.(
         shell ~host 
           "mkdir -p /tmp/ketrew_test2/somedir && \
+           mkdir -p /tmp/ketrew_test2/somedir_empty && \
            ls / > /tmp/ketrew_test2/ls && \
            ps aux > /tmp/ketrew_test2/somedir/psaux ")
     in
     let vol =
       Volume.(create ~host ~root
-                (dir "ketrew_test2" [file "ls"; dir "somedir" [file "psaux"]]))
+                (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
+                                     dir "somedir" [file "psaux"]]))
     in
     test_target_one_step ~state "2 files, 2 dirs over ssh" target_succeeds
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
@@ -176,13 +178,23 @@ let test_0 () =
          | _ -> false))
     >>= fun () ->
 
-    (* A target that fails to create a more complex file structure *)
+    (* A target that fails to create a more complex file structure; typo on file  *)
     let vol =
       Volume.(create ~host ~root
-                (dir "ketrew_test2" [file "ls";
+                (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
                                      dir "somedir_typo" [file "psaux"]]))
     in
-    test_target_one_step ~state "2 files, 2 dirs over ssh + typo" target_fails
+    test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" target_fails
+      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+    >>= fun () ->
+
+    (* A target that fails to create a more complex file structure; typo on dir  *)
+    let vol =
+      Volume.(create ~host ~root
+                (dir "ketrew_test2" [file "ls"; dir "somedir_empty_2" [];
+                                     dir "somedir" [file "psaux"]]))
+    in
+    test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" target_fails
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
