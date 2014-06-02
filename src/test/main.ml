@@ -144,11 +144,12 @@ let test_0 () =
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
+    let root = Path.absolute_directory_exn "/tmp" in
     test_target_one_step ~state "ls / > <file> over ssh" target_succeeds
       ~make:Process.(`Direct_command 
                        Command.(shell ~host "ls / > /tmp/ketrew_test"))
       ~spec:(Artifact_type.volume 
-               Volume.(create ~host ~root:"/tmp" (file "ketrew_test")))
+               Volume.(create ~host ~root (file "ketrew_test")))
     >>= fun () ->
 
     (* A target that creates a more complex file structure *)
@@ -160,7 +161,7 @@ let test_0 () =
            ps aux > /tmp/ketrew_test2/somedir/psaux ")
     in
     let vol =
-      Volume.(create ~host ~root:"/tmp" 
+      Volume.(create ~host ~root
                 (dir "ketrew_test2" [file "ls"; dir "somedir" [file "psaux"]]))
     in
     test_target_one_step ~state "2 files, 2 dirs over ssh" target_succeeds
@@ -177,7 +178,7 @@ let test_0 () =
 
     (* A target that fails to create a more complex file structure *)
     let vol =
-      Volume.(create ~host ~root:"/tmp" 
+      Volume.(create ~host ~root
                 (dir "ketrew_test2" [file "ls";
                                      dir "somedir_typo" [file "psaux"]]))
     in
@@ -194,7 +195,6 @@ let test_0 () =
       - target 1 may succeed and target2 fail by itself
 
     *)
-    let root = "/tmp" in
     let two_targets (succeed1, succeed2) check =
       let tmpfile = fmt "ketrew_test_%s" (Unique_id.create ()) in
       let target1 =

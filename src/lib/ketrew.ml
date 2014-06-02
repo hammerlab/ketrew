@@ -4,24 +4,54 @@ open Ketrew_pervasives
 
 module Path = struct
 
-  type abs
-  type rel
-  type 'a t = string
-  type relative = rel t
-  type absolute = abs t
+  
+  type relative 
+  type absolute
+  type file
+  type directory
+  type 'c t =
+    {kind: [`File | `Directory]; path: string}
+    constraint 'c = <relativity: 'relativity; kind: 'file_kind>
+  type absolute_directory = <relativity : absolute; kind: directory> t
+  type absolute_file = <relativity : absolute; kind: file> t
+  type relative_directory = <relativity : relative; kind: directory> t
+  type relative_file = <relativity : relative; kind: file> t
 
-  let root : absolute = "/"
-  let absolute_exn s : absolute t =
+  let file path : <relativity : 'a; kind: file>  t =
+    {kind = `File; path}
+
+  let directory path : <relativity : 'a; kind: directory> t  =
+    {kind = `Directory; path}
+
+  let root : <relativity : absolute; kind: directory> t = directory "/"
+
+  let absolute_file_exn s : <relativity : absolute; kind: file> t =
     if Filename.is_relative s
-    then invalid_argument_exn ~where:"Path" "absolute_exn"
-    else s
-  let relative_exn s : relative t =
-    if not (Filename.is_relative s)
-    then invalid_argument_exn ~where:"Path" "relative_exn"
-    else s
-  let concat: 'a t -> relative -> 'a t = Filename.concat 
+    then invalid_argument_exn ~where:"Path" "absolute_file_exn"
+    else file s
+  let absolute_directory_exn s : <relativity : absolute; kind: directory> t =
+    if Filename.is_relative s
+    then invalid_argument_exn ~where:"Path" "absolute_directory_exn"
+    else directory s
+  let relative_directory_exn s : <relativity : relative; kind: directory> t =
+    if Filename.is_relative s
+    then directory s
+    else invalid_argument_exn ~where:"Path" "relative_directory_exn"
+  let relative_file_exn s : <relativity: relative; kind: file> t =
+    if Filename.is_relative s
+    then file s
+    else invalid_argument_exn ~where:"Path" "relative_file_exn"
 
-  let to_string: 'a t -> string = fun x -> x
+  let concat: <relativity: 'a; kind: directory> t ->
+    <relativity: relative; kind: 'b> t -> <relativity: 'a; kind: 'b> t =
+    fun x y ->
+      { kind = y.kind; path = Filename.concat x.path y.path}
+
+  let to_string: 'a t -> string = fun x -> x.path
+
+  let exists_shell_condition = function
+  | {kind = `File; path } ->  fmt "[ -f %S ]" path
+  | {kind = `Directory; path } ->  fmt "[ -d %S ]" path
 
 end
 
@@ -107,7 +137,8 @@ module Host = struct
 
   let do_files_exist t paths =
     let cmd =
-      List.map paths ~f:(fmt "[ -f %S ]") |> String.concat ~sep:" && " in
+      List.map paths ~f:Path.exists_shell_condition 
+      |> String.concat ~sep:" && " in
     match t.connection with
     | `Localhost ->
       begin System.Shell.execute cmd
@@ -164,7 +195,7 @@ module Volume = struct
 
   type t = {
     host: Host.t;
-    root: Path.absolute;
+    root: Path.absolute_directory;
     structure: structure;
   }
   let create ~host ~root structure = {host; root; structure}
@@ -173,11 +204,12 @@ module Volume = struct
 
   let rec all_structure_paths s =
     match s with
-    | File s -> [Path.relative_exn s]
+    | File s -> [Path.relative_file_exn s]
     | Directory (name, children) ->
       let children_paths = 
         List.concat_map ~f:all_structure_paths children in
-      List.map ~f:(Path.concat name) children_paths
+      List.map ~f:(Path.concat (Path.relative_directory_exn name))
+        children_paths
 
   let all_paths t =
     List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
