@@ -9,6 +9,43 @@ module Test = struct
     try
       Host.ssh (Unix.getenv "ketrew_test_ssh")
     with Not_found -> Host.ssh "localhost"
+
+  let test_targets ~state ~name targets checks =
+    let open Ketrew in
+    Deferred_list.while_sequential targets (State.add_target state)
+    >>= fun (_ : unit list) ->
+    Deferred_list.while_sequential checks ~f:(function
+      | `Dont_care -> State.step state >>= fun _ -> return ()
+      | `Happens check ->
+        State.step state >>= fun happening ->
+        begin match check happening with
+        | true -> return ()
+        | false -> 
+          fail (fmt "T: %S: wrong happening: %s" name
+                  (List.map ~f:State.what_happened_to_string happening
+                   |> String.concat ~sep:",\n  "));
+          return ()
+        end
+      | `Status (id, check) ->
+        State.step state >>= fun _ ->
+        begin State.get_status state id
+          >>= function
+          | s when check s -> return ()
+          | other -> fail (fmt "T: %S: wrong status" name); return ()
+        end)
+    >>= fun (_: unit list) ->
+    return ()
+
+    let test_target_one_step ~state ~make ~spec name check =
+      let open Ketrew in
+      let target = Target.(active ~name ~make spec) in
+      test_targets ~name ~state [target] [check ~id:(Target.id target)]
+    let target_succeeds ~id =
+      `Status (id, function `Successful _ -> true | _ -> false)
+    let target_fails ~id = 
+      `Status (id, function `Dead _ -> true | _ -> false)
+    let check_one_step ~id check = `Happens (check ~id)
+    let nothing_happens = `Happens (function [] -> true | _ -> false)
 end
 
 let mini_db_test () =
@@ -93,59 +130,25 @@ let test_0 () =
     end
     >>= fun () ->
 
-    let test_targets ~name targets checks =
-      Deferred_list.while_sequential targets (State.add_target state)
-      >>= fun (_ : unit list) ->
-      Deferred_list.while_sequential checks ~f:(function
-        | `Dont_care -> State.step state >>= fun _ -> return ()
-        | `Happens check ->
-          State.step state >>= fun happening ->
-          begin match check happening with
-          | true -> return ()
-          | false -> 
-            Test.fail (fmt "T: %S: wrong happening: %s" name
-                         (List.map ~f:State.what_happened_to_string happening
-                          |> String.concat ~sep:",\n  "));
-            return ()
-          end
-        | `Status (id, check) ->
-          State.step state >>= fun _ ->
-          begin State.get_status state id
-            >>= function
-            | s when check s -> return ()
-            | other -> Test.fail (fmt "T: %S: wrong status" name); return ()
-          end)
-      >>= fun (_: unit list) ->
-      return ()
-    in
-    let test_target_one_step ~state ~make ~spec name check =
-      let target = Target.(active ~name ~make spec) in
-      test_targets ~name [target] [check ~id:(Target.id target)] in
-    let target_succeeds ~id =
-      `Status (id, function `Successful _ -> true | _ -> false) in
-    let target_fails ~id = 
-      `Status (id, function `Dead _ -> true | _ -> false) in
-    let check_one_step ~id check = `Happens (check ~id) in
-    let nothing_happens = `Happens (function [] -> true | _ -> false) in
 
-    test_target_one_step ~state "ls /" target_succeeds
+    Test.test_target_one_step ~state "ls /" Test.target_succeeds
       ~make:Process.(`Get_output Command.(shell "ls /"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
-    test_target_one_step ~state "ls /crazypath" target_fails
+    Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
       ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
     let host = Test.test_ssh_host in
-    test_target_one_step ~state "ls / over ssh" target_succeeds
+    Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
       ~make:Process.(`Get_output Command.(shell ~host "ls /"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
     let root = Path.absolute_directory_exn "/tmp" in
-    test_target_one_step ~state "ls / > <file> over ssh" target_succeeds
+    Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
       ~make:Process.(`Direct_command 
                        Command.(shell ~host "ls / > /tmp/ketrew_test"))
       ~spec:(Artifact_type.volume 
@@ -166,14 +169,14 @@ let test_0 () =
                 (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
                                      dir "somedir" [file "psaux"]]))
     in
-    test_target_one_step ~state "2 files, 2 dirs over ssh" target_succeeds
+    Test.test_target_one_step ~state "2 files, 2 dirs over ssh" Test.target_succeeds
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     (* doing it again should succeed for a good reason *)
-    test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
+    Test.test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
-      (check_one_step (fun ~id -> function
+      (Test.check_one_step (fun ~id -> function
          | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
          | _ -> false))
     >>= fun () ->
@@ -184,7 +187,7 @@ let test_0 () =
                 (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
                                      dir "somedir_typo" [file "psaux"]]))
     in
-    test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" target_fails
+    Test.test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" Test.target_fails
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
@@ -194,7 +197,7 @@ let test_0 () =
                 (dir "ketrew_test2" [file "ls"; dir "somedir_empty_2" [];
                                      dir "somedir" [file "psaux"]]))
     in
-    test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" target_fails
+    Test.test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" Test.target_fails
       ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
@@ -234,7 +237,7 @@ let test_0 () =
           id1 (expected_status succeed1)
           id2 (expected_status succeed2)
       in
-      test_targets ~name [target1; target2] (check ~id1 ~id2)
+      Test.test_targets ~state ~name [target1; target2] (check ~id1 ~id2)
     in
     two_targets (true, true) (fun ~id1 ~id2 -> 
       [ 
@@ -247,7 +250,7 @@ let test_0 () =
         `Happens (function 
          | [`Target_succeeded (i, `Process_success)] when i = id2 -> true
          | _ -> false);
-        nothing_happens
+        Test.nothing_happens
       ])
     >>= fun () ->
     two_targets (false, true) (fun ~id1 ~id2 -> 
@@ -261,7 +264,7 @@ let test_0 () =
         `Happens (function 
          | [`Target_died (i, `Dependencies_died)] when i = id2 -> true
          | _ -> false);
-        nothing_happens
+        Test.nothing_happens
       ])
     >>= fun () ->
     two_targets (true, false) (fun ~id1 ~id2 -> 
@@ -275,7 +278,7 @@ let test_0 () =
         `Happens (function 
          | [`Target_died (i, `Process_failure)] when i = id2 -> true
          | _ -> false);
-        nothing_happens
+        Test.nothing_happens
       ])
     >>= fun () ->
 
@@ -289,16 +292,62 @@ let test_0 () =
     Log.(s "test_0: Ketrew ERROR:  " %s (Error.to_string e) @ error);
     Test.fail "test_0 ends with error"
 
+let test_long_running_nohup () =
+  let open Ketrew in
+  let db_file = "/tmp/ketrew_test_database"  in
+  Lwt_main.run begin
+    begin System.remove db_file >>< fun _ -> return () end
+    >>= fun () ->
+    let configuration = Configuration.create db_file () in
+    State.create configuration >>= fun state ->
+
+    begin
+      Test.test_targets  ~state ~name:"one" 
+        [Target.active ~name:"one"
+           ~make:(`Long_running ("bad_plugin", Command.shell "ls"))
+           Artifact_type.string_value
+        ]
+        [`Dont_care]
+      >>< function
+      | `Ok _ -> Test.fail "expected one to fail"; return ()
+      | `Error (`Plugin_not_found ("bad_plugin", _)) -> return ()
+      | `Error e ->
+        Test.fail (fmt "expected one to fail but not with: %s" (Error.to_string e));
+        return ()
+    end
+    >>= fun () ->
+
+    Test.test_targets  ~state ~name:"one" 
+      [Target.active ~name:"one"
+         ~make:(`Long_running (Nohup_setsid.name, Command.shell "ls"))
+           Artifact_type.string_value
+      ]
+      [`Dont_care]
+    >>= fun () ->
+
+    System.remove db_file
+    >>= fun () ->
+    return ()
+  end |> function
+  | `Ok () -> ()
+  | `Error e ->
+    Log.(s "test_long_running_nohup: Ketrew ERROR:  "
+         %s (Error.to_string e) @ error);
+    Test.fail "test_long_running_nohup ends with error"
+
 
 let () =
   let argl = Sys.argv |> Array.to_list in
   global_with_color := not (List.mem ~set:argl "-no-color");
   global_debug_level := 3;
-  mini_db_test ();
-  test_0 ();
+  let all = List.mem ~set:argl "ALL" in
+  if List.mem ~set:argl "db-test" || all then mini_db_test ();
+  if List.mem ~set:argl "basic-test" || all then test_0 ();
+  if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
   begin match !Test.failed_tests with
   | [] ->
-    Log.(s "No tests failed \\o/ " @ normal);
+    Log.(s "No tests failed \\o/ (arg-list: "
+         % OCaml.list (sf "%S") argl % s ")" @ normal);
     exit 0
   | some ->
     Log.(s "Some tests failed: " %n % OCaml.list s some @ error);
