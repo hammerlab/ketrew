@@ -63,3 +63,22 @@ module Unique_id = struct
     fmt "ketrew_%s_%09d"
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
+
+module Error = struct
+
+  let to_string = function
+  | `IO _ as io -> IO.error_to_string io
+  | `System _ as s -> System.error_to_string s
+  | `Database (`Load, path) -> fmt "DB-load: %S" path
+  | `Host (`Execution (one, two, three, four)) ->
+    fmt "Host-exec(%s, %s, %s, %s)" one two three four
+  | `Persistent_state (`Deserilization s) ->
+    fmt "Persistent_state-Deserilization: %S" s
+  | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
+  | `Database_unavailable s -> fmt "DB %s" s
+  | `Not_implemented s -> fmt "Not-impl %S" s
+  | `Missing_data p -> fmt "missing data at id: %s" p
+  | `Long_running_failed_to_start (id, msg) ->
+    fmt "Long running %s failed to start: %s" id msg
+
+end
