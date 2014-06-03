@@ -30,3 +30,13 @@ not defined it will use `"localhost"`. But for the test to succeed it should be
 an SSH host for which the user running the test does not need password.
 The test will run some commands on that host and create files and directories
 in its `/tmp` directory.
+
+Documentation
+-------------
+
+The documentation depends on [omd](https://github.com/ocaml/omd), and
+Graphviz's `dot`:
+
+    please.sh doc
+
+
