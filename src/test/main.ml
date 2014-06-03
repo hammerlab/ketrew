@@ -136,32 +136,32 @@ let test_0 () =
 
 
     Test.test_target_one_step ~state "ls /" Test.target_succeeds
-      ~make:Process.(`Get_output Command.(shell "ls /"))
+      ~make:(`Get_output Target.Command.(shell "ls /"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
     Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
-      ~make:Process.(`Get_output Command.(shell "ls /crazypath"))
+      ~make:(`Get_output Target.Command.(shell "ls /crazypath"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
     let host = Test.test_ssh_host in
     Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
-      ~make:Process.(`Get_output Command.(shell ~host "ls /"))
+      ~make:(`Get_output Target.Command.(shell ~host "ls /"))
       ~spec:Artifact_type.string_value
     >>= fun () ->
 
     let root = Path.absolute_directory_exn "/tmp" in
     Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
-      ~make:Process.(`Direct_command 
-                       Command.(shell ~host "ls / > /tmp/ketrew_test"))
+      ~make:(`Direct_command 
+               Target.Command.(shell ~host "ls / > /tmp/ketrew_test"))
       ~spec:(Artifact_type.volume 
                Volume.(create ~host ~root (file "ketrew_test")))
     >>= fun () ->
 
     (* A target that creates a more complex file structure *)
     let cmd = 
-      Command.(
+      Target.Command.(
         shell ~host 
           "mkdir -p /tmp/ketrew_test2/somedir && \
            mkdir -p /tmp/ketrew_test2/somedir_empty && \
@@ -174,12 +174,12 @@ let test_0 () =
                                      dir "somedir" [file "psaux"]]))
     in
     Test.test_target_one_step ~state "2 files, 2 dirs over ssh" Test.target_succeeds
-      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+      ~make:(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     (* doing it again should succeed for a good reason *)
     Test.test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
-      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+      ~make:(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
       (Test.check_one_step (fun ~id -> function
          | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
          | _ -> false))
@@ -192,7 +192,7 @@ let test_0 () =
                                      dir "somedir_typo" [file "psaux"]]))
     in
     Test.test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" Test.target_fails
-      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+      ~make:(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     (* A target that fails to create a more complex file structure; typo on dir  *)
@@ -202,7 +202,7 @@ let test_0 () =
                                      dir "somedir" [file "psaux"]]))
     in
     Test.test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" Test.target_fails
-      ~make:Process.(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
+      ~make:(`Direct_command cmd) ~spec:(Artifact_type.volume vol)
     >>= fun () ->
 
     (*
@@ -221,8 +221,7 @@ let test_0 () =
           if succeed1 then (fmt "ls -l / > /tmp/%s" tmpfile) else "echo bouh"
         in
         Target.create ~name:"ls / > some tmp"
-          ~make:Process.(`Direct_command 
-                           Command.(shell ~host shell_command))
+          ~make:(`Direct_command Target.Command.(shell ~host shell_command))
           (Artifact_type.volume Volume.(create ~host ~root (file tmpfile)))
       in
       let target2 = 
@@ -230,7 +229,7 @@ let test_0 () =
           if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
         Target.active ~name:"count lines of dependency"
           ~dependencies:[ Target.id target1 ]
-          ~make:Process.(`Get_output Command.(shell ~host shell_command))
+          ~make:(`Get_output Target.Command.(shell ~host shell_command))
           (Artifact_type.string_value)
       in
       let id1 = Target.id target1 in
@@ -326,8 +325,7 @@ let test_long_running_nohup () =
         Test.test_targets  ~state ~name:(name "good ls")
           ~wait_between_steps:1.
           [Target.active ~name:"one"
-             ~make:(Nohup_setsid.create 
-                      (Command.shell ~host (fmt "ls > /tmp/%s" new_name)))
+             ~make:(Nohup_setsid.create ~host [fmt "ls > /tmp/%s" new_name])
              (Artifact_type.volume
                 Volume.(create ~host ~root (file new_name)))
           ]

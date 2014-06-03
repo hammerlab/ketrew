@@ -4,33 +4,6 @@ module Path = Ketrew_path
 
 module Host = Ketrew_host
 
-module Command = struct
-
-  type t = {
-    host: Host.t;
-    action: [ `Shell of string ];
-  }
-  let shell ?(host=Host.localhost) s = { host; action = `Shell s}
-
-  let get_host t = t.host
-
-  let to_string_hum {host; action = `Shell cmd} =
-    fmt "Shell[%S] on %s" cmd (Host.to_string host)
-
-  let get_output {host; action} =
-    match action with
-    | `Shell cmd ->
-      Host.get_shell_command_output host cmd
-  let run t =
-    get_output t (* TODO optimize to not record the output *)
-    >>= fun (_, _) ->
-    return ()
-
-  let to_monitored_script ~playground = function
-  | {action = `Shell c; _} -> Ketrew_monitored_script.create ~playground [c]
-
-end
-
 module Volume = struct
 
   type structure =   
@@ -114,19 +87,43 @@ module Artifact = struct
 
 end
 
-module Process = struct
 
-  type t = [
+
+module Target = struct
+
+
+  module Command = struct
+
+    type t = {
+      host: Host.t;
+      action: [ `Shell of string ];
+    }
+    let shell ?(host=Host.localhost) s = { host; action = `Shell s}
+
+    let get_host t = t.host
+
+    let to_string_hum {host; action = `Shell cmd} =
+      fmt "Shell[%S] on %s" cmd (Host.to_string host)
+
+    let get_output {host; action} =
+      match action with
+      | `Shell cmd ->
+        Host.get_shell_command_output host cmd
+    let run t =
+      get_output t (* TODO optimize to not record the output *)
+      >>= fun (_, _) ->
+      return ()
+
+
+  end
+
+  type build_process = [
     | `Artifact of Artifact.t
     | `Get_output of Command.t
     | `Direct_command of Command.t
     | `Long_running of string * string
   ]
-  let nop = `Artifact (`Value `Unit)
-end
-
-
-module Target = struct
+  let nop : build_process = `Artifact (`Value `Unit)
 
   type submitted_state = [`Created of Time.t]
   type activated_state =
@@ -147,13 +144,13 @@ module Target = struct
     persistance: [ `Input_data | `Recomputable of float | `Result ];
     metadata: Artifact.value;
     dependencies: id list;
-    make: Process.t;
+    make: build_process;
     result_type: Artifact_type.t;
     history: workflow_state;
   }
   let create
       ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
-      ?(dependencies=[]) ?(make= Process.nop)
+      ?(dependencies=[]) ?(make=nop)
       result_type = 
     let history = `Created Time.(now ()) in
     let id = Unique_id.create () in
@@ -354,7 +351,7 @@ end
 module Nohup_setsid: sig
   (* type t = Command.t *)
   include LONG_RUNNING
-  val create: Command.t -> [> `Long_running of string * string ]
+  val create: ?host:Host.t -> string list -> [> `Long_running of string * string ]
 end = struct
 
   type runnning = {
@@ -364,7 +361,7 @@ end = struct
     host: Host.t;
   }
   type run_parameters = [
-    | `Created of Command.t
+    | `Created of Host.t * string list
     | `Running of runnning
   ]
   let running =
@@ -378,8 +375,8 @@ end = struct
   let deserialize_exn s = (Marshal.from_string s 0 : run_parameters)
 
   let name = "nohup-setsid"
-  let create cmd =
-    `Long_running (name, `Created cmd |> serialize)
+  let create ?(host=Host.localhost) cmds =
+    `Long_running (name, `Created (host, cmds) |> serialize)
 
   let out_file_path ~playground =
     Path.(concat playground (relative_file_exn "out"))
@@ -388,12 +385,11 @@ end = struct
 
   let start rp =
     (* let script = Command.monitored_script cmd in *)
-    let cmd = created rp in
-    let host = Command.get_host cmd in
+    let (host, cmds) = created rp in
     begin match Host.get_fresh_playground host with
     | None -> fail (`Failed_to_start "Missing playground")
     | Some playground ->
-      let monitored_script = Command.to_monitored_script ~playground cmd in
+      let monitored_script = Ketrew_monitored_script.create ~playground cmds in
       let monitored_script_path =
         Path.(concat playground (relative_file_exn "monitored_script")) in
       Host.ensure_directory host playground
@@ -670,7 +666,7 @@ module State = struct
       >>= fun () ->
       return [`Target_succeeded (Target.id target, `Artifact_literal)]
     | `Get_output cmd ->
-      begin Command.get_output cmd
+      begin Target.Command.get_output cmd
         >>< function
         | `Ok (out, _) ->
           Log.(s "Cmd output: " % s out @ very_verbose);
@@ -688,7 +684,7 @@ module State = struct
           return [`Target_died (Target.id target, `Process_failure)]
       end
     | `Direct_command cmd ->
-      begin Command.run cmd
+      begin Target.Command.run cmd
         >>< function
         | `Ok () -> 
           begin Artifact.is_ready target.Target.result_type
@@ -698,7 +694,7 @@ module State = struct
                   make_fail_exn target  
                     ~msg:(fmt "command %S did not create %S" 
                             (Command.to_string_hum cmd)
-                            (Artifact_type.to_string target.Target.result_type)))
+                            (Artifact_type.to_string target.result_type)))
               >>= fun () ->
               return [`Target_died (Target.id target, `Process_failure)]
             | true ->
