@@ -50,11 +50,55 @@ usage () {
   echo "       $0 {setup,build,clean,help}"
 }
 
-case $1 in
-  "setup" ) setup ;;
-  "build" | "" ) setup; ocp-build ketrew-test ;;
-  "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
-  "help" )  usage ;;
-  * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
-esac
+make_doc () {
+  local outdir=_doc/
+  local apidoc=$outdir/api/
+  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
+  mkdir -p $apidoc
+  ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
+    -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
+    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+  local dot_file=_doc/modules.dot
+  local image_file=modules.svg
+  ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
+    \
+    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+  dot -Tsvg $dot_file -o_doc/$image_file
+  local index=_doc/index.html
+  cat << END_HTML > $index
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="api/style.css" type="text/css">
+  <meta charset="utf-8">
+</head>
+  <body>
+END_HTML
+  omd README.md >> $index
+  omd << END_MD >> $index
+Code Documentation
+------------------
+
+- [ocaml-doc for the API](api/index.html)
+
+<a href="$image_file">
+<object type="image/svg+xml" data="$image_file"
+style="transform-origin: 0% 100% 0;
+       transform: translateY(-100%) rotate(90deg);"
+  >Your browser does not support SVG</object>
+</a>
+END_MD
+  echo "</body><html>" >> $index
+}
+
+for i in $* ; do
+  case $i in
+    "setup" ) setup ;;
+    "build" | "" ) setup; ocp-build ketrew-test ;;
+    "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
+    "doc" ) make_doc ;;
+    "help" )  usage ;;
+    * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
+  esac
+done
 
