@@ -8,63 +8,7 @@ module Artifact = Ketrew_artifact
 
 module Target = Ketrew_target
 
-module Database = struct
-
-  type stupid_db = (string * string) list
-  type action =
-    | Set of string * string
-    | Sequence of action list
-    | Check of string * string option
-  let set ~key value = Set (key, value)
-  let seq l = Sequence l
-  let contains ~key v = Check (key, Some v) 
-  let is_not_set key = Check (key, None)
-
-  type t = {
-    mutable db: stupid_db;
-    (* mutable history: (action * stupid_db) list; *)
-    parameters: string;
-  }
-  let create parameters = {db = []; parameters} 
-
-  let load parameters =
-    IO.read_file parameters
-    >>= fun content ->
-    begin try return (Marshal.from_string content 0 : t) with
-    | e -> fail (`Database (`Load, parameters))
-    end
-  let save t =
-    let content = Marshal.to_string t [] in
-    IO.write_file t.parameters ~content
-
-  let get t ~key =
-    List.find_map t.db ~f:(fun (k, v) -> if k = key then Some v else None)
-    |> return
-  let act t ~action =
-    let current = ref t.db in
-    let rec go = 
-      function
-      | Set (key, value) ->
-        current := (key, value) :: !current;
-        true
-      | Check (key, value) ->
-        begin match List.find !current (fun (k, v) -> key = k) with
-        | Some (k, v) when Some v = value -> true
-        | None when value = None -> true
-        | _ -> false
-        end
-      | Sequence actions ->
-        List.for_all actions go
-    in
-    if go action 
-    then begin
-      t.db <- !current;
-      save t >>= fun () ->
-      return `Done
-    end
-    else return `Not_done
-
-end
+module Database = Ketrew_database
 
 module Persistent_state = struct
   type t = {
@@ -324,22 +268,10 @@ module State = struct
     | Some db -> return db
     | None -> 
       let path = t.configuration.Configuration.database_parameters in
-      begin System.file_info ~follow_symlink:true path
-        >>= function
-        | `Regular_file _ ->
-          Log.(s "Loading database at " % s path @ very_verbose);
-          Database.load path
-          >>= fun db ->
-          t.database_handle <- Some db;
-          return db
-        | _ -> 
-          Log.(s "Creating new database at " % s path @ very_verbose);
-          let db = Database.create path in
-          Database.save db (* should create + save be in `Database`? *)
-          >>= fun () ->
-          t.database_handle <- Some db;
-          return db
-      end
+      Database.load path
+      >>= fun db ->
+      t.database_handle <- Some db;
+      return db
 
   let get_persistent t =
     database t >>= fun db ->

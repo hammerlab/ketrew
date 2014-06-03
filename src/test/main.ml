@@ -56,8 +56,7 @@ let mini_db_test () =
   Lwt_main.run begin
     let module DB = Ketrew.Database in
     let db_file = "/tmp/ketrew_db_test"  in
-    let new_db = DB.create db_file in
-    DB.save new_db
+    begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
     DB.load db_file
     >>= fun db ->
