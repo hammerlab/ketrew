@@ -38,31 +38,9 @@ module Configuration = struct
     { database_parameters; persistent_state_key }
 end
 
-module type LONG_RUNNING = sig
-
-  type run_parameters
-
-  val name: string
-
-  val serialize: run_parameters -> string
-  val deserialize_exn: string -> run_parameters
-
-  val start: run_parameters ->
-    (run_parameters, [>  `Failed_to_start of string]) Deferred_result.t
-  val update: run_parameters ->
-    ([`Succeeded of run_parameters
-     | `Failed of run_parameters * string
-     | `Still_running of run_parameters],
-     [> `Failed_to_update of string]) Deferred_result.t
-
-  val kill: run_parameters ->
-    ([`Killed of run_parameters],
-     [> `Failed_to_kill of string]) Deferred_result.t
-
-end
 module Nohup_setsid: sig
   (* type t = Command.t *)
-  include LONG_RUNNING
+  include Ketrew_long_running.LONG_RUNNING
   val create: ?host:Host.t -> string list -> [> `Long_running of string * string ]
 end = struct
 
@@ -229,6 +207,8 @@ end
 
 (** The “application” state *)
 module State = struct
+  open Ketrew_long_running
+
   type t = {
     mutable database_handle: Database.t option;
     configuration: Configuration.t;
