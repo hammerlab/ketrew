@@ -54,7 +54,7 @@ end
 
 let mini_db_test () =
   Lwt_main.run begin
-    let module DB = Ketrew.Database in
+    let module DB = Ketrew_database in
     let db_file = "/tmp/ketrew_db_test"  in
     begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
@@ -110,18 +110,9 @@ let test_0 () =
   Lwt_main.run begin
     begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
-    let test_get_persistent () =
-      let configuration = Configuration.create db_file () in
-      State.create configuration
-      >>= fun state ->
-      State.get_persistent state
-      >>= fun persistent ->
-      return (state, persistent)
-    in
-    test_get_persistent () >>= fun (state, persistent) ->
-    State.save_persistent  state persistent >>= fun () ->
-    test_get_persistent ()
-    >>= fun (state, persistent) ->
+    let configuration = State.Configuration.create db_file () in
+    State.create configuration
+    >>= fun state ->
     State.add_target state 
       Target.(create ~name:"First target" Artifact.Type.string_value)
     >>= fun () ->
@@ -300,7 +291,7 @@ let test_long_running_nohup () =
   Lwt_main.run begin
     begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
-    let configuration = Configuration.create db_file () in
+    let configuration = State.Configuration.create db_file () in
     State.create configuration >>= fun state ->
 
     Test.test_targets  ~state ~name:("one bad plugin")
