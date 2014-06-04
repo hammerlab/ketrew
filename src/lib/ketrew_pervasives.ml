@@ -1,3 +1,4 @@
+(** [Pervasives] module for the library. *)
 
 include Nonstd
 module Result = Pvem.Result

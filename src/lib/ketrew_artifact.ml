@@ -20,23 +20,25 @@ module Volume = struct
   let file s = File s
   let dir name contents = Directory (name, contents)
 
-  let rec all_structure_paths s =
+  let rec all_structure_paths : 
+    type any. structure -> <kind: any; relativity: Path.relative > Path.t list =
+    fun s ->
     match s with
     | File s -> [Path.relative_file_exn s |> Path.any_kind ]
     | Directory (name, children) ->
       let children_paths = 
         List.concat_map ~f:all_structure_paths children in
-      let this_one = Path.relative_directory_exn name |> Path.any_kind in
-      this_one :: List.map ~f:(Path.concat this_one) children_paths
+      let this_one = Path.relative_directory_exn name in
+      (this_one |> Path.any_kind) :: List.map ~f:(Path.concat this_one) children_paths
 
-  let all_paths t =
+  let all_paths t: <kind: 'any; relativity: Path.absolute> Path.t list =
     List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
 
   let exists t =
     let paths = all_paths t in
     Host.do_files_exist t.host paths
 
-  let to_string {host; root; structure} =
+  let to_string_hum {host; root; structure} =
     fmt "Vol(%s:%s)" (Host.to_string host) (Path.to_string root)
 end
 
@@ -57,9 +59,9 @@ module Type = struct
   let string_value : t = `Value `String
   let volume v = `Volume v
 
-  let to_string = function
+  let to_string_hum = function
   | `Value v -> fmt "Value %s" (value_type_to_string v)
-  | `Volume v -> fmt "Volume %s" (Volume.to_string v)
+  | `Volume v -> fmt "Volume %s" (Volume.to_string_hum v)
 
 end
 

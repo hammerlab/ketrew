@@ -38,8 +38,6 @@ module Configuration = struct
 end
 
 
-(** The “application” state *)
-
 type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.t;
@@ -205,7 +203,7 @@ let _start_running_target t target =
                 make_fail_exn target  
                   ~msg:(fmt "command %S did not create %S" 
                           (Command.to_string_hum cmd)
-                          (Artifact.Type.to_string target.result_type)))
+                          (Artifact.Type.to_string_hum target.result_type)))
             >>= fun () ->
             return [`Target_died (Target.id target, `Process_failure)]
           | true ->

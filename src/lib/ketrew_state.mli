@@ -1,74 +1,35 @@
+(** The “application” state; the Engine. *)
+
 open Ketrew_pervasives
-(*
-module Persistent_state :
-  sig
-    type t = { current_targets : Target.id list; }
-    val create : unit -> t
-    val serialize : 'a -> string
-    val unserialize :
-      string ->
-      (t, [> `Persistent_state of [> `Deserilization of string ] ])
-      Ketrew_pervasives.t
-    val add : t -> Target.t -> t
-    val current_targets : t -> Target.id list
-  end
-*)
+
+(** Definition of the configuration (input to state creation; contents of the
+    future config-file). *)
 module Configuration :
   sig
     type t
+    (** The contents of the configuration. *)
+
     val create :
       ?persistent_state_key:string -> database_parameters:string -> unit -> t
+    (** Create a configuration, [persistent_state_key] is the “key” of the
+        state storage in the database, [database_parameters] are used to call
+        {!Ketrew_database.load}. *)
+
   end
 
 type t
+(** The contents of the application state. *)
 
 val default_plugins :
   (string * (module Ketrew_long_running.LONG_RUNNING)) list
+(** The “long-running” plugins loaded by default. *)
 
 val create :
   ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
   Configuration.t ->
   (t, 'a) Deferred_result.t
+(** Initialize the state. *)
 
-(*
-val database :
-  t ->
-  (Database.t,
-   [> `Database of [> `Load ] * string
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-val get_persistent :
-  t ->
-  (Persistent_state.t,
-   [> `Database of [> `Load ] * string
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Persistent_state of [> `Deserilization of string ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-val save_persistent :
-  t ->
-  'a ->
-  (unit,
-   [> `Database of [> `Load ] * string
-    | `Database_unavailable of string
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-val add_or_update_target :
-  t ->
-  Target.t ->
-  (unit,
-   [> `Database of [> `Load ] * string
-    | `Database_unavailable of Target.id
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-*)
 val add_target :
   t ->
   Ketrew_target.t ->
@@ -80,14 +41,8 @@ val add_target :
     | `Persistent_state of [> `Deserilization of string ]
     | `System of [> `File_info of string ] * [> `Exn of exn ] ])
   Deferred_result.t
-(*
-val get_target :
-  Database.t ->
-  string ->
-  (Target.t,
-   [> `Missing_data of string | `Target of [> `Deserilization of string ] ])
-  Ketrew_pervasives.t
-*)
+(** Add a target to the state. *)
+
 val current_targets :
   t ->
   (Ketrew_target.t list,
@@ -99,90 +54,8 @@ val current_targets :
     | `System of [> `File_info of string ] * [> `Exn of exn ]
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
-  (*
-val _check_and_activate_dependencies :
-  t:t ->
-  string list ->
-  ([> `Go_now | `Some_dependencies_died of string list | `Wait ] *
-   [> `Target_activated of Ketrew_pervasives.Unique_id.t * [> `Dependency ] ]
-   list,
-   [> `Database of [> `Load ] * string
-    | `Database_unavailable of Target.id
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Missing_data of string
-    | `System of [> `File_info of string ] * [> `Exn of exn ]
-    | `Target of [> `Deserilization of string ] ])
-  Ketrew_pervasives.t
-val with_plugin_or_kill_target :
-  t ->
-  target:Target.t ->
-  plugin_name:string ->
-  ((module Ketrew_long_running.LONG_RUNNING) ->
-   (([> `Target_died of
-          Ketrew_pervasives.Unique_id.t * [> `Plugin_not_found of string ] ]
-     as 'a)
-    list,
-    [> `Database of [> `Load ] * string
-     | `Database_unavailable of Target.id
-     | `IO of
-         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-     | `System of [> `File_info of string ] * [> `Exn of exn ] ]
-    as 'b)
-   Ketrew_pervasives.t) ->
-  ('a list, 'b) Ketrew_pervasives.t
-val _start_running_target :
-  t ->
-  Target.t ->
-  ([> `Target_died of
-        Ketrew_pervasives.Unique_id.t *
-        [> `Failed_to_start of string * string
-         | `Plugin_not_found of string
-         | `Process_failure ]
-    | `Target_started of Ketrew_pervasives.Unique_id.t * string
-    | `Target_succeeded of
-        Ketrew_pervasives.Unique_id.t *
-        [> `Artifact_literal | `Process_success ] ]
-   list,
-   [> `Database of [> `Load ] * string
-    | `Database_unavailable of Target.id
-    | `Host of [> `Execution of string * string * string * string ]
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-val _update_status :
-  t ->
-  target:Target.t ->
-  bookkeeping:Target.run_bookkeeping ->
-  ([> `Target_died of
-        Ketrew_pervasives.Unique_id.t *
-        [> `Failed_to_update of string * string
-         | `Plugin_not_found of string
-         | `Process_failure ]
-    | `Target_succeeded of
-        Ketrew_pervasives.Unique_id.t * [> `Process_success ] ]
-   list,
-   [> `Database of [> `Load ] * string
-    | `Database_unavailable of Target.id
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-  Ketrew_pervasives.t
-val log_what_happened :
-  [< `Target_activated of string * [< `Dependency ]
-   | `Target_died of
-       string *
-       [< `Dependencies_died
-        | `Failed_to_start of string * string
-        | `Failed_to_update of string * string
-        | `Plugin_not_found of string
-        | `Process_failure ]
-   | `Target_started of string * string
-   | `Target_succeeded of
-       string * [< `Artifact_literal | `Artifact_ready | `Process_success ] ] ->
-  Ketrew_pervasives.Log.t
-*)
+(** Get the list of targets currently handled. *)
+  
 val what_happened_to_string :
   [< `Target_activated of string * [< `Dependency ]
    | `Target_died of
@@ -196,6 +69,7 @@ val what_happened_to_string :
    | `Target_succeeded of
        string * [< `Artifact_literal | `Artifact_ready | `Process_success ] ] ->
   string
+(** Transform an item of the result of {!step} to a human-readable string. *)
 
 val step :
   t ->
@@ -222,6 +96,8 @@ val step :
     | `System of [> `File_info of string ] * [> `Exn of exn ]
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
+(** Run one step of the engine; [step] returns a list of “things that
+    happened”. *)
 
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
@@ -232,3 +108,4 @@ val get_status : t -> Ketrew_target.id ->
     | `System of [> `File_info of string ] * [> `Exn of exn ]
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
+(** Get the state description of a given target (by “id”). *)

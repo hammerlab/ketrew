@@ -1,5 +1,7 @@
+(** Top-level module exporting the API (pack). *)
 
 open Ketrew_pervasives
+
 module Path = Ketrew_path
 
 module Host = Ketrew_host
