@@ -45,10 +45,6 @@ for p in $findlib_packages ; do echo "PKG $p" >> .merlin ; done
 
 ocp-build root
 }
-usage () {
-  echo "usage: $0"
-  echo "       $0 {setup,build,clean,help}"
-}
 
 make_doc () {
   local outdir=_doc/
@@ -91,12 +87,38 @@ END_MD
   echo "</body><html>" >> $index
 }
 
+run_top () {
+  local toplevel="ocaml"
+  if utop -version ; then
+    toplevel="utop"
+  else
+    if rlwrap --version ; then
+      toplevel="rlwrap ocaml"
+    fi 
+  fi
+  local ocamlfind_packages=`for p in $findlib_packages ; do echo -n ",$p" ; done`
+  cat << EOF_ML > /tmp/ketrew_ocamlinit
+#use "topfind"
+#thread
+#require "nonstd$ocamlfind_packages"
+#directory "_obuild/ketrew/"
+#load "ketrew.cma"
+EOF_ML
+  $toplevel -init /tmp/ketrew_ocamlinit
+
+}
+
+usage () {
+  echo "usage: $0"
+  echo "       $0 {setup,build,clean,doc,top,help}"
+}
 for i in $* ; do
   case $i in
     "setup" ) setup ;;
     "build" | "" ) setup; ocp-build ketrew-test ;;
     "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
+    "top" ) run_top ;;
     "help" )  usage ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
