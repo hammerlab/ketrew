@@ -343,6 +343,20 @@ let test_long_running_nohup () =
          %s (Error.to_string e) @ error);
     Test.fail "test_long_running_nohup ends with error"
 
+let run_main () =
+  let additional_term =
+    let open Cmdliner in
+    let all_args =
+      let doc = " TODO: write some doc here " in
+      Arg.(value & pos_all string [] & info [] ~docv:"SPECIFICATION" ~doc)
+    in
+    Term.(pure (fun args -> 
+        [`Fail Log.(s "Nothing implemented: " % OCaml.list s args)])
+          $ all_args)
+  in
+  let argv =
+    Array.of_list (Array.to_list Sys.argv |> List.filter ~f:((<>) "cli")) in
+  Ketrew.Command_line.run_main ~argv additional_term
 
 let () =
   let argl = Sys.argv |> Array.to_list in
@@ -352,6 +366,8 @@ let () =
   if List.mem ~set:argl "db-test" || all then mini_db_test ();
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
+  if List.mem ~set:argl "cli" || all then
+    let `Never_returns = run_main () in ();
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "
