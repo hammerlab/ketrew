@@ -7,7 +7,7 @@ Build & Install
 ---------------
 
 Ketrew depends on
-`nonstd`, `pvem`, `docout`,  `sosa`,  `pvem_lwt_unix`
+`cmdliner`, `nonstd`, `pvem`, `docout`,  `sosa`,  `pvem_lwt_unix`
 and uses the `ocp-build` build system:
 
     ./please.sh build

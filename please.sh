@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix"
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner"
 
 
 lib_ml_files=$(find src/lib/ -type f -name '*.ml')
