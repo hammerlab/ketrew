@@ -68,6 +68,9 @@ end
 module Error = struct
 
   let to_string = function
+  | `Wrong_command_line sl ->
+    fmt "Wrong command line: %s" 
+      (String.concat ~sep:", " (List.map sl (fmt "%S")))
   | `IO _ as io -> IO.error_to_string io
   | `System _ as s -> System.error_to_string s
   | `Database (`Load, path) -> fmt "DB-load: %S" path
