@@ -90,14 +90,19 @@ let log_list ~empty l =
   match l with 
   | [] -> if_empty
   | more ->
-    indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
+    n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
 
 let run_state ~state ~how =
-  let log_happening ~step_count ~what_happened =
+  let log_happening ~what_happened =
     let open Log in
+    let step_count = List.length what_happened in
     let happening_list =
-      List.map what_happened ~f:(fun happening ->
-          s (Ketrew_state.what_happened_to_string happening)) in
+      List.mapi what_happened ~f:(fun step_index happening_list ->
+          List.map happening_list ~f:(fun happening ->
+              brakets (s "step " % i (step_index + 1)) % sp % 
+              s (Ketrew_state.what_happened_to_string happening)))
+      |> List.concat
+    in
     let step_sentence =
       match step_count with
       | 0 -> s "No step was executed"
@@ -113,7 +118,7 @@ let run_state ~state ~how =
   | ["step"] ->
     Ketrew_state.step state
     >>= fun what_happened ->
-    log_happening ~step_count:1 ~what_happened
+    log_happening ~what_happened:[what_happened]
   | ["fix"] ->
     let rec fix_point ~count history =
       Ketrew_state.step state
@@ -129,7 +134,7 @@ let run_state ~state ~how =
     in
     fix_point 0 []
     >>= fun (step_count, what_happened) ->
-    log_happening ~step_count ~what_happened:List.(rev what_happened |> concat)
+    log_happening ~what_happened:List.(rev what_happened)
   | sl -> 
     Log.(s "Unknown state-running command: " % OCaml.list (sf "%S") sl
          @ error);
