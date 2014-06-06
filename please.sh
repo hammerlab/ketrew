@@ -33,6 +33,13 @@ begin program "ketrew-test"
   comp = ["-thread" ]
   install = false
 end
+begin program "ketrew-cli-test"
+  files = [ "src/test/cli.ml" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+  install = false
+end
 OCP_END
 
 cat << MERLIN_END > .merlin
@@ -115,7 +122,7 @@ usage () {
 for i in $* ; do
   case $i in
     "setup" ) setup ;;
-    "build" | "" ) setup; ocp-build ketrew-test ;;
+    "build" | "" ) setup; ocp-build ketrew-test ketrew-cli-test ;;
     "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
     "top" ) run_top ;;
