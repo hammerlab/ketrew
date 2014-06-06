@@ -2,6 +2,7 @@ open Ketrew_pervasives
 
 type user_todo = [
   | `Fail of Log.t
+  | `Make of Ketrew_target.t * Ketrew_target.t list
 ]
 
 module Return_code = struct
@@ -58,26 +59,77 @@ let with_state ?plugins ~configuration f =
 
 let log_user_todo = function
 | `Fail l -> Log.(s "Fail with: " % brakets l)
+| `Make (act, deps) -> 
+  Log.(s "Make target :" % Ketrew_target.log act
+       % (match deps with
+         | [] -> empty
+         | more ->
+           parens (s "with " % separate (s ", ") 
+                     (List.map ~f:Ketrew_target.log more))))
 
-let run_user_todo_list todo_list =
+let run_user_todo_list ~state todo_list =
   Deferred_list.while_sequential todo_list (function
+    | `Make (active, dependencies) ->
+      begin 
+        Deferred_list.while_sequential (active :: dependencies) (fun t ->
+            Ketrew_state.add_target state t)
+        >>= fun (_ : unit list) ->
+        return ()
+      end
+      >>< Return_code.transform_error
     | `Fail l ->
       Log.(s "Fail: " % l @ error);
       fail Return_code.user_todo_failure)
   >>= fun (_ : unit list) ->
   return ()
 
+let log_list ~empty l =
+  let empty_log = empty in (* renaming because og Log.empty *)
+  let open Log in
+  let if_empty = sp % empty_log in
+  match l with 
+  | [] -> if_empty
+  | more ->
+    indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
+
 let run_state ~state ~how =
+  let log_happening ~step_count ~what_happened =
+    let open Log in
+    let happening_list =
+      List.map what_happened ~f:(fun happening ->
+          s (Ketrew_state.what_happened_to_string happening)) in
+    let step_sentence =
+      match step_count with
+      | 0 -> s "No step was executed"
+      | 1 -> s "One step was executed" 
+      | more -> i more % s " steps were executed"
+    in
+    Log.(step_sentence % s ":"  %
+         log_list ~empty:(s "Nothing happened") happening_list
+         @ normal); 
+    return ()
+  in
   begin match how with
   | ["step"] ->
     Ketrew_state.step state
     >>= fun what_happened ->
-    let log_list =
-      List.map what_happened ~f:(fun happening ->
-          Log.(s "-" % sp % s (Ketrew_state.what_happened_to_string happening))
-        ) in
-    Log.(s "One step executed:" % indent (separate n log_list) @ normal); 
-    return ()
+    log_happening ~step_count:1 ~what_happened
+  | ["fix"] ->
+    let rec fix_point ~count history =
+      Ketrew_state.step state
+      >>= fun what_happened ->
+      let count = count + 1 in
+      begin match history with
+      | _ when what_happened = [] ->
+        return (count, what_happened :: history)
+      | previous :: _ when previous = what_happened ->
+        return (count, what_happened :: history)
+      | _ -> fix_point ~count (what_happened :: history)
+      end
+    in
+    fix_point 0 []
+    >>= fun (step_count, what_happened) ->
+    log_happening ~step_count ~what_happened:List.(rev what_happened |> concat)
   | sl -> 
     Log.(s "Unknown state-running command: " % OCaml.list (sf "%S") sl
          @ error);
@@ -123,7 +175,7 @@ let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
               Log.(s "Would do:" %n % separate n log @ normal);
               return ()
             end else begin
-              run_user_todo_list todos
+              with_state ?plugins ~configuration (run_user_todo_list todos)
             end)
         $ Arg.(value & flag & info ["n"; "dry-run"]
                  ~doc:"Only display the TODO-items that would have been \

@@ -4,6 +4,7 @@ open Ketrew_pervasives
 
 type user_todo = [
   | `Fail of Log.t
+  | `Make of Ketrew_target.t * Ketrew_target.t list
 ]
 (** User-provided commands. *)
 
