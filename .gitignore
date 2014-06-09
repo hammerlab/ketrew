@@ -1,4 +1,5 @@
 _obuild/
+_prebuild/
 ocp-build.root*
 .merlin
 build.ocp
