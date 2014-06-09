@@ -17,10 +17,13 @@ module Persistent_state = struct
   let create () = {current_targets = [];}
 
   let serialize t =
-    Ketrew_gen_base_v0_j.string_of_persistent_state t
+    Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
 
   let deserialize s = 
-    try return (Ketrew_gen_base_v0_j.persistent_state_of_string s)
+    try return (
+        match Ketrew_gen_versioned_j.persistent_state_of_string s with
+        | `V0 v0 -> v0
+      )
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
   let add t target = { current_targets = Target.id target :: t.current_targets }

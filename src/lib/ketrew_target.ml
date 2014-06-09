@@ -125,11 +125,14 @@ let active
 let id t : Unique_id.t = t.id
 
 let serialize t =
-  Ketrew_gen_target_v0_j.string_of_t t
+  Ketrew_gen_versioned_j.string_of_target (`V0 t)
 
 let deserialize s : (t, _) Result.t =
   let open Result in
-  try return (Ketrew_gen_target_v0_j.t_of_string s)
+  try return (
+      match Ketrew_gen_versioned_j.target_of_string s with
+      | `V0 v0 -> v0
+    )
   with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))

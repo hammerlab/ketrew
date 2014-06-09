@@ -1,0 +1,9 @@
+
+type persistent_state_v0 
+  <ocaml from="Ketrew_gen_base_v0" t="persistent_state"> = abstract
+
+type target_v0 
+  <ocaml from="Ketrew_gen_target_v0" t="t"> = abstract
+
+type persistent_state = [ V0 of persistent_state_v0 ]
+type target = [ V0 of target_v0 ]
