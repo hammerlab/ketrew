@@ -7,7 +7,8 @@
 
 open Ketrew_pervasives
 
-type t
+type t = Ketrew_gen_base_v0_t.monitored_script =
+  {playground: Ketrew_path.absolute_directory; program: string list}
 (** The definition of a monitored script. *)
 
 val create:  playground:Ketrew_path.absolute_directory -> string list -> t

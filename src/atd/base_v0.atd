@@ -43,6 +43,12 @@ type artifact = [
   | Volume of volume
 ]
 
+
+type monitored_script = {
+  playground: path;
+  program: string list
+}
+
 (*
   Ketrew_state.Persistent_state.t:
 *)

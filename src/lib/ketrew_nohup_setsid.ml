@@ -4,16 +4,14 @@ module Path = Ketrew_path
 
 module Host = Ketrew_host
 
-type runnning = {
+type running = Ketrew_gen_nohup_setsid_v0_t.running = {
   pid: int option;
   playground: Path.absolute_directory;
   script: Ketrew_monitored_script.t;
   host: Host.t;
 }
-type run_parameters = [
-  | `Created of Host.t * string list
-  | `Running of runnning
-]
+type run_parameters = Ketrew_gen_nohup_setsid_v0_t.run_parameters
+
 let running =
   function `Running r -> r 
          | _ -> invalid_argument_exn ~where:"Nohup_setsid" "running"
@@ -21,8 +19,12 @@ let created =
   function `Created c -> c
          | _ -> invalid_argument_exn ~where:"Nohup_setsid" "created"
 
-let serialize t = Marshal.to_string t []
-let deserialize_exn s = (Marshal.from_string s 0 : run_parameters)
+let serialize t =
+  Ketrew_gen_versioned_j.string_of_nohup_setsid_run_parameters (`V0 t)
+let deserialize_exn s = 
+  begin match Ketrew_gen_versioned_j.nohup_setsid_run_parameters_of_string s with
+  | `V0 v0 -> v0
+  end
 
 let name = "nohup-setsid"
 let create ?(host=Host.localhost) cmds =

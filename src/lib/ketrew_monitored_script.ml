@@ -2,7 +2,8 @@
 open Ketrew_pervasives
 module Path = Ketrew_path
 
-type t = {playground: Path.absolute_directory; program: string list}
+type t = Ketrew_gen_base_v0_t.monitored_script =
+  {playground: Path.absolute_directory; program: string list}
 
 let create ~playground program = {playground; program}
 

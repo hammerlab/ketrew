@@ -5,5 +5,10 @@ type persistent_state_v0
 type target_v0 
   <ocaml from="Ketrew_gen_target_v0" t="t"> = abstract
 
+type nohup_setsid_run_parameters_v0 
+  <ocaml from="Ketrew_gen_nohup_setsid_v0" t="run_parameters"> = abstract
+
 type persistent_state = [ V0 of persistent_state_v0 ]
 type target = [ V0 of target_v0 ]
+type nohup_setsid_run_parameters = [ V0 of nohup_setsid_run_parameters_v0 ] 
+

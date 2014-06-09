@@ -1,0 +1,16 @@
+
+type host <ocaml from="Ketrew_gen_base_v0"> = abstract
+type path <ocaml from="Ketrew_gen_base_v0"> = abstract
+type monitored_script <ocaml from="Ketrew_gen_base_v0"> = abstract
+
+
+type running = {
+  pid: int option;
+  playground: path;
+  script: monitored_script;
+  host: host;
+}
+type run_parameters = [
+  | Created of (host * string list)
+  | Running of running
+]
