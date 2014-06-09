@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
+version_string="0.0.1-prealpha"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner"
+license_name="ISC"
 
 
 lib_ml_files=$(find src/lib/ -type f -name '*.ml')
@@ -11,7 +13,12 @@ setup() {
   quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
   quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
 
+#authors = [ $quoted_authors_list ]
+
 cat << OCP_END > build.ocp
+version = "$version_string"
+license = "$license_name"
+
 begin library "threads"
   generated = true
   dirname = [ "%{OCAMLLIB}%/threads" ]
@@ -20,6 +27,7 @@ end
 begin  library "ketrew"
   sort = true
   files = [
+  "ketrew_version.ml" (ocp2ml)
     $quoted_lib_files
   ]
   requires = [ $quoted_findlib_packages ]
@@ -64,7 +72,7 @@ make_doc () {
   local dot_file=_doc/modules.dot
   local image_file=modules.svg
   ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
-    \
+    -t "Ketrew $version_string" \
     -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
   dot -Tsvg $dot_file -o_doc/$image_file
   local index=_doc/index.html
@@ -74,6 +82,7 @@ make_doc () {
 <head>
   <link rel="stylesheet" href="api/style.css" type="text/css">
   <meta charset="utf-8">
+  <title>Ketrew $version_string</title>
 </head>
   <body>
 END_HTML

@@ -144,7 +144,7 @@ let run_state ~state ~how =
 
 let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
   let open Cmdliner in
-  let version = "0.0.0" in
+  let version = Ketrew_version.version in
   let sub_command ~info ~term = (term, info) in
   let info_cmd =
     sub_command
