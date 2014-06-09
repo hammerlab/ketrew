@@ -83,9 +83,11 @@ let is_ready specification =
   | `Value _ -> return false
   | `Volume v -> Volume.exists v
 
-let of_type: Type.t -> t = function
-  | `Value v -> invalid_argument_exn ~where:"Artifact" "specification_to_value"
-  | `Volume v -> `Volume v
+let of_type: Type.t -> t option =
+  function
+  | `Value `Unit -> Some (`Value `Unit)
+  | `Value v -> None
+  | `Volume v -> Some (`Volume v)
 
 
 

@@ -100,7 +100,7 @@ val is_ready :
 A “value” artifact is {i never } ready, a “volume” one is checked with {!Volume.exists}.
 This is meant to change. *)
 
-val of_type : Type.t -> t
-(** Get the value given it's type, fails with [Invalid_argument _] on “value”
-    artifacts. This is {i also } meant to change.
+val of_type : Type.t -> t option
+(** Get the value given it's type, if possible.
+    This is {i also } meant to change.
 *)

@@ -198,7 +198,7 @@ let _start_running_target t target =
       | `Ok () -> 
         begin Artifact.is_ready target.Target.result_type
           >>= function
-          | false ->
+          | false when target.Target.result_type <> `Value `Unit ->
             add_or_update_target t Target.(
                 make_fail_exn target  
                   ~msg:(fmt "command %S did not create %S" 
@@ -206,12 +206,22 @@ let _start_running_target t target =
                           (Artifact.Type.to_string_hum target.result_type)))
             >>= fun () ->
             return [`Target_died (Target.id target, `Process_failure)]
-          | true ->
+          | _ ->
             (* result_type must be a Volume: *)
-            let v = Artifact.of_type target.Target.result_type in
-            add_or_update_target t Target.(make_succeed_exn target v)
-            >>= fun () ->
-            return [`Target_succeeded (Target.id target, `Process_success)]
+            begin match Artifact.of_type target.Target.result_type with
+            | Some v ->
+              add_or_update_target t Target.(make_succeed_exn target v)
+              >>= fun () ->
+              return [`Target_succeeded (Target.id target, `Process_success)]
+            | None ->
+              add_or_update_target t Target.(
+                  make_fail_exn target  
+                    ~msg:(fmt "wrong typing of the target: \
+                               direct-command cannot produce %s" 
+                            (Artifact.Type.to_string_hum target.result_type)))
+              >>= fun () ->
+              return [`Target_died (Target.id target, `Wrong_type)]
+            end
         end
       | `Error (`Host (`Execution (where, out, err, msg))) ->
         Log.(s "Cmd error: " % s err @ very_verbose);
@@ -261,13 +271,22 @@ let _update_status t ~target ~bookkeeping =
         | `Ok (`Succeeded run_parameters) ->
           let run_parameters = Long_running.serialize run_parameters in
           (* result_type must be a Volume: *)
-          let v = Artifact.of_type target.Target.result_type in
-          add_or_update_target t Target.(
-              update_running_exn target ~run_parameters
-              |> fun trgt ->  make_succeed_exn trgt v
-            )
-          >>= fun () ->
-          return [`Target_succeeded (Target.id target, `Process_success)]
+          begin match Artifact.of_type target.Target.result_type with
+          | Some v ->
+            add_or_update_target t Target.(
+                update_running_exn target ~run_parameters
+                |> fun trgt ->  make_succeed_exn trgt v)
+            >>= fun () ->
+            return [`Target_succeeded (Target.id target, `Process_success)]
+          | None ->
+            add_or_update_target t Target.(
+                make_fail_exn target  
+                  ~msg:(fmt "wrong typing of the target: \
+                             long-running cannot produce %s" 
+                          (Artifact.Type.to_string_hum target.result_type)))
+            >>= fun () ->
+            return [`Target_died (Target.id target, `Wrong_type)]
+          end
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
           (* result_type must be a Volume: *)
@@ -308,6 +327,7 @@ let log_what_happened =
       | `Failed_to_update (plugin_name, msg) ->
         sf "[%s] failed to update: %s" plugin_name msg
       | `Plugin_not_found p -> sf "Plugin %S not found" p
+      | `Wrong_type ->  s "Wrong typing"
       | `Process_failure -> s "Process_failure")
 
 let what_happened_to_string w =
@@ -339,11 +359,21 @@ let step t =
               | `Wait -> return happenings
               end
             | true ->
-              (* result_type must be a Volume: *)
-              let v = Artifact.of_type target.Target.result_type in
-              add_or_update_target t Target.(make_succeed_exn target v)
-              >>= fun () ->
-              return [`Target_succeeded (Target.id target, `Artifact_ready)]
+              (* result_type must be a Volume or unit: *)
+              begin match Artifact.of_type target.Target.result_type with
+              | Some v ->
+                add_or_update_target t Target.(make_succeed_exn target v)
+                >>= fun () ->
+                return [`Target_succeeded (Target.id target, `Artifact_ready)]
+              | None ->
+                add_or_update_target t Target.(
+                    make_fail_exn target  
+                      ~msg:(fmt "wrong typing of the target: \
+                                 direct-command cannot produce %s" 
+                              (Artifact.Type.to_string_hum target.result_type)))
+                >>= fun () ->
+                return [`Target_died (Target.id target, `Wrong_type)]
+              end
           end
         (* start or run *)
         | `Running (bookkeeping, _)  ->

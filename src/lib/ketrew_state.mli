@@ -61,10 +61,11 @@ val what_happened_to_string :
    | `Target_died of
        string *
        [< `Dependencies_died
-        | `Failed_to_start of string * string
-        | `Failed_to_update of string * string
-        | `Plugin_not_found of string
-        | `Process_failure ]
+       | `Failed_to_start of string * string
+       | `Failed_to_update of string * string
+       | `Plugin_not_found of string
+       | `Wrong_type
+       | `Process_failure ]
    | `Target_started of string * string
    | `Target_succeeded of
        string * [< `Artifact_literal | `Artifact_ready | `Process_success ] ] ->
@@ -80,6 +81,7 @@ val step :
        | `Failed_to_start of string * string
        | `Failed_to_update of string * string
        | `Plugin_not_found of string
+       | `Wrong_type
        | `Process_failure ]
    | `Target_started of Ketrew_target.id * string
    | `Target_succeeded of

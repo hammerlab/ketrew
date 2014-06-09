@@ -41,7 +41,8 @@ let display_info ~state ~all ~item_format =
           | `Created _ -> "Created"
           | `Activated _ -> "Activated"
           | `Running _ -> "Running"
-          | `Dead _ -> "Dead"
+          | `Dead (date, previous_state, `Killed reason) -> fmt "Killed: %s" reason
+          | `Dead (date, previous_state, `Failed reason) -> fmt "Failed: %s" reason
           | `Successful _ -> "Successful"
           end
         | some_unknown -> fmt "$%s" some_unknown) item_format;

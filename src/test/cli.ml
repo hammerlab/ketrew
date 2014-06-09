@@ -34,34 +34,33 @@ let deploy_website more_args =
   let make_doc = 
     Target.(
       create ~name:"Make doc"
-        ~make:(`Get_output (Command.shell "please.sh doc"))
-        (`Value `String)) in
+        ~make:(`Direct_command (Command.shell "please.sh doc"))
+        (`Value `Unit)) in
   let check_out_gh_pages =
     Target.(
       create ~name:"check-out-gh-pages"
         ~dependencies:[Target.id write_branch; Target.id make_doc]
-        ~make:(`Get_output (Command.shell (fmt "git checkout gh-pages || git checkout -t origin/gh-pages")))
-        (`Value `String))
+        ~make:(`Direct_command (Command.shell (fmt "git checkout gh-pages || git checkout -t origin/gh-pages")))
+        (`Value `Unit))
   in
   let move_website =
     Target.(
       create ~name:"move-doc"
         ~dependencies:[Target.id check_out_gh_pages]
-        ~make:(`Get_output (Command.shell (fmt "cp -r _doc/* .")))
-        (`Value `String))
-  in
+        ~make:(`Direct_command (Command.shell (fmt "cp -r _doc/* .")))
+        (`Value `Unit)) in
   let commit_website =
     Target.(
       create ~name:"commit-doc"
         ~dependencies:[Target.id move_website]
-        ~make:(`Get_output (Command.shell (fmt "git add api && git ci -a -m 'update website' ")))
-        (`Value `String)) in
+        ~make:(`Direct_command (Command.shell (fmt "git add api && git ci -a -m 'update website' ")))
+        (`Value `Unit)) in
   let active =
     Target.(
       active ~name:"check-out-original-branch"
         ~dependencies:[Target.id commit_website]
-        ~make:(`Get_output (Command.shell (fmt "[ -f /tmp/%s ] && git checkout `cat /tmp/%s`" branch_file branch_file)))
-        (`Value `String))
+        ~make:(`Direct_command (Command.shell (fmt "[ -f /tmp/%s ] && git checkout `cat /tmp/%s`" branch_file branch_file)))
+        (`Value `Unit))
   in
   Log.(s "branch file: " % s branch_file @ verbose);
   [`Make (active, [write_branch; check_out_gh_pages; make_doc; move_website; commit_website])]
