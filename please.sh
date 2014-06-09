@@ -3,6 +3,8 @@
 version_string="0.0.1-prealpha"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner"
 license_name="ISC"
+seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
+authors=( "seb" )
 
 
 lib_ml_files=$(find src/lib/ -type f -name '*.ml')
@@ -10,15 +12,20 @@ lib_mli_files=$(find src/lib/ -type f -name '*.mli')
 lib_files="$lib_mli_files $lib_ml_files"
 
 setup() {
-  quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
-  quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
+  local quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
+  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
 
-#authors = [ $quoted_authors_list ]
+  local quoted_authors_list=""
+  for idx in "${authors[@]}" ; do
+    eval name=\${$idx[0]}
+    eval email=\${$idx[1]}
+    quoted_authors_list="$quoted_authors_list \"$name <$email>\""
+  done
 
 cat << OCP_END > build.ocp
 version = "$version_string"
 license = "$license_name"
-
+authors = [ $quoted_authors_list ]
 begin library "threads"
   generated = true
   dirname = [ "%{OCAMLLIB}%/threads" ]
@@ -76,6 +83,16 @@ make_doc () {
     -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
   dot -Tsvg $dot_file -o_doc/$image_file
   local index=_doc/index.html
+
+  local markdown_authors_list=""
+  for idx in "${authors[@]}" ; do
+    eval name=\${$idx[0]}
+    eval email=\${$idx[1]}
+    eval web=\${$idx[2]}
+    markdown_authors_list="$markdown_authors_list
+- [$name]($web) (\`$email\`)"
+  done
+
   cat << END_HTML > $index
 <!DOCTYPE html>
 <html>
@@ -99,6 +116,12 @@ style="transform-origin: 0% 100% 0;
        transform: translateY(-100%) rotate(90deg);"
   >Your browser does not support SVG</object>
 </a>
+
+Authors
+-------
+
+$markdown_authors_list
+
 END_MD
   echo "</body><html>" >> $index
 }
