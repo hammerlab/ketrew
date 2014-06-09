@@ -181,7 +181,7 @@ for i in $* ; do
     "setup" ) setup ;;
     "build" ) setup; ocp-build build  ketrew-test ketrew-cli-test ;;
     "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
-    "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
+    "clean" ) rm -fr _prebuild _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
     "top" ) run_top ;;
     "help" )  usage ;;
