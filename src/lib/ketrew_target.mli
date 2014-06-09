@@ -4,7 +4,7 @@ open Ketrew_pervasives
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig
 
-    type t
+    type t = Ketrew_gen_target_v0_t.command
     (** The type of commands. *)
 
     val shell : ?host:Ketrew_host.t -> string -> t
@@ -36,7 +36,7 @@ type build_process = [
   | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
   | `Direct_command of Command.t (** [Command.t] to run. *)
   | `Get_output of Command.t (** [Command.t] to run and get its [stdout]. *) 
-  | `Long_running of string * string 
+  | `Long_running of (string * string) 
   (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].
   *)
 ]

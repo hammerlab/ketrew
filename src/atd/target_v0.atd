@@ -1,0 +1,63 @@
+
+type time <ocaml from="Ketrew_gen_base_v0"> = abstract
+type unique_id <ocaml from="Ketrew_gen_base_v0"> = abstract
+type host <ocaml from="Ketrew_gen_base_v0"> = abstract
+type artifact <ocaml from="Ketrew_gen_base_v0"> = abstract
+type artifact_value <ocaml from="Ketrew_gen_base_v0"> = abstract
+type artifact_type <ocaml from="Ketrew_gen_base_v0"> = abstract
+
+type command = {
+  host: host;
+  action: [ Shell of string ];
+}
+
+type build_process = [
+  | Artifact of artifact
+  | Get_output of command
+  | Direct_command of command
+  | Long_running of (string * string)
+]
+
+type submitted_state = [
+  | Created of time
+]
+type activated_state = [
+  | Activated of (time * submitted_state * [ User | Dependency ])
+]
+type run_bookkeeping = 
+  { plugin_name: string; run_parameters: string; run_history: string list}
+type running_state = [
+  | Running of (run_bookkeeping * activated_state) 
+]
+type death_reason = [
+  | Killed of string
+  | Failed of string
+]
+type activated_or_running = [ (* Must be verbatim [activated_state | running_state] *)
+  | Activated of (time * submitted_state * [ User | Dependency ])
+  | Running of (run_bookkeeping * activated_state) 
+]
+type finished_state = [ 
+  | Dead of (time * activated_or_running * death_reason)
+  | Successful of (time * activated_or_running * artifact)
+]
+(* [ submitted_state | activated_state | running_state | finished_state] *)
+type workflow_state = [ 
+  | Created of time
+  | Activated of (time * submitted_state * [ User | Dependency ])
+  | Running of (run_bookkeeping * activated_state) 
+  | Dead of (time * activated_or_running * death_reason)
+  | Successful of (time * activated_or_running * artifact)
+] 
+
+type id = unique_id
+type t = {
+  id: id;
+  name: string;
+  persistance: [ Input_data | Recomputable of float | Result ];
+  metadata: artifact_value;
+  dependencies: id list;
+  make: build_process;
+  result_type: artifact_type;
+  history: workflow_state;
+}

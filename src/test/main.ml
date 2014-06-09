@@ -366,7 +366,7 @@ let () =
   if List.mem ~set:argl "db-test" || all then mini_db_test ();
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
-  if List.mem ~set:argl "cli" || all then begin
+  if List.mem ~set:argl "cli" then begin
     let db_file = "/tmp/ketrew_test_database"  in
     let configuration = Ketrew_state.Configuration.create db_file () in
     let `Never_returns = run_main ~configuration () in 

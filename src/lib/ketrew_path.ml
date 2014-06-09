@@ -5,8 +5,10 @@ type absolute
 type file
 type directory
 type 'c t =
-  {kind: [`File | `Directory]; path: string}
+  (* {kind: [`File | `Directory]; path: string} *)
+  Ketrew_gen_base_v0_t.path
   constraint 'c = <relativity: 'relativity; kind: 'file_kind>
+open Ketrew_gen_base_v0_t
 type absolute_directory = <relativity : absolute; kind: directory> t
 type absolute_file = <relativity : absolute; kind: file> t
 type relative_directory = <relativity : relative; kind: directory> t

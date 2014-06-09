@@ -21,7 +21,7 @@ end
 type connection = [ `Localhost | `Ssh of Ssh.t ]
 (** Specification of connection methods. *)
 
-type t
+type t = Ketrew_gen_base_v0_t.host
 (** Host container. *)
 
 val create :

@@ -1,7 +1,6 @@
 
 open Ketrew_pervasives
 
-type stupid_db = (string * string) list
 type action =
   | Set of string * string
   | Sequence of action list
@@ -11,7 +10,8 @@ let seq l = Sequence l
 let contains ~key v = Check (key, Some v) 
 let is_not_set key = Check (key, None)
 
-type t = {
+type stupid_db = Ketrew_gen_base_v0_t.stupid_db
+type t = Ketrew_gen_base_v0_t.database = {
   mutable db: stupid_db;
   (* mutable history: (action * stupid_db) list; *)
   parameters: string;
@@ -19,7 +19,7 @@ type t = {
 let create parameters = {db = []; parameters} 
 
 let save t =
-  let content = Marshal.to_string t [] in
+  let content = Ketrew_gen_base_v0_j.string_of_database t in
   IO.write_file t.parameters ~content
 
 let load path =
@@ -29,7 +29,7 @@ let load path =
       Log.(s "Loading database at " % s path @ very_verbose);
       IO.read_file path
       >>= fun content ->
-      begin try return (Marshal.from_string content 0 : t) with
+      begin try return (Ketrew_gen_base_v0_j.database_of_string content) with
       | e -> fail (`Database (`Load, path))
       end
     | _ -> 

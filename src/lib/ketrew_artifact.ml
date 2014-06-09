@@ -7,11 +7,12 @@ module Host = Ketrew_host
 
 module Volume = struct
 
-  type structure =   
+  open Ketrew_gen_base_v0_t
+  type structure = volume_structure =
     | File of string
-    | Directory of string * structure list
+    | Directory of (string * structure list)
 
-  type t = {
+  type t = volume = {
     host: Host.t;
     root: Path.absolute_directory;
     structure: structure;
@@ -44,17 +45,13 @@ end
 
 module Type = struct
 
-  type value_type = [`Unit | `String | `Number]
+  type value_type = Ketrew_gen_base_v0_t.value_type
   let value_type_to_string = function
   | `Unit -> "Unit"
   | `String -> "String"
   | `Number -> "Number"
 
-  type t = [
-    (* | `Fresh_file *)
-    | `Value of value_type
-    | `Volume of Volume.t
-  ]
+  type t = Ketrew_gen_base_v0_t.artifact_type
   let value vt : t = `Value vt
   let string_value : t = `Value `String
   let volume v = `Volume v
@@ -65,17 +62,11 @@ module Type = struct
 
 end
 
-type value = [ `Unit | `String of string | `Number of float ]
+type value = Ketrew_gen_base_v0_t.artifact_value
 
-let unit : value = `Unit
+let unit = `Unit
 
-type t = [
-  (* | `Tree of File_tree.t *)
-  (* | `File of File_tree.file *)
-  | `Value of value
-  | `Volume of Volume.t
-]
-
+type t = Ketrew_gen_base_v0_t.artifact
 
 (* TODO those two functions should be more type-safe *)
 let is_ready specification =

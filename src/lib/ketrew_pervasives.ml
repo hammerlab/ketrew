@@ -36,7 +36,8 @@ let invalid_argument_exn ?(where="pervasives") what =
   raise (Invalid_argument (fmt "[%S]: %s" where what))
 
 module Time = struct
-  type t = float
+  include Ketrew_gen_base_v0_t
+  type t = time
   let now () : t = Unix.gettimeofday ()
 
   let to_filename f =
@@ -56,7 +57,8 @@ end
 module Unique_id = struct
   (** Provide pseudo-unique identifiers. *)
 
-  type t = string
+  include Ketrew_gen_base_v0_t
+  type t = unique_id
   (** [string] seems to be the best-suited primitive *)
 
   (** Create a fresh filename-compliant identifier. *)

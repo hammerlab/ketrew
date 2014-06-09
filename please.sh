@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 version_string="0.0.1-prealpha"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner"
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojson"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
@@ -12,15 +12,34 @@ lib_mli_files=$(find src/lib/ -type f -name '*.mli')
 lib_files="$lib_mli_files $lib_ml_files"
 
 setup() {
-  local quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
-  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
-
+  set -e
   local quoted_authors_list=""
   for idx in "${authors[@]}" ; do
     eval name=\${$idx[0]}
     eval email=\${$idx[1]}
     quoted_authors_list="$quoted_authors_list \"$name <$email>\""
   done
+
+  mkdir -p _obuild/atdgen/
+  local lib_atd_files=$(find src/atd/ -type f -name '*.atd')
+  for atd in $lib_atd_files ; do
+    name=`basename $atd`
+    atdgen -t -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
+    atdgen -j -j-std -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
+  done
+  local lib_gen_files=$(find _obuild/atdgen/ -type f -name '*.ml')
+
+  local quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
+  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
+  local quoted_gen_files=$(for f in $lib_gen_files ; do echo "\"$f\" " ; done)
+
+  local yojson_hack_dir=$PWD/_prebuild/yojson
+  mkdir -p $yojson_hack_dir
+  cp -r `ocamlfind query yojson`/* $yojson_hack_dir
+  cd $yojson_hack_dir 
+  ocamlc -a -o yojson.cma `ocamlfind query easy-format`/easy_format.cmo yojson.cmo
+  ocamlopt -a -o yojson.cmxa `ocamlfind query easy-format`/easy_format.cmx yojson.cmx
+  cd -
 
 cat << OCP_END > build.ocp
 version = "$version_string"
@@ -31,15 +50,21 @@ begin library "threads"
   dirname = [ "%{OCAMLLIB}%/threads" ]
   has_byte = false
 end
+begin library "yojson"
+  generated = true
+  dirname = [ "$yojson_hack_dir" ]
+  requires = [ "easy-format" "biniou"  ]
+end
 begin  library "ketrew"
   sort = true
   files = [
-  "ketrew_version.ml" (ocp2ml)
+    "ketrew_version.ml" (ocp2ml)
     $quoted_lib_files
+    $quoted_gen_files
   ]
-  requires = [ $quoted_findlib_packages ]
+  requires = [ "easy-format" "biniou" $quoted_findlib_packages ]
+  comp = [ "-thread" ]
   link = [ "-thread" ]
-  comp = ["-thread" ]
 end
 begin program "ketrew-test"
   files = [ "src/test/main.ml" ]
@@ -154,7 +179,8 @@ usage () {
 for i in $* ; do
   case $i in
     "setup" ) setup ;;
-    "build" | "" ) setup; ocp-build ketrew-test ketrew-cli-test ;;
+    "build" ) setup; ocp-build build  ketrew-test ketrew-cli-test ;;
+    "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
     "clean" ) rm -fr _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
     "top" ) run_top ;;

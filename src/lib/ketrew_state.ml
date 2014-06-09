@@ -10,15 +10,17 @@ module Database = Ketrew_database
 module Nohup_setsid = Ketrew_nohup_setsid
 
 module Persistent_state = struct
-  type t = {
+  type t = Ketrew_gen_base_v0_t.persistent_state = {
     current_targets: Target.id list;
     (* keep db id of a list of all "archived" targets *)
   }
   let create () = {current_targets = [];}
 
-  let serialize t = Marshal.to_string t []
-  let unserialize s =
-    try return (Marshal.from_string s 0 : t)
+  let serialize t =
+    Ketrew_gen_base_v0_j.string_of_persistent_state t
+
+  let deserialize s = 
+    try return (Ketrew_gen_base_v0_j.persistent_state_of_string s)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
   let add t target = { current_targets = Target.id target :: t.current_targets }
@@ -69,7 +71,7 @@ let get_persistent t =
   begin Database.get db ~key:t.configuration.Configuration.persistent_state_key
     >>= function
     | Some persistent_serialized ->
-      Persistent_state.unserialize persistent_serialized
+      Persistent_state.deserialize persistent_serialized
     | None ->
       let e = Persistent_state.create () in
       return e

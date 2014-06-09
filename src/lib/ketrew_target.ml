@@ -9,7 +9,7 @@ module Artifact = Ketrew_artifact
 
 module Command = struct
 
-  type t = {
+  type t = Ketrew_gen_target_v0_t.command = {
     host: Host.t;
     action: [ `Shell of string ];
   }
@@ -32,37 +32,33 @@ module Command = struct
 
 end
 
-type build_process = [
-  | `Artifact of Artifact.t
-  | `Get_output of Command.t
-  | `Direct_command of Command.t
-  | `Long_running of string * string
-]
+include Ketrew_gen_target_v0_t
+
 let nop : build_process = `Artifact (`Value `Unit)
 
-type submitted_state = [`Created of Time.t]
-type activated_state =
-  [`Activated of Time.t * submitted_state * [ `User | `Dependency ] ]
-type run_bookkeeping = 
-  { plugin_name: string; run_parameters: string; run_history: string list}
-type running_state = [ `Running of run_bookkeeping * activated_state ]
-type death_reason = [`Killed of string | `Failed of string]
-type finished_state = [ 
-  | `Dead of Time.t * [activated_state | running_state] * death_reason
-  | `Successful of Time.t * [activated_state | running_state ] * Artifact.t
-]
-type workflow_state = [ submitted_state | activated_state | running_state | finished_state]
-type id = Unique_id.t
-type t = {
-  id: id;
-  name: string;
-  persistance: [ `Input_data | `Recomputable of float | `Result ];
-  metadata: Artifact.value;
-  dependencies: id list;
-  make: build_process;
-  result_type: Artifact.Type.t;
-  history: workflow_state;
-}
+(* type submitted_state = [`Created of Time.t] *)
+(* type activated_state = *)
+(*   [`Activated of Time.t * submitted_state * [ `User | `Dependency ] ] *)
+(* type run_bookkeeping = *) 
+(*   { plugin_name: string; run_parameters: string; run_history: string list} *)
+(* type running_state = [ `Running of run_bookkeeping * activated_state ] *)
+(* type death_reason = [`Killed of string | `Failed of string] *)
+(* type finished_state = [ *) 
+(*   | `Dead of Time.t * [activated_state | running_state] * death_reason *)
+(*   | `Successful of Time.t * [activated_state | running_state ] * Artifact.t *)
+(* ] *)
+(* type workflow_state = [ submitted_state | activated_state | running_state | finished_state] *)
+(* type id = Unique_id.t *)
+(* type t = { *)
+(*   id: id; *)
+(*   name: string; *)
+(*   persistance: [ `Input_data | `Recomputable of float | `Result ]; *)
+(*   metadata: Artifact.value; *)
+(*   dependencies: id list; *)
+(*   make: build_process; *)
+(*   result_type: Artifact.Type.t; *)
+(*   history: workflow_state; *)
+(* } *)
 let create
     ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
     ?(dependencies=[]) ?(make=nop)
@@ -127,10 +123,13 @@ let active
                             ?dependencies ?make artifact)
 
 let id t : Unique_id.t = t.id
-let serialize t = Marshal.to_string t []
+
+let serialize t =
+  Ketrew_gen_target_v0_j.string_of_t t
+
 let deserialize s : (t, _) Result.t =
   let open Result in
-  try return (Marshal.from_string s 0)
+  try return (Ketrew_gen_target_v0_j.t_of_string s)
   with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))

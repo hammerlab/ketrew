@@ -16,7 +16,7 @@ module Ssh = struct
 
   let () = configure_ssh_batch_option `Openssh
 
-  type t = {
+  type t = Ketrew_gen_base_v0_t.ssh_host = {
     address: string;
     port: int option;
     user: string option;
@@ -58,11 +58,9 @@ module Ssh = struct
     @ [dest]
 
 end
-type connection = [
-  | `Localhost
-  | `Ssh of Ssh.t
-]
-type t = {
+type connection = Ketrew_gen_base_v0_t.connection 
+                    
+type t = Ketrew_gen_base_v0_t.host = {
   name: string;
   connection: connection;
   playground: Path.absolute_directory option;

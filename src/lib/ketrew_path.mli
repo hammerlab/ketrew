@@ -12,7 +12,8 @@ type file
 type directory
 (** Abstract phantom type. *)
 
-type 'a t constraint 'a = < kind : 'file_kind; relativity : 'relativity >
+type 'a t = Ketrew_gen_base_v0_t.path
+  constraint 'a = < kind : 'file_kind; relativity : 'relativity >
 (**
    General type of file-paths, [kind] may be [file] or [directory],
    [relativity] may be [relative] or [absolute].
