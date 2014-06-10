@@ -275,6 +275,19 @@ let test_0 () =
       ])
     >>= fun () ->
 
+    let target_with_missing_dep = 
+      Target.active ~name:"target_with_missing_dep"
+          ~dependencies:[ "hope this one is not in the database" ]
+          ~make:(`Get_output Target.Command.(shell "ls"))
+          (Artifact.Type.string_value)
+    in
+    Test.test_targets ~state ~name:"target_with_missing_dep" [target_with_missing_dep] [
+      `Happens (function
+        | [`Target_died (_, `Dependencies_died)]  -> true
+        | _ -> false);
+      `Dont_care;
+    ]
+    >>= fun () ->
 
     System.remove db_file
     >>= fun () ->
