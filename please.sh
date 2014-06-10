@@ -173,12 +173,23 @@ EOF_ML
 
 }
 
+signature () {
+  local ml_file=$1
+  if [ "$1" = "" ]; then
+    echo "missing ML file"
+    exit 2
+  fi
+  local packages=""
+  for p in $findlib_packages; do packages="$packages,$p" ; done
+  ocamlfind ocamlc -thread -I _obuild/ketrew/ -package $packages -i -c $ml_file
+}
+
 usage () {
   echo "usage: $0"
   echo "       $0 {setup,build,clean,doc,top,help}"
 }
-for i in $* ; do
-  case $i in
+while [ "$1" != "" ]; do
+  case $1 in
     "setup" ) setup ;;
     "build" ) setup; ocp-build build  ketrew-test ketrew-cli-test ;;
     "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
@@ -186,7 +197,9 @@ for i in $* ; do
     "doc" ) make_doc ;;
     "top" ) run_top ;;
     "help" )  usage ;;
+    "sig" ) signature $2; shift ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
+  shift
 done
 
