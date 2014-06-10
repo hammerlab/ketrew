@@ -67,40 +67,26 @@ let deploy_website more_args =
 
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
   (* make tar.gz, md5sum, gpg, rm *)
-  let open Ketrew in
-  let host = Host.ssh ~playground:(Path.absolute_directory_exn "/tmp") host in
+  let open Ketrew.EDSL in
   let dest_base =
     match dest_prefix with
     | Some s -> s 
     | None -> fmt  "/tmp/backup_%s" Time.(now () |> to_filename)
   in
-  let destination ext = 
-    let filename = fmt "%s.%s" Filename.(basename dest_base) ext in
-    Artifact.Volume.(
-      create ~host ~root:(Path.absolute_directory_exn (Filename.dirname dest_base))
-        (file filename))
-  in
-  let path_of_volume v = 
-    Artifact.Volume.all_paths v |> List.hd_exn |> Path.to_string in
+  let destination ext = file ~host (fmt "%s.%s" dest_base ext) in
   let targz = destination "tar.gz" in
   let make_targz =
-    Target.(
-      create ~name:"make-tar.gz"
-        ~dependencies:[]
-        ~make:(Nohup_setsid.create ~host [
-            fmt "tar cfz '%s' '%s'" (path_of_volume targz) dir
-          ]))
-      (`Volume targz)
+    target ~returns:targz "make-tar.gz" ~dependencies:[]
+      ~make:(nohup_setsid ~host [
+          fmt "tar cfz '%s' '%s'" targz#path dir
+        ])
   in
   let md5 = destination "md5" in
   let md5_targz =
-    Target.(
-      create ~name:"make-md5-of-tar.gz"
-        ~dependencies:[Target.id make_targz]
-        ~make:(Nohup_setsid.create ~host [
-            fmt "md5sum '%s' > '%s'" (path_of_volume targz) (path_of_volume md5)
-          ]))
-      (`Volume md5)
+    target ~returns:md5 "make-md5-of-tar.gz" ~dependencies:[make_targz]
+      ~make:(nohup_setsid ~host [
+          fmt "md5sum '%s' > '%s'" targz#path md5#path
+        ]) 
   in
   let gpg =
     match gpg with
@@ -108,45 +94,33 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
     | true ->
       let gpg_file = destination "gpg" in
       let make_it =
-        Target.(
-          create ~name:"make-gpg-of-tar.gz"
-            ~dependencies:[Target.id make_targz]
-            ~make:(Nohup_setsid.create ~host [
-                fmt "gpg -c --passphrase bouh -o '%s' '%s'"
-                  (path_of_volume gpg_file) (path_of_volume targz)
-              ]))
-          (`Volume gpg_file)
-      in
+        target "make-gpg-of-tar.gz" ~returns:gpg_file ~dependencies:[make_targz]
+          ~make:(nohup_setsid ~host [
+              fmt "gpg -c --passphrase bouh -o '%s' '%s'"
+                gpg_file#path targz#path
+            ]) in
       let clean_up =
-        Target.(
-          create ~name:"rm-tar.gz"
-            ~dependencies:[Target.id make_it]
-            ~make:(Nohup_setsid.create ~host [
-                fmt "rm -f '%s'" (path_of_volume targz)
-              ])
-            (`Value `Unit))
-      in
+        target "rm-tar.gz" ~dependencies:[make_it]
+          ~make:(nohup_setsid ~host [ fmt "rm -f '%s'" targz#path ]) in
       [make_it; clean_up]
   in
-  let ids = List.map ~f:Target.id in
   let active =
-    Target.(
-      active ~name:"common ancestor"
-        ~dependencies:(ids gpg @ [Target.id make_targz; Target.id md5_targz])
-        (* the redundant make_targz dep is voluntary, for testing *)
-        ~make:(`Direct_command Command.(shell "echo Done"))
-        (`Value `Unit)
-    ) in
-  [`Make (active, gpg @ [make_targz; md5_targz])]
+    active "make-targz common ancestor"
+      ~dependencies:(gpg @ [make_targz; md5_targz])
+      (* the redundant make_targz dep is voluntary, it's for testing *)
+      ~make:(direct_shell_command "echo Done")
+  in
+  make_workflow [active]
 
 let make_targz_command_line argl =
+  let open Ketrew.EDSL in
   let open Cmdliner in
   let term =
     Term.(
       pure (fun gpg host dir dest_prefix ->
           make_targz_on_host ~gpg ~host ~dir ?dest_prefix)
       $ Arg.(value & flag & info ["with-gpg"; "G"] ~doc:"Also run GPG.")
-      $ Arg.(required & pos 0 (some string) None & info [] ~doc:"The Host." ~docv:"HOST")
+      $ host_cmdliner_term (`Required 0)
       $ Arg.(required & pos 1 (some string) None & info [] ~doc:"The Source." ~docv:"SRC")
       $ Arg.(value & opt (some string) None 
              & info ["destination"; "D"] ~doc:"Destination prefix." ~docv:"STR")
@@ -159,8 +133,8 @@ let make_targz_command_line argl =
   | `Ok todo -> todo
   | `Error `Exn
   | `Error `Parse
-  | `Error `Term
-  | `Help | `Version -> [`Fail Log.(s "Command line")]
+  | `Error `Term -> [`Fail Log.(s "Command line")]
+  | `Help | `Version -> []
 
 
 let run_main () =
