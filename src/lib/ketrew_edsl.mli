@@ -16,8 +16,15 @@ val parse_host : string -> host
 (** See {!Ketrew_host.of_string}. *)
 
 val host_cmdliner_term :
-  ?doc:string -> [ `Required of int ] -> Ketrew_host.t Cmdliner.Term.t
-(** Cmdliner term which creates a host argument. *)
+  ?doc:string -> 
+  [ `Required of int | `Flag of string list ] ->
+  Ketrew_host.t Cmdliner.Term.t
+(** Cmdliner term which creates a host argument or flag.
+    [`Required n] will be an anonymous argument at position [n]; 
+    [`Flag ["option-name"; "O"]] will create an optional
+    flag ["--option-name"] (aliased to ["-O"]) whose default value is
+    the host ["/tmp/"] (i.e. Localhost with ["/tmp"] as “playground”).
+    *)
 
 (** {3 Artifacts} *)
 

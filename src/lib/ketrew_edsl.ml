@@ -105,14 +105,18 @@ let make_workflow t = workflow t |> make
 
 let parse_host: string -> Host.t = Host.of_string
 
-let host_cmdliner_term ?(doc="URI of the host") how =
+let host_cmdliner_term 
+    ?(doc="URI of the host (e.g. \
+           ssh://user@example.com:42/tmp/ketrewplayground).") how =
   let open Cmdliner in
   Term.(
     pure (fun s -> parse_host s)
-    $ match how with
+    $ begin match how with
+    | `Flag (flags) ->
+      Arg.(value & opt string "/tmp/" & info flags ~doc ~docv:"URI")
     | `Required p ->
-      Arg.(required & pos p (some string) None &
-           info [] ~doc:"The Host." ~docv:"URI")
+      Arg.(required & pos p (some string) None & info [] ~doc ~docv:"URI")
+    end
   )
 
 let nohup_setsid ~host cmds =
