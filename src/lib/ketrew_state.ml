@@ -132,18 +132,24 @@ let _check_and_activate_dependencies ~t ids =
   let what_happened = ref [] in
   let happened h = what_happened := h :: !what_happened in
   Deferred_list.while_sequential ids ~f:(fun dep ->
-      get_target db dep >>= fun dependency ->
-      match dependency.Target.history with
-      | `Created _  ->
-        let newdep =
-          Target.(activate_exn dependency ~by:`Dependency) in
-        add_or_update_target t newdep
-        >>= fun () ->
-        `Target_activated (Target.id dependency, `Dependency) |> happened;
-        return `Wait
-      | `Activated _ | `Running _ -> return `Wait
-      | `Dead _ -> return (`Die dep)
-      | `Successful _ -> return `Go)
+      get_target db dep >>< function
+      | `Ok dependency ->
+        begin match dependency.Target.history with
+        | `Created _  ->
+          let newdep = Target.(activate_exn dependency ~by:`Dependency) in
+          add_or_update_target t newdep
+          >>= fun () ->
+          `Target_activated (Target.id dependency, `Dependency) |> happened;
+          return `Wait
+        | `Activated _ | `Running _ -> return `Wait
+        | `Dead _ -> return (`Die dep)
+        | `Successful _ -> return `Go
+        end
+      | `Error (`Missing_data s) ->
+        (* Dependency not-found => should get out of the way *)
+        return (`Die dep)
+      | `Error (`Target _ as e) -> fail e
+    )
   >>= fun statuses ->
   let happenings = List.rev !what_happened in 
   begin match statuses with
