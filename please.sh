@@ -107,6 +107,7 @@ make_doc () {
     -t "Ketrew $version_string" \
     -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
   dot -Tsvg $dot_file -o_doc/$image_file
+  rm $dot_file
   local index=_doc/index.html
 
   local markdown_authors_list=""
