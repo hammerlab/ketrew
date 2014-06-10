@@ -106,7 +106,7 @@ type t = {
 (** The fat record holding targets. *)
 
 val create :
-  ?name:string ->
+  ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.value ->
   ?dependencies:id list -> ?make:build_process -> Ketrew_artifact.Type.t -> t
@@ -137,7 +137,7 @@ val update_running_exn : t -> run_parameters:string -> t
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
 val active :
-  ?name:string ->
+  ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.value ->
   ?dependencies:id list -> ?make:build_process -> Ketrew_artifact.Type.t -> t

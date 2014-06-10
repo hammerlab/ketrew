@@ -60,11 +60,11 @@ let nop : build_process = `Artifact (`Value `Unit)
 (*   history: workflow_state; *)
 (* } *)
 let create
-    ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
+    ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
     ?(dependencies=[]) ?(make=nop)
     result_type = 
   let history = `Created Time.(now ()) in
-  let id = Unique_id.create () in
+  let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; persistance; metadata;
     dependencies; make; result_type; history }
 
@@ -115,11 +115,11 @@ let update_running_exn t ~run_parameters =
   | _ -> invalid_argument_exn ~where:"Target" (fmt "update_running_exn")
 
 
-let active 
+let active ?id
     ?name ?persistance ?metadata
     ?dependencies ?make
     artifact = 
-  activate_exn ~by:`User (create ?name ?persistance ?metadata
+  activate_exn ~by:`User (create ?id ?name ?persistance ?metadata
                             ?dependencies ?make artifact)
 
 let id t : Unique_id.t = t.id
