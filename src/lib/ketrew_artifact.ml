@@ -40,7 +40,7 @@ module Volume = struct
     Host.do_files_exist t.host paths
 
   let to_string_hum {host; root; structure} =
-    fmt "Vol(%s:%s)" (Host.to_string host) (Path.to_string root)
+    fmt "Vol(%s:%s)" (Host.to_string_hum host) (Path.to_string root)
 end
 
 module Type = struct

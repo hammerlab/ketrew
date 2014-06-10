@@ -18,7 +18,7 @@ module Command = struct
   let get_host t = t.host
 
   let to_string_hum {host; action = `Shell cmd} =
-    fmt "Shell[%S] on %s" cmd (Host.to_string host)
+    fmt "Shell[%S] on %s" cmd (Host.to_string_hum host)
 
   let get_output {host; action} =
     match action with

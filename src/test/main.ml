@@ -310,7 +310,7 @@ let test_long_running_nohup () =
     let root = Path.absolute_directory_exn "/tmp" in
     (* Deferred_list.while_sequential [Host.localhost; Test.test_ssh_host] ~f:(fun host -> *)
     Deferred_list.while_sequential [Test.test_ssh_host] ~f:(fun host ->
-        let name n = fmt "%s on %s" n Host.(to_string host) in
+        let name n = fmt "%s on %s" n Host.(to_string_hum host) in
         let new_name = Unique_id.create () in
         Test.test_targets  ~state ~name:(name "good ls")
           ~wait_between_steps:1.

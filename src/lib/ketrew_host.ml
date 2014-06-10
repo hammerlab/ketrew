@@ -75,10 +75,26 @@ let ssh ?playground ?port ?user ?name address =
   create ?playground Option.(value name ~default:address)
     ~connection:(`Ssh {Ssh. address; port; user})
 
-let to_string t = t.name
+let of_uri uri =
+  let connection =
+    Option.value_map ~default:`Localhost (Uri.host uri) ~f:(fun address ->
+        `Ssh {Ssh.address; port = Uri.port uri; user = Uri.userinfo uri})
+  in
+  let playground =
+    match Uri.path uri with
+    | "" -> None
+    | p -> Some (Path.absolute_directory_exn p)
+  in
+  create ?playground ~connection (Uri.to_string uri)
+
+let of_string s =
+  let uri = Uri.of_string s in
+  of_uri uri
+
+let to_string_hum t = t.name
 
 let fail_exec t ?(out="") ?(err="") msg =
-  fail (`Host (`Execution (to_string t, out, err, msg)))
+  fail (`Host (`Execution (to_string_hum t, out, err, msg)))
 
 let get_shell_command_output t cmd =
   match t.connection with

@@ -38,7 +38,15 @@ val ssh :
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
 
-val to_string : t -> string
+val of_string: string -> t
+(** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
+  string into a host, see {!of_uri}. *)
+
+val of_uri: Uri.t -> t
+(** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
+  the “path” part of the URI is the playground. *)
+
+val to_string_hum : t -> string
 (** Get a display-friendly string for the host (“name”, or hostname). *)
 
 val get_shell_command_output :
