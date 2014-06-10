@@ -15,3 +15,5 @@ module Nohup_setsid = Ketrew_nohup_setsid
 module State = Ketrew_state
 
 module Command_line = Ketrew_command_line
+
+module EDSL = Ketrew_edsl

@@ -1,0 +1,98 @@
+(** Easy interface to the library {b for end users}. *)
+(**
+  This is a more hopefully stable EDSL/API to make workflows and
+  deal with the system.
+
+  Many functions may raise exceptions when called on improperly, but this
+  should happen while building the workflow, not after it starts running. *)
+
+
+(** {3 Hosts} *)
+
+type host = Ketrew_host.t
+(** Alias for the host type. *)
+
+val parse_host : string -> host
+(** See {!Ketrew_host.of_string}. *)
+
+val host_cmdliner_term :
+  ?doc:string -> [ `Required of int ] -> Ketrew_host.t Cmdliner.Term.t
+(** Cmdliner term which creates a host argument. *)
+
+(** {3 Artifacts} *)
+
+(** Wrapper for {!Ketrew_artifact.t} and {!Ketrew_artifact.Type.t}. *)
+class type user_artifact = object
+  (**/**)
+  method artifact_type : Ketrew_artifact.Type.t
+  (**/**)
+
+  method path : string
+  (** Return the path of the artifact if the artifact is a volume containing
+      a single file or directory. *)
+end
+
+val file: ?host:Ketrew_host.t -> string -> user_artifact
+(** Create a volume containing one file. *)
+
+val unit : user_artifact
+(** The artifact that is “never ready” (i.e. the target associated will always
+    be (re-)run if activated). *)
+
+(** {3 Targets} *)
+
+(** Wrapper around {!Ketrew_target.t}. *)
+class type user_target =
+  object
+
+    method activate : unit
+    (** Activate the target. *)
+
+    method name : string
+    (** Get the name of the target *)
+
+    (**/**)
+    method is_active: bool
+    method id: Ketrew_pervasives.Unique_id.t
+    method render: Ketrew_target.t
+    method dependencies: user_target list
+    (**/**)
+  end
+
+(** Create a new target. *)
+val target :
+  ?active:bool ->
+  ?dependencies:user_target list ->
+  ?make:Ketrew_target.build_process ->
+  ?returns:user_artifact -> string -> user_target
+
+(** Create a new target but with [~active:true]. *)
+val active :
+  ?dependencies:user_target list ->
+  ?make:Ketrew_target.build_process ->
+  ?returns:user_artifact -> string -> user_target
+
+val nohup_setsid :
+  host:Ketrew_host.t -> string list -> Ketrew_target.build_process
+(** Create a nohup_setsid build process. *)
+
+val direct_shell_command :
+  ?host:Ketrew_host.t -> string -> Ketrew_target.build_process
+(** Create a shell command process (not “long-running”). *)
+
+(** {3 Workflows} *)
+
+type workflow
+(** Workflows wrap collections of targets. *)
+
+val workflow : user_target list -> workflow
+(** Create a workflow with a list of targets. *)
+
+val add_target : workflow -> user_target -> unit
+(** Add a target to a workflow, imperative style. *)
+
+val make : workflow -> Ketrew_command_line.user_todo list
+(** Convert a workflow into a command expected by {!Ketrew_command_line} *)
+
+val make_workflow : user_target list -> Ketrew_command_line.user_todo list
+(** Call {!workflow} and then {!make} at once. *)
