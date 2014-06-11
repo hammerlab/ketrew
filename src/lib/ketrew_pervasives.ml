@@ -87,5 +87,6 @@ module Error = struct
   | `Failed_to_kill msg -> fmt "Failed to kill target: %S" msg
   | `Long_running_failed_to_start (id, msg) ->
     fmt "Long running %s failed to start: %s" id msg
+  | `Failure msg -> fmt "Failure: %S" msg
 
 end
