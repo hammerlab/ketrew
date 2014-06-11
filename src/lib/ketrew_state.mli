@@ -56,38 +56,32 @@ val current_targets :
   Deferred_result.t
 (** Get the list of targets currently handled. *)
   
-val what_happened_to_string :
-  [< `Target_activated of string * [< `Dependency ]
-   | `Target_died of
-       string *
-       [< `Dependencies_died
-       | `Failed_to_start of string * string
-       | `Failed_to_update of string * string
-       | `Plugin_not_found of string
-       | `Wrong_type
-       | `Process_failure ]
-   | `Target_started of string * string
-   | `Target_succeeded of
-       string * [< `Artifact_literal | `Artifact_ready | `Process_success ] ] ->
-  string
+type happening =
+  [ `Target_activated of Ketrew_target.id * [ `Dependency ]
+  | `Target_died of
+      Ketrew_target.id  *
+      [ `Dependencies_died
+      | `Failed_to_start of string * string
+      | `Failed_to_update of string * string
+      | `Plugin_not_found of string
+      | `Wrong_type
+      | `Killed
+      | `Process_failure ]
+  | `Target_started of Ketrew_target.id * string
+  | `Target_succeeded of
+      Ketrew_target.id *
+      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+(** Structured log of what can happen during {!step} or {!kill}. *)
+
+val what_happened_to_string : happening -> string
 (** Transform an item of the result of {!step} to a human-readable string. *)
+
+val log_what_happened : happening -> Log.t
+(** Transform a {!happening} into {!Log.t} document. *)
 
 val step :
   t ->
-  ([ `Target_activated of Ketrew_target.id * [ `Dependency ]
-   | `Target_died of
-       Ketrew_target.id  *
-       [ `Dependencies_died
-       | `Failed_to_start of string * string
-       | `Failed_to_update of string * string
-       | `Plugin_not_found of string
-       | `Wrong_type
-       | `Process_failure ]
-   | `Target_started of Ketrew_target.id * string
-   | `Target_succeeded of
-       Ketrew_target.id *
-       [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
-   list,
+  (happening list,
    [> `Database of [> `Load ] * string
     | `Database_unavailable of Ketrew_target.id
     | `Host of [> `Execution of string * string * string * string ]
@@ -111,3 +105,19 @@ val get_status : t -> Ketrew_target.id ->
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
 (** Get the state description of a given target (by “id”). *)
+
+val kill:  t -> id:Ketrew_target.id ->
+  ([> `Target_died of Unique_id.t *
+                      [> `Killed | `Plugin_not_found of string ] ]
+     list,
+   [> `Database of [> `Load ] * string
+   | `Failed_to_kill of string
+   | `Database_unavailable of string
+   | `IO of
+        [> `Read_file_exn of string * exn
+        | `Write_file_exn of string * exn ]
+   | `Missing_data of string
+   | `Not_implemented of string
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+(** Kill a target *)

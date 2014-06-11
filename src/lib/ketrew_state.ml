@@ -317,6 +317,22 @@ let _update_status t ~target ~bookkeeping =
                                 `Failed_to_update (plugin_name, s))]
       end)
 
+type happening =
+  [ `Target_activated of Ketrew_target.id * [ `Dependency ]
+  | `Target_died of
+      Ketrew_target.id  *
+      [ `Dependencies_died
+      | `Failed_to_start of string * string
+      | `Failed_to_update of string * string
+      | `Plugin_not_found of string
+      | `Wrong_type
+      | `Killed
+      | `Process_failure ]
+  | `Target_started of Ketrew_target.id * string
+  | `Target_succeeded of
+      Ketrew_target.id *
+      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+
 let log_what_happened =
   let open Log in
   function
@@ -339,6 +355,7 @@ let log_what_happened =
       | `Failed_to_update (plugin_name, msg) ->
         sf "[%s] failed to update: %s" plugin_name msg
       | `Plugin_not_found p -> sf "Plugin %S not found" p
+      | `Killed -> s "Killed"
       | `Wrong_type ->  s "Wrong typing"
       | `Process_failure -> s "Process_failure")
 
@@ -402,5 +419,38 @@ let get_status t id =
   database t >>= fun db ->
   get_target db id >>= fun target ->
   return target.Target.history 
+
+let kill t ~id =
+  database t >>= fun db ->
+  get_target db id >>= fun target ->
+  begin match target.Target.history with
+  | `Created c ->
+    add_or_update_target t Target.(
+        kill_exn (activate_exn target ~by:`User)
+          ~msg:(fmt "Manual killing"))
+    >>= fun () ->
+    return [`Target_died (Target.id target, `Killed)]
+  | `Activated _ ->
+    add_or_update_target t Target.(
+        kill_exn target ~msg:(fmt "Manual killing"))
+    >>= fun () ->
+    return [`Target_died (Target.id target, `Killed)]
+  | `Running (bookkeeping, activation) ->
+    let plugin_name = bookkeeping.Target.plugin_name in
+    with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
+        let module Long_running = (val m : LONG_RUNNING) in
+        let run_parameters =
+          Long_running.deserialize_exn bookkeeping.Target.run_parameters in
+        Long_running.kill run_parameters
+        >>= function
+        | `Killed rp ->
+          add_or_update_target t Target.(
+              kill_exn target ~msg:(fmt "Manual killing (%s)" plugin_name))
+          >>= fun () ->
+          return [`Target_died (Target.id target, `Killed)])
+  | `Dead _ | `Successful _ ->
+    return []
+  end
+
 
 

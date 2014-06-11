@@ -84,6 +84,7 @@ module Error = struct
   | `Database_unavailable s -> fmt "DB %s" s
   | `Not_implemented s -> fmt "Not-impl %S" s
   | `Missing_data p -> fmt "missing data at id: %s" p
+  | `Failed_to_kill msg -> fmt "Failed to kill target: %S" msg
   | `Long_running_failed_to_start (id, msg) ->
     fmt "Long running %s failed to start: %s" id msg
 
