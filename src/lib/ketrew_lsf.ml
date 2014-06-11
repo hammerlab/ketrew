@@ -145,19 +145,19 @@ let update = function
     get_lsf_job_status run.created.host run.lsf_id
     >>= fun status ->
     begin match Option.bind log List.last with
-    | None when status = `Failed ->
+    | None when status = `Failed || status = `Done ->
+      (* yes, Done without log ⇒ failed *)
       return (`Failed (run_parameters, fmt "LSF status"))
-    | None ->
-      (* when status = `Running || status = `Done ->
-         maybe LSF says done but the logs has not been written yet?
-         so next time it should resolve *)
+    | None -> (* when status = `Running -*)
       return (`Still_running run_parameters)
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
     | Some (`Success  date) ->
       return (`Succeeded run_parameters)
-    | Some other ->
+    | Some other when status = `Running ->
       return (`Still_running run_parameters)
+    | Some other ->
+      return (`Failed (run_parameters, fmt "LSF status"))
     end
   end
   >>< begin function
