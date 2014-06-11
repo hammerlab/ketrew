@@ -43,6 +43,8 @@ let parse_bsub_output s =
     Int.of_string jobid
   | _ -> None
 
+
+
 let start: run_parameters -> (_, _) t = function
 | `Running _ ->
   fail (`Failed_to_start "Wrong state: already running")
@@ -99,6 +101,34 @@ let start: run_parameters -> (_, _) t = function
     end
   end
 
+let get_lsf_job_status host lsf_id =
+  let cmd = fmt "bjobs -o 'jobid stat delimiter=\"@\"' -noheader %d" lsf_id in
+  Host.get_shell_command_output host cmd
+  >>= fun (stdout, stderr) ->
+  Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
+       % s "Err: " % s stderr @ verbose);
+  let status =
+    match String.split stdout ~on:(`Character '@') with
+    | [jobid; status_string] ->
+      Log.(if Int.of_string jobid <> Some lsf_id  then
+             s "Job ID different from the one expected: "
+             % sf "%S" jobid % s " ≠ " % i lsf_id @ warning);
+      begin match String.strip status_string with
+      | "PEND" | "UNKWN" | "RUN" -> `Running
+      | "DONE" -> `Done
+      | "USUSP" | "PSUSP" | "SSUSP" | "EXIT" | "ZOMBI" -> `Failed
+      | other ->
+        Log.(s "LSF: unrocognized status string: " % sf "%S" other
+             @ error);
+        `Failed
+      end
+    | other ->
+      Log.(s "LSF: cannot parse status: " % OCaml.list (sf "%S") other
+           @ error);
+      `Failed
+  in
+  return status
+
 let update = function
 | `Created _ -> fail (`Failed_to_update "not running")
 | `Running run as run_parameters ->
@@ -112,9 +142,15 @@ let update = function
     end
     >>= fun log_content ->
     let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
-    (* TODO Also get bstatus output *)
+    get_lsf_job_status run.created.host run.lsf_id
+    >>= fun status ->
     begin match Option.bind log List.last with
+    | None when status = `Failed ->
+      return (`Failed (run_parameters, fmt "LSF status"))
     | None ->
+      (* when status = `Running || status = `Done ->
+         maybe LSF says done but the logs has not been written yet?
+         so next time it should resolve *)
       return (`Still_running run_parameters)
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))

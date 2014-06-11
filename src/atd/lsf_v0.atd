@@ -16,7 +16,7 @@ type running = {
   lsf_id: int;
   playground: path;
   script: monitored_script;
-  created: created
+  created: created;
 }
 type run_parameters = [
   | Created of created
