@@ -136,6 +136,16 @@ let make_targz_command_line argl =
   | `Error `Term -> [`Fail Log.(s "Command line")]
   | `Help | `Version -> []
 
+let run_command_with_lsf ~host ~queue cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  Log.(s "LSF on " % s (Ketrew.Host.to_string_hum host) @ normal);
+  make_workflow [
+    active "run_command_with_lsf"
+      ~make:(Ketrew_lsf.create ~queue
+               ~wall_limit:"1:30" ~processors:(`Min_max (1,1))
+               ~host [cmd])
+  ]
 
 let run_main () =
   let additional_term =
@@ -147,6 +157,8 @@ let run_main () =
     Term.(pure (function
       | "website" :: more_args -> deploy_website more_args
       | "tgz" :: more_args -> make_targz_command_line more_args
+      | "lsf" :: host :: queue :: cmd :: [] -> 
+        run_command_with_lsf ~host ~queue cmd
       | args -> 
         [`Fail Log.(s "Don't know what to do: " % OCaml.list s args)])
           $ all_args)
