@@ -1,0 +1,24 @@
+
+type host <ocaml from="Ketrew_gen_base_v0"> = abstract
+type path <ocaml from="Ketrew_gen_base_v0"> = abstract
+type monitored_script <ocaml from="Ketrew_gen_base_v0"> = abstract
+
+
+type created = {
+  host: host;
+  commands: string list;
+  queue: string option;
+  name: string option;
+  wall_limit: string option;
+  processors: [ Min of int | Min_max of (int * int) ] option;
+}
+type running = {
+  lsf_id: int;
+  playground: path;
+  script: monitored_script;
+  created: created
+}
+type run_parameters = [
+  | Created of created
+  | Running of running
+]

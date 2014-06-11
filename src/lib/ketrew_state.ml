@@ -50,6 +50,7 @@ type t = {
 }
 let default_plugins = [
   Nohup_setsid.name, (module Nohup_setsid: LONG_RUNNING);
+  Ketrew_lsf.name, (module Ketrew_lsf: LONG_RUNNING);
 ]
 let create ?(plugins=default_plugins) configuration =
   return {database_handle = None; configuration;
