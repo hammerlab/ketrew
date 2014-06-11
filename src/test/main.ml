@@ -36,6 +36,17 @@ module Test = struct
             >>= function
             | s when check s -> return ()
             | other -> fail (fmt "T: %S: wrong status" name); return ()
+          end
+        | `Kill_and (id, check) ->
+          State.kill state id
+          >>= fun happening ->
+          begin match check happening with
+          | true -> return ()
+          | false -> 
+            fail (fmt "T: %S: wrong kill happening: %s" name
+                    (List.map ~f:State.what_happened_to_string happening
+                     |> String.concat ~sep:",\n  "));
+            return ()
           end)
     >>= fun (_: unit list) ->
     return ()
@@ -342,6 +353,30 @@ let test_long_running_nohup () =
            Test.nothing_happens;
           ]
         >>= fun () ->
+
+        let id = Unique_id.create () in
+        Test.test_targets  ~state ~name:(name "sleep 42")
+          ~wait_between_steps:1.
+          [Target.active ~name:"one" ~id
+             ~make:(Nohup_setsid.create ~host [fmt "echo %S && sleep 42" String.(make 60 '=')])
+             (`Value `Unit)
+          ]
+          [`Happens (function
+             | [`Target_started (_, _)] -> true
+             | _ -> false);
+           `Happens (function (* We hope that 1 second intervals are enough *)
+             | [] -> true
+             | _ -> false);
+           `Dont_care;
+           `Dont_care;
+           `Dont_care;
+           `Kill_and (id, (function
+             | [`Target_died (_, `Killed)] -> true
+             | _ -> false));
+           Test.nothing_happens;
+          ]
+        >>= fun () ->
+
 
         return ())
     >>= fun (_ : unit list) ->

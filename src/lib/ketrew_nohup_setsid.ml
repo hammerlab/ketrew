@@ -153,6 +153,7 @@ let kill run_parameters =
       fail (`Failed_to_kill "Pid file empty")
     | Some p ->
       let cmd = fmt "kill -- -%d" p in
+      Log.(s "Killing group " % i p % s " with " % sf "%S" cmd @ very_verbose);
       Host.run_shell_command run.host cmd
       >>= fun () ->
       return (`Killed run_parameters)
