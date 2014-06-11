@@ -170,4 +170,25 @@ let update = function
     end
   end
   
-let kill _ = fail (`Failed_to_kill "kill: not implemented")
+let kill run_parameters =
+  match run_parameters with
+  | `Created _ -> fail (`Failed_to_kill "not running")
+  | `Running run as run_parameters ->
+    begin
+      let cmd = fmt "bkill %d" run.lsf_id in
+      Host.get_shell_command_output run.created.host cmd
+      >>< function
+      | `Ok (_) ->
+        return (`Killed run_parameters)
+      | `Error e ->
+        fail (`Failed_to_kill (Error.to_string e))
+    end
+  >>< begin function
+  | `Ok o -> return o
+  | `Error e ->
+    begin match e with
+    | `Failed_to_kill _ as e -> fail e
+    | `Host _ | `IO _ | `System _ as e -> 
+      fail (`Failed_to_kill (Error.to_string e))
+    end
+  end
