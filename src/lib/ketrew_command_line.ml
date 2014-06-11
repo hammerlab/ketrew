@@ -143,6 +143,31 @@ let run_state ~state ~how =
   end
   >>< Return_code.transform_error
 
+let kill ~state ids =
+  begin 
+    Deferred_list.while_sequential ids (fun id ->
+        Ketrew_state.kill state ~id
+        >>= function
+        | [`Target_died (_, `Killed)] -> 
+          Log.(s "Target " % s id % s " killed" @ normal); 
+          return ()
+        | [`Target_died (_, `Plugin_not_found p)] -> 
+          Log.(s "Target " % s id % s ": plugin not found: " % sf "%S" p
+               @ error); 
+          return ()
+        | [] ->
+          Log.(s "Target " % s id % s " was already finished" @ warning); 
+          return ()
+        | more ->
+          Log.(s "Target " % s id % s ": too much happened :" %
+               OCaml.list Ketrew_state.log_what_happened more @ error); 
+          return ()
+      )
+    >>= fun (_ : unit list) ->
+    return ()
+  end
+  >>< Return_code.transform_error
+
 let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
   let open Cmdliner in
   let version = Ketrew_version.version in
@@ -200,13 +225,26 @@ let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
             ~doc:"Run steps of the engine." 
             ~man:[])
     in
+    let kill_cmd =
+      let open Term in
+      sub_command
+        ~term:(
+          pure (fun ids ->
+              with_state ?plugins ~configuration (kill ids))
+          $ Arg.(non_empty @@ pos_all string [] @@
+                 info [] ~docv:"Target-Id" ~doc:"Kill target $(docv)"))
+        ~info:(
+          info "kill" ~version ~sdocs:"COMMON OPTIONS" 
+            ~doc:"Kill a target." 
+            ~man:[])
+    in
     let default_cmd = 
       let doc = "A Workflow Engine for Complex Experimental Workflows" in 
       let man = [] in
       sub_command
         ~term:Term.(ret (pure (`Help (`Plain, None))))
         ~info:(Term.info "ketrew" ~version ~doc ~man) in
-    let cmds = [info_cmd; call_cmd; run_cmd] in
+    let cmds = [info_cmd; call_cmd; run_cmd; kill_cmd] in
     match Term.eval_choice ?argv default_cmd cmds with
     | `Ok f -> f
     | `Error _ -> exit Return_code.cmdliner_error
