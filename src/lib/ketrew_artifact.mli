@@ -49,9 +49,7 @@ module Volume : sig
 
     val exists :
       t ->
-      (bool,
-       [> `Host of [> `Execution of string * string * string * string ] ])
-      Deferred_result.t
+      (bool, [> `Host of _ Ketrew_host.execution_error ]) Deferred_result.t
     (** Check whether the whole structure of the Volume exists on the host. *)
 
     val to_string_hum : t -> string
@@ -94,8 +92,7 @@ type t = [ `Value of value | `Volume of Volume.t ]
 
 val is_ready :
   Type.t ->
-  (bool, [> `Host of [> `Execution of string * string * string * string ] ])
-  Deferred_result.t
+  (bool, [> `Host of _ Ketrew_host.execution_error ]) Deferred_result.t
 (** Check whether an aritfact is ready, given its type.
 A “value” artifact is {i never } ready, a “volume” one is checked with {!Volume.exists}.
 This is meant to change. *)

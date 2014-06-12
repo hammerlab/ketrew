@@ -49,26 +49,29 @@ val of_uri: Uri.t -> t
 val to_string_hum : t -> string
 (** Get a display-friendly string for the host (“name”, or hostname). *)
 
+type 'a execution_error = 'a constraint 
+  'a = [> `Execution of
+            <host : string; stdout: string option; stderr: string option;
+             message: string> ]
+(** Error value for failed executions ({i Experimental} structural record). *)
+
 val get_shell_command_output :
   t ->
   string ->
-  (string * string,
-   [> `Host of [> `Execution of string * string * string * string ] ])
-  Deferred_result.t
+  (string * string, [> `Host of 'a execution_error]) Deferred_result.t
 (** Run a shell command on the host, and return its [(stdout, stderr)] pair
     (succeeds {i iff } the exit status is [0]). *)
 
 val get_shell_command_return_value :
   t ->
   string ->
-  (int, [> `Host of [> `Execution of string * string * string * string ] ])
-  Deferred_result.t
+  (int, [> `Host of _ execution_error ]) Deferred_result.t
 (** Run a shell command on the host, and return its exit status value. *)
 
 val run_shell_command :
   t ->
   string ->
-  (unit, [> `Host of [> `Execution of string * string * string * string ] ])
+  (unit, [> `Host of _ execution_error ])
   Deferred_result.t
 (** Run a shell command on the host (succeeds {i iff } the exit status is [0]).
 *)
@@ -76,7 +79,7 @@ val run_shell_command :
 val do_files_exist :
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
-  (bool, [> `Host of [> `Execution of string * string * string * string ] ])
+  (bool, [> `Host of _ execution_error ])
   Deferred_result.t
 (** Check existence of a list of files/directories. *)
 
@@ -88,7 +91,7 @@ val ensure_directory :
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
   (unit,
-   [> `Host of [> `Execution of string * string * string * string ]
+   [> `Host of _ execution_error
     | `System of
         [> `Make_directory of string ] *
         [> `Exn of exn | `Wrong_access_rights of int ] ])
@@ -100,7 +103,7 @@ val put_file :
   path:<kind: Ketrew_path.file; ..>  Ketrew_path.t ->
   content:string ->
   (unit,
-   [> `Host of [> `Execution of string * string * string * string ]
+   [> `Host of _ execution_error
     | `IO of [> `Write_file_exn of Ketrew_pervasives.IO.path * exn ] ])
   Deferred_result.t
 (** Write a file on the host at [path] containing [contents]. *)

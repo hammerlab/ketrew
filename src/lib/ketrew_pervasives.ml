@@ -86,8 +86,13 @@ module Error = struct
   | `IO _ as io -> IO.error_to_string io
   | `System _ as s -> System.error_to_string s
   | `Database (`Load, path) -> fmt "DB-load: %S" path
-  | `Host (`Execution (one, two, three, four)) ->
-    fmt "Host-exec(%s, %s, %s, %s)" one two three four
+  | `Host (`Execution exec) ->
+    fmt "Host:%S exec error: %S%s" exec#host exec#message
+      (match exec#stdout, exec#stderr with
+       | None, None -> ""
+       | oo, oe -> fmt " (%S, %S)" 
+                     (Option.value ~default:"" oo)
+                     (Option.value ~default:"" oe))
   | `Persistent_state (`Deserilization s) ->
     fmt "Persistent_state-Deserilization: %S" s
   | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s

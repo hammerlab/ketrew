@@ -19,14 +19,14 @@ module Command : sig
     val get_output :
       t ->
       (string * string,
-       [> `Host of [> `Execution of string * string * string * string ] ])
+       [> `Host of _ Ketrew_host.execution_error ])
       Deferred_result.t
     (** Run the command and get its [(stdout, stderr)] pair. *)
 
     val run :
       t ->
       (unit,
-       [> `Host of [> `Execution of string * string * string * string ] ])
+       [> `Host of _ Ketrew_host.execution_error ])
       Deferred_result.t
     (** Run the command and ignore its [(stdout, stderr)] pair. *)
 

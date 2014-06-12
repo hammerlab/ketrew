@@ -93,8 +93,20 @@ let of_string s =
 
 let to_string_hum t = t.name
 
-let fail_exec t ?(out="") ?(err="") msg =
-  fail (`Host (`Execution (to_string_hum t, out, err, msg)))
+(* Experimenting with even more structurally typed error values: *)
+type 'a execution_error = 'a constraint 
+  'a = [> `Execution of <host : string; stdout: string option; 
+          stderr: string option; message: string> ]
+
+let fail_exec t ?out ?err msg: 
+  (_, [> `Host of _ execution_error ]) Deferred_result.t =
+  let v = object
+    method host = to_string_hum t 
+    method stdout = out
+    method stderr = err
+    method message  = msg
+  end in
+  fail (`Host (`Execution v))
 
 let get_shell_command_output t cmd =
   match t.connection with
