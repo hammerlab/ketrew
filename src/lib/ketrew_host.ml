@@ -33,6 +33,53 @@ module Ssh = struct
       | Some u -> [fmt "%s@%s" u ssh.address])
     @ [command]
 
+  (** Strong version of an SSH call, trying to be like [Unix.exec]. 
+      It “stores” the value of ["$?"] in the stderr channel
+      enclosing the error log of the actual command between (hopefully) unique
+      strings.
+
+      It calls the command (list of strings, [argv]-like) with [exec]
+      inside a sub-shell, and escapes all the arguments with [Filename.quote].
+
+      Then it forces the “script” to return ['0'], if the overall execution of
+      the whole SSH command does not return ['0'], we know that the problem
+      is with the SSH call, not the command.
+  *)
+  let generic_ssh_exec ssh command =
+    let unique_tag = Unique_id.create () in
+    let spicied_command =
+      fmt "echo -n %s >&2 ; \
+           (exec %s) ; 
+           echo -n %s$? >&2 ; 
+           exit 0" 
+        unique_tag
+        (List.map command ~f:(Filename.quote) |> String.concat ~sep:" ")
+        unique_tag
+    in
+    let ssh_exec = do_ssh ssh spicied_command in
+    let parse_error_log out err =
+      let fail_parsing msg = fail (`Ssh_failure (`Wrong_log msg, err)) in
+      let pieces = String.split ~on:(`String unique_tag) err in
+      match pieces with
+      | "" :: actual_stderr :: return_value :: [] ->
+        begin match Int.of_string (String.strip return_value) with
+        | Some r -> return (out, actual_stderr, r)
+        | None -> fail_parsing "Return value not an integer"
+        end
+      | somehting_else -> fail_parsing "Cannot parse error log"
+    in
+    begin Ketrew_unix_process.exec ssh_exec
+      >>< function
+      | `Ok (out, err, `Exited 0) -> parse_error_log out err
+      | `Ok (out, err, other) ->
+        fail (`Ssh_failure (`Wrong_status other, err))
+      | `Error (`Process _ as process_error) ->
+        let msg = Ketrew_unix_process.error_to_string process_error in
+        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_exec 
+             % s " failed: " %s msg @ verbose);
+        fail (`Exec_failure msg)
+    end
+
   (** Generate an SCP command for the given host with the destination
       directory or file path. *)
   let scp_push ssh ~src ~dest =
@@ -98,6 +145,8 @@ type 'a execution_error = 'a constraint
   'a = [> `Execution of <host : string; stdout: string option; 
           stderr: string option; message: string> ]
 
+let fail_host e = fail (`Host e)
+
 let fail_exec t ?out ?err msg: 
   (_, [> `Host of _ execution_error ]) Deferred_result.t =
   let v = object
@@ -106,7 +155,7 @@ let fail_exec t ?out ?err msg:
     method stderr = err
     method message  = msg
   end in
-  fail (`Host (`Execution v))
+  fail_host (`Execution v)
 
 let get_shell_command_output t cmd =
   match t.connection with
@@ -159,6 +208,32 @@ let run_shell_command t cmd =
   get_shell_command_output t cmd
   >>= fun (_, _) ->
   return ()
+
+let execute t argl =
+  let ret out err exited =
+    return (object
+      method stdout = out method stderr = err method exited = exited
+    end)
+  in
+  match t.connection with
+  | `Localhost ->
+    begin Ketrew_unix_process.exec argl
+      >>< function
+      | `Ok (out, err, `Exited n) -> ret out err n
+      | `Ok (out, err, other) ->
+        fail_exec t ~out ~err (System.Shell.status_to_string other)
+      | `Error (`Process _ as process_error) ->
+        let msg = Ketrew_unix_process.error_to_string process_error in
+        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl 
+             % s " failed: " %s msg @ verbose);
+        fail_exec t msg
+    end
+  | `Ssh ssh ->
+    begin Ssh.generic_ssh_exec ssh argl
+      >>< function
+      | `Ok (out, err, exited) -> ret out err exited
+      | `Error e -> fail (`Host e)
+    end
 
 let do_files_exist t paths =
   let cmd =

@@ -76,6 +76,20 @@ val run_shell_command :
 (** Run a shell command on the host (succeeds {i iff } the exit status is [0]).
 *)
 
+(** Generic execution which tries to behave like [Unix.execv] even
+    on top of SSH. *)
+val execute: t -> string list ->
+  (<stdout: string; stderr: string; exited: int>,
+   [> `Host of
+        [> `Exec_failure of string
+        | `Execution of
+             <host : string; stdout: string option; stderr: string option;
+              message: string>
+        | `Ssh_failure of
+             [> `Wrong_log of string
+             | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
+   ]) Deferred_result.t
+
 val do_files_exist :
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
