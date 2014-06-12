@@ -3,16 +3,44 @@ Ketrew: Keep Track of Experimental Workflows
 
 This is **Work in Progress**, not ready for use.
 
+This documentation is available at <http://seb.mondet.org/ketrew/>.
+
 Build & Install
 ---------------
 
-Ketrew uses the `ocp-build` build system and depends on
-`cmdliner`, `nonstd`, `pvem`, `docout`,  `sosa`,  `pvem_lwt_unix`, `cmdliner`,
-and `atdgen`.
+### Dependencies
+
+Ketrew depends on
+
+- `nonstd`: nano-library providing a portable extract of `Core_kernel`
+- `pvem`: error monad
+- `docout`: logging with `smart-print`
+- `sosa`:  String module/functor
+- `pvem_lwt_unix`: `Lwt_unix` wrapped in a `Pvem.t` (error monad) with more
+precise error types.
+- `uri`:
+parse an [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
+(`uri` itself depends on `camlp4`).
+- `cmdliner`: command line parsing
+- `yojson`: JSON parsing/printing
+- `atdgen/atd`: definition of serialization formats (used with `Yojson`).
+
+and uses the `ocp-build` build system.
+
+The `please.sh` script can call `opam` itself:
+
+    ./please.sh get-dependencies
+
+### Build
+
+Then you may setup and build everything:
 
     ./please.sh build
 
-You should *not* install `ketrew` yet, but you can always call at your own risk:
+(for incremental compilation while developping please use: `ocp-build <target>`
+directly)
+
+You should not install `ketrew` yet, but you can always call at your own risk:
 
     ocp-build install
 
@@ -31,22 +59,6 @@ an SSH host for which the user running the test does not need password.
 The test will run some commands on that host and create files and directories
 in its `/tmp` directory.
 
-There is also a “command line” test, see:
-
-    _obuild/ketrew-cli-test/ketrew-cli-test.asm --help
-
-for now, `cli.ml` has only one workflow (using the library, no EDSL), that can
-be added/activated with:
-
-    _obuild/ketrew-cli-test/ketrew-cli-test.asm call website
-
-and then run with:
-
-    _obuild/ketrew-cli-test/ketrew-cli-test.asm run fix
-
-It should build the documentation and commit it in the `gh-pages` branch (or
-fail, for example, if the Git tree is not clean).
-
 Documentation
 -------------
 
@@ -54,5 +66,7 @@ The documentation depends on [omd](https://github.com/ocaml/omd), and
 Graphviz's `dot`:
 
     please.sh doc
+
+and check-out `_doc/index.html`.
 
 
