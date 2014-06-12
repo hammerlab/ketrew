@@ -123,33 +123,32 @@ make_doc () {
 <!DOCTYPE html>
 <html>
 <head>
-  <link rel="stylesheet" href="api/style.css" type="text/css">
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
   <meta charset="utf-8">
   <title>Ketrew $version_string</title>
 </head>
-  <body>
+  <body><div class="container">
 END_HTML
   omd README.md >> $index
   omd << END_MD >> $index
-Code Documentation
-------------------
-
-- [ocaml-doc for the API](api/index.html)
-
-<a href="$image_file">
-<object type="image/svg+xml" data="$image_file"
-style="transform-origin: 0% 100% 0;
-       transform: translateY(-100%) rotate(90deg);"
-  >Your browser does not support SVG</object>
-</a>
 
 Authors
 -------
 
 $markdown_authors_list
 
+Code Documentation
+------------------
+
+- [ocaml-doc for the API](api/index.html)
+
+<object class="img-rounded"  type="image/svg+xml" data="$image_file"
+style="transform-origin: 0% 100% 0;
+       transform: translateY(-100%) rotate(90deg);"
+  >Your browser does not support SVG</object>
 END_MD
-  echo "</body><html>" >> $index
+  echo "</div></body><html>" >> $index
 }
 
 run_top () {
