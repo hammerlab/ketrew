@@ -184,6 +184,10 @@ signature () {
   ocamlfind ocamlc -thread -I _obuild/ketrew/ -package $packages -i -c $ml_file
 }
 
+get_dependencies () {
+  opam install ocp-build $findlib_packages
+}
+
 usage () {
   echo "usage: $0"
   echo "       $0 {setup,build,clean,doc,top,help}"
@@ -198,6 +202,7 @@ while [ "$1" != "" ]; do
     "top" ) run_top ;;
     "help" )  usage ;;
     "sig" ) signature $2; shift ;;
+    "get-dependencies" ) get_dependencies ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
   shift
