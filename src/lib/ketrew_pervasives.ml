@@ -7,13 +7,24 @@ include  Pvem_lwt_unix.Deferred_result
 module String = struct
   include Sosa.Native_string
 end
-let printf = `No
-let sprintf = `No
-let fmt = Printf.sprintf
 
+let printf = `No
+(** We disable [printf]. *)
+
+let sprintf = `No
+(** We disable [sprintf], renamed as: *)
+
+let fmt = Printf.sprintf
+(** The only function dealing with “formats.” *)
 
 let global_debug_level = ref 2
+(** Global reference. *)
+
 let global_with_color = ref true
+(** Global reference. *)
+
+(** Application of the functor [Docout.Make_logger] to write to [stderr]
+    without buffering. *)
 module Log = 
   Docout.Make_logger (struct
     type ('a, 'b) result = 'a
@@ -26,18 +37,16 @@ module Log =
     let name = "ketrew"
   end)
 
-let failwithf fmt =
-  ksprintf (fun str ->
-      Log.(s "Failing: " % s str @ error);
-      failwith str
-    ) fmt
-
+(** Function that have a documented, easy to check contract, can raise
+    [Invalid_argument _] (their name should end in [_exn]). *)
 let invalid_argument_exn ?(where="pervasives") what =
   raise (Invalid_argument (fmt "[%S]: %s" where what))
 
+(** Handle timestamps. *)
 module Time = struct
   include Ketrew_gen_base_v0_t
   type t = time
+
   let now () : t = Unix.gettimeofday ()
 
   let to_filename f =
@@ -54,8 +63,8 @@ module Time = struct
 end
 
 
+(** Provide pseudo-unique identifiers. *)
 module Unique_id = struct
-  (** Provide pseudo-unique identifiers. *)
 
   include Ketrew_gen_base_v0_t
   type t = unique_id
@@ -67,6 +76,7 @@ module Unique_id = struct
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
 
+(** Deal with error values common accros the library. *)
 module Error = struct
 
   let to_string = function
