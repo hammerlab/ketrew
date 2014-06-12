@@ -23,7 +23,7 @@ let unit = object
   method path = failwith "Unit has no path"
 end
 
-let file ?(host= Host.localhost) path  =
+let file ?(host= Host.tmp_on_localhost) path  =
   let basename = Filename.basename path in
   object
     method artifact_type: Artifact.Type.t =

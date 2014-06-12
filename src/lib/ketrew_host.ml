@@ -115,8 +115,12 @@ type t = Ketrew_gen_base_v0_t.host = {
 let create ?(connection=`Localhost) ?playground name =
   {name; connection; playground}
 
-let localhost = 
-  create ~playground:(Path.absolute_directory_exn "/tmp")  "localhost"
+let localhost ?playground ?(name="localhost") () = 
+  create ~connection:`Localhost ?playground name
+
+let tmp_on_localhost = 
+  localhost ~playground:(Path.absolute_directory_exn "/tmp")
+    ~name:"file://tmp" ()
 
 let ssh ?playground ?port ?user ?name address =
   create ?playground Option.(value name ~default:address)

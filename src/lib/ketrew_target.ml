@@ -13,7 +13,7 @@ module Command = struct
     host: Host.t;
     action: [ `Shell of string ];
   }
-  let shell ?(host=Host.localhost) s = { host; action = `Shell s}
+  let shell ?(host=Host.tmp_on_localhost) s = { host; action = `Shell s}
 
   let get_host t = t.host
 

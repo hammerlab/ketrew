@@ -27,7 +27,7 @@ let deploy_website more_args =
       create ~name:"Get current branch"
         ~make:(`Direct_command (Command.shell
                               (fmt "git symbolic-ref --short HEAD > /tmp/%s" branch_file)))
-        (`Volume Artifact.Volume.(create ~host:Host.localhost 
+        (`Volume Artifact.Volume.(create ~host:Host.tmp_on_localhost 
                                     ~root:(Path.absolute_directory_exn "/tmp")
                                     (file branch_file))))
   in

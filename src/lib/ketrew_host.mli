@@ -10,28 +10,20 @@ module Ssh : sig
       (call [ssh] without password/question):
       {ul
         {li for OpenSSH, it is ["-oBatchMode=yes"],}
-        {li for DropBear, it ["-s"].  }
+        {li for DropBear, it is ["-s"].  }
       }*)
 
-  type t
-   (** Container of SSH connection parameters. *)
-
 end
-
-type connection = [ `Localhost | `Ssh of Ssh.t ]
-(** Specification of connection methods. *)
 
 type t = Ketrew_gen_base_v0_t.host
 (** Host container. *)
 
-val create :
-  ?connection:connection ->
-  ?playground:Ketrew_path.absolute_directory -> string -> t
-(** Create a [Host.t], the playground is an optional directory on the host,
-    where {i Ketrew} may put temporary scripts, logs, pid-files, etc. *)
+val localhost: ?playground:Ketrew_path.absolute_directory ->
+  ?name:string -> unit -> t
+(** The host ["localhost"] (i.e. not over SSH).  *)
 
-val localhost : t
-(** The host [localhost] is [`Localhost] with ["/tmp/"] as playground. *)
+val tmp_on_localhost: t
+(** The host ["localhost"], with ["/tmp"] as [playground]. *)
 
 val ssh :
   ?playground:Ketrew_path.absolute_directory ->

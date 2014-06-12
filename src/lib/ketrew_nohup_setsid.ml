@@ -27,7 +27,7 @@ let deserialize_exn s =
   end
 
 let name = "nohup-setsid"
-let create ?(host=Host.localhost) cmds =
+let create ?(host=Host.tmp_on_localhost) cmds =
   `Long_running (name, `Created (host, cmds) |> serialize)
 
 let out_file_path ~playground =

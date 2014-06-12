@@ -16,7 +16,7 @@ let deserialize_exn s =
 
 let name = "LSF"
 let create
-    ?(host=Host.localhost)
+    ?(host=Host.tmp_on_localhost)
     ?queue ?name ?wall_limit ?processors
     commands =
   `Long_running ("LSF",
