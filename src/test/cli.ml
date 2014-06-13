@@ -5,9 +5,7 @@
 
 *)
 
-open Ketrew_pervasives
-
-let db_file = "/tmp/ketrew_cli_test_database"
+open Printf
 
 (*
 
@@ -21,12 +19,12 @@ tree) which show ketrew's handling of errors in dependencies.
 *)
 let deploy_website more_args =
   let open Ketrew.EDSL in
-  let branch_file = Filename.concat "/tmp" (Unique_id.create ()) in
+  let branch_file = Filename.temp_file "ketrewcli" "git_branch" in
   let write_branch =
     target "Get current branch"
       ~returns:(file branch_file)
       ~make:(direct_shell_command 
-               (fmt "git symbolic-ref --short HEAD > %s" branch_file))
+               (sprintf "git symbolic-ref --short HEAD > %s" branch_file))
   in
   let make_doc = 
     target "Make doc" ~make:(direct_shell_command "please.sh doc")
@@ -35,19 +33,19 @@ let deploy_website more_args =
     target "Check out gh-pages"
       ~dependencies:[write_branch; make_doc]
       ~make:(direct_shell_command
-               (fmt "git checkout gh-pages || git checkout -t origin/gh-pages"))
+               (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
   in
   let move_website =
     target "Move _doc/" ~dependencies:[check_out_gh_pages]
-        ~make:(direct_shell_command (fmt "cp -r _doc/* .")) in
+        ~make:(direct_shell_command (sprintf "cp -r _doc/* .")) in
   let commit_website =
     target "Commit" ~dependencies:[move_website]
       ~make:(direct_shell_command
-               (fmt "git add api && git ci -a -m 'update website' ")) in
+               (sprintf "git add api && git ci -a -m 'update website' ")) in
   let get_back =
     target "Check-out original branch" ~dependencies:[ commit_website]
       ~make:(direct_shell_command
-               (fmt "[ -f %s ] && git checkout `cat %s`"
+               (sprintf "[ -f %s ] && git checkout `cat %s`"
                   branch_file branch_file))
   in
   run get_back
@@ -58,21 +56,21 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
   let dest_base =
     match dest_prefix with
     | Some s -> s 
-    | None -> fmt  "/tmp/backup_%s" Time.(now () |> to_filename)
+    | None -> sprintf  "/tmp/backup_from_ketrew_cli"
   in
-  let destination ext = file ~host (fmt "%s.%s" dest_base ext) in
+  let destination ext = file ~host (sprintf "%s.%s" dest_base ext) in
   let targz = destination "tar.gz" in
   let make_targz =
     target ~returns:targz "make-tar.gz" ~dependencies:[]
       ~make:(nohup_setsid ~host [
-          fmt "tar cfz '%s' '%s'" targz#path dir
+          sprintf "tar cfz '%s' '%s'" targz#path dir
         ])
   in
   let md5 = destination "md5" in
   let md5_targz =
     target ~returns:md5 "make-md5-of-tar.gz" ~dependencies:[make_targz]
       ~make:(nohup_setsid ~host [
-          fmt "md5sum '%s' > '%s'" targz#path md5#path
+          sprintf "md5sum '%s' > '%s'" targz#path md5#path
         ]) 
   in
   let gpg =
@@ -83,12 +81,12 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
       let make_it =
         target "make-gpg-of-tar.gz" ~returns:gpg_file ~dependencies:[make_targz]
           ~make:(nohup_setsid ~host [
-              fmt "gpg -c --passphrase bouh -o '%s' '%s'"
+              sprintf "gpg -c --passphrase bouh -o '%s' '%s'"
                 gpg_file#path targz#path
             ]) in
       let clean_up =
         target "rm-tar.gz" ~dependencies:[make_it]
-          ~make:(nohup_setsid ~host [ fmt "rm -f '%s'" targz#path ]) in
+          ~make:(nohup_setsid ~host [ sprintf "rm -f '%s'" targz#path ]) in
       [make_it; clean_up]
   in
   let common_ancestor =
@@ -120,13 +118,12 @@ let make_targz_command_line argl =
   | `Ok todo -> todo
   | `Error `Exn
   | `Error `Parse
-  | `Error `Term -> [`Fail Log.(s "Command line")]
+  | `Error `Term -> ketrew_fail "Wrong Command line"
   | `Help | `Version -> []
 
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  Log.(s "LSF on " % s (Ketrew.Host.to_string_hum host) @ normal);
   run (
     target "run_command_with_lsf"
       ~make:(Ketrew_lsf.create ~queue
@@ -134,25 +131,24 @@ let run_command_with_lsf ~host ~queue cmd =
                ~host [cmd])
   )
 
-let run_main () =
-  let additional_term =
-    let open Cmdliner in
-    let all_args =
-      let doc = " TODO: write some doc here " in
-      Arg.(value & pos_all string [] & info [] ~docv:"SPECIFICATION" ~doc)
-    in
-    Term.(pure (function
-      | "website" :: more_args -> deploy_website more_args
-      | "tgz" :: more_args -> make_targz_command_line more_args
-      | "lsf" :: host :: queue :: cmd :: [] -> 
-        run_command_with_lsf ~host ~queue cmd
-      | args -> 
-        [`Fail Log.(s "Don't know what to do: " % OCaml.list s args)])
-          $ all_args)
+let additional_term =
+  let open Cmdliner in
+  let all_args =
+    let doc = " TODO: write some doc here " in
+    Arg.(value & pos_all string [] & info [] ~docv:"SPECIFICATION" ~doc)
   in
-  Ketrew.Command_line.run_main additional_term
+  Term.(pure (function
+    | "website" :: more_args -> deploy_website more_args
+    | "tgz" :: more_args -> make_targz_command_line more_args
+    | "lsf" :: host :: queue :: cmd :: [] -> 
+      run_command_with_lsf ~host ~queue cmd
+    | args -> 
+      Ketrew.EDSL.ketrew_fail "Don't know what to do with %s"
+        (String.concat ", " args))
+        $ all_args)
 
 
 let `Never_returns =
+  let db_file = "/tmp/ketrew_cli_test_database" in
   let configuration = Ketrew_state.Configuration.create db_file () in
-  run_main ~configuration ()
+  Ketrew.Command_line.run_main ~additional_term ~configuration ()

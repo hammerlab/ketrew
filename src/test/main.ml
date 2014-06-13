@@ -404,7 +404,7 @@ let run_main () =
   in
   let argv =
     Array.of_list (Array.to_list Sys.argv |> List.filter ~f:((<>) "cli")) in
-  Ketrew.Command_line.run_main ~argv additional_term
+  Ketrew.Command_line.run_main ~argv ~additional_term ()
 
 let () =
   let argl = Sys.argv |> Array.to_list in
