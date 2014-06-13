@@ -44,12 +44,117 @@ You should not install `ketrew` yet, but you can always call at your own risk:
 
     ocp-build install
 
+### Build The Documentation
+
+The documentation depends on [omd](https://github.com/ocaml/omd), and
+Graphviz's `dot`:
+
+    please.sh doc
+
+and check-out `_doc/index.html`.
+
+Usage
+-----
+
+A workflow script is an OCaml file (script, compiled, or even inside the
+toplevel).
+
+The minimal file running Ketrew would be:
+
+```ocaml
+let `Never_returns =
+  let db_file = "/path/to/ketrew_database" in
+  let configuration = Ketrew_state.Configuration.create db_file () in
+  Ketrew.Command_line.run_main ~configuration ()
+```
+
+this provides Ketrew's command-line interface, but without any user-defined
+commands/workflows (see `<script.ml> --help`).
+
+> *Tip*: The build system can launch the OCaml toplevel (`utop`, or `ocaml`)
+> with the library loaded, **and** `Ketrew.Command_line.run_main`
+> can be fed a `~argv` argument. For example:
+> 
+> ```ocaml
+> let `Never_returns =
+>   let db_file = "/tmp/ketrew_database_readme" in
+>   let configuration = Ketrew_state.Configuration.create db_file () in
+>   Ketrew.Command_line.run_main ~configuration  ~argv:[|""; "--help"|] ()
+> ```
+> 
+> will display the default help message.
+
+Then, one can add create functions that create and `run` workflows:
+
+```ocaml
+let run_command_with_lsf cmd =
+  let open Ketrew.EDSL in
+  let host = 
+    parse_host "ssh://user42@MyLSFCluster/home/user42/kplayground?shell=bash" in
+  let queue = "normalpeople" in
+  run (
+    target "run_command_with_lsf"
+      ~make:(lsf ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1))
+               ~host [cmd])
+  )
+```
+
+those can be added to the command-line by providing a `Cmdliner.Term.t`
+(see [documentation](http://erratique.ch/software/cmdliner))
+to `run_main`.
+
+```ocaml
+let additional_term =
+  let open Cmdliner in
+  let all_args =
+    let doc = " TODO: write some doc here " in
+    Arg.(value & pos_all string [] & info [] ~docv:"SPECIFICATION" ~doc)
+  in
+  let treat_list_of_strings = function
+    | "lsf" :: cmd :: [] -> run_command_with_lsf cmd
+    | some_other_list -> 
+      Ketrew.EDSL.ketrew_fail "Don't know what to do with %s" 
+        (String.concat ", " some_other_list)
+  in
+  Term.(pure treat_list_of_strings $ all_args)
+
+let `Never_returns =
+  let db_file = "/path/to/ketrew_database" in
+  let configuration = Ketrew_state.Configuration.create db_file () in
+  Ketrew.Command_line.run_main ~additional_term ~configuration ()
+```
+
+then one should be able to add and activate mini-workflow with:
+
+    <script.ml> call lsf "<some shell command to run on the cluster>"
+
+To display the current status:
+
+    <script.ml> info
+
+To run as many steps as possible until a “fix-point” is reached:
+
+    <script.ml> run fix
+
+To kill running jobs use
+
+    <script.ml> kill <target-ID>
+
+or do an interactive murder:
+
+    <script.ml> kill --interactive
+
+See the file `src/test/cli.ml` for more examples (*work-in-progress*).
+
+
 Tests
 -----
 
 Run the tests like this:
 
+```bash
     ketrew_test_ssh=<Host> _obuild/ketrew-test/ketrew-test.asm [-no-color]
+```
 
 where `<Host>` is often an entry in your `.ssh/config` file.
 
@@ -59,14 +164,5 @@ an SSH host for which the user running the test does not need password.
 The test will run some commands on that host and create files and directories
 in its `/tmp` directory.
 
-Documentation
--------------
-
-The documentation depends on [omd](https://github.com/ocaml/omd), and
-Graphviz's `dot`:
-
-    please.sh doc
-
-and check-out `_doc/index.html`.
 
 
