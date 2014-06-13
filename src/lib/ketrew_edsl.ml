@@ -97,6 +97,10 @@ let run t =
   | first :: more -> [`Make (first, more)]
   | [] -> assert false (* there is at least the argument one *)
 
+let ketrew_fail fmt =
+  Printf.ksprintf (fun str -> [`Fail Log.(s str)]) fmt
+
+
 
 let parse_host: string -> Host.t = Host.of_string
 

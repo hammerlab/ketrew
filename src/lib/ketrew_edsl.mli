@@ -91,3 +91,8 @@ val direct_shell_command :
 
 val run: user_target ->  Ketrew_command_line.user_todo list
 (** Activate [user_target] and “make” the workflow. *)
+
+val ketrew_fail: 
+  ('a, unit, string, Ketrew_command_line.user_todo list) format4 -> 'a
+(** Printf-like function to return ask Ketrew to fail (complementary of
+    {!run}). *)
