@@ -123,3 +123,5 @@ let nohup_setsid ~host cmds =
 
 let direct_shell_command ?host cmd =
   `Direct_command Target.Command.(shell ?host cmd)
+
+let lsf = Ketrew_lsf.create

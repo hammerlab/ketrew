@@ -126,8 +126,7 @@ let run_command_with_lsf ~host ~queue cmd =
   let host = parse_host host in
   run (
     target "run_command_with_lsf"
-      ~make:(Ketrew_lsf.create ~queue
-               ~wall_limit:"1:30" ~processors:(`Min_max (1,1))
+      ~make:(lsf ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1))
                ~host [cmd])
   )
 

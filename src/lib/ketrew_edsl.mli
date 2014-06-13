@@ -87,6 +87,15 @@ val direct_shell_command :
   ?host:Ketrew_host.t -> string -> Ketrew_target.build_process
 (** Create a shell command process (not “long-running”). *)
 
+val lsf :
+  ?host:Ketrew_host.t ->
+  ?queue:string ->
+  ?name:string ->
+  ?wall_limit:string ->
+  ?processors:[ `Min of int | `Min_max of int * int ] ->
+  string list -> Ketrew_target.build_process
+(** Create an “LSF” build process. *)
+
 (** {3 Workflows} *)
 
 val run: user_target ->  Ketrew_command_line.user_todo list
