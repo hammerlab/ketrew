@@ -180,9 +180,9 @@ let kill ~state ~interactive ids =
             match target.Target.history with
             | `Running _ | `Activated _ | `Created _ ->
               let item_format = "$name ($id)" in
-              Log.(s "Add: " %n
+              Log.(s "Add: " % n
                    % bold_yellow (s (format_target ~item_format target)) % n
-                   % s " to kill list? [y/n]" @ normal);
+                   % s " to kill list? Press 'y' or 'n'" @ normal);
               begin get_key () >>= function
               | 'y' | 'Y' -> return (Some (Target.id target))
               | _ -> return None
