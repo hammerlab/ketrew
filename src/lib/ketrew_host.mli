@@ -109,6 +109,7 @@ val get_shell_command_return_value :
 (** Run a shell command on the host, and return its exit status value. *)
 
 val run_shell_command :
+  ?with_shell:shell ->
   t ->
   string ->
   (unit, [> `Host of  _ Error.non_zero_execution])  Deferred_result.t

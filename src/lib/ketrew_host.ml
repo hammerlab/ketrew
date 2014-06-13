@@ -245,8 +245,8 @@ let get_shell_command_return_value ?with_shell t cmd =
   >>= fun execution ->
   return execution#exited
     
-let run_shell_command t cmd =
-  get_shell_command_output t cmd
+let run_shell_command ?with_shell t cmd =
+  get_shell_command_output ?with_shell t cmd
   >>= fun (_, _) ->
   return ()
 
