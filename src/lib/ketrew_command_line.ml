@@ -1,5 +1,6 @@
 open Ketrew_pervasives
 module Target = Ketrew_target
+module Error = Ketrew_error
 
 type user_todo = [
   | `Fail of Log.t

@@ -16,4 +16,6 @@ module State = Ketrew_state
 
 module Command_line = Ketrew_command_line
 
+module Error = Ketrew_error
+
 module EDSL = Ketrew_edsl

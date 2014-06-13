@@ -25,8 +25,8 @@ let global_with_color = ref true
 
 (** Application of the functor [Docout.Make_logger] to write to [stderr]
     without buffering. *)
-module Log = 
-  Docout.Make_logger (struct
+module Log =  struct
+  include Docout.Make_logger (struct
     type ('a, 'b) result = 'a
     let debug_level () = !global_debug_level
     let with_color () = !global_with_color
@@ -36,6 +36,8 @@ module Log =
     let do_nothing () = ()
     let name = "ketrew"
   end)
+  let to_long_string = to_string ~line_width:max_int ~indent:4
+end
 
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
@@ -76,32 +78,3 @@ module Unique_id = struct
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
 
-(** Deal with error values common accros the library. *)
-module Error = struct
-
-  let to_string = function
-  | `Wrong_command_line sl ->
-    fmt "Wrong command line: %s" 
-      (String.concat ~sep:", " (List.map sl (fmt "%S")))
-  | `IO _ as io -> IO.error_to_string io
-  | `System _ as s -> System.error_to_string s
-  | `Database (`Load, path) -> fmt "DB-load: %S" path
-  | `Host (`Execution exec) ->
-    fmt "Host:%S exec error: %S%s" exec#host exec#message
-      (match exec#stdout, exec#stderr with
-       | None, None -> ""
-       | oo, oe -> fmt " (%S, %S)" 
-                     (Option.value ~default:"" oo)
-                     (Option.value ~default:"" oe))
-  | `Persistent_state (`Deserilization s) ->
-    fmt "Persistent_state-Deserilization: %S" s
-  | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
-  | `Database_unavailable s -> fmt "DB %s" s
-  | `Not_implemented s -> fmt "Not-impl %S" s
-  | `Missing_data p -> fmt "missing data at id: %s" p
-  | `Failed_to_kill msg -> fmt "Failed to kill target: %S" msg
-  | `Long_running_failed_to_start (id, msg) ->
-    fmt "Long running %s failed to start: %s" id msg
-  | `Failure msg -> fmt "Failure: %S" msg
-
-end

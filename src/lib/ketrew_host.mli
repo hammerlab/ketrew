@@ -41,51 +41,80 @@ val of_uri: Uri.t -> t
 val to_string_hum : t -> string
 (** Get a display-friendly string for the host (“name”, or hostname). *)
 
-type 'a execution_error = 'a constraint 
-  'a = [> `Execution of
-            <host : string; stdout: string option; stderr: string option;
-             message: string> ]
-(** Error value for failed executions ({i Experimental} structural record). *)
+module Error: sig
+
+  type 'a execution = 'a constraint 'a =
+    [> `Exec_failure of string
+    | `Execution of
+         <host : string; stdout: string option; 
+       stderr: string option; message: string>
+                                       | `Ssh_failure of
+         [> `Wrong_log of string
+         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
+
+  type 'a non_zero_execution = 'a constraint 'a = 
+    [> `Non_zero of (string * int) ] execution
+
+  val log :
+    [< `Exec_failure of string
+    | `Non_zero of (string * int)
+    | `Execution of
+         < host : string; message : string; stderr : string option;
+           stdout : string option; .. >
+    | `Ssh_failure of
+         [< `Wrong_log of string
+         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ] ->
+    Log.t
+
+end
+
+val execute: t -> string list ->
+  (<stdout: string; stderr: string; exited: int>,
+   [> `Host of _ Error.execution ]) Deferred_result.t
+(** Generic execution which tries to behave like [Unix.execv] even
+    on top of SSH. *)
+
+type shell = string -> string list
+(** A “shell” is a function that takes a command and returns, and
+     execv-style string list; e.g. ["sh"; "-c"; cmd] *)
+
+val shell_sh: sh:string -> shell
+(** Call sh-style commands using the command argument (e.g. [shell_sh "/bin/sh"]
+   for a known full-path). *)
+
+(*
+val global_default_shell: shell ref
+(** The [shell] used by {!shell_default} ([shell_sh ~sh:"sh"] if not set). *)
+
+val shell_default: shell
+(** One configurable [shell]. *)
+*)
 
 val get_shell_command_output :
+  ?shell:shell ->
   t ->
   string ->
-  (string * string, [> `Host of 'a execution_error]) Deferred_result.t
+  (string * string, [> `Host of  _ Error.non_zero_execution]) Deferred_result.t
 (** Run a shell command on the host, and return its [(stdout, stderr)] pair
     (succeeds {i iff } the exit status is [0]). *)
 
 val get_shell_command_return_value :
   t ->
   string ->
-  (int, [> `Host of _ execution_error ]) Deferred_result.t
+  (int, [> `Host of _ Error.execution ]) Deferred_result.t
 (** Run a shell command on the host, and return its exit status value. *)
 
 val run_shell_command :
   t ->
   string ->
-  (unit, [> `Host of _ execution_error ])
-  Deferred_result.t
+  (unit, [> `Host of  _ Error.non_zero_execution])  Deferred_result.t
 (** Run a shell command on the host (succeeds {i iff } the exit status is [0]).
 *)
-
-(** Generic execution which tries to behave like [Unix.execv] even
-    on top of SSH. *)
-val execute: t -> string list ->
-  (<stdout: string; stderr: string; exited: int>,
-   [> `Host of
-        [> `Exec_failure of string
-        | `Execution of
-             <host : string; stdout: string option; stderr: string option;
-              message: string>
-        | `Ssh_failure of
-             [> `Wrong_log of string
-             | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
-   ]) Deferred_result.t
 
 val do_files_exist :
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
-  (bool, [> `Host of _ execution_error ])
+  (bool, [> `Host of _ Error.execution ])
   Deferred_result.t
 (** Check existence of a list of files/directories. *)
 
@@ -97,7 +126,7 @@ val ensure_directory :
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
   (unit,
-   [> `Host of _ execution_error
+   [> `Host of _ Error.execution
     | `System of
         [> `Make_directory of string ] *
         [> `Exn of exn | `Wrong_access_rights of int ] ])
@@ -109,7 +138,7 @@ val put_file :
   path:<kind: Ketrew_path.file; ..>  Ketrew_path.t ->
   content:string ->
   (unit,
-   [> `Host of _ execution_error
+   [> `Host of _ Error.execution
     | `IO of [> `Write_file_exn of Ketrew_pervasives.IO.path * exn ] ])
   Deferred_result.t
 (** Write a file on the host at [path] containing [contents]. *)

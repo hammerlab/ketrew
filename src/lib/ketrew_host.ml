@@ -144,15 +144,42 @@ let of_string s =
 
 let to_string_hum t = t.name
 
-(* Experimenting with even more structurally typed error values: *)
-type 'a execution_error = 'a constraint 
-  'a = [> `Execution of <host : string; stdout: string option; 
-          stderr: string option; message: string> ]
+module Error = struct
+
+  type 'a execution = 'a constraint 'a =
+  [> `Exec_failure of string
+  | `Execution of
+       <host : string; stdout: string option; stderr: string option; message: string>
+  | `Ssh_failure of
+       [> `Wrong_log of string
+       | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
+
+  type 'a non_zero_execution = 'a constraint 'a = 
+    [> `Non_zero of (string * int) ] execution
+
+  let log e =
+    let kv k v = Log.(brakets (s k % s " → " % v)) in
+    match e with
+    | `Exec_failure failure -> Log.(s "Unix-exec-error: " % s failure)
+    | `Non_zero (cmd, ex) -> Log.(s "Cmd " % sf "%S" cmd % s " returned " % i ex)
+    | `Execution exec ->
+      Log.(
+        s "Process execution failed: "
+        % kv "Host" (s exec#host)
+        % kv "Message" (s exec#message)
+        % kv "Stdout" (option s exec#stdout)
+        % kv "Stderr" (option s exec#stderr))
+    | `Ssh_failure (`Wrong_log log, msg) ->
+      Log.(s "SSH failed parsing log:" % s msg % kv "Log" (sf "%S" log))
+    | `Ssh_failure (`Wrong_status exit_code, msg) ->
+      Log.(s "SSH failed:" % s msg 
+           % kv "Exit code" (Ketrew_unix_process.Exit_code.to_log exit_code))
+end
 
 let fail_host e = fail (`Host e)
 
 let fail_exec t ?out ?err msg: 
-  (_, [> `Host of _ execution_error ]) Deferred_result.t =
+  (_, [> `Host of _ Error.execution ]) Deferred_result.t =
   let v = object
     method host = to_string_hum t 
     method stdout = out
@@ -161,28 +188,49 @@ let fail_exec t ?out ?err msg:
   end in
   fail_host (`Execution v)
 
-let get_shell_command_output t cmd =
+let execute t argl =
+  let ret out err exited =
+    let kv k v = Log.(brakets (s k % s " → " % v) |> indent) in
+    Log.(s "Host: " % s (to_string_hum t)
+         % s " executed: " % OCaml.list (sf "%S") argl
+         % kv "status" (sf "exit:%d" exited)
+         % kv "stdout" (sf "%S" out)
+         % kv "stderr" (sf "%S" err) @ very_verbose);
+    return (object
+      method stdout = out method stderr = err method exited = exited
+    end)
+  in
   match t.connection with
   | `Localhost ->
-    begin System.Shell.execute cmd
+    begin Ketrew_unix_process.exec argl
       >>< function
-      | `Ok (out, err, `Exited 0) -> return (out, err)
-      | `Ok (out, err, other) -> 
+      | `Ok (out, err, `Exited n) -> ret out err n
+      | `Ok (out, err, other) ->
         fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Shell _ as e) ->
-        fail_exec t (System.error_to_string e)
-    end
-  | `Ssh ssh ->
-    let ssh_cmd = Ssh.(do_ssh ssh cmd) in
-    begin Ketrew_unix_process.succeed ssh_cmd
-      >>< function
-      | `Ok (out, err) -> return (out, err)
       | `Error (`Process _ as process_error) ->
         let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
+        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl 
              % s " failed: " %s msg @ verbose);
         fail_exec t msg
     end
+  | `Ssh ssh ->
+    begin Ssh.generic_ssh_exec ssh argl
+      >>< function
+      | `Ok (out, err, exited) -> ret out err exited
+      | `Error e -> fail (`Host e)
+    end
+
+type shell = string -> string list
+
+let shell_sh ~sh cmd = [sh; "-c"; cmd]
+
+let get_shell_command_output ?(shell=shell_sh ~sh:"sh") t cmd =
+  execute t (shell cmd)
+  >>= fun execution ->
+  match execution#exited with
+  | 0 -> return (execution#stdout, execution#stderr)
+  | n -> fail_host (`Non_zero (cmd, n))
+
 let get_shell_command_return_value t cmd =
   match t.connection with
   | `Localhost ->
@@ -213,31 +261,6 @@ let run_shell_command t cmd =
   >>= fun (_, _) ->
   return ()
 
-let execute t argl =
-  let ret out err exited =
-    return (object
-      method stdout = out method stderr = err method exited = exited
-    end)
-  in
-  match t.connection with
-  | `Localhost ->
-    begin Ketrew_unix_process.exec argl
-      >>< function
-      | `Ok (out, err, `Exited n) -> ret out err n
-      | `Ok (out, err, other) ->
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
-    end
-  | `Ssh ssh ->
-    begin Ssh.generic_ssh_exec ssh argl
-      >>< function
-      | `Ok (out, err, exited) -> ret out err exited
-      | `Error e -> fail (`Host e)
-    end
 
 let do_files_exist t paths =
   let cmd =

@@ -2,7 +2,7 @@
 
 open Ketrew_pervasives
 
-(** High-level representation of Unix exit codes. *)
+(** Higher-level representation of Unix exit codes. *)
 module Exit_code: sig
   type t = [
     | `Exited of int
@@ -10,6 +10,7 @@ module Exit_code: sig
     | `Stopped of int
   ]
   val to_string: t -> string
+  val to_log: t -> Log.t
 end
 
 val exec :

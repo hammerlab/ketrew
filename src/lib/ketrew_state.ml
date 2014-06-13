@@ -196,12 +196,11 @@ let _start_running_target t target =
         add_or_update_target t new_target
         >>= fun () ->
         return [`Target_succeeded (Target.id target, `Process_success)]
-      | `Error (`Host (`Execution exec)) ->
-        Log.(s "Cmd error: " % option s exec#stderr @ very_verbose);
+      | `Error (`Host e) ->
         add_or_update_target t Target.(
             make_fail_exn target  
-              ~msg:(fmt "On %S, msg: %S" 
-                      exec#host  exec#message))
+              ~msg:(fmt "Host error: %s" 
+                      (Host.Error.log e |> Log.to_long_string)))
         >>= fun () ->
         return [`Target_died (Target.id target, `Process_failure)]
     end
@@ -236,11 +235,10 @@ let _start_running_target t target =
               return [`Target_died (Target.id target, `Wrong_type)]
             end
         end
-      | `Error (`Host (`Execution exec)) ->
-        Log.(s "Cmd error: " % option s exec#stderr @ very_verbose);
+      | `Error (`Host e) ->
         add_or_update_target t Target.(
             make_fail_exn target  
-              ~msg:(fmt "On %S, msg: %S" exec#host  exec#message))
+              ~msg:(fmt "host: %s" (Host.Error.log e |> Log.to_long_string)))
         >>= fun () ->
         return [`Target_died (Target.id target, `Process_failure)]
     end

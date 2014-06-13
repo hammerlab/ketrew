@@ -306,7 +306,7 @@ let test_0 () =
   end |> function
   | `Ok () -> ()
   | `Error e ->
-    Log.(s "test_0: Ketrew ERROR:  " %s (Error.to_string e) @ error);
+    Log.(s "test_0: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
     Test.fail "test_0 ends with error"
 
 let test_long_running_nohup () =

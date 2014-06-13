@@ -12,6 +12,7 @@ module Exit_code = struct
   | `Exited n ->   fmt "exited:%d" n
   | `Signaled n -> fmt "signaled:%d" n
   | `Stopped n ->  fmt "stopped:%d" n
+  let to_log exit_status = Log.s (to_string exit_status)
 
 end
 

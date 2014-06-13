@@ -3,6 +3,7 @@ open Ketrew_pervasives
 module Path = Ketrew_path
 
 module Host = Ketrew_host
+module Error = Ketrew_error
 
 include Ketrew_gen_lsf_v0_t
 

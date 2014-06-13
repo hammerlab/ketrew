@@ -3,6 +3,7 @@ open Ketrew_pervasives
 module Path = Ketrew_path
 
 module Host = Ketrew_host
+module Error = Ketrew_error
 
 type running = Ketrew_gen_nohup_setsid_v0_t.running = {
   pid: int option;

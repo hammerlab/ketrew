@@ -84,7 +84,7 @@ val step :
   (happening list,
    [> `Database of [> `Load ] * string
     | `Database_unavailable of Ketrew_target.id
-    | `Host of _ Ketrew_host.execution_error
+    | `Host of _ Ketrew_host.Error.execution
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of Ketrew_target.id
