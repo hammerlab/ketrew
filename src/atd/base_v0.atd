@@ -15,11 +15,18 @@ type connection = [
   | Ssh of ssh_host
 ]
 
+type default_shell = {
+  binary: string option;
+  command_name: string;
+  options: string list;
+  command_option: string;
+}
+
 type host = {
   name: string;
   connection: connection;
   playground: path option;
-  default_shell: (string * string);
+  default_shell: default_shell;
 }
 
 type volume_structure =  [

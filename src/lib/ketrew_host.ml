@@ -107,13 +107,21 @@ module Ssh = struct
 end
 type connection = Ketrew_gen_base_v0_t.connection 
                     
+type default_shell = Ketrew_gen_base_v0_t.default_shell
+
 type t = Ketrew_gen_base_v0_t.host = {
   name: string;
   connection: connection;
   playground: Path.absolute_directory option;
-  default_shell: string * string;
+  default_shell: default_shell
 }
-let create ~connection ?(default_shell=("sh", "-c")) ?playground name =
+
+let default_shell ?binary ?(options=[]) ?(command_option="-c") command_name =
+  {Ketrew_gen_base_v0_t. binary; command_name; options; command_option}
+
+let shell_sh_minus_c = default_shell "sh"
+
+let create ~connection ?(default_shell=shell_sh_minus_c) ?playground name =
   {name; connection; playground; default_shell}
 
 let localhost ?default_shell ?playground ?(name="localhost") () = 
@@ -225,12 +233,14 @@ type shell = string -> string list
 
 let shell_sh ~sh cmd = [sh; "-c"; cmd]
 
-let default_shell t cmd = 
-  let sh, minus_c = t.default_shell in
-  [sh; minus_c; cmd]
+let shell_of_default_shell t cmd = 
+  let open Ketrew_gen_base_v0_t in
+  t.default_shell.command_name :: 
+  t.default_shell.options
+  @ [t.default_shell.command_option; cmd]
 
 let override_shell ?with_shell t =
-  let shell = Option.value ~default:(default_shell t) with_shell in
+  let shell = Option.value ~default:(shell_of_default_shell t) with_shell in
   shell
 
 let get_shell_command_output ?with_shell t cmd =
@@ -267,21 +277,6 @@ let get_fresh_playground t =
 let ensure_directory ?with_shell t ~path =
   let cmd = fmt "mkdir -p %s" Path.(to_string_quoted path) in
   run_shell_command ?with_shell t cmd
-    (*
-  match t.connection with
-  | `Localhost -> System.ensure_directory_path Path.(to_string path)
-  | `Ssh ssh ->
-    let ssh_cmd = Ssh.(do_ssh ssh cmd) in
-    begin Ketrew_unix_process.succeed ssh_cmd
-      >>< function
-      | `Ok (out, err) -> return ()
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
-    end
-*)
 
 let put_file t ~path ~content =
   match t.connection with

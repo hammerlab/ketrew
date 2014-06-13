@@ -15,6 +15,10 @@ module Ssh : sig
 
 end
 
+
+type default_shell
+(** Specification of the default shell of a Host. *)
+
 type t = Ketrew_gen_base_v0_t.host
 (** Host container.
 
@@ -25,8 +29,20 @@ type t = Ketrew_gen_base_v0_t.host
     
 *)
 
+val default_shell :
+  ?binary:string ->
+  ?options:string list ->
+  ?command_option:string ->
+  string ->
+  Ketrew_gen_base_v0_t.default_shell
+(** Use
+  [default_shell ~binary:"/bin/sh" ~options:["-l"; "--something"; "blah" ]
+      ~command_option:"-c" "sh"]
+  to define a default-shell calling ["sh -l --something blah -c <command>"].
+*)
+
 val localhost:
-  ?default_shell:string * string ->
+  ?default_shell:default_shell ->
   ?playground:Ketrew_path.absolute_directory ->
   ?name:string -> unit -> t
 (** The host ["localhost"] (i.e. not over SSH).  *)
@@ -35,7 +51,7 @@ val tmp_on_localhost: t
 (** The host ["localhost"], with ["/tmp"] as [playground]. *)
 
 val ssh :
-  ?default_shell:string * string ->
+  ?default_shell:default_shell ->
   ?playground:Ketrew_path.absolute_directory ->
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
@@ -133,7 +149,7 @@ val ensure_directory :
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
   (unit, [> `Host of _ Error.non_zero_execution ]) Deferred_result.t
-  (** Make sure the directory [path] exists on the host. *)
+(** Make sure the directory [path] exists on the host. *)
 
 val put_file :
   t ->
