@@ -103,3 +103,6 @@ val make : workflow -> Ketrew_command_line.user_todo list
 
 val make_workflow : user_target list -> Ketrew_command_line.user_todo list
 (** Call {!workflow} and then {!make} at once. *)
+
+val run: user_target ->  Ketrew_command_line.user_todo list
+(** Activate [user_target] and “make” the workflow. *)

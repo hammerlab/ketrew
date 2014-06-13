@@ -87,21 +87,23 @@ let workflow targets = { targets }
 let add_target w t = w.targets <- t :: w.targets
 let make w =
   let found_one_active = ref None in
-  let targets =
-    List.map w.targets (fun t ->
-        if !found_one_active = None && t#is_active 
-        then (
-          found_one_active := Some t#render;
-          List.map t#dependencies ~f:(fun t -> t#render)
-        ) else 
-          t#render :: List.map t#dependencies ~f:(fun t -> t#render))
-    |> List.concat
+  let rec go_through_deps t =
+  (* let targets = *)
+    (* List.map w.targets (fun t -> *)
+    if !found_one_active = None && t#is_active 
+    then (
+      found_one_active := Some t#render;
+    );
+    t#render :: List.concat_map t#dependencies ~f:go_through_deps
     |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id) in
+  let targets = List.concat_map w.targets ~f:go_through_deps in
   match !found_one_active with
   | Some a -> [`Make (a, targets)]
   | None -> failwith "There no active target"
 
 let make_workflow t = workflow t |> make
+
+let run t = t#activate; make_workflow [t]
 
 let parse_host: string -> Host.t = Host.of_string
 
