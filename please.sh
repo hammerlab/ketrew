@@ -184,6 +184,8 @@ signature () {
 }
 
 get_dependencies () {
+  opam remote add smondet git@github.com:smondet/opam-repository || \
+    echo 'Already an opam repo called `smondet`'
   opam install ocp-build $findlib_packages
 }
 
