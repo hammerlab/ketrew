@@ -19,6 +19,7 @@ type host = {
   name: string;
   connection: connection;
   playground: path option;
+  default_shell: (string * string);
 }
 
 type volume_structure =  [

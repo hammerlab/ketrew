@@ -16,9 +16,18 @@ module Ssh : sig
 end
 
 type t = Ketrew_gen_base_v0_t.host
-(** Host container. *)
+(** Host container.
 
-val localhost: ?playground:Ketrew_path.absolute_directory ->
+  A host is the current machine, or an SSH-accessed distant host.
+  It may have a plaground: a directory where Ketrew can create runtime-files.
+  It keeps track of a default-shell to use (the “default” [default_shell], is
+  [("sh", "-c")]).
+    
+*)
+
+val localhost:
+  ?default_shell:string * string ->
+  ?playground:Ketrew_path.absolute_directory ->
   ?name:string -> unit -> t
 (** The host ["localhost"] (i.e. not over SSH).  *)
 
@@ -26,6 +35,7 @@ val tmp_on_localhost: t
 (** The host ["localhost"], with ["/tmp"] as [playground]. *)
 
 val ssh :
+  ?default_shell:string * string ->
   ?playground:Ketrew_path.absolute_directory ->
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
