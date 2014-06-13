@@ -219,7 +219,7 @@ let kill ~state ~interactive ids =
   end
   >>< Return_code.transform_error
 
-let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
+let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
   let open Cmdliner in
   let version = Ketrew_version.version in
   let sub_command ~info ~term = (term, info) in
@@ -238,7 +238,7 @@ let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
                  & info ["-F"; "item-format"] ~docv:"FORMAT-STRING"
                    ~doc:"Use $(docv) as format for displaying jobs")
         ) in
-  let call_cmd =
+  let make_call_cmd user_actions_term =
     let open Term in
     sub_command
       ~info:(info "call" ~version ~sdocs:"COMMON OPTIONS" 
@@ -297,14 +297,18 @@ let cmdliner_main ?plugins ~configuration ?argv user_actions_term () =
       sub_command
         ~term:Term.(ret (pure (`Help (`Plain, None))))
         ~info:(Term.info "ketrew" ~version ~doc ~man) in
-    let cmds = [info_cmd; call_cmd; run_cmd; kill_cmd] in
+    let call_cmd =
+      Option.value_map ~default:[] additional_term 
+        ~f:(fun o -> [make_call_cmd o]) in
+    let cmds = [info_cmd] @ call_cmd @ [run_cmd; kill_cmd] in
     match Term.eval_choice ?argv default_cmd cmds with
     | `Ok f -> f
     | `Error _ -> exit Return_code.cmdliner_error
     | `Version | `Help -> exit 0
 
 
-let run_main ?plugins ?argv ~configuration additional_terms =
-  match Lwt_main.run (cmdliner_main ?plugins ?argv ~configuration additional_terms ()) with
+let run_main ?plugins ?argv ~configuration ?additional_term () =
+  match Lwt_main.run 
+          (cmdliner_main ?plugins ?argv ~configuration ?additional_term ()) with
   | `Ok () -> exit 0
   | `Error n -> exit n
