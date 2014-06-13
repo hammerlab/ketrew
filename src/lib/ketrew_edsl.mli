@@ -89,20 +89,5 @@ val direct_shell_command :
 
 (** {3 Workflows} *)
 
-type workflow
-(** Workflows wrap collections of targets. *)
-
-val workflow : user_target list -> workflow
-(** Create a workflow with a list of targets. *)
-
-val add_target : workflow -> user_target -> unit
-(** Add a target to a workflow, imperative style. *)
-
-val make : workflow -> Ketrew_command_line.user_todo list
-(** Convert a workflow into a command expected by {!Ketrew_command_line} *)
-
-val make_workflow : user_target list -> Ketrew_command_line.user_todo list
-(** Call {!workflow} and then {!make} at once. *)
-
 val run: user_target ->  Ketrew_command_line.user_todo list
 (** Activate [user_target] and “make” the workflow. *)
