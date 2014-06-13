@@ -116,6 +116,7 @@ val run_shell_command :
 *)
 
 val do_files_exist :
+  ?with_shell:shell ->
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
   (bool, [> `Host of _ Error.execution ])

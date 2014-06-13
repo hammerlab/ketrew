@@ -251,34 +251,13 @@ let run_shell_command t cmd =
   return ()
 
 
-let do_files_exist t paths =
+let do_files_exist ?with_shell t paths =
   let cmd =
     List.map paths ~f:Path.exists_shell_condition 
     |> String.concat ~sep:" && " in
-  match t.connection with
-  | `Localhost ->
-    begin System.Shell.execute cmd
-      >>< function
-      | `Ok (_, _, `Exited 0) -> return true
-      | `Ok (_, _, `Exited 1) -> return false
-      | `Ok (out, err, other) -> 
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Shell _ as e) -> fail_exec t (System.error_to_string e)
-    end
-  | `Ssh ssh ->
-    let ssh_cmd = Ssh.(do_ssh ssh cmd) in
-    begin Ketrew_unix_process.exec ssh_cmd
-      >>< function
-      | `Ok (_, _, `Exited 0) -> return true
-      | `Ok (_, _, `Exited 1) -> return false
-      | `Ok (out, err, other) -> 
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
-    end
+  get_shell_command_return_value ?with_shell t cmd
+  >>= fun ret ->
+  return (ret = 0)
 
 let get_fresh_playground t = 
   let fresh = Unique_id.create () in
