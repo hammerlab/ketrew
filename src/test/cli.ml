@@ -91,13 +91,13 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
           ~make:(nohup_setsid ~host [ fmt "rm -f '%s'" targz#path ]) in
       [make_it; clean_up]
   in
-  let active =
-    active "make-targz common ancestor"
+  let common_ancestor =
+    target "make-targz common ancestor"
       ~dependencies:(gpg @ [make_targz; md5_targz])
       (* the redundant make_targz dep is voluntary, it's for testing *)
       ~make:(direct_shell_command "echo Done")
   in
-  make_workflow [active]
+  run common_ancestor
 
 let make_targz_command_line argl =
   let open Ketrew.EDSL in
@@ -127,12 +127,12 @@ let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
   Log.(s "LSF on " % s (Ketrew.Host.to_string_hum host) @ normal);
-  make_workflow [
-    active "run_command_with_lsf"
+  run (
+    target "run_command_with_lsf"
       ~make:(Ketrew_lsf.create ~queue
                ~wall_limit:"1:30" ~processors:(`Min_max (1,1))
                ~host [cmd])
-  ]
+  )
 
 let run_main () =
   let additional_term =
