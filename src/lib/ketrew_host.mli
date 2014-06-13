@@ -129,14 +129,10 @@ val get_fresh_playground :
 (** Get a new subdirectory in the host's playground *)
 
 val ensure_directory :
+  ?with_shell:shell ->
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
-  (unit,
-   [> `Host of _ Error.execution
-    | `System of
-        [> `Make_directory of string ] *
-        [> `Exn of exn | `Wrong_access_rights of int ] ])
-  Deferred_result.t
+  (unit, [> `Host of _ Error.non_zero_execution ]) Deferred_result.t
   (** Make sure the directory [path] exists on the host. *)
 
 val put_file :

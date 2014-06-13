@@ -264,11 +264,13 @@ let get_fresh_playground t =
   Option.map  t.playground (fun pg ->
       Path.(concat pg (relative_directory_exn fresh)))
 
-let ensure_directory t ~path =
+let ensure_directory ?with_shell t ~path =
+  let cmd = fmt "mkdir -p %s" Path.(to_string_quoted path) in
+  run_shell_command ?with_shell t cmd
+    (*
   match t.connection with
   | `Localhost -> System.ensure_directory_path Path.(to_string path)
   | `Ssh ssh ->
-    let cmd = fmt "mkdir -p %s" Path.(to_string_quoted path) in
     let ssh_cmd = Ssh.(do_ssh ssh cmd) in
     begin Ketrew_unix_process.succeed ssh_cmd
       >>< function
@@ -279,6 +281,7 @@ let ensure_directory t ~path =
              % s " failed: " %s msg @ verbose);
         fail_exec t msg
     end
+*)
 
 let put_file t ~path ~content =
   match t.connection with
