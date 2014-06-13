@@ -40,13 +40,13 @@ val ssh :
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
 
-val of_string: string -> t
-(** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
-  string into a host, see {!of_uri}. *)
-
 val of_uri: Uri.t -> t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
   the “path” part of the URI is the playground. *)
+
+val of_string: string -> t
+(** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
+  string into a host, see {!of_uri}. *)
 
 val to_string_hum : t -> string
 (** Get a display-friendly string for the host (“name”, or hostname). *)
@@ -86,22 +86,15 @@ val execute: t -> string list ->
 
 type shell = string -> string list
 (** A “shell” is a function that takes a command and returns, and
-     execv-style string list; e.g. ["sh"; "-c"; cmd] *)
+     execv-style string list; the default for each host
+     is ["sh"; "-c"; cmd] *)
 
 val shell_sh: sh:string -> shell
 (** Call sh-style commands using the command argument (e.g. [shell_sh "/bin/sh"]
-   for a known full-path). *)
-
-(*
-val global_default_shell: shell ref
-(** The [shell] used by {!shell_default} ([shell_sh ~sh:"sh"] if not set). *)
-
-val shell_default: shell
-(** One configurable [shell]. *)
-*)
+   for a known path or command). *)
 
 val get_shell_command_output :
-  ?shell:shell ->
+  ?with_shell:shell ->
   t ->
   string ->
   (string * string, [> `Host of  _ Error.non_zero_execution]) Deferred_result.t

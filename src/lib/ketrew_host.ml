@@ -127,8 +127,6 @@ let ssh ?default_shell ?playground ?port ?user ?name address =
   create ?playground ?default_shell Option.(value name ~default:address)
     ~connection:(`Ssh {Ssh. address; port; user})
 
-let default_shell t = t.default_shell
-
 let of_uri uri =
   let connection =
     Option.value_map ~default:`Localhost (Uri.host uri) ~f:(fun address ->
@@ -227,7 +225,12 @@ type shell = string -> string list
 
 let shell_sh ~sh cmd = [sh; "-c"; cmd]
 
-let get_shell_command_output ?(shell=shell_sh ~sh:"sh") t cmd =
+let default_shell t cmd = 
+  let sh, minus_c = t.default_shell in
+  [sh; minus_c; cmd]
+
+let get_shell_command_output ?with_shell t cmd =
+  let shell = Option.value ~default:(default_shell t) with_shell in
   execute t (shell cmd)
   >>= fun execution ->
   match execution#exited with
