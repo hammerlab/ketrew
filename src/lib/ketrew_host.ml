@@ -229,39 +229,22 @@ let default_shell t cmd =
   let sh, minus_c = t.default_shell in
   [sh; minus_c; cmd]
 
-let get_shell_command_output ?with_shell t cmd =
+let override_shell ?with_shell t =
   let shell = Option.value ~default:(default_shell t) with_shell in
-  execute t (shell cmd)
+  shell
+
+let get_shell_command_output ?with_shell t cmd =
+  execute t (override_shell ?with_shell t cmd)
   >>= fun execution ->
   match execution#exited with
   | 0 -> return (execution#stdout, execution#stderr)
   | n -> fail_host (`Non_zero (cmd, n))
 
-let get_shell_command_return_value t cmd =
-  match t.connection with
-  | `Localhost ->
-    begin System.Shell.execute cmd
-      >>< function
-      | `Ok (out, err, `Exited n) -> return n
-      | `Ok (out, err, other) -> 
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Shell _ as e) ->
-        fail_exec t (System.error_to_string e)
-    end
-  | `Ssh ssh ->
-    let ssh_cmd = Ssh.(do_ssh ssh cmd) in
-    begin Ketrew_unix_process.exec ssh_cmd
-      >>< function
-      | `Ok (out, err, `Exited n) -> return n
-      | `Ok (out, err, other) -> 
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_cmd 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
-    end
-
+let get_shell_command_return_value ?with_shell t cmd =
+  execute t (override_shell ?with_shell t cmd)
+  >>= fun execution ->
+  return execution#exited
+    
 let run_shell_command t cmd =
   get_shell_command_output t cmd
   >>= fun (_, _) ->

@@ -102,6 +102,7 @@ val get_shell_command_output :
     (succeeds {i iff } the exit status is [0]). *)
 
 val get_shell_command_return_value :
+  ?with_shell:shell ->
   t ->
   string ->
   (int, [> `Host of _ Error.execution ]) Deferred_result.t
