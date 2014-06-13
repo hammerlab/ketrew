@@ -125,6 +125,10 @@ make_doc () {
 <head>
   <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
   <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/highlight.js/8.0/styles/default.css">
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/highlight.js/8.0/styles/paraiso.dark.css">
+  <script src="http://cdn.jsdelivr.net/highlight.js/8.0/highlight.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script>
   <meta charset="utf-8">
   <title>Ketrew $version_string</title>
 </head>
