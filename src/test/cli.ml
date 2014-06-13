@@ -11,8 +11,8 @@ let db_file = "/tmp/ketrew_cli_test_database"
 
 (*
 
-A first dummy, non-EDSL, workflow that can compile the documentation, switch to
-the gh-pages branch, commit the new version of the documentation, and got
+A first dummy workflow that can compile the documentation, switch to
+the gh-pages branch, commit the new version of the documentation, and get
 back to the original branch.
 
 It can also fail in many ways (e.g. Git checkout forbidden because of dirty
@@ -20,50 +20,37 @@ tree) which show ketrew's handling of errors in dependencies.
 
 *)
 let deploy_website more_args =
-  let open Ketrew in
-  let branch_file = Unique_id.create () in
+  let open Ketrew.EDSL in
+  let branch_file = Filename.concat "/tmp" (Unique_id.create ()) in
   let write_branch =
-    Target.(
-      create ~name:"Get current branch"
-        ~make:(`Direct_command (Command.shell
-                              (fmt "git symbolic-ref --short HEAD > /tmp/%s" branch_file)))
-        (`Volume Artifact.Volume.(create ~host:Host.tmp_on_localhost 
-                                    ~root:(Path.absolute_directory_exn "/tmp")
-                                    (file branch_file))))
+    target "Get current branch"
+      ~returns:(file branch_file)
+      ~make:(direct_shell_command 
+               (fmt "git symbolic-ref --short HEAD > %s" branch_file))
   in
   let make_doc = 
-    Target.(
-      create ~name:"Make doc"
-        ~make:(`Direct_command (Command.shell "please.sh doc"))
-        (`Value `Unit)) in
+    target "Make doc" ~make:(direct_shell_command "please.sh doc")
+      ~returns:unit in
   let check_out_gh_pages =
-    Target.(
-      create ~name:"check-out-gh-pages"
-        ~dependencies:[Target.id write_branch; Target.id make_doc]
-        ~make:(`Direct_command (Command.shell (fmt "git checkout gh-pages || git checkout -t origin/gh-pages")))
-        (`Value `Unit))
+    target "Check out gh-pages"
+      ~dependencies:[write_branch; make_doc]
+      ~make:(direct_shell_command
+               (fmt "git checkout gh-pages || git checkout -t origin/gh-pages"))
   in
   let move_website =
-    Target.(
-      create ~name:"move-doc"
-        ~dependencies:[Target.id check_out_gh_pages]
-        ~make:(`Direct_command (Command.shell (fmt "cp -r _doc/* .")))
-        (`Value `Unit)) in
+    target "Move _doc/" ~dependencies:[check_out_gh_pages]
+        ~make:(direct_shell_command (fmt "cp -r _doc/* .")) in
   let commit_website =
-    Target.(
-      create ~name:"commit-doc"
-        ~dependencies:[Target.id move_website]
-        ~make:(`Direct_command (Command.shell (fmt "git add api && git ci -a -m 'update website' ")))
-        (`Value `Unit)) in
-  let active =
-    Target.(
-      active ~name:"check-out-original-branch"
-        ~dependencies:[Target.id commit_website]
-        ~make:(`Direct_command (Command.shell (fmt "[ -f /tmp/%s ] && git checkout `cat /tmp/%s`" branch_file branch_file)))
-        (`Value `Unit))
+    target "Commit" ~dependencies:[move_website]
+      ~make:(direct_shell_command
+               (fmt "git add api && git ci -a -m 'update website' ")) in
+  let get_back =
+    target "Check-out original branch" ~dependencies:[ commit_website]
+      ~make:(direct_shell_command
+               (fmt "[ -f %s ] && git checkout `cat %s`"
+                  branch_file branch_file))
   in
-  Log.(s "branch file: " % s branch_file @ verbose);
-  [`Make (active, [write_branch; check_out_gh_pages; make_doc; move_website; commit_website])]
+  run get_back
 
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir =
   (* make tar.gz, md5sum, gpg, rm *)

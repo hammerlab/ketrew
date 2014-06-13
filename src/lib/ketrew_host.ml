@@ -211,6 +211,8 @@ let fail_exec t ?out ?err msg:
   fail_host (`Execution v)
 
 let execute t argl =
+  Log.(s "Host.execute " % s (to_string_hum t) % OCaml.list s argl
+       @ very_verbose);
   let ret out err exited =
     let kv k v = Log.(brakets (s k % s " → " % v) |> indent) in
     Log.(s "Host: " % s (to_string_hum t)
