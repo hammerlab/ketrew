@@ -58,7 +58,15 @@ val ssh :
 
 val of_uri: Uri.t -> t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
-  the “path” part of the URI is the playground. *)
+    the “path” part of the URI is the playground.
+    If present a ["shell"] argument defines the [default_shell].
+    example
+    [of_string "//user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c"]
+    will be [ssh ~default_shell:(default_shell  "bash"
+    ~command_name ~options:["-l"; "--init-file"; "bouh"] ~command_option:"-c")
+     ~port:42 ~user:"user" "SomeHost"]
+
+*)
 
 val of_string: string -> t
 (** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant

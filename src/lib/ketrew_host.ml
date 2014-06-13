@@ -145,7 +145,20 @@ let of_uri uri =
     | "" -> None
     | p -> Some (Path.absolute_directory_exn p)
   in
-  create ?playground ~connection (Uri.to_string uri)
+  let default_shell =
+    Uri.get_query_param uri "shell"
+    |> Option.bind ~f:(fun s -> 
+        match String.split ~on:(`Character ',') s with
+        | [] -> None
+        | one :: [] -> Some (default_shell one)
+        | one :: two :: [] -> Some (default_shell ~command_option:two one)
+        | one :: more -> 
+          let command_option = List.last more |> Option.value_exn ~msg:"bug" in
+          let options = List.split_n more (List.length more - 1) |> fst in
+          Some (default_shell ~command_option one ~options)
+      )
+  in
+  create ?playground ~connection ?default_shell (Uri.to_string uri)
 
 let of_string s =
   let uri = Uri.of_string s in
