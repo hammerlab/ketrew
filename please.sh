@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 version_string="0.0.1-prealpha"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojson uri"
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojson uri toml"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )

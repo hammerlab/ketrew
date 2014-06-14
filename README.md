@@ -24,6 +24,7 @@ parse an [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 - `cmdliner`: command line parsing
 - `yojson`: JSON parsing/printing
 - `atdgen/atd`: definition of serialization formats (used with `Yojson`).
+- `toml`: config-file parsing
 
 and uses the `ocp-build` build system.
 
