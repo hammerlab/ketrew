@@ -32,14 +32,34 @@ module Persistent_state = struct
 end
 
 module Configuration = struct
+
   type t = {
     database_parameters: string;
     persistent_state_key: string;
   }
+
   let default_persistent_state_key = "ketrew_persistent_state"
+
+  let default_configuration_path = 
+    try Sys.getenv "HOME" with _ -> "HOME" ^ "/.config/ketrew"
+
   let create 
       ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
     { database_parameters; persistent_state_key }
+
+  let parse_exn str =
+    let toml = Toml.from_string str in
+    let table =
+      try Toml.get_table toml "database" with
+      | Not_found -> failwith "Configuration file without [database]" in
+    let database_parameters = 
+      try Toml.get_string table "path" with
+      | _ -> failwith "missing database path" in
+    let persistent_state_key =
+      try Toml.get_string table "state-key" with 
+      | _ -> default_persistent_state_key in
+    create ~persistent_state_key ~database_parameters ()
+
 end
 
 

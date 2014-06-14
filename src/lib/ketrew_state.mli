@@ -15,6 +15,12 @@ module Configuration :
         state storage in the database, [database_parameters] are used to call
         {!Ketrew_database.load}. *)
 
+    val default_configuration_path: string
+    (** Default path to the configuration file. *)
+
+    val parse_exn: string -> t
+    (** Parse the contents of a configuration file. *)
+
   end
 
 type t
