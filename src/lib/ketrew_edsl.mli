@@ -13,7 +13,7 @@ type host = Ketrew_host.t
 (** Alias for the host type. *)
 
 val parse_host : string -> host
-(** See {!Ketrew_host.of_string}. *)
+(** See {!Ketrew_host.of_uri}. *)
 
 val host_cmdliner_term :
   ?doc:string -> 
