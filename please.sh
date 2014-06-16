@@ -80,6 +80,12 @@ begin program "ketrew-cli-test"
   comp = ["-thread" ]
   install = false
 end
+begin program "ketrew-client"
+  files = [ "src/app/main.ml" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+end
 OCP_END
 
 cat << MERLIN_END > .merlin
@@ -205,7 +211,7 @@ usage () {
 while [ "$1" != "" ]; do
   case $1 in
     "setup" ) setup ;;
-    "build" ) setup; ocp-build build  ketrew-test ketrew-cli-test ;;
+    "build" ) setup; ocp-build build  ;;
     "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
     "clean" ) rm -fr _prebuild _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
