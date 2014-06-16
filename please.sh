@@ -125,8 +125,9 @@ make_doc () {
   done
 
   local index_markdown=/tmp/ketrew_index_markdown
+  local dev_markdown=/tmp/ketrew_devdoc_markdown
 
-  cp README.md $index_markdown
+  sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
   cat << END_MD >> $index_markdown
 
 Authors
@@ -134,6 +135,15 @@ Authors
 
 $markdown_authors_list
 
+Development
+-----------
+
+See the [development documentation](development.html).
+
+END_MD
+
+    cp src/doc/development.md $dev_markdown
+    cat <<END_MD >> $dev_markdown
 Code Documentation
 ------------------
 
@@ -146,8 +156,17 @@ style="transform-origin: 0% 100% 0;
 END_MD
 
   local index=_doc/index.html
+  local devdoc=_doc/development.html
   cp src/doc/code_style.css _doc/
-  cat << END_HTML > $index
+  markdown_to_html $index_markdown $index "Ketrew: Home"
+  markdown_to_html $dev_markdown $devdoc "Ketrew: Development"
+}
+
+markdown_to_html () {
+    local input=$1
+    local output=$2
+    local title=$3
+  cat << END_HTML > $output
 <!DOCTYPE html>
 <html>
 <head>
@@ -155,15 +174,15 @@ END_MD
   <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
   <link rel="stylesheet" href="code_style.css" type="text/css">
   <meta charset="utf-8">
-  <title>Ketrew $version_string</title>
+  <title>$title</title>
 </head>
   <body><div class="container">
-  <h1>Ketrew: Keep Track of Experimental Workflows</h1>
+  <h1>$title</h1>
   <h2>Contents</h2>
 END_HTML
-  omd -otoc -ts 1 -td 4 $index_markdown >> $index
-  omd -r ocaml='higlo' $index_markdown | grep -v '<h1' >> $index
-  echo "</div></body><html>" >> $index
+  omd -otoc -ts 1 -td 4 $input >> $output
+  omd -r ocaml='higlo' $input | grep -v '<h1' >> $output
+  echo "</div></body><html>" >> $output
 }
 
 run_top () {
