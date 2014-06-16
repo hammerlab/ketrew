@@ -119,22 +119,20 @@ make_doc () {
 - [$name]($web) (\`$email\`)"
   done
 
+  cp src/doc/code_style.css _doc/
   cat << END_HTML > $index
 <!DOCTYPE html>
 <html>
 <head>
   <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
   <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
-  <link rel="stylesheet" href="http://cdn.jsdelivr.net/highlight.js/8.0/styles/default.css">
-  <link rel="stylesheet" href="http://cdn.jsdelivr.net/highlight.js/8.0/styles/paraiso.dark.css">
-  <script src="http://cdn.jsdelivr.net/highlight.js/8.0/highlight.min.js"></script>
-  <script>hljs.initHighlightingOnLoad();</script>
+  <link rel="stylesheet" href="code_style.css" type="text/css">
   <meta charset="utf-8">
   <title>Ketrew $version_string</title>
 </head>
   <body><div class="container">
 END_HTML
-  omd README.md >> $index
+  omd -r ocaml='higlo' README.md >> $index
   omd << END_MD >> $index
 
 Authors

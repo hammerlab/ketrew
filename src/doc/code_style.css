@@ -1,0 +1,16 @@
+.id { color: #333333 ; font-style: italic }
+.kw { color: #990000 ; font-weight: bold ;}
+.kw1 { color: orange ; font-weight: bold ;}
+.kw2 { color: #009 ; font-weight: bold ;}
+.kw3 { color: #274388 ; font-weight: bold ;}
+.kw4 { color: brown ; font-weight: bold ;}
+.comment { color: green ; font-style: italic ; }
+.string { color: #999900; font-weight: bold ; }
+.text { }
+.numeric { color: #123345 ; }
+.directive { font-style: italic ; color : #0000aa } ;
+.escape { color: #409290 ; }
+.symbol { color: orange ; font-weight: bold ; }
+.symbol1 { color: #993300 ; font-weight: bold ; }
+.constant { color: pink; }
+pre { font-family: courier }

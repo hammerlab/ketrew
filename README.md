@@ -47,8 +47,9 @@ You should not install `ketrew` yet, but you can always call at your own risk:
 
 ### Build The Documentation
 
-The documentation depends on [omd](https://github.com/ocaml/omd), and
-Graphviz's `dot`:
+The documentation depends on [omd](https://github.com/ocaml/omd),
+[higlo](http://zoggy.github.io/higlo/),
+and Graphviz's `dot`:
 
     please.sh doc
 
