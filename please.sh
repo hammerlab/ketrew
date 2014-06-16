@@ -204,10 +204,81 @@ get_dependencies () {
   opam install ocp-build $findlib_packages
 }
 
-usage () {
-  echo "usage: $0"
-  echo "       $0 {setup,build,clean,doc,top,help}"
+#
+# ocp-build install seems broken
+# so here is a dirty implementation of META/install/uninstall
+#
+meta_file () {
+  local meta=$1
+  cat << EOF_META > $meta
+version = "$version_string"
+description = "The Ketrew workflow engine"
+requires = "$findlib_packages"
+archive(byte) = "ketrew.cma"
+archive(native) = "ketrew.cmxa"
+exists_if = "ketrew.cma"
+EOF_META
 }
+install () {
+    local prefix=$1
+    meta_file _obuild/ketrew/META
+    ocamlfind install ketrew _obuild/ketrew/META _obuild/ketrew/*.*
+    local kclient=_obuild/ketrew-client/ketrew-client
+    if [ -f $kclient.asm ] ; then
+        cp $kclient.asm $prefix/bin/ketrew-client
+    else
+        cp $kclient.byte $prefix/bin/ketrew-client
+    fi
+}
+uninstall () {
+    local prefix=$1
+    ocamlfind remove ketrew
+    rm -f $prefix/bin/ketrew-client
+}
+
+opam_file () {
+    local out_file=$1
+#    local ocp_build_install_options=' "-install-destdir" prefix '
+    local quoted_findlib_packages=$(for f in $findlib_packages ; do echo -n "\"$f\" " ; done)
+    cat << END_OPAM > $out_file
+opam-version: "1"
+maintainer: "seb@mondet.org"
+homepage: "$homepage"
+ocaml-version: [ >= "4.01.0" ]
+build: [
+  ["./please.sh" "build"]
+  ["./please.sh" "install" prefix ]
+]
+remove: [
+  ["./please.sh" "uninstall" prefix ]
+]
+depends: [ "ocp-build" "ocamlfind" $quoted_findlib_packages ]
+
+END_OPAM
+}
+
+opam_package () {
+
+    local destination=$1
+    if [ -d "$destination" ] ; then
+        echo "OK: $destination!"
+    else
+        echo "usage: opam_package [OPAM_REPO_DIR]"
+        return 4
+    fi
+    local package=$destination/packages/ketrew/ketrew.$version_string/
+    mkdir -p  $package
+    opam_file $package/opam
+    echo "Ketrew: Keep Track of Experimental Workflows" > $package/descr
+    echo "git: \"git@github.com:smondet/ketrew\"" > $package/url
+
+}
+
+usage () {
+    echo "usage: $0"
+    echo "       $0 {setup,build,clean,doc,top,sig,get-dependencies,local-opam,opam,meta-file,install,uninstall,help}"
+}
+
 while [ "$1" != "" ]; do
   case $1 in
     "setup" ) setup ;;
@@ -219,6 +290,11 @@ while [ "$1" != "" ]; do
     "help" )  usage ;;
     "sig" ) signature $2; shift ;;
     "get-dependencies" ) get_dependencies ;;
+    "meta-file" ) meta_file $2; shift ;;
+    "install" ) install $2 ; shift;;
+    "uninstall" ) uninstall $2 ; shift;;
+    "local-opam" ) opam_file "./opam" ;;
+    "opam" ) opam_package $2; shift ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
   shift
