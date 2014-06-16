@@ -2,6 +2,7 @@ open Ketrew_pervasives
 module Target = Ketrew_target
 module Error = Ketrew_error
 module User_command = Ketrew_user_command
+module Configuration = Ketrew_state.Configuration
 
 module Return_code = struct
   let user_todo_failure = 2
@@ -53,13 +54,6 @@ let display_info ~state ~all ~item_format =
     List.iter targets (fun t -> format_target ~item_format t |> print_string);
     return ()
   end
-  >>< Return_code.transform_error
-
-let with_state ?plugins ~configuration f =
-  Ketrew_state.create ?plugins configuration
-  >>= fun state ->
-  f ~state
-
 
 let log_list ~empty l =
   let empty_log = empty in (* renaming because og Log.empty *)
@@ -118,7 +112,6 @@ let run_state ~state ~how =
          @ error);
     fail (`Wrong_command_line sl)
   end
-  >>< Return_code.transform_error
 
 (** [with_cbreak f] calls with the terminal in “get key” mode. 
          It comes from
@@ -188,20 +181,36 @@ let kill ~state ~interactive ids =
     >>= fun (_ : unit list) ->
     return ()
   end
-  >>< Return_code.transform_error
 
-let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
+
+let with_state ?plugins ~configuration f =
+  Ketrew_state.create ?plugins configuration
+  >>= fun state ->
+  f ~state
+
+
+
+let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   let open Cmdliner in
   let version = Ketrew_version.version in
   let sub_command ~info ~term = (term, info) in
+  let config_file_argument =
+    let docv = "FILE" in
+    let doc = "Use $(docv) as configuration file." in
+    Arg.(value & opt string Configuration.default_configuration_path
+         & info ["C"; "configuration-file"] ~docv ~doc)
+  in
   let info_cmd =
     sub_command
       ~info:(Term.info "info" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
-          pure (fun all item_format ->
+          pure (fun config_path all item_format ->
+              Configuration.get_configuration ?override_configuration config_path
+              >>= fun configuration ->
               with_state ?plugins ~configuration
                 (display_info ~item_format ~all))
+          $ config_file_argument
           $ Arg.(value & flag & info ["A"; "all"] 
                    ~doc:"Display all processes even the completed ones.")
           $ Arg.(value
@@ -209,38 +218,15 @@ let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
                  & info ["-F"; "item-format"] ~docv:"FORMAT-STRING"
                    ~doc:"Use $(docv) as format for displaying jobs")
         ) in
-  let make_call_cmd user_actions_term =
-    let open Term in
-    sub_command
-      ~info:(info "call" ~version ~sdocs:"COMMON OPTIONS" 
-               ~doc:"Call a user-defined “command line”"
-               ~man:[])
-      ~term:(
-        pure (fun dry_run (todos: User_command.t list) ->
-            if dry_run
-            then begin
-              let log =
-                List.mapi todos (fun idx todo ->
-                    Log.(s "- " % brakets (i idx) 
-                         % s ": " % User_command.log todo)) in
-              Log.(s "Would do:" %n % separate n log @ normal);
-              return ()
-            end else begin
-              with_state ?plugins ~configuration 
-                (fun ~state ->
-                   User_command.run_list ~state todos
-                   >>< Return_code.transform_error)
-            end)
-        $ Arg.(value & flag & info ["n"; "dry-run"]
-                 ~doc:"Only display the TODO-items that would have been \
-                       activated.")
-        $ user_actions_term) in
     let run_cmd =
       let open Term in
       sub_command
         ~term:(
-          pure (fun how ->
+          pure (fun config_path how ->
+              Configuration.get_configuration ?override_configuration config_path
+              >>= fun configuration ->
               with_state ?plugins ~configuration (run_state ~how))
+          $ config_file_argument
           $ Arg.(non_empty @@ pos_all string [] @@
                  info [] ~docv:"HOW" ~doc:"Use $(docv) method: `step`"))
         ~info:(
@@ -252,9 +238,12 @@ let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
       let open Term in
       sub_command
         ~term:(
-          pure (fun interactive ids ->
+          pure (fun config_path interactive ids ->
+              Configuration.get_configuration ?override_configuration config_path
+              >>= fun configuration ->
               with_state ?plugins ~configuration 
                 (kill ~interactive ids))
+          $ config_file_argument
           $ Arg.(value & flag & info ["i"; "interactive"] 
                    ~doc:"Go through running targets and kill them with 'y' \
                          or 'n'.")
@@ -271,18 +260,17 @@ let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
       sub_command
         ~term:Term.(ret (pure (`Help (`Plain, None))))
         ~info:(Term.info "ketrew" ~version ~doc ~man) in
-    let call_cmd =
-      Option.value_map ~default:[] additional_term 
-        ~f:(fun o -> [make_call_cmd o]) in
-    let cmds = [info_cmd] @ call_cmd @ [run_cmd; kill_cmd] in
+    let cmds = [info_cmd; run_cmd; kill_cmd] in
     match Term.eval_choice ?argv default_cmd cmds with
     | `Ok f -> f
     | `Error _ -> exit Return_code.cmdliner_error
     | `Version | `Help -> exit 0
 
 
-let run_main ?plugins ?argv ~configuration ?additional_term () =
-  match Lwt_main.run 
-          (cmdliner_main ?plugins ?argv ~configuration ?additional_term ()) with
+let run_main ?plugins ?argv ?override_configuration () =
+  match Lwt_main.run (
+      cmdliner_main ?plugins ?argv ?override_configuration ()
+      >>< Return_code.transform_error
+    ) with
   | `Ok () -> exit 0
   | `Error n -> exit n

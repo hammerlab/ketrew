@@ -98,10 +98,12 @@ val lsf :
 
 (** {3 Workflows} *)
 
-val run: user_target ->  Ketrew_user_command.t list
-(** Activate [user_target] and “make” the workflow. *)
+val run:
+  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
+  ?override_configuration:Ketrew_state.Configuration.t ->
+  user_target ->
+  unit
+(** Activate [user_target] (the next time Ketrew runs a step, the target will
+    started/run. *)
 
-val ketrew_fail: 
-  ('a, unit, string, Ketrew_user_command.t list) format4 -> 'a
-(** Printf-like function to return ask Ketrew to fail (complementary of
-    {!run}). *)
+

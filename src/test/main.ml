@@ -391,57 +391,43 @@ let test_long_running_nohup () =
          %s (Error.to_string e) @ error);
     Test.fail "test_long_running_nohup ends with error"
 
-let run_main () =
-  let additional_term =
-    let open Cmdliner in
-    let all_args =
-      let doc = " TODO: write some doc here " in
-      Arg.(value & pos_all string [] & info [] ~docv:"SPECIFICATION" ~doc)
-    in
-    Term.(pure (fun args -> 
-        [`Fail Log.(s "Nothing implemented: " % OCaml.list s args)])
-          $ all_args)
-  in
-  let argv =
-    Array.of_list (Array.to_list Sys.argv |> List.filter ~f:((<>) "cli")) in
-  Ketrew.Command_line.run_main ~argv ~additional_term ()
 
 let test_config_file_parsing () =
   let open Ketrew.State.Configuration in
   let () =
     let base = create ~database_parameters:"aaabbb" () in
-    let parsed =
-      parse_exn "# Example config\n\
+    match 
+      parse "# Example config\n\
                   more-useless-key = 42\n\
                   [database] # Section DB\n\
                   path = \"aaabbb\"\n\
-                  "
-    in
-    if base <> parsed then Test.fail "test_config_file_parsing 1";
+            " with
+    | `Ok parsed when parsed = base -> ()
+    | _ -> Test.fail "test_config_file_parsing 1"
   in
   let () =
     let base =
       create
         ~persistent_state_key:"some-key" ~database_parameters:"aaabbb" () in
-    let parsed =
-      parse_exn "# Example config\n\
-                  more-useless-key = 42\n\
-                  [database] # Section DB\n\
-                  path = \"aaabbb\"\n\
-                  state-key = \"some-key\"\n\
-                  "
-    in
-    if base <> parsed then Test.fail "test_config_file_parsing 2";
+    match
+      parse "# Example config\n\
+             more-useless-key = 42\n\
+             [database] # Section DB\n\
+             path = \"aaabbb\"\n\
+             state-key = \"some-key\"\n\
+             " with
+    | `Ok parsed when parsed = base -> ()
+    | _ -> Test.fail "test_config_file_parsing 2"
   in
   let () =
-    try parse_exn "# some comment\n# no database section" |> ignore;
-      Test.fail "no database in config"
-    with _ -> ()
+    match parse "# some comment\nstate-key= \"no path\"" with
+    | `Error _ -> ()
+    | `Ok _ -> Test.fail "no database-path in config should fail"
   in
   let () =
-    try parse_exn "# some comment\n[database]state-key= \"no path\"" |> ignore;
-      Test.fail "no database-path in config"
-    with _ -> ()
+    match parse "# some comment\n[database]state-key= \"no path\"" with
+    | `Error _ -> ()
+    | `Ok _ -> Test.fail "no database-path in config should fail"
   in
   ()
 
@@ -456,12 +442,6 @@ let () =
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
   if List.mem ~set:argl "config-file" || all then test_config_file_parsing ();
-  if List.mem ~set:argl "cli" then begin
-    let db_file = "/tmp/ketrew_test_database"  in
-    let configuration = Ketrew_state.Configuration.create db_file () in
-    let `Never_returns = run_main ~configuration () in 
-    ()
-  end;
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "

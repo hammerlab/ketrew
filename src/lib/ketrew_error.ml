@@ -8,6 +8,8 @@ let to_string = function
     (String.concat ~sep:", " (List.map sl (fmt "%S")))
 | `IO _ as io -> IO.error_to_string io
 | `System _ as s -> System.error_to_string s
+| `Configuration (`Parsing e) ->
+  fmt "Parsing error in config-file: %S" e
 | `Database (`Load, path) -> fmt "DB-load: %S" path
 | `Host e ->
   fmt "Host: %s" (Ketrew_host.Error.log e |> Log.to_long_string)

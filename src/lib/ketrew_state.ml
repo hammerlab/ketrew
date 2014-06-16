@@ -41,7 +41,7 @@ module Configuration = struct
   let default_persistent_state_key = "ketrew_persistent_state"
 
   let default_configuration_path = 
-    try Sys.getenv "HOME" with _ -> "HOME" ^ "/.config/ketrew"
+    Sys.getenv "HOME" ^ ".config/ketrew/client.toml"
 
   let create 
       ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
@@ -60,6 +60,19 @@ module Configuration = struct
       | _ -> default_persistent_state_key in
     create ~persistent_state_key ~database_parameters ()
 
+  let parse s =
+    let open Result in
+    try parse_exn s |> return 
+    with e -> fail (`Configuration (`Parsing (Printexc.to_string e)))
+
+
+  let get_configuration ?override_configuration path =
+    match override_configuration with
+    | Some c -> return c
+    | None ->
+      IO.read_file path
+      >>= fun content ->
+      of_result (parse content)
 end
 
 

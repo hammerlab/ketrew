@@ -85,7 +85,7 @@ let active  ?dependencies ?make ?returns name =
    - make sure the run target is active,
    - get the IDs of all the depdendencies,
 *)
-let run t =
+let user_command_list t =
   t#activate;
   let rec go_through_deps t =
     t#render :: List.concat_map t#dependencies ~f:go_through_deps in
@@ -97,9 +97,21 @@ let run t =
   | first :: more -> [`Make (first, more)]
   | [] -> assert false (* there is at least the argument one *)
 
-let ketrew_fail fmt =
-  Printf.ksprintf (fun str -> [`Fail Log.(s str)]) fmt
 
+let run ?plugins ?override_configuration t =
+  let todo_list = user_command_list t in
+  match Lwt_main.run (
+    Ketrew_state.Configuration.(
+      get_configuration ?override_configuration default_configuration_path)
+    >>= fun configuration ->
+    Ketrew_state.create ?plugins configuration
+    >>= fun state ->
+    Ketrew_user_command.run_list ~state todo_list
+  ) with
+  | `Ok () -> ()
+  | `Error e ->
+    Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
+    failwith (Ketrew_error.to_string e)
 
 
 let parse_host: string -> Host.t = Host.of_string

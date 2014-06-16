@@ -18,8 +18,17 @@ module Configuration :
     val default_configuration_path: string
     (** Default path to the configuration file. *)
 
-    val parse_exn: string -> t
+    val parse :
+      string ->
+      (t, [> `Configuration of [> `Parsing of string ] ]) Result.t
     (** Parse the contents of a configuration file. *)
+
+    val get_configuration :
+      ?override_configuration:t ->
+      string ->
+      (t,
+       [> `Configuration of [> `Parsing of string ]
+       | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
 
   end
 
