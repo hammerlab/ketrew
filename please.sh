@@ -327,6 +327,7 @@ while [ "$1" != "" ]; do
     "uninstall" ) uninstall $2 ; shift;;
     "local-opam" ) opam_file "./opam" ;;
     "opam" ) opam_package $2; shift ;;
+    "travis" ) do_travis ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
   shift

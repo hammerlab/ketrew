@@ -1,5 +1,5 @@
 language: c
-script: bash -ex "./please.sh travis"
+script: ./please.sh travis
 
 env: 
   matrix: 
