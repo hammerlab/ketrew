@@ -8,7 +8,19 @@ This documentation is available at <http://seb.mondet.org/ketrew/>.
 Build & Install
 ---------------
 
-### Dependencies
+### From Opam
+
+If you have `opam` up and running:
+
+    opam remote add smondet git@github.com:smondet/dev-opam-repo
+    opam install type_conv
+    opam install ketrew
+
+(installing `type_conv` manually will be useless when
+[`ocaml/opam-repository#2240`](https://github.com/ocaml/opam-repository/pull/2240)
+is merged).
+
+### Getting Just The Dependencies
 
 Ketrew depends on
 
@@ -41,9 +53,15 @@ Then you may setup and build everything:
 (for incremental compilation while developping please use: `ocp-build <target>`
 directly)
 
-You should not install `ketrew` yet, but you can always call at your own risk:
+### Install
 
-    ocp-build install
+For now, `ketrew` uses a custom install/uninstall procedure:
+
+    ./please.sh install <prefix>
+
+and uninstall with:
+
+    ./please.sh uninstall <prefix>
 
 ### Build The Documentation
 
