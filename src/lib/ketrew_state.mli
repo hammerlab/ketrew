@@ -18,6 +18,10 @@ module Configuration :
     val default_configuration_path: string
     (** Default path to the configuration file. *)
 
+    val default_database_path: string
+    (** Default path to the database (used when generating custom configuration
+        files). *)
+
     val parse :
       string ->
       (t, [> `Configuration of [> `Parsing of string ] ]) Result.t

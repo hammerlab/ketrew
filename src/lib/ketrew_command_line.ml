@@ -200,6 +200,24 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
     Arg.(value & opt string Configuration.default_configuration_path
          & info ["C"; "configuration-file"] ~docv ~doc)
   in
+  let init_cmd =
+    sub_command
+      ~info:(Term.info "init" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
+               ~doc:"Initialize the client (create config-file)")
+      ~term:Term.(
+          pure (fun config_path database_path ->
+              System.ensure_directory_path (Filename.dirname config_path)
+              >>= fun () ->
+              let content =
+                fmt "# Ketrew configuration file\n\n[database]\n\
+                    \  path = %S\n" database_path
+              in
+              IO.write_file ~content config_path)
+          $ config_file_argument
+          $ Arg.(value & opt string Configuration.default_database_path
+                 & info ["database"] ~docv:"FILE"
+                   ~doc:"Use $(docv) as database.")
+        ) in
   let info_cmd =
     sub_command
       ~info:(Term.info "info" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
@@ -260,7 +278,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
       sub_command
         ~term:Term.(ret (pure (`Help (`Plain, None))))
         ~info:(Term.info "ketrew" ~version ~doc ~man) in
-    let cmds = [info_cmd; run_cmd; kill_cmd] in
+    let cmds = [init_cmd; info_cmd; run_cmd; kill_cmd] in
     match Term.eval_choice ?argv default_cmd cmds with
     | `Ok f -> f
     | `Error _ -> exit Return_code.cmdliner_error

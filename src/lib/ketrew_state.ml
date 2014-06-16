@@ -41,7 +41,11 @@ module Configuration = struct
   let default_persistent_state_key = "ketrew_persistent_state"
 
   let default_configuration_path = 
-    Sys.getenv "HOME" ^ ".config/ketrew/client.toml"
+    Sys.getenv "HOME" ^ "/.ketrew/client.toml"
+
+  let default_database_path = 
+    Sys.getenv "HOME" ^ "/.ketrew/database.json"
+
 
   let create 
       ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
