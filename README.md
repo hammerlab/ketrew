@@ -76,6 +76,15 @@ and check-out `_doc/index.html`.
 Usage
 -----
 
+### Initialization
+
+To create a configuration file, run:
+
+    ketrew-client init
+
+This creates `$HOME/.ketrew/client.toml` (see `ketrew-client init --help` to
+choose another path).
+
 ### Workflow Scripts
 
 A workflow script is an OCaml file (script, compiled, or even inside the
@@ -108,7 +117,7 @@ See the file `src/test/cli.ml` for more examples (*work-in-progress*).
 
 ### Ketrew-client
 
-Ketrew has a command-line client.  See:
+Ketrew is driven from the command-line client.  See:
 
     ketrew-client --help
 
