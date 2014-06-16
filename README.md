@@ -19,7 +19,7 @@ Ketrew depends on
 - `pvem_lwt_unix`: `Lwt_unix` wrapped in a `Pvem.t` (error monad) with more
 precise error types.
 - `uri`:
-parse an [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
+parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
 - `yojson`: JSON parsing/printing
