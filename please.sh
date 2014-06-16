@@ -108,7 +108,6 @@ make_doc () {
     -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
   dot -Tsvg $dot_file -o_doc/$image_file
   rm $dot_file
-  local index=_doc/index.html
 
   local markdown_authors_list=""
   for idx in "${authors[@]}" ; do
@@ -119,21 +118,10 @@ make_doc () {
 - [$name]($web) (\`$email\`)"
   done
 
-  cp src/doc/code_style.css _doc/
-  cat << END_HTML > $index
-<!DOCTYPE html>
-<html>
-<head>
-  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
-  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
-  <link rel="stylesheet" href="code_style.css" type="text/css">
-  <meta charset="utf-8">
-  <title>Ketrew $version_string</title>
-</head>
-  <body><div class="container">
-END_HTML
-  omd -r ocaml='higlo' README.md >> $index
-  omd << END_MD >> $index
+  local index_markdown=/tmp/ketrew_index_markdown
+
+  cp README.md $index_markdown
+  cat << END_MD >> $index_markdown
 
 Authors
 -------
@@ -150,6 +138,25 @@ style="transform-origin: 0% 100% 0;
        transform: translateY(-100%) rotate(90deg);"
   >Your browser does not support SVG</object>
 END_MD
+
+  local index=_doc/index.html
+  cp src/doc/code_style.css _doc/
+  cat << END_HTML > $index
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
+  <link rel="stylesheet" href="http://cdn.jsdelivr.net/bootstrap/3.1.1/css/bootstrap-theme.min.css" type="text/css">
+  <link rel="stylesheet" href="code_style.css" type="text/css">
+  <meta charset="utf-8">
+  <title>Ketrew $version_string</title>
+</head>
+  <body><div class="container">
+  <h1>Ketrew: Keep Track of Experimental Workflows</h1>
+  <h2>Contents</h2>
+END_HTML
+  omd -otoc -ts 1 -td 4 $index_markdown >> $index
+  omd -r ocaml='higlo' $index_markdown | grep -v '<h1' >> $index
   echo "</div></body><html>" >> $index
 }
 
