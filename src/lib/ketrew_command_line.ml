@@ -1,11 +1,7 @@
 open Ketrew_pervasives
 module Target = Ketrew_target
 module Error = Ketrew_error
-
-type user_todo = [
-  | `Fail of Log.t
-  | `Make of Ketrew_target.t * Ketrew_target.t list
-]
+module User_command = Ketrew_user_command
 
 module Return_code = struct
   let user_todo_failure = 2
@@ -64,31 +60,6 @@ let with_state ?plugins ~configuration f =
   >>= fun state ->
   f ~state
 
-let log_user_todo = function
-| `Fail l -> Log.(s "Fail with: " % brakets l)
-| `Make (act, deps) -> 
-  Log.(s "Make target :" % Ketrew_target.log act
-       % (match deps with
-         | [] -> empty
-         | more ->
-           parens (s "with " % separate (s ", ") 
-                     (List.map ~f:Ketrew_target.log more))))
-
-let run_user_todo_list ~state todo_list =
-  Deferred_list.while_sequential todo_list (function
-    | `Make (active, dependencies) ->
-      begin 
-        Deferred_list.while_sequential (active :: dependencies) (fun t ->
-            Ketrew_state.add_target state t)
-        >>= fun (_ : unit list) ->
-        return ()
-      end
-      >>< Return_code.transform_error
-    | `Fail l ->
-      Log.(s "Fail: " % l @ error);
-      fail Return_code.user_todo_failure)
-  >>= fun (_ : unit list) ->
-  return ()
 
 let log_list ~empty l =
   let empty_log = empty in (* renaming because og Log.empty *)
@@ -245,17 +216,20 @@ let cmdliner_main ?plugins ~configuration ?argv ?additional_term () =
                ~doc:"Call a user-defined “command line”"
                ~man:[])
       ~term:(
-        pure (fun dry_run (todos: user_todo list) ->
+        pure (fun dry_run (todos: User_command.t list) ->
             if dry_run
             then begin
               let log =
                 List.mapi todos (fun idx todo ->
                     Log.(s "- " % brakets (i idx) 
-                         % s ": " % log_user_todo todo)) in
+                         % s ": " % User_command.log todo)) in
               Log.(s "Would do:" %n % separate n log @ normal);
               return ()
             end else begin
-              with_state ?plugins ~configuration (run_user_todo_list todos)
+              with_state ?plugins ~configuration 
+                (fun ~state ->
+                   User_command.run_list ~state todos
+                   >>< Return_code.transform_error)
             end)
         $ Arg.(value & flag & info ["n"; "dry-run"]
                  ~doc:"Only display the TODO-items that would have been \

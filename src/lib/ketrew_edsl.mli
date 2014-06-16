@@ -98,10 +98,10 @@ val lsf :
 
 (** {3 Workflows} *)
 
-val run: user_target ->  Ketrew_command_line.user_todo list
+val run: user_target ->  Ketrew_user_command.t list
 (** Activate [user_target] and “make” the workflow. *)
 
 val ketrew_fail: 
-  ('a, unit, string, Ketrew_command_line.user_todo list) format4 -> 'a
+  ('a, unit, string, Ketrew_user_command.t list) format4 -> 'a
 (** Printf-like function to return ask Ketrew to fail (complementary of
     {!run}). *)
