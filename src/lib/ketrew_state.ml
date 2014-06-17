@@ -230,6 +230,22 @@ let with_plugin_or_kill_target t ~target ~plugin_name f =
     return [`Target_died (Target.id target, `Plugin_not_found plugin_name)]
   end
 
+let host_error_to_potential_target_failure t ~target ~error =
+  match Host.Error.classify error with
+  | `Ssh | `Unix when 
+      not t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure ->
+    let e = Host.Error.log error in
+    Log.(s "SSH failed, but not killing " % s (Target.id target)
+         % sp % e @ warning);
+    return []
+  | _ ->
+    add_or_update_target t Target.(
+        make_fail_exn target  
+          ~msg:(fmt "Host error: %s" 
+                  (Host.Error.log error |> Log.to_long_string)))
+    >>= fun () ->
+    return [`Target_died (Target.id target, `Process_failure)]
+
 let _start_running_target t target =
   begin match target.Target.make with
   | `Artifact a ->
@@ -246,20 +262,8 @@ let _start_running_target t target =
         add_or_update_target t new_target
         >>= fun () ->
         return [`Target_succeeded (Target.id target, `Process_success)]
-      | `Error (`Host e) ->
-        begin match Host.Error.classify e with
-        | `Ssh | `Unix ->
-          Log.(s "SSH failed, but not killing " % s (Target.id target)
-               % sp % Host.Error.log e @ warning);
-          return []
-        | `Execution ->
-          add_or_update_target t Target.(
-              make_fail_exn target  
-                ~msg:(fmt "Host error: %s" 
-                        (Host.Error.log e |> Log.to_long_string)))
-          >>= fun () ->
-          return [`Target_died (Target.id target, `Process_failure)]
-        end
+      | `Error (`Host error) ->
+        host_error_to_potential_target_failure ~target ~error t
     end
   | `Direct_command cmd ->
     begin Target.Command.run cmd
@@ -292,12 +296,8 @@ let _start_running_target t target =
               return [`Target_died (Target.id target, `Wrong_type)]
             end
         end
-      | `Error (`Host e) ->
-        add_or_update_target t Target.(
-            make_fail_exn target  
-              ~msg:(fmt "host: %s" (Host.Error.log e |> Log.to_long_string)))
-        >>= fun () ->
-        return [`Target_died (Target.id target, `Process_failure)]
+      | `Error (`Host error) ->
+        host_error_to_potential_target_failure ~target ~error t
     end
   | `Long_running (plugin_name, created_run_paramters) ->
     with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
