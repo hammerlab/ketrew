@@ -47,9 +47,10 @@ let run_command_with_lsf cmd =
   let host = 
     parse_host "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash" in
   let queue = "normalpeople" in
+  let program = Program.sh cmd in
   run (
     target "run_command_with_lsf"
-      ~make:(lsf ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host [cmd])
+      ~make:(lsf ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host program)
   )
 
 let () = (* Extremely basic main of the workflow script *)
