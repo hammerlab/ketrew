@@ -1,5 +1,5 @@
 (** Definition of the configuration (input to state creation; contents of the
-    future config-file). *)
+    config-file). *)
 
 open Ketrew_pervasives
 
@@ -47,5 +47,7 @@ val get_configuration :
   (t,
    [> `Configuration of [> `Parsing of string ]
    | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
+(** The call [get_configuration file] reads and parses the file [f], unless
+    [override_configuration] is provided. *)
 
 
