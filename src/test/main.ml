@@ -11,6 +11,9 @@ module Test = struct
         (Unix.getenv "ketrew_test_ssh")
     with Not_found -> Host.ssh "localhost"
 
+  let wrong_ssh_host =
+    Ketrew.EDSL.parse_host "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
+
   let test_targets ?wait_between_steps ~state ~name targets checks =
     let open Ketrew in
     Deferred_list.while_sequential targets (State.add_target state)
@@ -309,6 +312,61 @@ let test_0 () =
     Log.(s "test_0: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
     Test.fail "test_0 ends with error"
 
+let test_ssh_failure_vs_target_failure () =
+  let open Ketrew in
+  Lwt_main.run begin
+    let test_wrong_host turn_unix_ssh_failure_into_target_failure expect =
+      let database_parameters = "/tmp/ketrew_test_ssh_failure"  in
+      begin System.remove database_parameters >>< fun _ -> return () end
+      >>= fun () ->
+      let configuration =
+        State.Configuration.create 
+          ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
+      State.create configuration
+      >>= fun state ->
+      let target_with_wrong_host =
+        let host = Test.wrong_ssh_host in
+        Target.active ~name:"target_with_missing_dep"
+          ~make:(`Get_output Target.Command.(shell ~host "ls"))
+          (Artifact.Type.string_value)
+      in
+      Test.test_targets
+        ~state ~name:"target_with_wrong_host" [target_with_wrong_host]
+        expect
+    in
+    (* `false` is the default:
+       The target won't be killed (so Ketrew will try to run it again at each
+       `step`)
+    *)
+    test_wrong_host false [
+      `Happens (function (* Nothing happens. *)
+        | []  -> true
+        | _ -> false);
+      `Happens (function
+        | []  -> true
+        | _ -> false);
+      `Dont_care;
+    ]
+    >>= fun () ->
+    (* The target will be kill at the first attempt: *)
+    test_wrong_host true [
+      `Happens (function (* Nothing happens. *)
+        | [`Target_died _]  -> true
+        | _ -> false);
+      `Happens (function
+        | []  -> true
+        | _ -> false);
+      `Dont_care;
+    ]
+
+  end |> function
+  | `Ok () -> ()
+  | `Error e ->
+    Log.(s "test_0: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
+    Test.fail "test_0 ends with error"
+
+
+
 let test_long_running_nohup () =
   let open Ketrew in
   let db_file = "/tmp/ketrew_test_database"  in
@@ -442,6 +500,7 @@ let () =
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
   if List.mem ~set:argl "config-file" || all then test_config_file_parsing ();
+  if List.mem ~set:argl "ssh-failure" || all then test_ssh_failure_vs_target_failure ();
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "
