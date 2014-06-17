@@ -182,24 +182,27 @@ let update = function
   end
   
 let kill run_parameters =
-  match run_parameters with
-  | `Created _ -> fail (`Failed_to_kill "not running")
-  | `Running run as run_parameters ->
-    begin
-      let cmd = fmt "bkill %d" run.lsf_id in
-      Host.get_shell_command_output run.created.host cmd
-      >>< function
-      | `Ok (_) ->
+  begin
+    match run_parameters with
+    | `Created _ -> fail_fatal "not running"
+    | `Running run as run_parameters ->
+      begin
+        let cmd = fmt "bkill %d" run.lsf_id in
+        Host.get_shell_command_output run.created.host cmd
+        >>= fun (_, _) ->
         return (`Killed run_parameters)
-      | `Error e ->
-        fail (`Failed_to_kill (Error.to_string e))
-    end
+      end
+  end
   >>< begin function
   | `Ok o -> return o
   | `Error e ->
     begin match e with
-    | `Failed_to_kill _ as e -> fail e
-    | `Host _ | `IO _ | `System _ as e -> 
-      fail (`Failed_to_kill (Error.to_string e))
+    | `Fatal _ as e -> fail e
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
   end

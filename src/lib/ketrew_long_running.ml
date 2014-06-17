@@ -33,15 +33,13 @@ module type LONG_RUNNING = sig
   val update: run_parameters ->
     ([`Succeeded of run_parameters
      | `Failed of run_parameters * string
-     | `Still_running of run_parameters],
-     error) Deferred_result.t
+     | `Still_running of run_parameters], error) Deferred_result.t
   (** Check and update the status of the long-running job. Again, is
       [`Still_running rp] is returned, the next call to {!update} (or {!kill})
       will receive those parameters. *)
 
   val kill: run_parameters ->
-    ([`Killed of run_parameters],
-     [> `Failed_to_kill of string]) Deferred_result.t
+    ([`Killed of run_parameters], error) Deferred_result.t
   (** Kill the long-running computation. *)
 
 end

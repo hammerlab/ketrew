@@ -333,12 +333,12 @@ let _start_running_target t target =
                   ~msg:(fmt "[%s] Fatal error %s" plugin_name s))
             >>= fun () ->
             return [`Target_died (Target.id target,
-                                  `Failed_to_start (plugin_name, s))]
+                                  `Long_running_unrecoverable (plugin_name, s))]
           | `Error e ->
             long_running_error_to_potential_target_failure t e ~target
               ~plugin_name
               ~make_error:(fun plugin_name s ->
-                  `Failed_to_start (plugin_name, s))
+                  `Long_running_unrecoverable (plugin_name, s))
         end)
   end
 
@@ -388,7 +388,7 @@ let _update_status t ~target ~bookkeeping =
           long_running_error_to_potential_target_failure t e ~target
             ~plugin_name
             ~make_error:(fun plugin_name s ->
-                `Failed_to_update (plugin_name, s))
+                `Long_running_unrecoverable (plugin_name, s))
       end)
 
 type happening =
@@ -396,11 +396,10 @@ type happening =
   | `Target_died of
       Ketrew_target.id  *
       [ `Dependencies_died
-      | `Failed_to_start of string * string
-      | `Failed_to_update of string * string
       | `Plugin_not_found of string
       | `Wrong_type
       | `Killed
+      | `Long_running_unrecoverable of string * string
       | `Process_failure ]
   | `Target_started of Ketrew_target.id * string
   | `Target_succeeded of
@@ -424,12 +423,10 @@ let log_what_happened =
     s "Target " % s id % s " died: " 
     % (match how with
       | `Dependencies_died -> s "Dependencies_died"
-      | `Failed_to_start (plugin_name, msg) -> 
-        sf "[%s] failed to start: %s" plugin_name msg
-      | `Failed_to_update (plugin_name, msg) ->
-        sf "[%s] failed to update: %s" plugin_name msg
       | `Plugin_not_found p -> sf "Plugin %S not found" p
       | `Killed -> s "Killed"
+      | `Long_running_unrecoverable (plug, str) ->
+        brakets (s plug) % s ": Unrecoverable error: " % s str
       | `Wrong_type ->  s "Wrong typing"
       | `Process_failure -> s "Process_failure")
 
@@ -516,12 +513,18 @@ let kill t ~id =
         let run_parameters =
           Long_running.deserialize_exn bookkeeping.Target.run_parameters in
         Long_running.kill run_parameters
-        >>= function
-        | `Killed rp ->
+        >>< function
+        | `Ok (`Killed rp) ->
           add_or_update_target t Target.(
               kill_exn target ~msg:(fmt "Manual killing (%s)" plugin_name))
           >>= fun () ->
-          return [`Target_died (Target.id target, `Killed)])
+          return [`Target_died (Target.id target, `Killed)]
+        | `Error e ->
+          long_running_error_to_potential_target_failure t e ~target
+            ~plugin_name
+            ~make_error:(fun plugin_name s ->
+                `Long_running_unrecoverable (plugin_name, s))
+      )
   | `Dead _ | `Successful _ ->
     return []
   end

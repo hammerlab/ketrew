@@ -163,7 +163,7 @@ let kill run_parameters =
       (* either it didn't start yet, or it already crashed …
          should count the number of retries or compare dates and have a timeout
       *)
-      fail (`Failed_to_kill "Pid file empty")
+      fail_fatal "Pid file empty"
     | Some p ->
       let cmd = fmt "kill -- -%d" p in
       Log.(s "Killing group " % i p % s " with " % sf "%S" cmd @ very_verbose);
@@ -172,10 +172,18 @@ let kill run_parameters =
       return (`Killed run_parameters)
     end
   end
-  >>< function
+  >>< begin function
   | `Ok o -> return o
-  | `Error (`Failed_to_kill _ as e) -> fail e
-  | `Error (`Host _ | `IO _ | `System _ as e) ->
-    fail (`Failed_to_kill (Error.to_string e))
+  | `Error e ->
+    begin match e with
+    | `Fatal _ as e -> fail e
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
+    end
+  end
 
 
