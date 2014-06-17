@@ -77,7 +77,7 @@ module Ssh = struct
         let msg = Ketrew_unix_process.error_to_string process_error in
         Log.(s "Ssh-cmd " % OCaml.list (sf "%S") ssh_exec 
              % s " failed: " %s msg @ verbose);
-        fail (`Exec_failure msg)
+        fail (`Unix_exec msg)
     end
 
   (** Generate an SCP command for the given host with the destination
@@ -169,7 +169,7 @@ let to_string_hum t = t.name
 module Error = struct
 
   type 'a execution = 'a constraint 'a =
-  [> `Exec_failure of string
+  [> `Unix_exec of string
   | `Execution of
        <host : string; stdout: string option; stderr: string option; message: string>
   | `Ssh_failure of
@@ -179,10 +179,16 @@ module Error = struct
   type 'a non_zero_execution = 'a constraint 'a = 
     [> `Non_zero of (string * int) ] execution
 
+  let classify (e : _ non_zero_execution) =
+    match e with
+    | `Unix_exec _ -> `Unix
+    | `Execution _ | `Non_zero _ -> `Execution
+    | `Ssh_failure _ -> `Ssh
+
   let log e =
     let kv k v = Log.(brakets (s k % s " → " % v)) in
     match e with
-    | `Exec_failure failure -> Log.(s "Unix-exec-error: " % s failure)
+    | `Unix_exec failure -> Log.(s "Unix-exec-error: " % s failure)
     | `Non_zero (cmd, ex) -> Log.(s "Cmd " % sf "%S" cmd % s " returned " % i ex)
     | `Execution exec ->
       Log.(

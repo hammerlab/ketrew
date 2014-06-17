@@ -83,7 +83,7 @@ val to_string_hum : t -> string
 module Error: sig
 
   type 'a execution = 'a constraint 'a =
-    [> `Exec_failure of string
+    [> `Unix_exec of string
     | `Execution of
          <host : string; stdout: string option; 
        stderr: string option; message: string>
@@ -94,8 +94,27 @@ module Error: sig
   type 'a non_zero_execution = 'a constraint 'a = 
     [> `Non_zero of (string * int) ] execution
 
+  val classify :
+    [ `Execution of
+        < host : string; message : string; stderr : string option;
+          stdout : string option >
+    | `Non_zero of string * int
+    | `Ssh_failure of
+        [> `Wrong_log of string
+        | `Wrong_status of Ketrew_unix_process.Exit_code.t ] *
+        string
+    | `Unix_exec of string ] ->
+    [ `Execution | `Ssh | `Unix ]
+  (**
+     Get a glance at the gravity of the situation: {ul
+     {li [`Unix]: a function of the kind {!Unix.exec} failed.}
+     {li [`Ssh]: SSH failed to run something but it does not mean that the
+     actual command is wrong.}
+     {li [`Execution]: SSH/[Unix] succeeded but the command failed.}
+     } *)
+
   val log :
-    [< `Exec_failure of string
+    [< `Unix_exec of string
     | `Non_zero of (string * int)
     | `Execution of
          < host : string; message : string; stderr : string option;
