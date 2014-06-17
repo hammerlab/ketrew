@@ -397,7 +397,8 @@ let test_long_running_nohup () =
         Test.test_targets  ~state ~name:(name "good ls")
           ~wait_between_steps:1.
           [Target.active ~name:"one"
-             ~make:(Nohup_setsid.create ~host [fmt "ls > /tmp/%s" new_name])
+             ~make:(Nohup_setsid.create ~host 
+                      (`Shell_command (fmt "ls > /tmp/%s" new_name)))
              (Artifact.Type.volume
                 Artifact.Volume.(create ~host ~root (file new_name)))
           ]
@@ -416,7 +417,8 @@ let test_long_running_nohup () =
         Test.test_targets  ~state ~name:(name "sleep 42")
           ~wait_between_steps:1.
           [Target.active ~name:"one" ~id
-             ~make:(Nohup_setsid.create ~host [fmt "echo %S && sleep 42" String.(make 60 '=')])
+             ~make:(Nohup_setsid.create ~host 
+                      (`Shell_command (fmt "echo %S && sleep 42" String.(make 60 '='))))
              (`Value `Unit)
           ]
           [`Happens (function

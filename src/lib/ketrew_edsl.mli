@@ -26,6 +26,25 @@ val host_cmdliner_term :
     the host ["/tmp/"] (i.e. Localhost with ["/tmp"] as “playground”).
     *)
 
+(** {3 Build Programs} *)
+
+(** Build “things to run”. *)
+module Program: sig
+
+  type t = Ketrew_program.t
+  (** Something to run {i is} a {!Ketrew_program.t}. *)
+
+  val sh: string -> t
+  (** Create a program that runs a shell command. *)
+
+  val shf: ('a, unit, string, t) format4 -> 'a
+  (** Printf-like function to create shell commands. *)
+
+  val (&&): t -> t -> t
+  (** [a && b] is a program than runs [a] then [b] iff [a] succeeded. *)
+
+end
+
 (** {3 Artifacts} *)
 
 (** Wrapper for {!Ketrew_artifact.t} and {!Ketrew_artifact.Type.t}. *)
@@ -73,14 +92,14 @@ val target :
   ?make:Ketrew_target.build_process ->
   ?returns:user_artifact -> string -> user_target
 
-(** Create a new target but with [~active:true]. *)
 val active :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
   ?returns:user_artifact -> string -> user_target
+(** Create a new target but with [~active:true]. *)
 
 val nohup_setsid :
-  host:Ketrew_host.t -> string list -> Ketrew_target.build_process
+  host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
 (** Create a nohup_setsid build process. *)
 
 val direct_shell_command :
@@ -93,7 +112,7 @@ val lsf :
   ?name:string ->
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
-  string list -> Ketrew_target.build_process
+  Program.t -> Ketrew_target.build_process
 (** Create an “LSF” build process. *)
 
 (** {3 Workflows} *)

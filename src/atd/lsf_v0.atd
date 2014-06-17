@@ -1,12 +1,13 @@
 
 type host <ocaml from="Ketrew_gen_base_v0"> = abstract
 type path <ocaml from="Ketrew_gen_base_v0"> = abstract
+type program <ocaml from="Ketrew_gen_base_v0"> = abstract
 type monitored_script <ocaml from="Ketrew_gen_base_v0"> = abstract
 
 
 type created = {
   host: host;
-  commands: string list;
+  program: program;
   queue: string option;
   name: string option;
   wall_limit: string option;

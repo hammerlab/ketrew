@@ -27,10 +27,10 @@ val create :
   ?name:string ->
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
-  string list ->
+  Ketrew_program.t ->
   [> `Long_running of string  * string ]
-(** Create a “long-running” {!Ketrew_target.build_process} to run a list of
-    shell commands on a given LSF-enabled host (run parameters
+  (** Create a “long-running” {!Ketrew_target.build_process} to run a 
+    {!Ketrew_program.t} on a given LSF-enabled host (run parameters
     already serialized): {ul
       {li [?queue] is the name of the LSF queue requested (["-q"] option). }
       {li [?name] is the job name (["-J"] option). }

@@ -6,24 +6,28 @@ module Host = Ketrew_host
 
 module Artifact = Ketrew_artifact
 
+module Program = Ketrew_program
 
 module Command = struct
 
   type t = Ketrew_gen_target_v0_t.command = {
     host: Host.t;
-    action: [ `Shell of string ];
+    action: Program.t;
   }
-  let shell ?(host=Host.tmp_on_localhost) s = { host; action = `Shell s}
+  let shell ?(host=Host.tmp_on_localhost) s = { host; action = `Shell_command s}
 
   let get_host t = t.host
 
-  let to_string_hum {host; action = `Shell cmd} =
-    fmt "Shell[%S] on %s" cmd (Host.to_string_hum host)
+  let log {host; action} = 
+    Log.(s "Action: " % Program.log action
+         % s " on " % s (Host.to_string_hum host))
+
+  let to_string_hum c = Log.to_long_string (log c)
 
   let get_output {host; action} =
-    match action with
-    | `Shell cmd ->
-      Host.get_shell_command_output host cmd
+    let cmd = Program.to_single_shell_command action in
+    Host.get_shell_command_output host cmd
+
   let run t =
     get_output t (* TODO optimize to not record the output *)
     >>= fun (_, _) ->

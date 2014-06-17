@@ -113,6 +113,14 @@ let run ?plugins ?override_configuration t =
     Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
     failwith (Ketrew_error.to_string e)
 
+module Program = struct
+
+  type t = Ketrew_program.t
+  let (&&) a b = `And [a; b]
+  let sh c = `Shell_command c
+  let shf fmt = Printf.ksprintf sh fmt
+
+end
 
 let parse_host: string -> Host.t = Host.of_string
 

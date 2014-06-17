@@ -51,10 +51,15 @@ type artifact = [
   | Volume of volume
 ]
 
+type program = [
+  | Shell_command of string
+  | Exec of string list
+  | And of program list
+]
 
 type monitored_script = {
   playground: path;
-  program: string list
+  program: program;
 }
 
 (*

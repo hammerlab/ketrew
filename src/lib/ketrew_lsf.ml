@@ -19,9 +19,9 @@ let name = "LSF"
 let create
     ?(host=Host.tmp_on_localhost)
     ?queue ?name ?wall_limit ?processors
-    commands =
+    program =
   `Long_running ("LSF",
-                 `Created {host; commands; queue; name; wall_limit; processors}
+                 `Created {host; program; queue; name; wall_limit; processors}
                  |> serialize)
 
 let out_file_path ~playground =
@@ -56,7 +56,7 @@ let start: run_parameters -> (_, _) t = function
     fail_fatal (fmt  "Host %s: Missing playground" 
                   (Host.to_string_hum created.host))
   | Some playground ->
-    let script = Ketrew_monitored_script.create ~playground created.commands in
+    let script = Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path =
       Path.(concat playground (relative_file_exn "monitored_script")) in
     Host.ensure_directory created.host playground

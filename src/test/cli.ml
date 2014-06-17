@@ -94,9 +94,8 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let targz = destination "tar.gz" in
   let make_targz =
     target ~returns:targz "make-tar.gz" ~dependencies:[]
-      ~make:(nohup_setsid ~host [
-          sprintf "tar cfz '%s' '%s'" targz#path dir
-        ])
+      ~make:(nohup_setsid ~host 
+               (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
       (* A first target using `nohup_setsid`
         see [nohup(1)](http://linux.die.net/man/1/nohup)
         and [setsid(1)](http://linux.die.net/man/1/setsid). *)
@@ -104,9 +103,8 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let md5 = destination "md5" in
   let md5_targz =
     target ~returns:md5 "make-md5-of-tar.gz" ~dependencies:[make_targz]
-      ~make:(nohup_setsid ~host [
-          sprintf "md5sum '%s' > '%s'" targz#path md5#path
-        ]) 
+      ~make:(nohup_setsid ~host
+               Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
   let gpg = (* `gpg` is a list of targets, `[]` or `[gpg-c, rm-tar.gz]` *)
     match gpg with
@@ -115,13 +113,12 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       let gpg_file = destination "gpg" in
       let make_it =
         target "make-gpg-of-tar.gz" ~returns:gpg_file ~dependencies:[make_targz]
-          ~make:(nohup_setsid ~host [
-              sprintf "gpg -c --passphrase bouh -o '%s' '%s'"
-                gpg_file#path targz#path
-            ]) in
+          ~make:(nohup_setsid ~host 
+                   Program.(shf "gpg -c --passphrase bouh -o '%s' '%s'"
+                              gpg_file#path targz#path)) in
       let clean_up =
         target "rm-tar.gz" ~dependencies:[make_it]
-          ~make:(nohup_setsid ~host [ sprintf "rm -f '%s'" targz#path ]) in
+          ~make:(nohup_setsid ~host (Program.shf "rm -f '%s'" targz#path )) in
       [make_it; clean_up]
   in
   let common_ancestor =
@@ -142,7 +139,7 @@ let run_command_with_lsf ~host ~queue cmd =
   let host = parse_host host in
   run (
     target "run_command_with_lsf"
-      ~make:(lsf [cmd]
+      ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
   )
 

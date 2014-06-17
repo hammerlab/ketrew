@@ -8,10 +8,10 @@
 open Ketrew_pervasives
 
 type t = Ketrew_gen_base_v0_t.monitored_script =
-  {playground: Ketrew_path.absolute_directory; program: string list}
+  {playground: Ketrew_path.absolute_directory; program: Ketrew_program.t}
 (** The definition of a monitored script. *)
 
-val create:  playground:Ketrew_path.absolute_directory -> string list -> t
+val create:  playground:Ketrew_path.absolute_directory -> Ketrew_program.t -> t
 (** Create a new script, which will run the list of commands, and store state
     values in the [playground] directory. *)
 

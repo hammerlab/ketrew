@@ -6,6 +6,8 @@ module Path = Ketrew_path
 
 module Host = Ketrew_host
 
+module Program = Ketrew_program
+
 module Artifact = Ketrew_artifact
 
 module Target = Ketrew_target

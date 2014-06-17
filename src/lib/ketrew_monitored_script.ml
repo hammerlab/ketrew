@@ -3,7 +3,7 @@ open Ketrew_pervasives
 module Path = Ketrew_path
 
 type t = Ketrew_gen_base_v0_t.monitored_script =
-  {playground: Path.absolute_directory; program: string list}
+  {playground: Path.absolute_directory; program: Ketrew_program.t}
 
 let create ~playground program = {playground; program}
 
@@ -14,7 +14,7 @@ let pid_file t =
   Path.(concat t.playground (relative_file_exn "pid"))
 
 let to_string t  =
-  let cmds = t.program in
+  let cmds = Ketrew_program.to_shell_commands t.program in
   let log = log_file t |> Path.to_string in
   let date = "date -u +'%F %T'" in
   let backquoted s = fmt "`%s`" s in
