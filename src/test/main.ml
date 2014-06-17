@@ -124,7 +124,7 @@ let test_0 () =
   Lwt_main.run begin
     begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
-    let configuration = State.Configuration.create db_file () in
+    let configuration = Configuration.create db_file () in
     State.create configuration
     >>= fun state ->
     State.add_target state 
@@ -320,7 +320,7 @@ let test_ssh_failure_vs_target_failure () =
       begin System.remove database_parameters >>< fun _ -> return () end
       >>= fun () ->
       let configuration =
-        State.Configuration.create 
+        Configuration.create 
           ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
       State.create configuration
       >>= fun state ->
@@ -373,7 +373,7 @@ let test_long_running_nohup () =
   Lwt_main.run begin
     begin System.remove db_file >>< fun _ -> return () end
     >>= fun () ->
-    let configuration = State.Configuration.create db_file () in
+    let configuration = Configuration.create db_file () in
     State.create configuration >>= fun state ->
 
     Test.test_targets  ~state ~name:("one bad plugin")
@@ -451,7 +451,7 @@ let test_long_running_nohup () =
 
 
 let test_config_file_parsing () =
-  let open Ketrew.State.Configuration in
+  let open Ketrew.Configuration in
   let () =
     let base = create ~database_parameters:"aaabbb" () in
     match 

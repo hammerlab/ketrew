@@ -101,7 +101,7 @@ let user_command_list t =
 let run ?plugins ?override_configuration t =
   let todo_list = user_command_list t in
   match Lwt_main.run (
-    Ketrew_state.Configuration.(
+    Ketrew_configuration.(
       get_configuration ?override_configuration default_configuration_path)
     >>= fun configuration ->
     Ketrew_state.create ?plugins configuration

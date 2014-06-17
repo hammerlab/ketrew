@@ -2,7 +2,7 @@ open Ketrew_pervasives
 module Target = Ketrew_target
 module Error = Ketrew_error
 module User_command = Ketrew_user_command
-module Configuration = Ketrew_state.Configuration
+module Configuration = Ketrew_configuration
 
 module Return_code = struct
   let user_todo_failure = 2

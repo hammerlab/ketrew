@@ -2,48 +2,6 @@
 
 open Ketrew_pervasives
 
-(** Definition of the configuration (input to state creation; contents of the
-    future config-file). *)
-module Configuration :
-  sig
-    type t
-    (** The contents of the configuration. *)
-
-    val create :
-      ?turn_unix_ssh_failure_into_target_failure: bool ->
-      ?persistent_state_key:string -> database_parameters:string -> unit -> t
-    (** Create a configuration, [persistent_state_key] is the “key” of the
-        state storage in the database, [database_parameters] are used to call
-        {!Ketrew_database.load}.
-
-        The parameter [turn_unix_ssh_failure_into_target_failure] tells
-        Ketrew whether it should kill targets when a failure is not
-        assuredly “their fault” (e.g. a call to [ssh] may fail
-        because of network settings, and succeed when tried again later);
-        the default value is [false].
-    *)
-
-    val default_configuration_path: string
-    (** Default path to the configuration file. *)
-
-    val default_database_path: string
-    (** Default path to the database (used when generating custom configuration
-        files). *)
-
-    val parse :
-      string ->
-      (t, [> `Configuration of [> `Parsing of string ] ]) Result.t
-    (** Parse the contents of a configuration file. *)
-
-    val get_configuration :
-      ?override_configuration:t ->
-      string ->
-      (t,
-       [> `Configuration of [> `Parsing of string ]
-       | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
-
-  end
-
 type t
 (** The contents of the application state. *)
 
@@ -53,7 +11,7 @@ val default_plugins :
 
 val create :
   ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
-  Configuration.t ->
+  Ketrew_configuration.t ->
   (t, 'a) Deferred_result.t
 (** Initialize the state. *)
 

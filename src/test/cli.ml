@@ -65,7 +65,7 @@ let deploy_website () =
   say "Using database: %S" custom_database_file;
   run get_back
     ~override_configuration:
-      (Ketrew_state.Configuration.create
+      (Ketrew_configuration.create
          ~database_parameters:custom_database_file ())
 
 (*

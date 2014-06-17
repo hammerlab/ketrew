@@ -100,7 +100,7 @@ val lsf :
 
 val run:
   ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
-  ?override_configuration:Ketrew_state.Configuration.t ->
+  ?override_configuration:Ketrew_configuration.t ->
   user_target ->
   unit
 (** Activate [user_target] (the next time Ketrew runs a step, the target will

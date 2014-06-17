@@ -7,6 +7,9 @@ module Artifact = Ketrew_artifact
 module Target = Ketrew_target
 module Database = Ketrew_database
 
+module Configuration = Ketrew_configuration
+
+
 module Nohup_setsid = Ketrew_nohup_setsid
 
 module Persistent_state = struct
@@ -31,68 +34,6 @@ module Persistent_state = struct
   let current_targets t = t.current_targets
 end
 
-module Configuration = struct
-
-  type t = {
-    database_parameters: string;
-    persistent_state_key: string;
-    turn_unix_ssh_failure_into_target_failure: bool;
-  }
-
-  let default_persistent_state_key = "ketrew_persistent_state"
-
-  let default_configuration_path = 
-    Sys.getenv "HOME" ^ "/.ketrew/client.toml"
-
-  let default_database_path = 
-    Sys.getenv "HOME" ^ "/.ketrew/database.json"
-
-
-  let create 
-      ?(turn_unix_ssh_failure_into_target_failure=false)
-      ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
-    {
-      database_parameters; persistent_state_key;
-      turn_unix_ssh_failure_into_target_failure;
-    }
-
-  let parse_exn str =
-    let toml = Toml.from_string str in
-    let turn_unix_ssh_failure_into_target_failure =
-      try 
-        Toml.get_bool toml "unix-ssh-make-targets-fail"
-        || Toml.get_bool toml "turn-unix-ssh-failure-into-target-failure"
-      with
-      | _ -> false
-    in
-    let table =
-      try Toml.get_table toml "database" with
-      | Not_found -> failwith "Configuration file without [database]" in
-    let database_parameters = 
-      try Toml.get_string table "path" with
-      | _ -> failwith "missing database path" in
-    let persistent_state_key =
-      try Toml.get_string table "state-key" with 
-      | _ -> default_persistent_state_key in
-    create ~turn_unix_ssh_failure_into_target_failure
-      ~persistent_state_key ~database_parameters ()
-
-  let parse s =
-    let open Result in
-    try parse_exn s |> return 
-    with e -> fail (`Configuration (`Parsing (Printexc.to_string e)))
-
-
-  let get_configuration ?override_configuration path =
-    match override_configuration with
-    | Some c -> return c
-    | None ->
-      IO.read_file path
-      >>= fun content ->
-      of_result (parse content)
-end
-
-
 type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.t;
@@ -114,7 +55,7 @@ let database t =
   match t.database_handle with
   | Some db -> return db
   | None -> 
-    let path = t.configuration.Configuration.database_parameters in
+    let path = Configuration.database_parameters t.configuration in
     Database.load path
     >>= fun db ->
     t.database_handle <- Some db;
@@ -122,8 +63,8 @@ let database t =
 
 let get_persistent t =
   database t >>= fun db ->
-  begin Database.get db ~key:t.configuration.Configuration.persistent_state_key
-    >>= function
+  let key = Configuration.persistent_state_key t.configuration in
+  begin Database.get db ~key >>= function
     | Some persistent_serialized ->
       Persistent_state.deserialize persistent_serialized
     | None ->
@@ -133,7 +74,7 @@ let get_persistent t =
 
 let save_persistent t persistent =
   database t >>= fun db ->
-  let key = t.configuration.Configuration.persistent_state_key in
+  let key = Configuration.persistent_state_key t.configuration in
   let action = Database.(set ~key (Persistent_state.serialize persistent)) in
   begin Database.act db ~action
     >>= function
@@ -231,9 +172,9 @@ let with_plugin_or_kill_target t ~target ~plugin_name f =
   end
 
 let host_error_to_potential_target_failure t ~target ~error =
+  let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
   match Host.Error.classify error with
-  | `Ssh | `Unix when 
-      not t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure ->
+  | `Ssh | `Unix when not should_kill ->
     let e = Host.Error.log error in
     Log.(s "SSH failed, but not killing " % s (Target.id target)
          % sp % e @ warning);
@@ -248,9 +189,8 @@ let host_error_to_potential_target_failure t ~target ~error =
 
 let long_running_error_to_potential_target_failure t
     ~target ~make_error ~plugin_name e =
-  let should_die =
-    t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure in
-  match e, should_die with
+  let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
+  match e, should_kill with
   | `Recoverable str, true
   | `Fatal str, _ ->
     add_or_update_target t Target.(
