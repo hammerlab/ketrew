@@ -10,10 +10,18 @@ module Configuration :
     (** The contents of the configuration. *)
 
     val create :
+      ?turn_unix_ssh_failure_into_target_failure: bool ->
       ?persistent_state_key:string -> database_parameters:string -> unit -> t
     (** Create a configuration, [persistent_state_key] is the “key” of the
         state storage in the database, [database_parameters] are used to call
-        {!Ketrew_database.load}. *)
+        {!Ketrew_database.load}.
+
+        The parameter [turn_unix_ssh_failure_into_target_failure] tells
+        Ketrew whether it should kill targets when a failure is not
+        assuredly “their fault” (e.g. a call to [ssh] may fail
+        because of network settings, and succeed when tried again later);
+        the default value is [false].
+    *)
 
     val default_configuration_path: string
     (** Default path to the configuration file. *)

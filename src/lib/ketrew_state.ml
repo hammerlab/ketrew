@@ -36,6 +36,7 @@ module Configuration = struct
   type t = {
     database_parameters: string;
     persistent_state_key: string;
+    turn_unix_ssh_failure_into_target_failure: bool;
   }
 
   let default_persistent_state_key = "ketrew_persistent_state"
@@ -48,11 +49,22 @@ module Configuration = struct
 
 
   let create 
+      ?(turn_unix_ssh_failure_into_target_failure=false)
       ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
-    { database_parameters; persistent_state_key }
+    {
+      database_parameters; persistent_state_key;
+      turn_unix_ssh_failure_into_target_failure;
+    }
 
   let parse_exn str =
     let toml = Toml.from_string str in
+    let turn_unix_ssh_failure_into_target_failure =
+      try 
+        Toml.get_bool toml "unix-ssh-make-targets-fail"
+        || Toml.get_bool toml "turn-unix-ssh-failure-into-target-failure"
+      with
+      | _ -> false
+    in
     let table =
       try Toml.get_table toml "database" with
       | Not_found -> failwith "Configuration file without [database]" in
@@ -62,7 +74,8 @@ module Configuration = struct
     let persistent_state_key =
       try Toml.get_string table "state-key" with 
       | _ -> default_persistent_state_key in
-    create ~persistent_state_key ~database_parameters ()
+    create ~turn_unix_ssh_failure_into_target_failure
+      ~persistent_state_key ~database_parameters ()
 
   let parse s =
     let open Result in
@@ -234,12 +247,19 @@ let _start_running_target t target =
         >>= fun () ->
         return [`Target_succeeded (Target.id target, `Process_success)]
       | `Error (`Host e) ->
-        add_or_update_target t Target.(
-            make_fail_exn target  
-              ~msg:(fmt "Host error: %s" 
-                      (Host.Error.log e |> Log.to_long_string)))
-        >>= fun () ->
-        return [`Target_died (Target.id target, `Process_failure)]
+        begin match Host.Error.classify e with
+        | `Ssh | `Unix ->
+          Log.(s "SSH failed, but not killing " % s (Target.id target)
+               % sp % Host.Error.log e @ warning);
+          return []
+        | `Execution ->
+          add_or_update_target t Target.(
+              make_fail_exn target  
+                ~msg:(fmt "Host error: %s" 
+                        (Host.Error.log e |> Log.to_long_string)))
+          >>= fun () ->
+          return [`Target_died (Target.id target, `Process_failure)]
+        end
     end
   | `Direct_command cmd ->
     begin Target.Command.run cmd
