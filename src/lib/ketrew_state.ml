@@ -311,13 +311,26 @@ let _start_running_target t target =
                 set_running_exn target ~plugin_name ~run_parameters)
             >>= fun () ->
             return [`Target_started (Target.id target, plugin_name)]
-          | `Error (`Failed_to_start s) ->
+          | `Error (`Fatal s) ->
             add_or_update_target t Target.(
                 make_fail_exn target  
-                  ~msg:(fmt "[%s] %s" plugin_name s))
+                  ~msg:(fmt "[%s] Fatal error %s" plugin_name s))
             >>= fun () ->
             return [`Target_died (Target.id target,
                                   `Failed_to_start (plugin_name, s))]
+          | `Error (`Recoverable str) ->
+            begin match t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure with
+            | true ->
+              add_or_update_target t Target.(
+                  make_fail_exn target  
+                    ~msg:(fmt "[%s] Error %s" plugin_name str))
+              >>= fun () ->
+              return [`Target_died (Target.id target,
+                                    `Failed_to_start (plugin_name, str))]
+            | false ->
+              Log.(s "[%s] Recoverable error: " % s str @ warning);
+              return []
+            end
         end)
   end
 

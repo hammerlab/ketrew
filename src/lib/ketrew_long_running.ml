@@ -2,6 +2,12 @@
 
 open Ketrew_pervasives
 
+type error = [
+  | `Fatal of string
+  | `Recoverable of string
+]
+(** The “imposed” error types for “long-running” plugins. *)
+
 (** The module type [LONG_RUNNING] defines the interface for plugins. *)
 module type LONG_RUNNING = sig
 
@@ -20,7 +26,7 @@ module type LONG_RUNNING = sig
       and assumes that no exception will be thrown in that case. *)
 
   val start: run_parameters ->
-    (run_parameters, [>  `Failed_to_start of string]) Deferred_result.t
+    (run_parameters, error) Deferred_result.t
   (** Start the long-running computation, the returned [run_parameters] will be
       stored and used for the first call to {!update}. *)
 

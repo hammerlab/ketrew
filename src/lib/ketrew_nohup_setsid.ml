@@ -36,11 +36,14 @@ let out_file_path ~playground =
 let err_file_path ~playground =
   Path.(concat playground (relative_file_exn "err"))
 
+let fail_fatal msg = fail (`Fatal msg)
+
 let start rp =
   (* let script = Command.monitored_script cmd in *)
   let (host, cmds) = created rp in
   begin match Host.get_fresh_playground host with
-  | None -> fail (`Failed_to_start "Missing playground")
+  | None ->
+    fail_fatal (fmt  "Host %s: Missing playground" (Host.to_string_hum host))
   | Some playground ->
     let monitored_script = Ketrew_monitored_script.create ~playground cmds in
     let monitored_script_path =
@@ -63,14 +66,20 @@ let start rp =
     return (`Running {pid = None; playground; 
                       script = monitored_script; host})
   end
-  >>< function
+  >>< begin function
   | `Ok o -> return o
   | `Error e ->
     begin match e with
-    | `Failed_to_start _ as e -> fail e
-    | `Host _ | `IO _ | `System _ as e -> 
-      fail (`Failed_to_start (Error.to_string e))
+    | `Fatal _ as e -> fail e
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> 
+      fail_fatal (Error.to_string e)
     end
+  end
 
 let _pid_and_log run_parameters =
   let run = running run_parameters in

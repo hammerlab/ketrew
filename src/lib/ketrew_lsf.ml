@@ -44,14 +44,17 @@ let parse_bsub_output s =
     Int.of_string jobid
   | _ -> None
 
+let fail_fatal msg = fail (`Fatal msg)
 
 
 let start: run_parameters -> (_, _) t = function
 | `Running _ ->
-  fail (`Failed_to_start "Wrong state: already running")
+  fail_fatal "Wrong state: already running"
 | `Created created ->
   begin match Host.get_fresh_playground created.host with
-  | None -> fail (`Failed_to_start "Missing playground")
+  | None ->
+    fail_fatal (fmt  "Host %s: Missing playground" 
+                  (Host.to_string_hum created.host))
   | Some playground ->
     let script = Ketrew_monitored_script.create ~playground created.commands in
     let monitored_script_path =
@@ -88,17 +91,21 @@ let start: run_parameters -> (_, _) t = function
     | Some lsf_id ->
       return (`Running {lsf_id; playground; script; created})
     | None ->
-      fail (`Failed_to_start 
-              (fmt "bsub did not give a JOB ID: %S %S" stdout stderr))
+      fail_fatal (fmt "bsub did not give a JOB ID: %S %S" stdout stderr)
     end
   end
   >>< begin function
   | `Ok o -> return o
   | `Error e ->
     begin match e with
-    | `Failed_to_start _ as e -> fail e
-    | `Host _ | `IO _ | `System _ as e -> 
-      fail (`Failed_to_start (Error.to_string e))
+    | `Fatal _ as e -> fail e
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> 
+      fail_fatal (Error.to_string e)
     end
   end
 
