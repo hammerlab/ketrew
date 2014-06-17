@@ -15,6 +15,7 @@ module Command = struct
     action: Program.t;
   }
   let shell ?(host=Host.tmp_on_localhost) s = { host; action = `Shell_command s}
+  let program ?(host=Host.tmp_on_localhost) action = { host; action}
 
   let get_host t = t.host
 

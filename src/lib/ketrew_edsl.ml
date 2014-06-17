@@ -141,7 +141,9 @@ let host_cmdliner_term
 let nohup_setsid ~host cmds =
   Ketrew_nohup_setsid.create ~host cmds
 
+let direct_execution ?host cmd =
+  `Direct_command Target.Command.(program ?host cmd)
 let direct_shell_command ?host cmd =
-  `Direct_command Target.Command.(shell ?host cmd)
+  direct_execution ?host Program.(sh cmd)
 
 let lsf = Ketrew_lsf.create

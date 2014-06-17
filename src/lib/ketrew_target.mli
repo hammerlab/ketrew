@@ -10,6 +10,9 @@ module Command : sig
     val shell : ?host:Ketrew_host.t -> string -> t
     (** Create a “shell” command for a given [Host.t]. *)
 
+    val program: ?host:Ketrew_host.t -> Ketrew_program.t -> t
+    (** Create a [Command.t] that runs a {!Ketrew_program.t}. *)
+
     val get_host : t -> Ketrew_host.t
     (** Get the host. *)
 

@@ -85,12 +85,12 @@ class type user_target =
     (**/**)
   end
 
-(** Create a new target. *)
 val target :
   ?active:bool ->
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
   ?returns:user_artifact -> string -> user_target
+(** Create a new target. *)
 
 val active :
   ?dependencies:user_target list ->
@@ -102,9 +102,13 @@ val nohup_setsid :
   host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
 (** Create a nohup_setsid build process. *)
 
+val direct_execution :
+  ?host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
+(** Create a direct process (not “long-running”). *)
+
 val direct_shell_command :
   ?host:Ketrew_host.t -> string -> Ketrew_target.build_process
-(** Create a shell command process (not “long-running”). *)
+(** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
 
 val lsf :
   ?host:Ketrew_host.t ->
