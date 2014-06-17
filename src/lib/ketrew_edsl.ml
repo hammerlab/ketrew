@@ -146,4 +146,6 @@ let direct_execution ?host cmd =
 let direct_shell_command ?host cmd =
   direct_execution ?host Program.(sh cmd)
 
+let get_output ?host prog = `Get_output Target.Command.(program ?host prog)
+
 let lsf = Ketrew_lsf.create
