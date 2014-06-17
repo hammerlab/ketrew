@@ -246,6 +246,22 @@ let host_error_to_potential_target_failure t ~target ~error =
     >>= fun () ->
     return [`Target_died (Target.id target, `Process_failure)]
 
+let long_running_error_to_potential_target_failure t
+    ~target ~make_error ~plugin_name e =
+  let should_die =
+    t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure in
+  match e, should_die with
+  | `Recoverable str, true
+  | `Fatal str, _ ->
+    add_or_update_target t Target.(
+        make_fail_exn target  ~msg:(fmt "[%s] Error %s" plugin_name str))
+    >>= fun () ->
+    return [`Target_died (Target.id target,
+                          make_error plugin_name str)]
+  | `Recoverable str, false ->
+    Log.(s "[%s] Recoverable error: " % s str @ warning);
+    return []
+
 let _start_running_target t target =
   begin match target.Target.make with
   | `Artifact a ->
@@ -318,19 +334,11 @@ let _start_running_target t target =
             >>= fun () ->
             return [`Target_died (Target.id target,
                                   `Failed_to_start (plugin_name, s))]
-          | `Error (`Recoverable str) ->
-            begin match t.configuration.Configuration.turn_unix_ssh_failure_into_target_failure with
-            | true ->
-              add_or_update_target t Target.(
-                  make_fail_exn target  
-                    ~msg:(fmt "[%s] Error %s" plugin_name str))
-              >>= fun () ->
-              return [`Target_died (Target.id target,
-                                    `Failed_to_start (plugin_name, str))]
-            | false ->
-              Log.(s "[%s] Recoverable error: " % s str @ warning);
-              return []
-            end
+          | `Error e ->
+            long_running_error_to_potential_target_failure t e ~target
+              ~plugin_name
+              ~make_error:(fun plugin_name s ->
+                  `Failed_to_start (plugin_name, s))
         end)
   end
 
@@ -376,13 +384,11 @@ let _update_status t ~target ~bookkeeping =
             )
           >>= fun () ->
           return [`Target_died (Target.id target, `Process_failure)]
-        | `Error (`Failed_to_update s) ->
-          add_or_update_target t Target.(
-              make_fail_exn target  
-                ~msg:(fmt "[%s] %s" plugin_name s))
-          >>= fun () ->
-          return [`Target_died (Target.id target,
-                                `Failed_to_update (plugin_name, s))]
+        | `Error e ->
+          long_running_error_to_potential_target_failure t e ~target
+            ~plugin_name
+            ~make_error:(fun plugin_name s ->
+                `Failed_to_update (plugin_name, s))
       end)
 
 type happening =

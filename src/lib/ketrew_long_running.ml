@@ -34,7 +34,7 @@ module type LONG_RUNNING = sig
     ([`Succeeded of run_parameters
      | `Failed of run_parameters * string
      | `Still_running of run_parameters],
-     [> `Failed_to_update of string]) Deferred_result.t
+     error) Deferred_result.t
   (** Check and update the status of the long-running job. Again, is
       [`Still_running rp] is returned, the next call to {!update} (or {!kill})
       will receive those parameters. *)

@@ -138,7 +138,7 @@ let get_lsf_job_status host lsf_id =
   return status
 
 let update = function
-| `Created _ -> fail (`Failed_to_update "not running")
+| `Created _ -> fail_fatal "not running"
 | `Running run as run_parameters ->
   begin
     let log_file = Ketrew_monitored_script.log_file run.script in
@@ -172,9 +172,12 @@ let update = function
   | `Ok o -> return o
   | `Error e ->
     begin match e with
-    | `Failed_to_update _ as e -> fail e
-    | `Host _ | `IO _ | `System _ as e -> 
-      fail (`Failed_to_update (Error.to_string e))
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
   end
   

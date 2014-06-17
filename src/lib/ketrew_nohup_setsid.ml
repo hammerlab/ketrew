@@ -145,9 +145,12 @@ let update run_parameters =
   | `Ok o -> return o
   | `Error e ->
     begin match e with
-    | `Failed_to_update _ as e -> fail e
-    | `Host _ | `IO _ | `System _ as e -> 
-      fail (`Failed_to_update (Error.to_string e))
+    | `Host he as e ->
+      begin match Host.Error.classify he with
+      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
+      | `Execution -> fail_fatal (Error.to_string e)
+      end
+    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
 
 let kill run_parameters =
