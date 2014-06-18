@@ -317,6 +317,8 @@ let _update_status t ~target ~bookkeeping =
           end
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
+          Log.(brakets (s plugin_name) % sp % Target.log target
+               % s " failed: " % s msg @ very_verbose);
           (* result_type must be a Volume: *)
           add_or_update_target t Target.(
               update_running_exn target ~run_parameters
