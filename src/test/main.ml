@@ -413,6 +413,7 @@ let test_long_running_nohup () =
           ]
         >>= fun () ->
 
+        (* Test the `kill` function: *)
         let id = Unique_id.create () in
         Test.test_targets  ~state ~name:(name "sleep 42")
           ~wait_between_steps:1.
@@ -437,6 +438,26 @@ let test_long_running_nohup () =
           ]
         >>= fun () ->
 
+        (* Test that a target fails when the process succeeds but does not
+           create the right target: *)
+        let t =
+          Ketrew.EDSL.(
+            active "some name"
+              ~make:(nohup_setsid ~host Program.(sh "ls > /tmp/some_temp_file"))
+              ~returns:(file ~host "/tmp/some_temp_file_with_error")
+          )
+        in
+        Test.test_targets ~state ~name:(name "wrong 'returns'")
+          ~wait_between_steps:0.3 [t#render] [
+          `Happens (function
+            | [`Target_started (_, _)] -> true
+            | _ -> false);
+          `Happens (function
+             | [`Target_died (_, `Process_failure)] -> true
+             | _ -> false);
+          `Dont_care;
+        ]
+        >>= fun () ->
 
         return ())
     >>= fun (_ : unit list) ->
