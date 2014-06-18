@@ -20,13 +20,13 @@ tree) which show ketrew's handling of errors in dependencies.
 *)
 let deploy_website () =
   let open Ketrew.EDSL in
-  let branch_file = Filename.temp_file "ketrewcli" "git_branch" in
+  let branch_file = file (sprintf "/tmp/branch_%s" (Ketrew_pervasives.Unique_id.create ())) in
   let write_branch =
     (* The target that produces `branch_file` *)
     target "Get current branch"
-      ~returns:(file branch_file)
+      ~returns:branch_file
       ~make:(direct_shell_command 
-               (sprintf "git symbolic-ref --short HEAD > %s" branch_file))
+               (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
   in
   let make_doc = 
     target "Make doc" ~make:(direct_shell_command "please.sh doc")
@@ -53,7 +53,7 @@ let deploy_website () =
     target "Check-out original branch" ~dependencies:[ commit_website]
       ~make:(direct_shell_command
                (sprintf "[ -f %s ] && git checkout `cat %s`"
-                  branch_file branch_file))
+                  branch_file#path branch_file#path))
   in
   (* `run` will activate the target `get_back`, and add all its (transitive)
      dependencies to the system.
