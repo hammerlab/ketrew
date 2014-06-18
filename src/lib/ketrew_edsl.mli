@@ -43,6 +43,10 @@ module Program: sig
   val (&&): t -> t -> t
   (** [a && b] is a program than runs [a] then [b] iff [a] succeeded. *)
 
+  val exec: string list -> t
+  (** Create a program that run in [Unix.exec] mode (i.e. does not need shell
+      escaping). *)
+
 end
 
 (** {3 Artifacts} *)

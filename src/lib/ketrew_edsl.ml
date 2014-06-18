@@ -119,6 +119,7 @@ module Program = struct
   let (&&) a b = `And [a; b]
   let sh c = `Shell_command c
   let shf fmt = Printf.ksprintf sh fmt
+  let exec l = `Exec l
 
 end
 
