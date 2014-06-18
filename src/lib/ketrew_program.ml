@@ -6,7 +6,7 @@ type t = Ketrew_gen_base_v0_t.program
 let rec to_shell_commands = function
 | `Shell_command s -> [s]
 | `Exec sl -> 
-  [fmt "exec %s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")]
+  [fmt "%s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")]
 | `And l -> List.concat_map l ~f:to_shell_commands
 
 let to_single_shell_command t = 
