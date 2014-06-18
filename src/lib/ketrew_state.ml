@@ -285,6 +285,8 @@ let _start_running_target t target =
 let _update_status t ~target ~bookkeeping =
   let plugin_name = bookkeeping.Target.plugin_name in
   with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
+      let log_prefix =
+        Log.(brakets (s plugin_name) % sp % Target.log target % s ": ") in
       let module Long_running = (val m : LONG_RUNNING) in
       let run_parameters =
         Long_running.deserialize_exn bookkeeping.Target.run_parameters in
@@ -297,28 +299,39 @@ let _update_status t ~target ~bookkeeping =
           >>= fun () ->
           return []
         | `Ok (`Succeeded run_parameters) ->
-          let run_parameters = Long_running.serialize run_parameters in
-          (* result_type must be a Volume: *)
-          begin match Artifact.of_type target.Target.result_type with
-          | Some v ->
-            add_or_update_target t Target.(
-                update_running_exn target ~run_parameters
-                |> fun trgt ->  make_succeed_exn trgt v)
-            >>= fun () ->
-            return [`Target_succeeded (Target.id target, `Process_success)]
-          | None ->
-            add_or_update_target t Target.(
-                make_fail_exn target  
-                  ~msg:(fmt "wrong typing of the target: \
-                             long-running cannot produce %s" 
-                          (Artifact.Type.to_string_hum target.result_type)))
-            >>= fun () ->
-            return [`Target_died (Target.id target, `Wrong_type)]
+          begin Artifact.is_ready target.Target.result_type >>= function
+            | false when target.Target.result_type <> `Value `Unit ->
+              Log.(log_prefix % s "succeeded by itself by artifact not-ready"
+                   @ very_verbose);
+              add_or_update_target t Target.(
+                  make_fail_exn target  
+                    ~msg:(fmt "the target did not produce %s" 
+                            (Artifact.Type.to_string_hum target.result_type)))
+              >>= fun () ->
+              return [`Target_died (Target.id target, `Process_failure)]
+            | true_or_unit ->
+              let run_parameters = Long_running.serialize run_parameters in
+              (* result_type must be a Volume: *)
+              begin match Artifact.of_type target.Target.result_type with
+              | Some v ->
+                add_or_update_target t Target.(
+                    update_running_exn target ~run_parameters
+                    |> fun trgt ->  make_succeed_exn trgt v)
+                >>= fun () ->
+                return [`Target_succeeded (Target.id target, `Process_success)]
+              | None ->
+                add_or_update_target t Target.(
+                    make_fail_exn target  
+                      ~msg:(fmt "wrong typing of the target: \
+                                 long-running cannot produce %s" 
+                              (Artifact.Type.to_string_hum target.result_type)))
+                >>= fun () ->
+                return [`Target_died (Target.id target, `Wrong_type)]
+              end
           end
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
-          Log.(brakets (s plugin_name) % sp % Target.log target
-               % s " failed: " % s msg @ very_verbose);
+          Log.(log_prefix % s " failed: " % s msg @ very_verbose);
           (* result_type must be a Volume: *)
           add_or_update_target t Target.(
               update_running_exn target ~run_parameters
