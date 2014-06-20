@@ -24,13 +24,21 @@ val add_target :
   Ketrew_target.t ->
   (unit,
    [> `Database of Ketrew_database.error
-    | `Database_unavailable of Ketrew_target.id
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Persistent_state of [> `Deserilization of string ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ] ])
+   | `Database_unavailable of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ] ])
   Deferred_result.t
 (** Add a target to the state. *)
+
+val archive_target: t ->
+  Ketrew_target.id ->
+  (unit,
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Missing_data of Ketrew_target.id
+   | `Target of [> `Deserilization of string ]
+   | `Persistent_state of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Move a target to the “archived” list. *)
 
 val current_targets :
   t ->

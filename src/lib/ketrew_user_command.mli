@@ -1,5 +1,7 @@
 (** Commands that can be fed to the engine by end-users. *)
 
+open Ketrew_pervasives
+
 type t = [
   | `Fail of Ketrew_pervasives.Log.t
   | `Make of Ketrew_target.t * Ketrew_target.t list
@@ -17,9 +19,6 @@ val run_list :
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
    | `Failure of string
-   | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-   | `Persistent_state of [> `Deserilization of string ]
-   | `System of [> `File_info of string ] * [> `Exn of exn ] ])
-    Ketrew_pervasives.Deferred_result.t
+   | `Persistent_state of [> `Deserilization of string ] ])
+    Deferred_result.t
 (** Run a todo-list with the given [state] instance. *)

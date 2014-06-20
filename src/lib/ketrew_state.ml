@@ -30,6 +30,10 @@ module Persistent_state = struct
 
   let add t target = { t with current_targets = Target.id target :: t.current_targets }
 
+  let archive t target =
+    { current_targets = List.filter t.current_targets (fun i -> i = target);
+      archived_targets = target :: t.archived_targets }
+
   let current_targets t = t.current_targets
 end
 
@@ -119,13 +123,22 @@ let add_target t target =
   >>= fun persistent ->
   let new_persistent = Persistent_state.add persistent target in
   save_persistent t new_persistent
-(* TODO: remove target if this fails, or put in same transaction *)
+
 
 let get_target db id =
   Database.get db id
   >>= function
   | Some t -> of_result (Target.deserialize t)
   | None -> fail (`Missing_data id)
+
+let archive_target t target_id =
+  database t >>= fun db ->
+  get_target db target_id (* Making sure that the id exists. *)
+  >>= fun (_ : Target.t) ->
+  get_persistent t
+  >>= fun persistent ->
+  let new_persistent = Persistent_state.archive persistent target_id in
+  save_persistent t new_persistent
 
 let current_targets t =
   database t >>= fun db ->
