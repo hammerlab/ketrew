@@ -26,7 +26,7 @@ module Ssh = struct
   let do_ssh ssh command =
     ["ssh"; !_configuration_ssh_batch_option]
     @ (match ssh.port with
-      | Some p -> ["-p"; "port"]
+      | Some p -> ["-p"; Int.to_string p]
       | None -> [])
     @ (match ssh.user with
       | None -> [ssh.address]
