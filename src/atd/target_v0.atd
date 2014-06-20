@@ -5,7 +5,6 @@ type host <ocaml from="Ketrew_gen_base_v0"> = abstract
 type program <ocaml from="Ketrew_gen_base_v0"> = abstract
 type artifact <ocaml from="Ketrew_gen_base_v0"> = abstract
 type artifact_value <ocaml from="Ketrew_gen_base_v0"> = abstract
-type artifact_type <ocaml from="Ketrew_gen_base_v0"> = abstract
 type volume <ocaml from="Ketrew_gen_base_v0"> = abstract
 
 type command = {

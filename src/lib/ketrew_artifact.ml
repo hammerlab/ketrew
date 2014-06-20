@@ -45,42 +45,12 @@ module Volume = struct
     Log.to_long_string (log v)
 end
 
-module Type = struct
-
-  type value_type = Ketrew_gen_base_v0_t.value_type
-  let value_type_to_string = function
-  | `Unit -> "Unit"
-  | `String -> "String"
-  | `Number -> "Number"
-
-  type t = Ketrew_gen_base_v0_t.artifact_type
-  let value vt : t = `Value vt
-  let string_value : t = `Value `String
-  let volume v = `Volume v
-
-  let to_string_hum = function
-  | `Value v -> fmt "Value %s" (value_type_to_string v)
-  | `Volume v -> fmt "Volume %s" (Volume.to_string_hum v)
-
-end
 
 type value = Ketrew_gen_base_v0_t.artifact_value
 
 let unit = `Unit
 
 type t = Ketrew_gen_base_v0_t.artifact
-
-(* TODO those two functions should be more type-safe *)
-let is_ready specification =
-  match specification with
-  | `Value _ -> return false
-  | `Volume v -> Volume.exists v
-
-let of_type: Type.t -> t option =
-  function
-  | `Value `Unit -> Some (`Value `Unit)
-  | `Value v -> None
-  | `Volume v -> Some (`Volume v)
 
 
 

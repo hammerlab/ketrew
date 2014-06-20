@@ -58,30 +58,6 @@ module Volume : sig
     val log : t -> Log.t
     (** Get a Human-readable document. *)
 
-
-  end
-
-(** Module defining an artifact's “type”;  its “specification”. *)
-module Type : sig
-
-    type value_type = [ `Number | `String | `Unit ]
-    (** The specification of a value's type. *)
-
-    type t = [ `Value of value_type | `Volume of Volume.t ]
-    (** The specification of an artifact. *)
-
-    val value : value_type -> t
-    (** Construct a “value-type” artifact type. *)
-
-    val string_value : t
-    (** Shortcut for [`Value `String]. *)
-
-    val volume : Volume.t -> t
-    (** Construct a “volume-specification” artifact type. *)
-
-    val to_string_hum : t -> string
-    (** Get a Human-readable string. *)
-
   end
 
 type value = [ `Number of float | `String of string | `Unit ]
@@ -94,14 +70,3 @@ type t = [ `Value of value | `Volume of Volume.t ]
 (* Literal artifact, i.e. a literal value, or the specification of a volume
    (used for now also to represent its “value”). *)
 
-val is_ready :
-  Type.t ->
-  (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
-(** Check whether an aritfact is ready, given its type.
-A “value” artifact is {i never } ready, a “volume” one is checked with {!Volume.exists}.
-This is meant to change. *)
-
-val of_type : Type.t -> t option
-(** Get the value given it's type, if possible.
-    This is {i also } meant to change.
-*)

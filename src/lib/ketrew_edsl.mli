@@ -53,9 +53,6 @@ end
 
 (** Wrapper for {!Ketrew_artifact.t} and {!Ketrew_artifact.Type.t}. *)
 class type user_artifact = object
-  (**/**)
-  method artifact_type : Ketrew_artifact.Type.t
-  (**/**)
 
   method path : string
   (** Return the path of the artifact if the artifact is a volume containing

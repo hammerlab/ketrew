@@ -40,11 +40,6 @@ type volume = {
   structure: volume_structure;
 }
 
-type value_type = [Unit | String | Number]
-type artifact_type = [
-  | Value of value_type
-  | Volume of volume
-]
 type artifact_value = [ Unit | String of string | Number of float ]
 type artifact = [
   | Value of artifact_value

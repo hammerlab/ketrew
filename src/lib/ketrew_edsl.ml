@@ -11,7 +11,6 @@ type host = Ketrew_host.t
 
 class type user_artifact = object
 
-  method artifact_type : Artifact.Type.t
   method path : string
   method exists: Target.Condition.t
   (** Return the path of the artifact if the artifact is a volume containing
@@ -20,7 +19,6 @@ class type user_artifact = object
 end
 
 let unit = object
-  method artifact_type = `Value `Unit
   method path = failwith "Unit has no path"
   method exists = `False
 end
@@ -33,11 +31,9 @@ let file ?(host= Host.tmp_on_localhost) path  =
         create ~host
           ~root:(Path.absolute_directory_exn (Filename.dirname path))
           (file basename))
-    method artifact_type: Artifact.Type.t = `Volume  vol
     method path = path
     method exists = `Volume_exists vol
   end
-      (* Artifact.Volume.all_paths v |> List.hd_exn |> Path.to_string in *)
 
 class type user_target =
   object
