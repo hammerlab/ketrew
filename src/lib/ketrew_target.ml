@@ -134,10 +134,17 @@ let deserialize s : (t, _) Result.t =
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
 
-let is_ready t =
+let should_start t =
   match t.condition with
-  | `True -> return true
-  | `False -> return false
+  | `True -> return false
+  | `False -> return true
+  | `Volume_exists v -> 
+    Artifact.Volume.exists v >>| not
+
+let did_ensure_condition t =
+  match t.condition with
+  | `True -> return false
+  | `False -> return true
   | `Volume_exists v -> Artifact.Volume.exists v
 
 

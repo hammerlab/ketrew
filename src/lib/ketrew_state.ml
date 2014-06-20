@@ -264,7 +264,7 @@ let _start_running_target t target =
     begin Target.Command.run cmd
       >>< function
       | `Ok () -> 
-        begin Target.is_ready target
+        begin Target.did_ensure_condition target
           >>= function
           | false ->
             add_or_update_target t Target.(
@@ -326,7 +326,7 @@ let _update_status t ~target ~bookkeeping =
           >>= fun () ->
           return []
         | `Ok (`Succeeded run_parameters) ->
-          begin Target.is_ready target >>= function
+          begin Target.did_ensure_condition target >>= function
             | false ->
               Log.(log_prefix 
                    % s "succeeded by itself but did not ensure condition"
@@ -413,9 +413,9 @@ let step t =
         match target.Target.history with
         | `Created _ -> (* nothing to do *) return []
         | `Activated _ ->
-          begin Target.is_ready target
+          begin Target.should_start target
             >>= function
-            | false ->
+            | true ->
               _check_and_activate_dependencies ~t target.Target.dependencies
               >>= fun (what_now, happenings) ->
               begin match what_now with
@@ -430,7 +430,7 @@ let step t =
                 return (`Target_died (Target.id target, `Dependencies_died) :: happenings)
               | `Wait -> return happenings
               end
-            | true ->
+            | false ->
               add_or_update_target t
                 Target.(make_succeed_exn target (`Value `Unit))
               >>= fun () ->
