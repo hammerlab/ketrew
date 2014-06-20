@@ -237,14 +237,6 @@ let kill ~state ~interactive ids =
   end
 
 
-let with_state ?plugins ~configuration f =
-  Ketrew_state.create ?plugins configuration
-  >>= fun state ->
-  f ~state
-  >>= fun () ->
-  Ketrew_state.release state
-
-
 
 let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   let open Cmdliner in
@@ -282,7 +274,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
           pure (fun config_path all item_format ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
-              with_state ?plugins ~configuration
+              Ketrew_state.with_state ?plugins ~configuration
                 (display_info ~item_format ~all))
           $ config_file_argument
           $ Arg.(value & flag & info ["A"; "all"] 
@@ -299,7 +291,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path max_sleep how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            with_state ?plugins ~configuration (run_state ~max_sleep ~how))
+            Ketrew_state.with_state ?plugins ~configuration (run_state ~max_sleep ~how))
         $ config_file_argument
         $ Arg.(value & opt float 60.
                & info ["max-sleep"] ~docv:"SECONDS" 
@@ -327,7 +319,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path interactive ids ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            with_state ?plugins ~configuration 
+            Ketrew_state.with_state ?plugins ~configuration 
               (kill ~interactive ids))
         $ config_file_argument
         $ Arg.(value & flag & info ["i"; "interactive"] 

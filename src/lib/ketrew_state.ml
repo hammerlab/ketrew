@@ -52,6 +52,21 @@ let release t =
   | Some s -> Database.close s
   | None -> return ()
 
+let with_state ?plugins ~configuration f =
+  create ?plugins configuration
+  >>= fun state ->
+  begin try f ~state with
+  | e -> 
+    release state
+    >>= fun () ->
+    fail (`Failure (fmt "with_state: client function threw exception: %s" 
+                      (Printexc.to_string e)))
+  end
+  >>= fun () ->
+  release state
+
+
+
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
   fail (`Not_implemented msg)

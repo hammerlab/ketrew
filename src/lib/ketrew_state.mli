@@ -19,6 +19,15 @@ val release: t ->
   (unit, [> `Database of Ketrew_database.error]) Deferred_result.t
 (** Release the database handle. *)
 
+val with_state: 
+  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
+  configuration:Ketrew_configuration.t ->
+  (state:t ->
+   (unit, [> `Database of Ketrew_database.error 
+          | `Failure of string] as 'merge_error) Deferred_result.t) ->
+  (unit, 'merge_error) Deferred_result.t
+
+
 val add_target :
   t ->
   Ketrew_target.t ->
