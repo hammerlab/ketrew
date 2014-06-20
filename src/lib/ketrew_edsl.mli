@@ -81,6 +81,9 @@ class type user_target =
     method name : string
     (** Get the name of the target *)
 
+    method metadata: Ketrew_artifact.value
+    (** The metadata that has been set for the target. *)
+
     (**/**)
     method is_active: bool
     method id: Ketrew_pervasives.Unique_id.t
@@ -93,13 +96,17 @@ val target :
   ?active:bool ->
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
-  ?returns:user_artifact -> string -> user_target
+  ?returns:user_artifact ->
+  ?metadata:Ketrew_artifact.value ->
+  string -> user_target
 (** Create a new target. *)
 
 val active :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
-  ?returns:user_artifact -> string -> user_target
+  ?returns:user_artifact ->
+  ?metadata:Ketrew_artifact.value ->
+  string -> user_target
 (** Create a new target but with [~active:true]. *)
 
 val nohup_setsid :

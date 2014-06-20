@@ -43,6 +43,7 @@ class type user_target =
     method id: Unique_id.t
     method render: Ketrew_target.t
     method dependencies: user_target list
+    method metadata: Ketrew_artifact.value
   end
 
 
@@ -52,6 +53,7 @@ let user_target_internal
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
   ?(returns = unit)
+  ?(metadata = Artifact.unit)
   ()
   =
   let id = Unique_id.create () in
@@ -65,19 +67,22 @@ let user_target_internal
     method dependencies = dependencies
     method activate = active <- true
     method is_active = active
+    method metadata = metadata
     method render =
       let creation = if active then Target.active else Target.create in
-      creation 
+      creation ~metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~name:self#name
         ~make returns#artifact_type
+        
   end
 
-let target ?active ?dependencies ?make ?returns name =
-  user_target_internal ?active ?dependencies ~name ?make ?returns ()
-let active  ?dependencies ?make ?returns name =
-  user_target_internal ~active:true ?dependencies ~name ?make ?returns ()
+let target ?active ?dependencies ?make ?returns ?metadata name =
+  user_target_internal ?active ?dependencies ~name ?make ?metadata ?returns ()
+let active  ?dependencies ?make ?returns ?metadata name =
+  user_target_internal ~active:true
+    ?dependencies ?metadata ~name ?make ?returns ()
 
 (*
   Run a workflow:
