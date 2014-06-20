@@ -134,89 +134,88 @@ let test_0 () =
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = Configuration.create db_file () in
-    State.create configuration
-    >>= fun state ->
-    State.add_target state 
-      Target.(create ~name:"First target" Artifact.Type.string_value)
-    >>= fun () ->
-    begin State.current_targets state
-      >>= function
-      | [one] when one.Target.name = "First target" -> return ()
-      | other ->
-        Test.fail (fmt "too many targets: %d" (List.length other)); return ()
-    end
-    >>= fun () ->
+    State.with_state ~configuration begin fun ~state ->
+      State.add_target state 
+        Target.(create ~name:"First target" Artifact.Type.string_value)
+      >>= fun () ->
+      begin State.current_targets state
+        >>= function
+        | [one] when one.Target.name = "First target" -> return ()
+        | other ->
+          Test.fail (fmt "too many targets: %d" (List.length other)); return ()
+      end
+      >>= fun () ->
 
 
-    Test.test_target_one_step ~state "ls /" Test.target_succeeds
-      ~make:(`Get_output Target.Command.(shell "ls /"))
-      ~spec:Artifact.Type.string_value
-    >>= fun () ->
+      Test.test_target_one_step ~state "ls /" Test.target_succeeds
+        ~make:(`Get_output Target.Command.(shell "ls /"))
+        ~spec:Artifact.Type.string_value
+      >>= fun () ->
 
-    Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
-      ~make:(`Get_output Target.Command.(shell "ls /crazypath"))
-      ~spec:Artifact.Type.string_value
-    >>= fun () ->
+      Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
+        ~make:(`Get_output Target.Command.(shell "ls /crazypath"))
+        ~spec:Artifact.Type.string_value
+      >>= fun () ->
 
-    let host = Test.test_ssh_host in
-    Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
-      ~make:(`Get_output Target.Command.(shell ~host "ls /"))
-      ~spec:Artifact.Type.string_value
-    >>= fun () ->
+      let host = Test.test_ssh_host in
+      Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
+        ~make:(`Get_output Target.Command.(shell ~host "ls /"))
+        ~spec:Artifact.Type.string_value
+      >>= fun () ->
 
-    let root = Path.absolute_directory_exn "/tmp" in
-    Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
-      ~make:(`Direct_command 
-               Target.Command.(shell ~host "ls / > /tmp/ketrew_test"))
-      ~spec:(Artifact.Type.volume 
-               Artifact.Volume.(create ~host ~root (file "ketrew_test")))
-    >>= fun () ->
+      let root = Path.absolute_directory_exn "/tmp" in
+      Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
+        ~make:(`Direct_command 
+                 Target.Command.(shell ~host "ls / > /tmp/ketrew_test"))
+        ~spec:(Artifact.Type.volume 
+                 Artifact.Volume.(create ~host ~root (file "ketrew_test")))
+      >>= fun () ->
 
-    (* A target that creates a more complex file structure *)
-    let cmd = 
-      Target.Command.(
-        shell ~host 
-          "mkdir -p /tmp/ketrew_test2/somedir && \
-           mkdir -p /tmp/ketrew_test2/somedir_empty && \
-           ls / > /tmp/ketrew_test2/ls && \
-           ps aux > /tmp/ketrew_test2/somedir/psaux ")
-    in
-    let vol =
-      Artifact.Volume.(create ~host ~root
-                (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
-                                     dir "somedir" [file "psaux"]]))
-    in
-    Test.test_target_one_step ~state "2 files, 2 dirs over ssh" Test.target_succeeds
-      ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
-    >>= fun () ->
+      (* A target that creates a more complex file structure *)
+      let cmd = 
+        Target.Command.(
+          shell ~host 
+            "mkdir -p /tmp/ketrew_test2/somedir && \
+             mkdir -p /tmp/ketrew_test2/somedir_empty && \
+             ls / > /tmp/ketrew_test2/ls && \
+             ps aux > /tmp/ketrew_test2/somedir/psaux ")
+      in
+      let vol =
+        Artifact.Volume.(create ~host ~root
+                           (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
+                                                dir "somedir" [file "psaux"]]))
+      in
+      Test.test_target_one_step ~state "2 files, 2 dirs over ssh" Test.target_succeeds
+        ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
+      >>= fun () ->
 
-    (* doing it again should succeed for a good reason *)
-    Test.test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
-      ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
-      (Test.check_one_step (fun ~id -> function
-         | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
-         | _ -> false))
-    >>= fun () ->
+      (* doing it again should succeed for a good reason *)
+      Test.test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
+        ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
+        (Test.check_one_step (fun ~id -> function
+           | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
+           | _ -> false))
+      >>= fun () ->
 
-    (* A target that fails to create a more complex file structure; typo on file  *)
-    let vol =
-      Artifact.Volume.(create ~host ~root
-                (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
-                                     dir "somedir_typo" [file "psaux"]]))
-    in
-    Test.test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" Test.target_fails
-      ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
-    >>= fun () ->
+      (* A target that fails to create a more complex file structure; typo on file  *)
+      let vol =
+        Artifact.Volume.(create ~host ~root
+                           (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
+                                                dir "somedir_typo" [file "psaux"]]))
+      in
+      Test.test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" Test.target_fails
+        ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
+      >>= fun () ->
 
-    (* A target that fails to create a more complex file structure; typo on dir  *)
-    let vol =
-      Artifact.Volume.(create ~host ~root
-                (dir "ketrew_test2" [file "ls"; dir "somedir_empty_2" [];
-                                     dir "somedir" [file "psaux"]]))
-    in
-    Test.test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" Test.target_fails
-      ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
-    >>= fun () ->
+      (* A target that fails to create a more complex file structure; typo on dir  *)
+      let vol =
+        Artifact.Volume.(create ~host ~root
+                           (dir "ketrew_test2" [file "ls"; dir "somedir_empty_2" [];
+                                                dir "somedir" [file "psaux"]]))
+      in
+      Test.test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" Test.target_fails
+        ~make:(`Direct_command cmd) ~spec:(Artifact.Type.volume vol)
+      >>= fun () ->
 
     (*
 
@@ -227,89 +226,90 @@ let test_0 () =
       - target 1 may succeed and target2 fail by itself
 
     *)
-    let two_targets (succeed1, succeed2) check =
-      let tmpfile = fmt "ketrew_test_%s" (Unique_id.create ()) in
-      let target1 =
-        let shell_command =
-          if succeed1 then (fmt "ls -l / > /tmp/%s" tmpfile) else "echo bouh"
+      let two_targets (succeed1, succeed2) check =
+        let tmpfile = fmt "ketrew_test_%s" (Unique_id.create ()) in
+        let target1 =
+          let shell_command =
+            if succeed1 then (fmt "ls -l / > /tmp/%s" tmpfile) else "echo bouh"
+          in
+          Target.create ~name:"ls / > some tmp"
+            ~make:(`Direct_command Target.Command.(shell ~host shell_command))
+            (Artifact.Type.volume Artifact.Volume.(create ~host ~root (file tmpfile)))
         in
-        Target.create ~name:"ls / > some tmp"
-          ~make:(`Direct_command Target.Command.(shell ~host shell_command))
-          (Artifact.Type.volume Artifact.Volume.(create ~host ~root (file tmpfile)))
+        let target2 = 
+          let shell_command =
+            if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
+          Target.active ~name:"count lines of dependency"
+            ~dependencies:[ Target.id target1 ]
+            ~make:(`Get_output Target.Command.(shell ~host shell_command))
+            (Artifact.Type.string_value)
+        in
+        let id1 = Target.id target1 in
+        let id2 = Target.id target2 in
+        let expected_status b = if b then "succeeds" else "fails" in
+        let name =
+          fmt "%s (%s) depends on %s (%s)"
+            id1 (expected_status succeed1)
+            id2 (expected_status succeed2)
+        in
+        Test.test_targets ~state ~name [target1; target2] (check ~id1 ~id2)
       in
-      let target2 = 
-        let shell_command =
-          if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
-        Target.active ~name:"count lines of dependency"
-          ~dependencies:[ Target.id target1 ]
-          ~make:(`Get_output Target.Command.(shell ~host shell_command))
-          (Artifact.Type.string_value)
-      in
-      let id1 = Target.id target1 in
-      let id2 = Target.id target2 in
-      let expected_status b = if b then "succeeds" else "fails" in
-      let name =
-        fmt "%s (%s) depends on %s (%s)"
-          id1 (expected_status succeed1)
-          id2 (expected_status succeed2)
-      in
-      Test.test_targets ~state ~name [target1; target2] (check ~id1 ~id2)
-    in
-    two_targets (true, true) (fun ~id1 ~id2 -> 
-      [ 
-        `Happens (function 
-         | [`Target_activated (i, `Dependency)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_succeeded (i, `Process_success)] when i = id2 -> true
-         | _ -> false);
-        Test.nothing_happens
-      ])
-    >>= fun () ->
-    two_targets (false, true) (fun ~id1 ~id2 -> 
-      [ 
-        `Happens (function 
-         | [`Target_activated (i, `Dependency)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_died (i, `Process_failure)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_died (i, `Dependencies_died)] when i = id2 -> true
-         | _ -> false);
-        Test.nothing_happens
-      ])
-    >>= fun () ->
-    two_targets (true, false) (fun ~id1 ~id2 -> 
-      [ 
-        `Happens (function 
-         | [`Target_activated (i, `Dependency)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
-         | _ -> false);
-        `Happens (function 
-         | [`Target_died (i, `Process_failure)] when i = id2 -> true
-         | _ -> false);
-        Test.nothing_happens
-      ])
-    >>= fun () ->
+      two_targets (true, true) (fun ~id1 ~id2 -> 
+          [ 
+            `Happens (function 
+              | [`Target_activated (i, `Dependency)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_succeeded (i, `Process_success)] when i = id2 -> true
+              | _ -> false);
+            Test.nothing_happens
+          ])
+      >>= fun () ->
+      two_targets (false, true) (fun ~id1 ~id2 -> 
+          [ 
+            `Happens (function 
+              | [`Target_activated (i, `Dependency)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_died (i, `Process_failure)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_died (i, `Dependencies_died)] when i = id2 -> true
+              | _ -> false);
+            Test.nothing_happens
+          ])
+      >>= fun () ->
+      two_targets (true, false) (fun ~id1 ~id2 -> 
+          [ 
+            `Happens (function 
+              | [`Target_activated (i, `Dependency)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
+              | _ -> false);
+            `Happens (function 
+              | [`Target_died (i, `Process_failure)] when i = id2 -> true
+              | _ -> false);
+            Test.nothing_happens
+          ])
+      >>= fun () ->
 
-    let target_with_missing_dep = 
-      Target.active ~name:"target_with_missing_dep"
+      let target_with_missing_dep = 
+        Target.active ~name:"target_with_missing_dep"
           ~dependencies:[ "hope this one is not in the database" ]
           ~make:(`Get_output Target.Command.(shell "ls"))
           (Artifact.Type.string_value)
-    in
-    Test.test_targets ~state ~name:"target_with_missing_dep" [target_with_missing_dep] [
-      `Happens (function
-        | [`Target_died (_, `Dependencies_died)]  -> true
-        | _ -> false);
-      `Dont_care;
-    ]
+      in
+      Test.test_targets ~state ~name:"target_with_missing_dep" [target_with_missing_dep] [
+        `Happens (function
+          | [`Target_died (_, `Dependencies_died)]  -> true
+          | _ -> false);
+        `Dont_care;
+      ]
+    end
     >>= fun () ->
 
     return ()
@@ -323,23 +323,21 @@ let test_ssh_failure_vs_target_failure () =
   let open Ketrew in
   Lwt_main.run begin
     let test_wrong_host turn_unix_ssh_failure_into_target_failure expect =
-      let database_parameters = "/tmp/ketrew_test_ssh_failure"  in
-      begin System.remove database_parameters >>< fun _ -> return () end
-      >>= fun () ->
+      Test.new_db_file ()
+      >>= fun database_parameters ->
       let configuration =
         Configuration.create 
           ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
-      State.create configuration
-      >>= fun state ->
-      let target_with_wrong_host =
-        let host = Test.wrong_ssh_host in
-        Target.active ~name:"target_with_missing_dep"
-          ~make:(`Get_output Target.Command.(shell ~host "ls"))
-          (Artifact.Type.string_value)
-      in
-      Test.test_targets
-        ~state ~name:"target_with_wrong_host" [target_with_wrong_host]
-        expect
+      State.with_state ~configuration (fun ~state ->
+          let target_with_wrong_host =
+            let host = Test.wrong_ssh_host in
+            Target.active ~name:"target_with_missing_dep"
+              ~make:(`Get_output Target.Command.(shell ~host "ls"))
+              (Artifact.Type.string_value)
+          in
+          Test.test_targets
+            ~state ~name:"target_with_wrong_host" [target_with_wrong_host]
+            expect)
     in
     (* `false` is the default:
        The target won't be killed (so Ketrew will try to run it again at each
@@ -380,95 +378,94 @@ let test_long_running_nohup () =
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = Configuration.create db_file () in
-    State.create configuration >>= fun state ->
+    State.with_state ~configuration (fun ~state ->
 
-    Test.test_targets  ~state ~name:("one bad plugin")
-      [Target.active ~name:"one"
-         ~make:(`Long_running ("bad_plugin", "useless string"))
-         Artifact.Type.string_value
-      ]
-      [`Happens (function
-         | [`Target_died (_, `Plugin_not_found "bad_plugin")] -> true
-         | _ -> false);
-       `Dont_care;
-       Test.nothing_happens;
-      ]
-    >>= fun () ->
-
-    let root = Path.absolute_directory_exn "/tmp" in
-    (* Deferred_list.while_sequential [Host.localhost; Test.test_ssh_host] ~f:(fun host -> *)
-    Deferred_list.while_sequential [Test.test_ssh_host] ~f:(fun host ->
-        let name n = fmt "%s on %s" n Host.(to_string_hum host) in
-        let new_name = Unique_id.create () in
-        Test.test_targets  ~state ~name:(name "good ls")
-          ~wait_between_steps:1.
+        Test.test_targets  ~state ~name:("one bad plugin")
           [Target.active ~name:"one"
-             ~make:(Nohup_setsid.create ~host 
-                      (`Shell_command (fmt "ls > /tmp/%s" new_name)))
-             (Artifact.Type.volume
-                Artifact.Volume.(create ~host ~root (file new_name)))
+             ~make:(`Long_running ("bad_plugin", "useless string"))
+             Artifact.Type.string_value
           ]
           [`Happens (function
-             | [`Target_started (_, _)] -> true
+             | [`Target_died (_, `Plugin_not_found "bad_plugin")] -> true
              | _ -> false);
-           `Happens (function (* We hope that 1 second intervals are enough
-                                 but there is no good synchronization *)
-             | [`Target_succeeded _] -> true
-             | _ -> false);
+           `Dont_care;
            Test.nothing_happens;
           ]
         >>= fun () ->
 
-        (* Test the `kill` function: *)
-        let id = Unique_id.create () in
-        Test.test_targets  ~state ~name:(name "sleep 42")
-          ~wait_between_steps:1.
-          [Target.active ~name:"one" ~id
-             ~make:(Nohup_setsid.create ~host 
-                      (`Shell_command (fmt "echo %S && sleep 42" String.(make 60 '='))))
-             (`Value `Unit)
-          ]
-          [`Happens (function
-             | [`Target_started (_, _)] -> true
-             | _ -> false);
-           `Happens (function (* We hope that 1 second intervals are enough *)
-             | [] -> true
-             | _ -> false);
-           `Dont_care;
-           `Dont_care;
-           `Dont_care;
-           `Kill_and (id, (function
-             | [`Target_died (_, `Killed)] -> true
-             | _ -> false));
-           Test.nothing_happens;
-          ]
-        >>= fun () ->
+        let root = Path.absolute_directory_exn "/tmp" in
+        Deferred_list.while_sequential [Test.test_ssh_host] ~f:(fun host ->
+            let name n = fmt "%s on %s" n Host.(to_string_hum host) in
+            let new_name = Unique_id.create () in
+            Test.test_targets  ~state ~name:(name "good ls")
+              ~wait_between_steps:1.
+              [Target.active ~name:"one"
+                 ~make:(Nohup_setsid.create ~host 
+                          (`Shell_command (fmt "ls > /tmp/%s" new_name)))
+                 (Artifact.Type.volume
+                    Artifact.Volume.(create ~host ~root (file new_name)))
+              ]
+              [`Happens (function
+                 | [`Target_started (_, _)] -> true
+                 | _ -> false);
+               `Happens (function (* We hope that 1 second intervals are enough
+                                     but there is no good synchronization *)
+                 | [`Target_succeeded _] -> true
+                 | _ -> false);
+               Test.nothing_happens;
+              ]
+            >>= fun () ->
 
-        (* Test that a target fails when the process succeeds but does not
-           create the right target: *)
-        let t =
-          Ketrew.EDSL.(
-            active "some name"
-              ~make:(nohup_setsid ~host Program.(sh "ls > /tmp/some_temp_file"))
-              ~returns:(file ~host "/tmp/some_temp_file_with_error")
-          )
-        in
-        Test.test_targets ~state ~name:(name "wrong 'returns'")
-          ~wait_between_steps:0.3 [t#render] [
-          `Happens (function
-            | [`Target_started (_, _)] -> true
-            | _ -> false);
-          `Happens (function
-             | [`Target_died (_, `Process_failure)] -> true
-             | _ -> false);
-          `Dont_care;
-        ]
-        >>= fun () ->
+            (* Test the `kill` function: *)
+            let id = Unique_id.create () in
+            Test.test_targets  ~state ~name:(name "sleep 42")
+              ~wait_between_steps:1.
+              [Target.active ~name:"one" ~id
+                 ~make:(Nohup_setsid.create ~host 
+                          (`Shell_command (fmt "echo %S && sleep 42" String.(make 60 '='))))
+                 (`Value `Unit)
+              ]
+              [`Happens (function
+                 | [`Target_started (_, _)] -> true
+                 | _ -> false);
+               `Happens (function (* We hope that 1 second intervals are enough *)
+                 | [] -> true
+                 | _ -> false);
+               `Dont_care;
+               `Dont_care;
+               `Dont_care;
+               `Kill_and (id, (function
+                 | [`Target_died (_, `Killed)] -> true
+                 | _ -> false));
+               Test.nothing_happens;
+              ]
+            >>= fun () ->
+
+            (* Test that a target fails when the process succeeds but does not
+               create the right target: *)
+            let t =
+              Ketrew.EDSL.(
+                active "some name"
+                  ~make:(nohup_setsid ~host Program.(sh "ls > /tmp/some_temp_file"))
+                  ~returns:(file ~host "/tmp/some_temp_file_with_error")
+              )
+            in
+            Test.test_targets ~state ~name:(name "wrong 'returns'")
+              ~wait_between_steps:0.3 [t#render] [
+              `Happens (function
+                | [`Target_started (_, _)] -> true
+                | _ -> false);
+              `Happens (function
+                | [`Target_died (_, `Process_failure)] -> true
+                | _ -> false);
+              `Dont_care;
+            ]
+            >>= fun () ->
+
+            return ())
+        >>= fun (_ : unit list) ->
 
         return ())
-    >>= fun (_ : unit list) ->
-
-    return ()
   end |> function
   | `Ok () -> ()
   | `Error e ->

@@ -104,11 +104,8 @@ let run ?plugins ?override_configuration t =
     Ketrew_configuration.(
       get_configuration ?override_configuration default_configuration_path)
     >>= fun configuration ->
-    Ketrew_state.create ?plugins configuration
-    >>= fun state ->
-    Ketrew_user_command.run_list ~state todo_list
-    >>= fun () ->
-    Ketrew_state.release state
+    Ketrew_state.with_state ?plugins ~configuration (fun ~state ->
+        Ketrew_user_command.run_list ~state todo_list)
   ) with
   | `Ok () -> ()
   | `Error e ->

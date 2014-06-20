@@ -9,16 +9,6 @@ val default_plugins :
   (string * (module Ketrew_long_running.LONG_RUNNING)) list
 (** The “long-running” plugins loaded by default. *)
 
-val create :
-  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
-  Ketrew_configuration.t ->
-  (t, 'a) Deferred_result.t
-(** Initialize the state. *)
-
-val release: t ->
-  (unit, [> `Database of Ketrew_database.error]) Deferred_result.t
-(** Release the database handle. *)
-
 val with_state: 
   ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
   configuration:Ketrew_configuration.t ->
@@ -26,6 +16,7 @@ val with_state:
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string] as 'merge_error) Deferred_result.t) ->
   (unit, 'merge_error) Deferred_result.t
+(** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
 
 
 val add_target :
