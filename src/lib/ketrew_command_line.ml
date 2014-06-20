@@ -287,7 +287,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
                    ~doc:"Display all processes even the completed ones.")
           $ Arg.(value
                  & opt string default_item_format
-                 & info ["-F"; "item-format"] ~docv:"FORMAT-STRING"
+                 & info ["F"; "item-format"] ~docv:"FORMAT-STRING"
                    ~doc:"Use $(docv) as format for displaying jobs")
         ) in
   let run_cmd =
