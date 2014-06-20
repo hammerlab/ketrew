@@ -236,6 +236,33 @@ let kill ~state ~interactive ids =
     return ()
   end
 
+let archive ~state ~interactive ids =
+  begin 
+    begin if interactive then
+        Ketrew_state.current_targets state
+        >>= fun all_targets ->
+        Deferred_list.while_sequential all_targets (fun target ->
+            let item_format = "$name ($id)" in
+            Log.(s "Add: " % n
+                 % bold_yellow (s (format_target ~item_format target)) % n
+                 % s " to archival list? Press 'y' or 'n'" @ normal);
+            begin get_key () >>= function
+              | 'y' | 'Y' -> return (Some (Target.id target))
+              | _ -> return None
+            end)
+        >>| List.filter_opt
+      else
+        return []
+    end
+    >>= fun additional_ids ->
+    let to_archive = additional_ids @ ids in
+    if List.length to_archive = 0 then 
+      Log.(s "There is nothing to archive." @ warning);
+    Deferred_list.while_sequential to_archive (fun id ->
+        Ketrew_state.archive_target state id)
+    >>= fun (_ : unit list) ->
+    return ()
+  end
 
 
 let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
@@ -312,6 +339,8 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "run" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Run steps of the engine."  ~man)
   in
+  let interactive_flag doc =
+    Arg.(value & flag & info ["i"; "interactive"] ~doc) in
   let kill_cmd =
     let open Term in
     sub_command
@@ -322,9 +351,8 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
             Ketrew_state.with_state ?plugins ~configuration 
               (kill ~interactive ids))
         $ config_file_argument
-        $ Arg.(value & flag & info ["i"; "interactive"] 
-                 ~doc:"Go through running targets and kill them with 'y' \
-                       or 'n'.")
+        $ interactive_flag "Go through running targets and kill them with 'y' \
+                            or 'n'."
         $ Arg.(value @@ pos_all string [] @@
                info [] ~docv:"Target-Id" ~doc:"Kill target $(docv)"))
       ~info:(
@@ -332,13 +360,31 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
           ~doc:"Kill a target." 
           ~man:[])
   in
+  let archive_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path interactive ids ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration 
+              (archive ~interactive ids))
+        $ config_file_argument
+        $ interactive_flag "Go through running targets and kill them with 'y' \
+                            or 'n'."
+        $ Arg.(value @@ pos_all string [] @@
+               info [] ~docv:"Target-Id" ~doc:"Archive target $(docv)"))
+      ~info:(
+        info "archive" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Archive targets." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
     sub_command
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
-  let cmds = [init_cmd; info_cmd; run_cmd; kill_cmd] in
+  let cmds = [init_cmd; info_cmd; run_cmd; kill_cmd; archive_cmd] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
   | `Error _ -> exit Return_code.cmdliner_error
