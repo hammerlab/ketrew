@@ -67,5 +67,6 @@ type monitored_script = {
 *)
 type persistent_state = {
   current_targets: unique_id list;
+  archived_targets: unique_id list;
 }
 

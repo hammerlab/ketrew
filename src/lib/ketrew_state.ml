@@ -15,12 +15,11 @@ module Nohup_setsid = Ketrew_nohup_setsid
 module Persistent_state = struct
   type t = Ketrew_gen_base_v0_t.persistent_state = {
     current_targets: Target.id list;
-    (* keep db id of a list of all "archived" targets *)
+    archived_targets: Target.id list;
   }
-  let create () = {current_targets = [];}
+  let create () = {current_targets = []; archived_targets = []}
 
-  let serialize t =
-    Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
+  let serialize t = Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
 
   let deserialize s = 
     try return (
@@ -29,7 +28,7 @@ module Persistent_state = struct
       )
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
-  let add t target = { current_targets = Target.id target :: t.current_targets }
+  let add t target = { t with current_targets = Target.id target :: t.current_targets }
 
   let current_targets t = t.current_targets
 end
