@@ -107,6 +107,8 @@ let run ?plugins ?override_configuration t =
     Ketrew_state.create ?plugins configuration
     >>= fun state ->
     Ketrew_user_command.run_list ~state todo_list
+    >>= fun () ->
+    Ketrew_state.release state
   ) with
   | `Ok () -> ()
   | `Error e ->

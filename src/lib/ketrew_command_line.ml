@@ -241,6 +241,8 @@ let with_state ?plugins ~configuration f =
   Ketrew_state.create ?plugins configuration
   >>= fun state ->
   f ~state
+  >>= fun () ->
+  Ketrew_state.release state
 
 
 

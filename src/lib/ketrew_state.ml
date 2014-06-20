@@ -47,6 +47,11 @@ let create ?(plugins=default_plugins) configuration =
   return {database_handle = None; configuration;
           long_running_plugins = plugins}
 
+let release t =
+  match t.database_handle with
+  | Some s -> Database.close s
+  | None -> return ()
+
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
   fail (`Not_implemented msg)

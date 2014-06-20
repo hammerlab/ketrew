@@ -15,6 +15,10 @@ val create :
   (t, 'a) Deferred_result.t
 (** Initialize the state. *)
 
+val release: t ->
+  (unit, [> `Database of Ketrew_database.error]) Deferred_result.t
+(** Release the database handle. *)
+
 val add_target :
   t ->
   Ketrew_target.t ->
