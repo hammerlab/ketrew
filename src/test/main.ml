@@ -64,14 +64,23 @@ module Test = struct
       `Status (id, function `Dead _ -> true | _ -> false)
     let check_one_step ~id check = `Happens (check ~id)
     let nothing_happens = `Happens (function [] -> true | _ -> false)
+
+    let new_db_file () =
+      let db_file = "/tmp/ketrew_db_test"  in
+      begin System.Shell.do_or_fail (fmt "rm -f %s*" db_file)
+        (* DBM uses `db_file` as a prefix for implementation-dependent files *)
+        >>< fun _ -> return ()
+      end
+      >>= fun () ->
+      return db_file
+
 end
 
 let mini_db_test () =
   Lwt_main.run begin
     let module DB = Ketrew_database in
-    let db_file = "/tmp/ketrew_db_test"  in
-    begin System.remove db_file >>< fun _ -> return () end
-    >>= fun () ->
+    Test.new_db_file ()
+    >>= fun db_file ->
     DB.load db_file
     >>= fun db ->
     DB.get db ~key:"k"
@@ -95,16 +104,17 @@ let mini_db_test () =
       end
     in
     check_k db >>= fun () ->
+    DB.close db >>= fun () ->
     DB.load db_file
     >>= fun db2 ->
     check_k db2 >>= fun () ->
-    begin DB.act db DB.(seq [contains ~key:"k" "V"])
+    begin DB.act db2 DB.(seq [contains ~key:"k" "V"])
       >>= function
       | `Done -> return ()
       | `Not_done -> Test.fail "seq 2 not done"; return ()
     end
     >>= fun () ->
-    begin DB.act db DB.(seq [contains ~key:"k" "v"])
+    begin DB.act db2 DB.(seq [contains ~key:"k" "v"])
       >>= function
       | `Not_done -> return ()
       | `Done -> Test.fail "seq 3 done"; return ()
@@ -115,15 +125,14 @@ let mini_db_test () =
   |> function
   | `Ok () -> ()
   | `Error e ->
-    Log.(s "mini_db_test: ERROR: TODO " @ error);
+    Log.(s "mini_db_test: ERROR:  " % s (Ketrew_error.to_string e) @ error);
     Test.fail "mini_db_test ends with error"
 
 let test_0 () =
   let open Ketrew in
-  let db_file = "/tmp/ketrew_test_database"  in
   Lwt_main.run begin
-    begin System.remove db_file >>< fun _ -> return () end
-    >>= fun () ->
+    Test.new_db_file ()
+    >>= fun db_file ->
     let configuration = Configuration.create db_file () in
     State.create configuration
     >>= fun state ->
@@ -303,8 +312,6 @@ let test_0 () =
     ]
     >>= fun () ->
 
-    System.remove db_file
-    >>= fun () ->
     return ()
   end |> function
   | `Ok () -> ()
@@ -369,10 +376,9 @@ let test_ssh_failure_vs_target_failure () =
 
 let test_long_running_nohup () =
   let open Ketrew in
-  let db_file = "/tmp/ketrew_test_database"  in
   Lwt_main.run begin
-    begin System.remove db_file >>< fun _ -> return () end
-    >>= fun () ->
+    Test.new_db_file ()
+    >>= fun db_file ->
     let configuration = Configuration.create db_file () in
     State.create configuration >>= fun state ->
 
@@ -462,8 +468,6 @@ let test_long_running_nohup () =
         return ())
     >>= fun (_ : unit list) ->
 
-    System.remove db_file
-    >>= fun () ->
     return ()
   end |> function
   | `Ok () -> ()

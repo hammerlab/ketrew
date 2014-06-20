@@ -19,7 +19,7 @@ val add_target :
   t ->
   Ketrew_target.t ->
   (unit,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
     | `Database_unavailable of Ketrew_target.id
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
@@ -31,7 +31,7 @@ val add_target :
 val current_targets :
   t ->
   (Ketrew_target.t list,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of Ketrew_target.id
@@ -66,7 +66,7 @@ val log_what_happened : happening -> Log.t
 val step :
   t ->
   (happening list,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
     | `Database_unavailable of Ketrew_target.id
     | `Host of _ Ketrew_host.Error.execution
     | `IO of
@@ -81,7 +81,7 @@ val step :
 
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of string
@@ -96,7 +96,7 @@ val kill:  t -> id:Ketrew_target.id ->
                       | `Long_running_unrecoverable of string * string
                       | `Plugin_not_found of string ] ]
      list,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
    | `Failed_to_kill of string
    | `Database_unavailable of string
    | `IO of

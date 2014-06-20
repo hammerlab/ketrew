@@ -14,7 +14,7 @@ val run_list :
   state:Ketrew_state.t ->
   t list ->
   (unit,
-   [> `Database of [> `Load ] * string
+   [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
    | `Failure of string
    | `IO of

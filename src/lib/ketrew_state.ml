@@ -137,8 +137,11 @@ let _check_and_activate_dependencies ~t ids =
         | `Dead _ -> return (`Die dep)
         | `Successful _ -> return `Go
         end
-      | `Error (`Missing_data s) ->
+      | `Error (`Database _ as e)
+      | `Error (`Missing_data _ as e) ->
         (* Dependency not-found => should get out of the way *)
+        Log.(s "Error while activating dependencies: " %
+             s (Ketrew_error.to_string e) @ error);
         return (`Die dep)
       | `Error (`Target _ as e) -> fail e
     )
