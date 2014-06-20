@@ -65,9 +65,13 @@ let with_state ?plugins ~configuration f =
     fail (`Failure (fmt "with_state: client function threw exception: %s" 
                       (Printexc.to_string e)))
   end
-  >>= fun () ->
-  release state
-
+  >>< begin function
+  | `Ok () ->
+    release state
+  | `Error e ->
+    release state >>< fun _ ->
+    fail e
+  end
 
 
 let not_implemented msg = 
