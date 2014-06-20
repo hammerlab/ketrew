@@ -27,13 +27,12 @@ type error =
   [ `Act of action | `Get of string | `Load of string | `Close ] * string
 let log_error = function
 | `Database (what, msg) ->
-  Log.(s "Database" % 
-       begin match what with
-       | `Load path -> s "Loading " % s path
-       | `Get k -> s "Getting " % s k
-       | `Act a -> s "Processing " % log_action a
-       | `Close -> s "Closing"
-       end
+  Log.(s "Database" % sp
+       % parens (match what with
+         | `Load path -> s "Loading " % s path
+         | `Get k -> s "Getting " % s k
+         | `Act a -> s "Processing " % log_action a
+         | `Close -> s "Closing")
        % s " → "
        % s msg)
 
