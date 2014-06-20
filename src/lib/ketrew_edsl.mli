@@ -60,6 +60,10 @@ class type user_artifact = object
   method path : string
   (** Return the path of the artifact if the artifact is a volume containing
       a single file or directory. *)
+
+  method exists : Ketrew_target.Condition.t
+  (** Get “is-ready” condition (for the [~ready_when] argument of {!target}. *)
+
 end
 
 val file: ?host:Ketrew_host.t -> string -> user_artifact
@@ -96,7 +100,7 @@ val target :
   ?active:bool ->
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
-  ?returns:user_artifact ->
+  ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.value ->
   string -> user_target
 (** Create a new target. *)
@@ -104,7 +108,7 @@ val target :
 val active :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
-  ?returns:user_artifact ->
+  ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.value ->
   string -> user_target
 (** Create a new target but with [~active:true]. *)

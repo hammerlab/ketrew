@@ -96,6 +96,26 @@ type workflow_state = [
 type id = Unique_id.t
 (** The identifiers of targets. *)
 
+module Condition : sig
+  type t = [
+    | `True
+    | `False
+    | `Volume_exists of Ketrew_artifact.Volume.t
+  ]
+  (** A execution anti-condition, the condition defines when a target is
+    (already) ready: {ul
+    {li with [`False] the target always runs (because never “ready”),}
+    {li with [`True] the target never runs (a bit useless),}
+    {li with [`Volume_exists v] the target runs if the volume does not exist
+    ([make]-like behavior).}
+      }
+  *)
+
+  val log: t -> Log.t
+  val to_string_hum: t -> string
+
+end
+
 type t = {
   id : id;
   name : string;
@@ -103,7 +123,7 @@ type t = {
   metadata : Ketrew_artifact.value;
   dependencies : id list;
   make : build_process;
-  result_type : Ketrew_artifact.Type.t;
+  condition : Condition.t;
   history : workflow_state;
 }
 (** The fat record holding targets. *)
@@ -112,7 +132,10 @@ val create :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.value ->
-  ?dependencies:id list -> ?make:build_process -> Ketrew_artifact.Type.t -> t
+  ?dependencies:id list -> ?make:build_process -> 
+  ?condition:Condition.t ->
+  unit ->
+  t
 (** Create a target value (not stored in the DB yet). *)
 
 val activate_exn : t -> by:[ `Dependency | `User ] -> t
@@ -143,7 +166,9 @@ val active :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.value ->
-  ?dependencies:id list -> ?make:build_process -> Ketrew_artifact.Type.t -> t
+  ?dependencies:id list -> ?make:build_process ->
+  ?condition:Condition.t ->
+  unit -> t
 (** Like {!create} but set as already activated. *)
 
 val id : t -> Unique_id.t
@@ -161,3 +186,7 @@ val deserialize :
 val log : t -> Log.t
 (** Get a [Log.t] “document” to display the target. *)
 
+val is_ready:
+  t ->
+  (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
+(** Check whether a target is ready, given its condition.  *)

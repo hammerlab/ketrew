@@ -164,6 +164,7 @@ let of_string s =
   let uri = Uri.of_string s in
   of_uri uri
 
+let log t = Log.(s t.name)
 let to_string_hum t = t.name
 
 module Error = struct

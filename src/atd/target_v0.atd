@@ -6,6 +6,7 @@ type program <ocaml from="Ketrew_gen_base_v0"> = abstract
 type artifact <ocaml from="Ketrew_gen_base_v0"> = abstract
 type artifact_value <ocaml from="Ketrew_gen_base_v0"> = abstract
 type artifact_type <ocaml from="Ketrew_gen_base_v0"> = abstract
+type volume <ocaml from="Ketrew_gen_base_v0"> = abstract
 
 type command = {
   host: host;
@@ -51,6 +52,12 @@ type workflow_state = [
   | Successful of (time * activated_or_running * artifact)
 ] 
 
+type condition = [
+  | True
+  | False
+  | Volume_exists of volume
+]
+
 type id = unique_id
 type t = {
   id: id;
@@ -59,6 +66,7 @@ type t = {
   metadata: artifact_value;
   dependencies: id list;
   make: build_process;
-  result_type: artifact_type;
+  condition: condition;
+  (* result_type: artifact_type; *)
   history: workflow_state;
 }

@@ -24,20 +24,20 @@ let deploy_website () =
   let write_branch =
     (* The target that produces `branch_file` *)
     target "Get current branch"
-      ~returns:branch_file
+      ~ready_when:branch_file#exists
       ~make:(direct_shell_command 
                (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
   in
   let make_doc = 
     target "Make doc" ~make:(direct_shell_command "please.sh doc")
-      ~returns:unit in
+      ~ready_when:`False in
   let check_out_gh_pages =
     (* first target with dependencies: the two previous ones *)
     target "Check out gh-pages"
       ~dependencies:[write_branch; make_doc]
       ~make:(direct_shell_command
                (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
-      (* The default value for `?returns` is unit, so this
+      (* The default value for `?ready_when` is [`False], so this
          target will always be recomputed. 
          It can fail pretty often, e.g. is the git-tree is not clean, for `git
          checkout`.  *)
@@ -93,7 +93,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let targz = destination "tar.gz" in
   let make_targz =
-    target ~returns:targz "make-tar.gz" ~dependencies:[]
+    target ~ready_when:targz#exists "make-tar.gz" ~dependencies:[]
       ~make:(nohup_setsid ~host 
                (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
       (* A first target using `nohup_setsid`
@@ -102,7 +102,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let md5 = destination "md5" in
   let md5_targz =
-    target ~returns:md5 "make-md5-of-tar.gz" ~dependencies:[make_targz]
+    target ~ready_when:md5#exists "make-md5-of-tar.gz" ~dependencies:[make_targz]
       ~make:(nohup_setsid ~host
                Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
@@ -112,7 +112,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     | true ->
       let gpg_file = destination "gpg" in
       let make_it =
-        target "make-gpg-of-tar.gz" ~returns:gpg_file ~dependencies:[make_targz]
+        target "make-gpg-of-tar.gz" ~ready_when:gpg_file#exists ~dependencies:[make_targz]
           ~make:(nohup_setsid ~host 
                    Program.(shf "gpg -c --passphrase bouh -o '%s' '%s'"
                               gpg_file#path targz#path)) in

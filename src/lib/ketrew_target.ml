@@ -39,16 +39,30 @@ end
 
 include Ketrew_gen_target_v0_t
 
+module Condition = struct
+  type t = condition
+  let log =
+    Log.(function
+      | `True -> s "True"
+      | `False -> s "False"
+      | `Volume_exists v -> 
+        parens (s "Volume " % Artifact.Volume.log v % s " exists"))
+  let to_string_hum c = Log.to_long_string (log c)
+
+end
+
+
 let nop : build_process = `Artifact (`Value `Unit)
 
 let create
     ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
     ?(dependencies=[]) ?(make=nop)
-    result_type = 
+    ?(condition=`False)
+    () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; persistance; metadata;
-    dependencies; make; result_type; history }
+    dependencies; make; condition; history }
 
 (** Create a new  target but activated from a created one; 
     raises [Invalid_argument _] if current status is not [`Created _]. *)
@@ -97,12 +111,13 @@ let update_running_exn t ~run_parameters =
   | _ -> invalid_argument_exn ~where:"Target" (fmt "update_running_exn")
 
 
+
 let active ?id
     ?name ?persistance ?metadata
-    ?dependencies ?make
-    artifact = 
-  activate_exn ~by:`User (create ?id ?name ?persistance ?metadata
-                            ?dependencies ?make artifact)
+    ?dependencies ?make ?condition
+    () = 
+  activate_exn ~by:`User (create ?id ?name ?persistance ?metadata ?condition
+                            ?dependencies ?make ())
 
 let id t : Unique_id.t = t.id
 
@@ -118,6 +133,12 @@ let deserialize s : (t, _) Result.t =
   with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
+
+let is_ready t =
+  match t.condition with
+  | `True -> return true
+  | `False -> return false
+  | `Volume_exists v -> Artifact.Volume.exists v
 
 
 

@@ -13,6 +13,7 @@ class type user_artifact = object
 
   method artifact_type : Artifact.Type.t
   method path : string
+  method exists: Target.Condition.t
   (** Return the path of the artifact if the artifact is a volume containing
       a single file or directory. *)
 
@@ -21,17 +22,20 @@ end
 let unit = object
   method artifact_type = `Value `Unit
   method path = failwith "Unit has no path"
+  method exists = `False
 end
 
 let file ?(host= Host.tmp_on_localhost) path  =
   let basename = Filename.basename path in
   object
-    method artifact_type: Artifact.Type.t =
-      `Volume Artifact.Volume.(
-          create ~host
-            ~root:(Path.absolute_directory_exn (Filename.dirname path))
-            (file basename))
+    val vol =
+      Artifact.Volume.(
+        create ~host
+          ~root:(Path.absolute_directory_exn (Filename.dirname path))
+          (file basename))
+    method artifact_type: Artifact.Type.t = `Volume  vol
     method path = path
+    method exists = `Volume_exists vol
   end
       (* Artifact.Volume.all_paths v |> List.hd_exn |> Path.to_string in *)
 
@@ -52,7 +56,7 @@ let user_target_internal
   ?(dependencies = [])
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
-  ?(returns = unit)
+  ?(ready_when = `False)
   ?(metadata = Artifact.unit)
   ()
   =
@@ -73,16 +77,16 @@ let user_target_internal
       creation ~metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
-        ~name:self#name
-        ~make returns#artifact_type
+        ~name:self#name ~condition:ready_when
+        ~make ()
         
   end
 
-let target ?active ?dependencies ?make ?returns ?metadata name =
-  user_target_internal ?active ?dependencies ~name ?make ?metadata ?returns ()
-let active  ?dependencies ?make ?returns ?metadata name =
+let target ?active ?dependencies ?make ?ready_when ?metadata name =
+  user_target_internal ?active ?dependencies ~name ?make ?metadata ?ready_when ()
+let active  ?dependencies ?make ?ready_when ?metadata name =
   user_target_internal ~active:true
-    ?dependencies ?metadata ~name ?make ?returns ()
+    ?dependencies ?metadata ~name ?make ?ready_when ()
 
 (*
   Run a workflow:

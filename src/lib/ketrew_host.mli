@@ -80,6 +80,10 @@ val of_string: string -> t
 val to_string_hum : t -> string
 (** Get a display-friendly string for the host (“name”, or hostname). *)
 
+val log : t -> Log.t
+(** Get a {!Log.t} document. *)
+
+
 module Error: sig
 
   type 'a execution = 'a constraint 'a =

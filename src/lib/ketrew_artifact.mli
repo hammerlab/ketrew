@@ -55,6 +55,10 @@ module Volume : sig
     val to_string_hum : t -> string
     (** Get a Human-readable string. *)
 
+    val log : t -> Log.t
+    (** Get a Human-readable document. *)
+
+
   end
 
 (** Module defining an artifact's “type”;  its “specification”. *)
