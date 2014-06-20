@@ -17,7 +17,7 @@ let default_configuration_path =
   Sys.getenv "HOME" ^ "/.ketrew/client.toml"
 
 let default_database_path = 
-  Sys.getenv "HOME" ^ "/.ketrew/database.json"
+  Sys.getenv "HOME" ^ "/.ketrew/database_dbm"
 
 
 let create 
