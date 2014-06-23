@@ -264,6 +264,19 @@ let archive ~state ~interactive ids =
     return ()
   end
 
+let make_command_alias cmd ?(options="") name =
+  let open Cmdliner in
+  let term, info = cmd in
+  let orig = Term.name info in
+  let doc = Printf.sprintf "An alias for $(b,%s%s)." orig options in
+  let man = [
+    `S "DESCRIPTION";
+    `P (Printf.sprintf "$(b,$(mname) %s) is an alias for $(b,$(mname) %s%s)."
+          name orig options);
+    `P (Printf.sprintf "See $(b,$(mname) %s --help) for details."
+          orig);
+  ] in
+  (term, Term.info name ~docs:"COMMAND ALIASES" ~doc ~man)
 
 let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   let open Cmdliner in
@@ -383,13 +396,36 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "archive" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Archive targets." ~man:[])
   in
+  let print_conf_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Log.(s "From " %
+                 (match override_configuration with 
+                  | None -> sf "%S" config_path
+                  | Some _ -> s "user-overriden")
+                 % s ":" % n
+                 % concat
+                   (List.map (Configuration.log configuration)
+                      ~f:(fun conflog ->  s "* " % conflog % n))
+                 @ normal); return ())
+        $ config_file_argument)
+      ~info:(info "print-configuration" ~version 
+               ~doc:"Display current configuration." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
     sub_command
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
-  let cmds = [init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd] in
+  let cmds = [
+    init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+    print_conf_cmd; make_command_alias print_conf_cmd "pc";
+  ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
   | `Error _ -> exit Return_code.cmdliner_error
