@@ -69,7 +69,7 @@ let format_target ~item_format t =
     | some_unknown -> fmt "$%s" some_unknown) item_format;
   Buffer.contents buf
 
-let display_info ~state ~all ~item_format =
+let display_status ~state ~all ~item_format =
   begin
     Log.(s "display_info !" @ verbose);
     Ketrew_state.current_targets state
@@ -293,16 +293,16 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
                  & info ["database"] ~docv:"FILE"
                    ~doc:"Use $(docv) as database.")
         ) in
-  let info_cmd =
+  let status_cmd =
     sub_command
-      ~info:(Term.info "info" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
+      ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
           pure (fun config_path all item_format ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
               Ketrew_state.with_state ?plugins ~configuration
-                (display_info ~item_format ~all))
+                (display_status ~item_format ~all))
           $ config_file_argument
           $ Arg.(value & flag & info ["A"; "all"] 
                    ~doc:"Display all processes even the completed ones.")
@@ -384,7 +384,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
     sub_command
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
-  let cmds = [init_cmd; info_cmd; run_cmd; kill_cmd; archive_cmd] in
+  let cmds = [init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
   | `Error _ -> exit Return_code.cmdliner_error
