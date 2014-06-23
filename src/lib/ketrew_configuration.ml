@@ -5,6 +5,8 @@ type t = {
   database_parameters: string;
   persistent_state_key: string;
   turn_unix_ssh_failure_into_target_failure: bool;
+  debug_level: int;
+  with_color: bool;
 }
 
 let log t =
@@ -16,6 +18,8 @@ let log t =
          then s "turns"
          else s "does not turn")
       % s " into target failure";
+      s "Debug-level: " % i t.debug_level;
+      s "Client " % s (if t.with_color then "with" else "without") % s " colors";
     ])
 
 
@@ -33,44 +37,62 @@ let default_database_path =
 
 
 let create 
+    ?(debug_level=2)
+    ?(with_color=true)
     ?(turn_unix_ssh_failure_into_target_failure=false)
-    ?(persistent_state_key=default_persistent_state_key) ~database_parameters () =
+    ?(persistent_state_key=default_persistent_state_key)
+    ~database_parameters () =
   {
     database_parameters; persistent_state_key;
     turn_unix_ssh_failure_into_target_failure;
+    debug_level; with_color;
   }
 
 let parse_exn str =
   let toml = Toml.from_string str in
+  let toml_option ?(table=toml) get name =
+    try Some (get table name) with _ -> None in
+  let toml_mandatory ?(table=toml) get name =
+    try get table name
+    with _ -> failwith (fmt "Mandatory field %S missing" name) in
   let turn_unix_ssh_failure_into_target_failure =
-    try 
-      Toml.get_bool toml "unix-ssh-make-targets-fail"
-      || Toml.get_bool toml "turn-unix-ssh-failure-into-target-failure"
-    with
-    | _ -> false
-  in
-  let table =
-    try Toml.get_table toml "database" with
-    | Not_found -> failwith "Configuration file without [database]" in
-  let database_parameters = 
-    try Toml.get_string table "path" with
-    | _ -> failwith "missing database path" in
-  let persistent_state_key =
-    try Toml.get_string table "state-key" with 
-    | _ -> default_persistent_state_key in
-  create ~turn_unix_ssh_failure_into_target_failure
-    ~persistent_state_key ~database_parameters ()
+    toml_option Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
+  let debug_level = toml_option Toml.get_int "debug-level" in
+  let with_color =
+    Option.(
+      toml_option Toml.get_table "client"
+      >>= fun table ->
+      toml_option ~table Toml.get_bool "color") in
+  let database_parameters, persistent_state_key =
+    let table = toml_mandatory Toml.get_table "database" in
+    toml_mandatory ~table Toml.get_string  "path",
+    toml_option ~table Toml.get_string "state-key" in
+  create 
+    ?turn_unix_ssh_failure_into_target_failure 
+    ?debug_level 
+    ?with_color
+    ?persistent_state_key 
+    ~database_parameters ()
 
 let parse s =
   let open Result in
   try parse_exn s |> return 
   with e -> fail (`Configuration (`Parsing (Printexc.to_string e)))
 
+let apply_globals t =
+  global_debug_level := t.debug_level;
+  global_with_color := t.with_color;
+  ()
 
-let get_configuration ?override_configuration path =
-  match override_configuration with
-  | Some c -> return c
+let get_configuration ?(and_apply=true) ?override_configuration path =
+  begin match override_configuration with
+  | Some c -> 
+    return c
   | None ->
     IO.read_file path
     >>= fun content ->
     of_result (parse content)
+  end
+  >>= fun conf ->
+  if and_apply then apply_globals conf;
+  return conf
