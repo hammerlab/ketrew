@@ -50,4 +50,5 @@ val get_configuration :
 (** The call [get_configuration file] reads and parses the file [f], unless
     [override_configuration] is provided. *)
 
-
+val log: t -> Log.t list
+(** Get a display-friendly list of configuration items. *)

@@ -7,6 +7,18 @@ type t = {
   turn_unix_ssh_failure_into_target_failure: bool;
 }
 
+let log t =
+  Log.([
+      s "Database: " % sf "%S" t.database_parameters;
+      s "State-key: " % sf "%S" t.persistent_state_key;
+      s "Unix-failure "
+      % (if t.turn_unix_ssh_failure_into_target_failure
+         then s "turns"
+         else s "does not turn")
+      % s " into target failure";
+    ])
+
+
 let database_parameters t = t.database_parameters
 let persistent_state_key t = t.persistent_state_key
 let is_unix_ssh_failure_fatal t = t.turn_unix_ssh_failure_into_target_failure
