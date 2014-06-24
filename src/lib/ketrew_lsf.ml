@@ -1,7 +1,7 @@
 open Ketrew_pervasives
 
 module Path = Ketrew_path
-
+module Program = Ketrew_program
 module Host = Ketrew_host
 module Error = Ketrew_error
 
@@ -23,6 +23,22 @@ let create
   `Long_running ("LSF",
                  `Created {host; program; queue; name; wall_limit; processors}
                  |> serialize)
+
+let log = 
+  let open Log in
+  function
+  | `Created c -> [
+      "Status", s "Created";
+      "Host", Host.log c.host;
+      "Program", Program.log c.program;
+    ]
+| `Running rp -> [
+      "Status", s "Running";
+      "Host", Host.log rp.created.host;
+      "Program", Program.log rp.created.program;
+      "LSF-ID", i rp.lsf_id;
+      "Playground", s (Path.to_string rp.playground);
+  ]
 
 let out_file_path ~playground =
   Path.(concat playground (relative_file_exn "out"))

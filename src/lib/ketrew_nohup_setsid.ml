@@ -4,6 +4,7 @@ module Path = Ketrew_path
 
 module Host = Ketrew_host
 module Error = Ketrew_error
+module Program = Ketrew_program
 
 type running = Ketrew_gen_nohup_setsid_v0_t.running = {
   pid: int option;
@@ -30,6 +31,21 @@ let deserialize_exn s =
 let name = "nohup-setsid"
 let create ?(host=Host.tmp_on_localhost) cmds =
   `Long_running (name, `Created (host, cmds) |> serialize)
+
+let log = 
+  let open Log in
+  function
+  | `Created (host, prog) -> [
+      "Status", s "Created";
+      "Host", Host.log host;
+      "Program", Program.log prog;
+    ]
+| `Running rp -> [
+      "Status", s "Running";
+      "Host", Host.log rp.host;
+      "PID", OCaml.option i rp.pid;
+      "Playground", s (Path.to_string rp.playground);
+  ]
 
 let out_file_path ~playground =
   Path.(concat playground (relative_file_exn "out"))

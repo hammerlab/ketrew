@@ -42,4 +42,6 @@ module type LONG_RUNNING = sig
     ([`Killed of run_parameters], error) Deferred_result.t
   (** Kill the long-running computation. *)
 
+  val log: run_parameters -> (string * Log.t) list
+  (** Get a list of things to display. *)
 end
