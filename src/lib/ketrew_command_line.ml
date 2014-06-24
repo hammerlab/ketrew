@@ -22,29 +22,6 @@ module Return_code = struct
 
 end
 
-(** [with_cbreak f] calls with the terminal in “get key” mode. 
-         It comes from
-         http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
-*)
-let with_cbreak (f: unit -> (_, _) t) =
-  let open Lwt_unix in
-  Lwt.(tcgetattr stdin
-       >>= fun term_init ->
-       let term_cbreak = { term_init with c_icanon = false } in
-       tcsetattr stdin TCSANOW term_cbreak
-       >>= fun () ->
-       catch f (fun exn -> return (`Error (`Failure "with_cbreak")))
-       >>= fun res ->
-       tcsetattr stdin TCSADRAIN term_init
-       >>= fun () ->
-       return res)
-
-let get_key () =
-  with_cbreak (fun () ->
-      wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
-        ~on_exn:(fun e -> (`Failure "get_key")))
-
-
 let default_item_format = 
   "- $id:$n  Name: $name → $status\n\
   \  Deps: $dependencies$n"
@@ -69,12 +46,137 @@ let format_target ~item_format t =
     | some_unknown -> fmt "$%s" some_unknown) item_format;
   Buffer.contents buf
 
+module Interaction = struct
+
+  (** [with_cbreak f] calls with the terminal in “get key” mode. 
+         It comes from
+         http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
+  *)
+  let with_cbreak (f: unit -> (_, _) t) =
+    let open Lwt_unix in
+    Lwt.(tcgetattr stdin
+         >>= fun term_init ->
+         let term_cbreak = { term_init with c_icanon = false; c_echo = false } in
+         tcsetattr stdin TCSANOW term_cbreak
+         >>= fun () ->
+         catch f (fun exn -> return (`Error (`Failure "with_cbreak")))
+         >>= fun res ->
+         tcsetattr stdin TCSADRAIN term_init
+         >>= fun () ->
+         return res)
+
+  let get_key () =
+    with_cbreak (fun () ->
+        wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
+          ~on_exn:(fun e -> (`Failure "get_key")))
+
+  let interaction_chars =
+    List.init 10 (fun i -> Char.chr (48 + i))
+    @ List.init 26 (fun i -> Char.chr (97 + i))
+    
+  let menu_item ?char ?(log=Log.empty) v =
+    (char, log, v)
+
+  let menu ?(max_per_page=10) ?(always_there=[]) ~sentence items =
+    (* let item_number = List.length items in *)
+    let items_splitted =
+      let split_number = max_per_page - (List.length always_there) in
+      let rec split acc l =
+        let left, right = List.split_n l split_number in
+        match right with
+        | [] -> List.rev (left :: acc)
+        | more -> split (left :: acc) more
+      in
+      split [] items
+    in
+    let number_of_menus = List.length items_splitted in
+    let rec menu_loop nth =
+      let items =
+        always_there @ (List.nth items_splitted nth |> Option.value ~default:[])
+      in
+      let available_chars =
+        List.filter interaction_chars (fun c ->
+            List.for_all items (fun (k, _, _) -> k <> Some c)) in
+      let filled_items =
+        let n = ref 0 in
+        List.map items ~f:(function
+          | None, l, v -> (incr n; List.nth available_chars !n, l, v)
+          | Some k, l, v -> Some k, l, v)
+      in
+      Log.(sentence % sp 
+           % brakets (i (nth + 1) % s "/" % i number_of_menus) % n
+           % s "Press a key: " % n
+           % concat 
+             (List.map filled_items ~f:(function
+                | (Some k, l, v) -> sf "* [%c]: " k % l % n
+                | None, _, _ -> s "ERROR, wrong usage of `menu`"))
+           % (
+             let previous = sf "* [<]: previous screen" % n in
+             let next = sf "* [>]: next screen" % n in
+             match number_of_menus, nth with
+             | 1, _ -> empty
+             | _, 0 -> next
+             | n, t when t = n - 1 -> previous
+             | _, _ -> previous % next
+           )
+           @ normal);
+      get_key () 
+      >>= fun key ->
+      begin match key with
+      | '<' -> menu_loop (nth - 1)
+      | '>' -> menu_loop (nth + 1)
+      | other ->
+        begin match List.find filled_items (fun (k, _, _) -> k = Some key) with
+        | Some (_, _, v) -> return v
+        | None ->
+          Log.(sf "Cannot understand: %c, try again please." key @ normal);
+          menu_loop nth
+        end
+      end
+    in 
+    menu_loop 0
+
+  let build_sublist_of_targets ~state ~list_name =
+    Ketrew_state.current_targets state
+    >>= fun all_targets ->
+    let to_process = ref [] in
+    let target_menu () =
+      List.filter_map all_targets ~f:(fun target ->
+          match List.exists !to_process ~f:(fun id -> id = Target.id target) with
+          | true -> None
+          | false ->
+            let item_format = "$name ($id)" in
+            Some (
+              menu_item 
+                ~log:Log.(s "Add: "
+                          % bold_yellow (s (format_target ~item_format target)))
+                (`Add (Target.id target))))
+        in
+        let rec loop () =
+          menu ~sentence:Log.(s "Add targets to “"
+                              % s list_name % s "”")
+            ~always_there:[
+              menu_item ~char:'A' ~log:Log.(s "Proceed") `Done;
+              menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel;
+            ]
+            (target_menu ())
+          >>= function
+          | `Add id -> to_process := id :: !to_process; loop ()
+          | `Cancel -> return `Cancel
+          | `Done -> return (`Go !to_process)
+        in
+        loop ()
+
+end
 let display_status ~state ~all ~item_format =
   begin
     Log.(s "display_info !" @ verbose);
     Ketrew_state.current_targets state
     >>= fun targets ->
-    List.iter targets (fun t -> format_target ~item_format t |> print_string);
+    List.iter targets (fun t -> 
+        format_target ~item_format t |> print_string;
+      );
+    flush stdout;
     return ()
   end
 
@@ -158,23 +260,22 @@ let run_state ~state ~max_sleep ~how =
           fail (`Failure "System.sleep")
       end
     in
-    with_cbreak (fun () ->
-        Deferred_list.for_concurrent ~f:(fun x -> x) [
-          begin loop 2. [] end;
-          begin
-            let rec kbd_loop () =
-              Log.(s "Press the 'q' key to stop loopping." @ normal);
-              get_key ()
-              >>= function
-              | 'q' | 'Q' ->
-                keep_going := false;
-                Light.green traffic_light;
-                return ()
-              | _ -> kbd_loop ()
-            in
-            kbd_loop ()
-          end;
-        ])
+    Deferred_list.for_concurrent ~f:(fun x -> x) [
+      begin loop 2. [] end;
+      begin
+        let rec kbd_loop () =
+          Log.(s "Press the 'q' key to stop loopping." @ normal);
+          Interaction.get_key ()
+          >>= function
+          | 'q' | 'Q' ->
+            keep_going := false;
+            Light.green traffic_light;
+            return ()
+          | _ -> kbd_loop ()
+        in
+        kbd_loop ()
+      end;
+    ]
     >>= fun ((_ : unit list), errors) ->
     begin match errors with
     | [] -> return ()
@@ -192,77 +293,95 @@ let run_state ~state ~max_sleep ~how =
 let kill ~state ~interactive ids =
   begin 
     begin if interactive then
-        Ketrew_state.current_targets state
-        >>= fun all_targets ->
-        Deferred_list.while_sequential all_targets (fun target ->
-            match target.Target.history with
-            | `Running _ | `Activated _ | `Created _ ->
-              let item_format = "$name ($id)" in
-              Log.(s "Add: " % n
-                   % bold_yellow (s (format_target ~item_format target)) % n
-                   % s " to kill list? Press 'y' or 'n'" @ normal);
-              begin get_key () >>= function
-              | 'y' | 'Y' -> return (Some (Target.id target))
-              | _ -> return None
-              end
-            | _ -> return None)
-        >>| List.filter_opt
+        Interaction.build_sublist_of_targets ~state ~list_name:"Kill list"
       else
-        return []
+        return (`Go [])
     end
-    >>= fun additional_ids ->
-    let to_kill = additional_ids @ ids in
-    if List.length to_kill = 0 then 
-      Log.(s "There is nothing to kill." @ warning);
-    Deferred_list.while_sequential to_kill (fun id ->
-        Ketrew_state.kill state ~id
-        >>= function
-        | [`Target_died (_, `Killed)] -> 
-          Log.(s "Target " % s id % s " killed" @ normal); 
-          return ()
-        | [`Target_died (_, `Plugin_not_found p)] -> 
-          Log.(s "Target " % s id % s ": plugin not found: " % sf "%S" p
-               @ error); 
-          return ()
-        | [] ->
-          Log.(s "Target " % s id % s " was already finished" @ warning); 
-          return ()
-        | more ->
-          Log.(s "Target " % s id % s ": too much happened :" %
-               OCaml.list Ketrew_state.log_what_happened more @ error); 
-          return ()
-      )
-    >>= fun (_ : unit list) ->
-    return ()
+    >>= function
+    | `Go additional_ids ->
+      let to_kill = additional_ids @ ids in
+      if List.length to_kill = 0 then 
+        Log.(s "There is nothing to kill." @ warning);
+      Deferred_list.while_sequential to_kill (fun id ->
+          Ketrew_state.kill state ~id
+          >>= function
+          | [`Target_died (_, `Killed)] -> 
+            Log.(s "Target " % s id % s " killed" @ normal); 
+            return ()
+          | [`Target_died (_, `Plugin_not_found p)] -> 
+            Log.(s "Target " % s id % s ": plugin not found: " % sf "%S" p
+                 @ error); 
+            return ()
+          | [] ->
+            Log.(s "Target " % s id % s " was already finished" @ warning); 
+            return ()
+          | more ->
+            Log.(s "Target " % s id % s ": too much happened :" %
+                 OCaml.list Ketrew_state.log_what_happened more @ error); 
+            return ()
+        )
+      >>= fun (_ : unit list) ->
+      return ()
+    | `Cancel -> 
+      Log.(s "Cancelling murder plans." @ normal);
+      return ()
   end
 
 let archive ~state ~interactive ids =
   begin 
     begin if interactive then
-        Ketrew_state.current_targets state
-        >>= fun all_targets ->
-        Deferred_list.while_sequential all_targets (fun target ->
-            let item_format = "$name ($id)" in
-            Log.(s "Add: " % n
-                 % bold_yellow (s (format_target ~item_format target)) % n
-                 % s " to archival list? Press 'y' or 'n'" @ normal);
-            begin get_key () >>= function
-              | 'y' | 'Y' -> return (Some (Target.id target))
-              | _ -> return None
-            end)
-        >>| List.filter_opt
+        Interaction.build_sublist_of_targets ~state ~list_name:"Archival list"
       else
-        return []
+        return (`Go [])
     end
-    >>= fun additional_ids ->
-    let to_archive = additional_ids @ ids in
-    if List.length to_archive = 0 then 
-      Log.(s "There is nothing to archive." @ warning);
-    Deferred_list.while_sequential to_archive (fun id ->
-        Ketrew_state.archive_target state id)
-    >>= fun (_ : unit list) ->
-    return ()
+    >>= function
+    | `Go additional_ids ->
+      let to_archive = additional_ids @ ids in
+      if List.length to_archive = 0 then 
+        Log.(s "There is nothing to archive." @ warning);
+      Deferred_list.while_sequential to_archive (fun id ->
+          Ketrew_state.archive_target state id)
+      >>= fun (_ : unit list) ->
+      return ()
+    | `Cancel ->
+      Log.(s "Cancelling archival" @ normal);
+      return ()
   end
+
+let interact ~state =
+  let rec main_loop () =
+    Interaction.(
+      menu ~sentence:Log.(s "Main menu")
+        ~always_there:[menu_item ~char:'q' ~log:Log.(s "Quit") `Quit]
+        [
+          menu_item ~char:'s' ~log:Log.(s "Display current status(es)") `Status;
+          menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
+          menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
+          menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
+          menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
+        ]
+    )
+    >>= function
+    | `Quit -> return ()
+    | `Status -> 
+      display_status ~item_format:default_item_format ~all:true ~state
+      >>= fun () ->
+      main_loop ()
+    | `Kill ->
+      kill ~interactive:true ~state []
+      >>= fun () ->
+      main_loop ()
+    | `Run how ->
+      run_state ~state  ~max_sleep:120. ~how
+      >>= fun () ->
+      main_loop ()
+    | `Archive ->
+      archive ~interactive:true ~state []
+      >>= fun () ->
+      main_loop ()
+    | other -> main_loop ()
+  in
+  main_loop ()
 
 let make_command_alias cmd ?(options="") name =
   let open Cmdliner in
@@ -336,7 +455,8 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path max_sleep how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration (run_state ~max_sleep ~how))
+            Ketrew_state.with_state ?plugins ~configuration 
+              (run_state ~max_sleep ~how))
         $ config_file_argument
         $ Arg.(value & opt float 60.
                & info ["max-sleep"] ~docv:"SECONDS" 
@@ -354,7 +474,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
           `I ("`loop`", "loop `fix` until pressing 'q' (there is a \
                         timed-wait starting at 2 seconds until `--max-sleep`)")
         ] in
-        info "run" ~version ~sdocs:"COMMON OPTIONS" 
+        info "run-engine" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Run steps of the engine."  ~man)
   in
   let interactive_flag doc =
@@ -416,6 +536,19 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
       ~info:(info "print-configuration" ~version 
                ~doc:"Display current configuration." ~man:[])
   in
+  let interact_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration interact)
+        $ config_file_argument)
+      ~info:(
+        info "interact" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Run the interactive menu." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
@@ -424,6 +557,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
   let cmds = [
     init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+    interact_cmd;
     print_conf_cmd; make_command_alias print_conf_cmd "pc";
   ] in
   match Term.eval_choice ?argv default_cmd cmds with
