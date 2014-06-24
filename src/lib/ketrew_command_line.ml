@@ -397,7 +397,8 @@ let rec explore
           @ archive_item
         ))
       >>= function
-      | `Cancel -> return ()
+      | `Cancel ->
+        explore ~state ~interactive ~with_archived ~filter_target None
       | `Kill ->
         Ketrew_state.kill state chosen_id
         >>= fun what_happened ->
