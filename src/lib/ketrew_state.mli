@@ -53,6 +53,19 @@ val current_targets :
   Deferred_result.t
 (** Get the list of targets currently handled. *)
   
+val archived_targets :
+  t ->
+  (Ketrew_target.t list,
+   [> `Database of Ketrew_database.error
+    | `IO of
+        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
+    | `Missing_data of Ketrew_target.id
+    | `Persistent_state of [> `Deserilization of string ]
+    | `System of [> `File_info of string ] * [> `Exn of exn ]
+    | `Target of [> `Deserilization of string ] ])
+  Deferred_result.t
+(** Get the list of targets that have been archived. *)
+  
 type happening =
   [ `Target_activated of Ketrew_target.id * [ `Dependency ]
   | `Target_died of

@@ -156,6 +156,17 @@ let current_targets t =
   | some :: more -> fail some (* TODO do not forget other errors *)
   end
 
+let archived_targets t =
+  database t >>= fun db ->
+  get_persistent t >>= fun persistent ->
+  let target_ids = Persistent_state.archived_targets persistent in
+  Deferred_list.for_concurrent target_ids ~f:(get_target db)
+  >>= fun (targets, errors) ->
+  begin match errors with
+  | [] -> return targets
+  | some :: more -> fail some (* TODO do not forget other errors *)
+  end
+
 let _check_and_activate_dependencies ~t ids =
   database t >>= fun db ->
   let what_happened = ref [] in
