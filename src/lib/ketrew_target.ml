@@ -55,7 +55,7 @@ end
 let nop : build_process = `Artifact (`Value `Unit)
 
 let create
-    ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.unit)
+    ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
     ?(dependencies=[]) ?(make=nop)
     ?(condition=`False)
     () = 

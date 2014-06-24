@@ -45,12 +45,27 @@ module Volume = struct
     Log.to_long_string (log v)
 end
 
+module Value = struct
 
-type value = Ketrew_gen_base_v0_t.artifact_value
+  type t = Ketrew_gen_base_v0_t.artifact_value
 
-let unit = `Unit
+  let log = 
+    let log_variant name v =
+      Log.(brakets (s name % if v <> empty then sp % v else empty)) in
+    function
+  | `Number fl ->  log_variant "Number" Log.(f fl)
+  | `String str -> log_variant "String " Log.(s str)
+  | `Unit -> log_variant "Unit " Log.empty
+  
+  let unit = `Unit
+end
+
+
 
 type t = Ketrew_gen_base_v0_t.artifact
 
+let log = function
+| `Volume v -> Volume.log v
+| `Value v -> Value.log v
 
 

@@ -1,5 +1,6 @@
 open Ketrew_pervasives
 module Target = Ketrew_target
+module Artifact = Ketrew_artifact
 module Error = Ketrew_error
 module User_command = Ketrew_user_command
 module Configuration = Ketrew_configuration
@@ -45,6 +46,55 @@ let format_target ~item_format t =
       end
     | some_unknown -> fmt "$%s" some_unknown) item_format;
   Buffer.contents buf
+
+module Document = struct
+
+  let build_process ~state ?(with_details=false)  =
+    let open Log in
+    let open Target in
+    let add_details details =
+      if with_details then s ": " % n % details else empty in
+    let command_details c = add_details (Target.Command.log c) in
+    function
+    | `Artifact a ->
+      s "Artifact" % add_details (Artifact.log a)
+    | `Direct_command c ->
+      s "Direct command" % command_details c
+    | `Get_output c -> 
+      s "Get output of command" % command_details c
+    | `Long_running (name, content) ->
+      s "Long-running " % parens (s name)
+      % if with_details 
+      then 
+        s ":" % n %
+        indent (concat (
+            List.map
+              (Ketrew_state.long_running_log ~state name content)
+              ~f:(fun (title, descr) -> s title % s ": " % descr % n)
+        ))
+      else empty
+        
+
+  let target ~state ?build_process_details t =
+    let open Log in
+    let open Target in
+    let itemize l =
+      indent (concat (List.map l ~f:(fun (name, log) -> 
+          s "* " % s name % s ": " % log %n))) in
+    s "Target " % s t.name % n
+    % itemize [
+      "ID", s t.id;
+      "Persistance",
+      (match t.persistance with
+       | `Recomputable bility -> s "Recomputable " % f bility
+       | `Result -> s "Result"
+       | `Input_data -> s "Input-data");
+      "Dependencies", OCaml.list s t.dependencies;
+      "Metadata", Artifact.Value.log t.metadata;
+      "Build-process", 
+      build_process ~state ?with_details:build_process_details t.make;
+    ]
+end
 
 module Interaction = struct
 
@@ -104,7 +154,9 @@ module Interaction = struct
           | Some k, l, v -> Some k, l, v)
       in
       Log.(sentence % sp 
-           % brakets (i (nth + 1) % s "/" % i number_of_menus) % n
+           % (if nth = 0 && number_of_menus = 1
+              then empty
+              else brakets (i (nth + 1) % s "/" % i number_of_menus)) % n
            % s "Press a key: " % n
            % concat 
              (List.map filled_items ~f:(function
@@ -350,6 +402,7 @@ let archive ~state ~interactive ids =
 
 let rec explore 
     ~state ~interactive
+    ?build_process_details
     ?(with_archived=false) ?(filter_target=fun _ -> true)
     target_opt =
   let cancel_menu_item =
@@ -379,7 +432,9 @@ let rec explore
     begin
       Ketrew_state.get_target state chosen_id
       >>= fun chosen ->
-      let sentence = Log.(s "Exploring " % Target.log chosen) in
+      let sentence =
+        Log.(s "Exploring " 
+             % Document.target ?build_process_details ~state chosen) in
       Ketrew_state.is_archived state chosen_id
       >>= fun is_archived ->
       Interaction.(
@@ -391,14 +446,26 @@ let rec explore
           if not is_archived && Target.Is.finished chosen
           then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
           else [] in
+        let build_process_details_item =
+          match build_process_details with
+          | Some true -> []
+          | _ ->
+            [menu_item ~char:'b'
+               ~log:Log.(s "Shot build process details") `Detail_make]
+        in
         menu ~sentence ~always_there:[cancel_menu_item] (
-          [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
+          build_process_details_item
           @ kill_item
           @ archive_item
+          @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
         ))
       >>= function
       | `Cancel ->
         explore ~state ~interactive ~with_archived ~filter_target None
+      | `Detail_make ->
+        explore ~state ~interactive ~with_archived ~filter_target
+          ~build_process_details:true
+          (Some chosen_id)
       | `Kill ->
         Ketrew_state.kill state chosen_id
         >>= fun what_happened ->

@@ -82,7 +82,7 @@ class type user_target =
     method name : string
     (** Get the name of the target *)
 
-    method metadata: Ketrew_artifact.value
+    method metadata: Ketrew_artifact.Value.t
     (** The metadata that has been set for the target. *)
 
     (**/**)
@@ -98,7 +98,7 @@ val target :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
   ?ready_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.value ->
+  ?metadata:Ketrew_artifact.Value.t ->
   string -> user_target
 (** Create a new target. *)
 
@@ -106,7 +106,7 @@ val active :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->
   ?ready_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.value ->
+  ?metadata:Ketrew_artifact.Value.t ->
   string -> user_target
 (** Create a new target but with [~active:true]. *)
 

@@ -43,7 +43,7 @@ class type user_target =
     method id: Unique_id.t
     method render: Ketrew_target.t
     method dependencies: user_target list
-    method metadata: Ketrew_artifact.value
+    method metadata: Ketrew_artifact.Value.t
   end
 
 
@@ -53,7 +53,7 @@ let user_target_internal
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
   ?(ready_when = `False)
-  ?(metadata = Artifact.unit)
+  ?(metadata = Artifact.Value.unit)
   ()
   =
   let id = Unique_id.create () in

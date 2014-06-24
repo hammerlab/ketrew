@@ -16,6 +16,9 @@ module Command : sig
     val get_host : t -> Ketrew_host.t
     (** Get the host. *)
 
+    val log: t -> Log.t
+    (** Get a display document. *)
+
     val to_string_hum : t -> string
     (** Get a Human-readable string. *)
 
@@ -120,7 +123,7 @@ type t = {
   id : id;
   name : string;
   persistance : [ `Input_data | `Recomputable of float | `Result ];
-  metadata : Ketrew_artifact.value;
+  metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   make : build_process;
   condition : Condition.t;
@@ -131,7 +134,7 @@ type t = {
 val create :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
-  ?metadata:Ketrew_artifact.value ->
+  ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list -> ?make:build_process -> 
   ?condition:Condition.t ->
   unit ->
@@ -165,7 +168,7 @@ val update_running_exn : t -> run_parameters:string -> t
 val active :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
-  ?metadata:Ketrew_artifact.value ->
+  ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list -> ?make:build_process ->
   ?condition:Condition.t ->
   unit -> t

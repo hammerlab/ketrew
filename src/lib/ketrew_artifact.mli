@@ -60,13 +60,20 @@ module Volume : sig
 
   end
 
-type value = [ `Number of float | `String of string | `Unit ]
-(** Literal values. *)
+module Value : sig
+  type t = [ `Number of float | `String of string | `Unit ]
+      (** Literal values. *)
 
-val unit : value
-(** Alias for [`Unit]. *)
+  val log: t -> Log.t
 
-type t = [ `Value of value | `Volume of Volume.t ]
+  val unit : t
+  (** Alias for [`Unit]. *)
+end
+
+
+type t = [ `Value of Value.t | `Volume of Volume.t ]
 (* Literal artifact, i.e. a literal value, or the specification of a volume
    (used for now also to represent its “value”). *)
 
+val log: t -> Log.t
+(** Get a [Log] document. *)
