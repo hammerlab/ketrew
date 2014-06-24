@@ -114,7 +114,7 @@ module Interaction = struct
              let previous = sf "* [<]: previous screen" % n in
              let next = sf "* [>]: next screen" % n in
              match number_of_menus, nth with
-             | 1, _ -> empty
+             | 1, 0 -> empty
              | _, 0 -> next
              | n, t when t = n - 1 -> previous
              | _, _ -> previous % next
@@ -348,6 +348,107 @@ let archive ~state ~interactive ids =
       return ()
   end
 
+let rec explore 
+    ~state ~interactive
+    ?(with_archived=false) ?(filter_target=fun _ -> true)
+    target_opt =
+  let cancel_menu_item =
+    Interaction.(menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel) in
+  let get_filter () =
+    Interaction.(
+      menu ~sentence:Log.(s "Pick a filter") [
+        menu_item ~char:'n' ~log:Log.(s "None, see them all") `None;
+        menu_item ~char:'c' ~log:Log.(s "Just created") `Created;
+        menu_item ~char:'a' ~log:Log.(s "Activated") `Activated;
+        menu_item ~char:'r' ~log:Log.(s "Running") `Running;
+        menu_item ~char:'t' ~log:Log.(s "Terminated, success or failure") `Finished;
+        menu_item ~char:'f' ~log:Log.(s "Failed") `Failed;
+        menu_item ~char:'s' ~log:Log.(s "Successful") `Successful;
+      ])
+    >>= function
+    | `None -> return (fun _ -> true)
+    | `Created -> return Target.Is.created
+    | `Activated -> return Target.Is.activated
+    | `Running -> return Target.Is.running
+    | `Failed -> return Target.Is.failed
+    | `Finished -> return Target.Is.finished
+    | `Successful -> return Target.Is.successful
+  in
+  begin match target_opt with
+  | Some chosen -> 
+    begin
+      let sentence = Log.(s "Exploring " % Target.log chosen) in
+      Interaction.(
+        menu ~sentence ~always_there:[cancel_menu_item] [
+          menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json;
+        ])
+      >>= function
+      | `Cancel -> return ()
+      | `View_json ->
+        let content = Target.serialize chosen in 
+        let tmp =
+          Filename.(concat temp_dir_name (fmt "%s.json" (Unique_id.create ())))
+        in
+        IO.write_file ~content tmp
+        >>= fun () ->
+        let editor =
+          try Sys.getenv "EDITOR" 
+          with _ -> 
+            Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
+            "vi" in
+        let command = fmt "%s %s" editor tmp in
+        Log.(s "Running " % s command @ verbose);
+        (* We actually want (for now) to bloc the whole process and wait for
+           the editor to end. *)
+        ignore (Sys.command command);
+        explore ~state ~interactive ~with_archived ~filter_target (Some chosen)
+    end
+  | None ->
+    Log.(s "Targets: " @ normal);
+    let item_format = "$name ($id)" in
+    Ketrew_state.current_targets state >>= fun current_targets ->
+    begin match with_archived with
+    | true ->
+      Ketrew_state.archived_targets state >>= fun l ->
+      return (current_targets @ l)
+    | false -> return current_targets
+    end
+    >>= fun all_targets ->
+    let target_menu () =
+      List.filter_map all_targets ~f:(fun target ->
+          match filter_target target with
+          | false -> None
+          | true ->
+            Some (
+              Interaction.menu_item 
+                ~log:Log.(bold_yellow (s (format_target ~item_format target)))
+                (`Go (target))))
+    in
+    let rec loop () =
+      let open Interaction in
+      menu ~sentence:Log.(s "Pick a target")
+        ~always_there:[
+          cancel_menu_item;
+          menu_item ~char:'f' ~log:Log.(s "Add/Change filter") `Filter;
+          menu_item ~char:'a'  (`Set_with_archived (not with_archived))
+            ~log:Log.(s (if with_archived then "Hide" else "Show")
+                      % s " archived targets");
+        ]
+        (target_menu ())
+      >>= function
+      | `Cancel -> return ()
+      | `Set_with_archived with_archived ->
+        explore ~state ~interactive ~with_archived ~filter_target None
+      | `Filter ->
+        get_filter ()
+        >>= fun filter_target ->
+        explore ~state ~interactive ~with_archived ~filter_target None
+      | `Go t ->
+        explore ~state ~interactive ~with_archived ~filter_target (Some t)
+    in
+    loop ()
+  end
+
 let interact ~state =
   let rec main_loop () =
     Interaction.(
@@ -359,6 +460,7 @@ let interact ~state =
           menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
           menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
           menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
+          menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
         ]
     )
     >>= function
@@ -379,7 +481,10 @@ let interact ~state =
       archive ~interactive:true ~state []
       >>= fun () ->
       main_loop ()
-    | other -> main_loop ()
+    | `Explore ->
+      explore ~interactive:true ~state None
+      >>= fun () ->
+      main_loop ()
   in
   main_loop ()
 

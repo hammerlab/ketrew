@@ -24,4 +24,5 @@ let to_string = function
 | `Long_running_failed_to_start (id, msg) ->
   fmt "Long running %s failed to start: %s" id msg
 | `Failure msg -> fmt "Failure: %S" msg
-
+| `Process _ as pe -> Ketrew_unix_process.error_to_string pe
+| `Shell _ as se -> System.error_to_string se
