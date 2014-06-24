@@ -147,5 +147,38 @@ let did_ensure_condition t =
   | `False -> return true
   | `Volume_exists v -> Artifact.Volume.exists v
 
+module Is = struct
+
+  let created (t: t) = 
+    match t.history with
+    | `Created _ -> true
+    | _ -> false
+
+  let activated (t: t) = 
+    match t.history with
+    | `Activated _ -> true
+    | _ -> false
+
+  let running t = 
+    match t.history with
+    | `Running _ -> true
+    | _ -> false
+  let finished t =
+    match t.history with
+    | `Successful _ | `Dead _ -> true
+    | _ -> false
+
+  let failed t =
+    match t.history with
+    | `Dead _ -> true
+    | _ -> false
+  let successful t =
+    match t.history with
+    | `Successful _ -> true
+    | _ -> false 
+    
+
+
+end
 
 

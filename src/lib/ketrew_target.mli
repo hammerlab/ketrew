@@ -195,3 +195,13 @@ val did_ensure_condition:
   t ->
   (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
 (** Check whether a target actually did its job, given its condition.  *)
+
+(** Basic boolean queries on targets. *)
+module Is: sig
+  val created: t -> bool
+  val activated: t -> bool
+  val running: t -> bool
+  val finished: t -> bool
+  val failed: t -> bool
+  val successful: t -> bool
+end
