@@ -177,6 +177,10 @@ module Is = struct
     | `Successful _ -> true
     | _ -> false 
     
+  let killable t =
+    match t.history with
+    | `Created _ | `Activated _ | `Running _ -> true
+    | _ -> false
 
 
 end

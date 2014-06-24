@@ -204,4 +204,5 @@ module Is: sig
   val finished: t -> bool
   val failed: t -> bool
   val successful: t -> bool
+  val killable: t -> bool
 end
