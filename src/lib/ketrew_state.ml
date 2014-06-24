@@ -31,10 +31,11 @@ module Persistent_state = struct
   let add t target = { t with current_targets = Target.id target :: t.current_targets }
 
   let archive t target =
-    { current_targets = List.filter t.current_targets (fun i -> i = target);
+    { current_targets = List.filter t.current_targets (fun i -> i <> target);
       archived_targets = target :: t.archived_targets }
 
   let current_targets t = t.current_targets
+  let archived_targets t = t.archived_targets
 end
 
 type t = {
