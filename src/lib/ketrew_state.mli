@@ -149,3 +149,7 @@ val kill:  t -> id:Ketrew_target.id ->
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Kill a target *)
+
+val long_running_log: state:t -> string -> string -> (string * Log.t) list
+(** [long_running_log ~state plugin_name serialized_run_params]
+    calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)

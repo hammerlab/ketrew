@@ -512,4 +512,23 @@ let kill t ~id =
   end
 
 
-
+let long_running_log ~state plugin_name content =
+  begin match 
+    List.find state.long_running_plugins (fun (n, _) -> n = plugin_name)
+  with
+  | Some (_, m) ->
+    let module Long_running = (val m : LONG_RUNNING) in
+    begin try
+      let c = Long_running.deserialize_exn content in
+      Long_running.log c
+    with e -> 
+      let log = Log.(s "Serialization exception: " % exn e) in
+      Log.(log @ error);
+      ["Error", log]
+    end
+      
+  | None -> 
+    let log = Log.(s "Plugin not found: " % sf "%S" plugin_name) in
+    Log.(log @ error);
+    ["Error", log]
+  end
