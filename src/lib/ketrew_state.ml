@@ -130,15 +130,19 @@ let add_target t target =
   save_persistent t new_persistent
 
 
-let get_target db id =
+let get_target_with_db db id =
   Database.get db id
   >>= function
   | Some t -> of_result (Target.deserialize t)
   | None -> fail (`Missing_data id)
 
+let get_target t id =
+  database t >>= fun db ->
+  get_target_with_db db id
+
 let archive_target t target_id =
   database t >>= fun db ->
-  get_target db target_id (* Making sure that the id exists. *)
+  get_target_with_db db target_id (* Making sure that the id exists. *)
   >>= fun (_ : Target.t) ->
   get_persistent t
   >>= fun persistent ->
@@ -149,7 +153,7 @@ let current_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let target_ids = Persistent_state.current_targets persistent in
-  Deferred_list.for_concurrent target_ids ~f:(get_target db)
+  Deferred_list.for_concurrent target_ids ~f:(get_target_with_db db)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
@@ -160,7 +164,7 @@ let archived_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let target_ids = Persistent_state.archived_targets persistent in
-  Deferred_list.for_concurrent target_ids ~f:(get_target db)
+  Deferred_list.for_concurrent target_ids ~f:(get_target_with_db db)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
@@ -172,7 +176,7 @@ let _check_and_activate_dependencies ~t ids =
   let what_happened = ref [] in
   let happened h = what_happened := h :: !what_happened in
   Deferred_list.while_sequential ids ~f:(fun dep ->
-      get_target db dep >>< function
+      get_target_with_db db dep >>< function
       | `Ok dependency ->
         begin match dependency.Target.history with
         | `Created _  ->
@@ -461,12 +465,12 @@ let step t =
 
 let get_status t id =
   database t >>= fun db ->
-  get_target db id >>= fun target ->
+  get_target_with_db db id >>= fun target ->
   return target.Target.history 
 
 let kill t ~id =
   database t >>= fun db ->
-  get_target db id >>= fun target ->
+  get_target_with_db db id >>= fun target ->
   begin match target.Target.history with
   | `Created c ->
     add_or_update_target t Target.(

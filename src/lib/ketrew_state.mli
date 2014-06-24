@@ -40,6 +40,14 @@ val archive_target: t ->
     Deferred_result.t
 (** Move a target to the “archived” list. *)
 
+val get_target: t -> Unique_id.t ->
+  (Ketrew_target.t,
+   [> `Database of [> `Get of string | `Load of string ] * string
+   | `Missing_data of string
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Get a target from its id. *)
+
 val current_targets :
   t ->
   (Ketrew_target.t list,
