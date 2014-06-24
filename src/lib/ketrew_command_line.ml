@@ -375,15 +375,32 @@ let rec explore
     | `Successful -> return Target.Is.successful
   in
   begin match target_opt with
-  | Some chosen -> 
+  | Some chosen_id -> 
     begin
+      Ketrew_state.get_target state chosen_id
+      >>= fun chosen ->
       let sentence = Log.(s "Exploring " % Target.log chosen) in
       Interaction.(
-        menu ~sentence ~always_there:[cancel_menu_item] [
-          menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json;
-        ])
+        let kill_item =
+          if Target.Is.killable chosen
+          then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
+          else [] in
+        menu ~sentence ~always_there:[cancel_menu_item] (
+          [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
+          @ kill_item
+        ))
       >>= function
       | `Cancel -> return ()
+      | `Kill ->
+        Ketrew_state.kill state chosen_id
+        >>= fun what_happened ->
+        Log.(s "Killing target " % s (Target.name chosen) % n
+             % (separate n 
+                  (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                |> indent)
+             @ warning);
+        explore ~state ~interactive ~with_archived ~filter_target
+          (Some chosen_id)
       | `View_json ->
         let content = Target.serialize chosen in 
         let tmp =
@@ -401,7 +418,8 @@ let rec explore
         (* We actually want (for now) to bloc the whole process and wait for
            the editor to end. *)
         ignore (Sys.command command);
-        explore ~state ~interactive ~with_archived ~filter_target (Some chosen)
+        explore ~state ~interactive ~with_archived ~filter_target
+          (Some chosen_id)
     end
   | None ->
     Log.(s "Targets: " @ normal);
@@ -422,7 +440,7 @@ let rec explore
             Some (
               Interaction.menu_item 
                 ~log:Log.(bold_yellow (s (format_target ~item_format target)))
-                (`Go (target))))
+                (`Go (Target.id target))))
     in
     let rec loop () =
       let open Interaction in
