@@ -73,6 +73,15 @@ val archived_targets :
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
 (** Get the list of targets that have been archived. *)
+
+val is_archived: t -> Unique_id.t -> 
+  (bool, 
+   [> `Database of [> `Get of string | `Load of string ] * string
+   | `Missing_data of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ]
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Check whether a target is in the “archive”. *)
   
 type happening =
   [ `Target_activated of Ketrew_target.id * [ `Dependency ]

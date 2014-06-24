@@ -171,6 +171,11 @@ let archived_targets t =
   | some :: more -> fail some (* TODO do not forget other errors *)
   end
 
+let is_archived t tid =
+  archived_targets t
+  >>= fun arch ->
+  return (List.exists arch ~f:(fun x -> Target.id x = tid))
+
 let _check_and_activate_dependencies ~t ids =
   database t >>= fun db ->
   let what_happened = ref [] in
