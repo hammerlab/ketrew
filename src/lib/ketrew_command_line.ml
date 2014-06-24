@@ -380,14 +380,21 @@ let rec explore
       Ketrew_state.get_target state chosen_id
       >>= fun chosen ->
       let sentence = Log.(s "Exploring " % Target.log chosen) in
+      Ketrew_state.is_archived state chosen_id
+      >>= fun is_archived ->
       Interaction.(
         let kill_item =
           if Target.Is.killable chosen
           then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
           else [] in
+        let archive_item =
+          if not is_archived && Target.Is.finished chosen
+          then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
+          else [] in
         menu ~sentence ~always_there:[cancel_menu_item] (
           [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
           @ kill_item
+          @ archive_item
         ))
       >>= function
       | `Cancel -> return ()
@@ -399,6 +406,11 @@ let rec explore
                   (List.map ~f:Ketrew_state.log_what_happened what_happened) 
                 |> indent)
              @ warning);
+        explore ~state ~interactive ~with_archived ~filter_target
+          (Some chosen_id)
+      | `Archive ->
+        Ketrew_state.archive_target state chosen_id
+        >>= fun () ->
         explore ~state ~interactive ~with_archived ~filter_target
           (Some chosen_id)
       | `View_json ->
