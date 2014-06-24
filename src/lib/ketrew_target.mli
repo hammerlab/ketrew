@@ -174,6 +174,9 @@ val active :
 val id : t -> Unique_id.t
 (** Get a target's id. *)
 
+val name : t -> string
+(** Get a target's user-defined name. *)
+
 val serialize : t -> string
 (** Serialize a target (for the database). *)
 

@@ -56,7 +56,7 @@ module Test = struct
 
     let test_target_one_step ?condition ~state ~make name check =
       let open Ketrew in
-      let target = Target.(active ~name ?condition  ~make ()) in
+      let target = Target.active ~name ?condition  ~make () in
       test_targets ~name ~state [target] [check ~id:(Target.id target)]
     let target_succeeds ~id =
       `Status (id, function `Successful _ -> true | _ -> false)

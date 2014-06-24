@@ -120,6 +120,7 @@ let active ?id
                             ?dependencies ?make ())
 
 let id t : Unique_id.t = t.id
+let name t = t.name
 
 let serialize t =
   Ketrew_gen_versioned_j.string_of_target (`V0 t)
