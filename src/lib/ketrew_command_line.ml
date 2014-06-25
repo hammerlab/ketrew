@@ -423,13 +423,13 @@ module Explorer = struct
   type exploration_state = {
     build_process_details: bool;
     show_archived: bool;
-    target_filter: Target.t -> bool;
+    target_filter: (Target.t -> bool) * Log.t;
     current_target: Target.id option;
   }
   let create_state () =
     {build_process_details = false;
      show_archived = false;
-     target_filter = (fun _ -> true);
+     target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
      current_target = None}
 
 
@@ -439,25 +439,26 @@ module Explorer = struct
         menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
       ])
 
+  let filter ~log ~char f =
+    (char, log, `Set (f, log))
+
+  let filters = [
+    filter (fun _ -> true)      ~char:'n' ~log:Log.(s "No-filter, see them all");
+    filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
+    filter Target.Is.activated  ~char:'a' ~log:Log.(s "Activated");
+    filter Target.Is.running    ~char:'r' ~log:Log.(s "Running");
+    filter Target.Is.failed     ~char:'t' ~log:Log.(s "Terminated, success or failure");
+    filter Target.Is.finished   ~char:'f' ~log:Log.(s "Failed");
+    filter Target.Is.successful ~char:'s' ~log:Log.(s "Successful");
+  ]
+
   let get_filter () =
     Interaction.(
-      menu ~sentence:Log.(s "Pick a filter") [
-        menu_item ~char:'n' ~log:Log.(s "None, see them all") `None;
-        menu_item ~char:'c' ~log:Log.(s "Just created") `Created;
-        menu_item ~char:'a' ~log:Log.(s "Activated") `Activated;
-        menu_item ~char:'r' ~log:Log.(s "Running") `Running;
-        menu_item ~char:'t' ~log:Log.(s "Terminated, success or failure") `Finished;
-        menu_item ~char:'f' ~log:Log.(s "Failed") `Failed;
-        menu_item ~char:'s' ~log:Log.(s "Successful") `Successful;
-      ])
+      menu ~sentence:Log.(s "Pick a filter")
+        (List.map filters (fun (char, log, tag) ->
+             menu_item ~char ~log tag)))
     >>= function
-    | `None -> return (fun _ -> true)
-    | `Created -> return Target.Is.created
-    | `Activated -> return Target.Is.activated
-    | `Running -> return Target.Is.running
-    | `Failed -> return Target.Is.failed
-    | `Finished -> return Target.Is.finished
-    | `Successful -> return Target.Is.successful
+    | `Set f  -> return f
 
   let pick_a_target ~state (es : exploration_state) =
     Ketrew_state.current_targets state >>= fun current_targets ->
@@ -473,12 +474,15 @@ module Explorer = struct
         ~always_there:(
           cancel_menu_items
           @ [
-            menu_item ~char:'f' ~log:Log.(s "Add/Change filter") `Filter;
+            menu_item ~char:'f' 
+              ~log:Log.(s "Change filter "
+                        % parens (s "current: " % snd es.target_filter))
+              `Filter;
             menu_item ~char:'a'  (`Set_with_archived (not es.show_archived))
               ~log:Log.(s (if es.show_archived then "Hide" else "Show")
                         % s " archived targets");
           ])
-        (make_target_menu ~targets ~filter_target:es.target_filter ()))
+        (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
 
   let explore_single_target ~state (es: exploration_state) target =
     let sentence =
