@@ -1,12 +1,35 @@
 (*
 
-  This “test” provides a Ketrew command line with some default user defined
-  targets.
+This “test” provides a few user defined targets.
 
 *)
 
 open Printf
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
+
+
+
+(*
+Ketrew will use the default configuration file unless the configuration is
+overridden.
+We do this so that the tests do not impact the user's current
+installation.
+
+To interact with the targets created by this file just use a config-file
+containing:
+
+```toml
+[database]
+    path = "/tmp/ketrew_cli_test_db"
+```
+*)
+let run_with_test_configuration user_target =
+  let open Ketrew.EDSL in
+  let override_configuration =
+    let custom_database_file = "/tmp/ketrew_cli_test_db" in
+    say "Using database: %S" custom_database_file;
+    Ketrew_configuration.create ~database_parameters:custom_database_file () in
+  run user_target ~override_configuration
 
 (*
 
@@ -57,16 +80,8 @@ let deploy_website () =
   in
   (* `run` will activate the target `get_back`, and add all its (transitive)
      dependencies to the system.
-
-     Ketrew will use the default configuration file unless the configuration is
-     overridden:
   *)
-  let custom_database_file = "/tmp/ketrew_cli_test_db" in
-  say "Using database: %S" custom_database_file;
-  run get_back
-    ~override_configuration:
-      (Ketrew_configuration.create
-         ~database_parameters:custom_database_file ())
+  run_with_test_configuration get_back
 
 (*
   This second target could the beginning of a “backup” workflow.
@@ -127,7 +142,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       ~dependencies:(gpg @ [make_targz; md5_targz])
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
-  run common_ancestor
+  run_with_test_configuration common_ancestor
 
 
 (*
@@ -137,7 +152,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  run (
+  run_with_test_configuration (
     target "run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
@@ -167,7 +182,7 @@ let () =
     | host :: dir :: dest_prefix :: "with-gpg" :: []  ->
       make_targz_on_host ~gpg:true ~dest_prefix ~host:(Ketrew.EDSL.parse_host host) ~dir ()
     | other ->
-      say "usage: %s tgz <host> <uri> [dest-prefix] [\"with-gpg\"]" Sys.argv.(0);
+      say "usage: %s tgz <host> <dir> [dest-prefix] [\"with-gpg\"]" Sys.argv.(0);
       failwith "Wrong command line"
     end
   | "lsf" :: more ->
