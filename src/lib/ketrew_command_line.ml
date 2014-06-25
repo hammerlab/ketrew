@@ -93,6 +93,14 @@ module Document = struct
       "Metadata", Artifact.Value.log t.metadata;
       "Build-process", 
       build_process ~state ?with_details:build_process_details t.make;
+      "Status",
+      (match t.history with
+       | `Dead _       -> s "Dead"
+       | `Successful _ -> s "Successful"
+       | `Activated _  -> s "Activated"
+       | `Created _    -> s "Created"
+       | `Running (rb, _) ->
+         s "Running " % parens (s rb.plugin_name));
     ]
 end
 
@@ -554,8 +562,8 @@ module Explorer = struct
           % parens 
             (match why with `User -> s "user" | `Dependency -> s "dependency")
         | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
-          log_of_status (act :> Target.workflow_state)
-          % s "Running " % parens (s plugin_name)
+          log_of_status (act :> Target.workflow_state) % n
+          % s "Running " % parens (s plugin_name) % s ":" % n
           % indent (
             separate n
               (List.map
@@ -569,9 +577,8 @@ module Explorer = struct
             | `Failed reason -> s "Failed: " % s reason
             | `Killed reason -> s "Killed: " % s reason)
         | `Successful (time, prev, arti) ->
-          log_of_status (prev :> Target.workflow_state)
-          % s "Successful: " % Time.log time % n
-          % s "→ " % Artifact.log arti
+          log_of_status (prev :> Target.workflow_state) % n
+          % s "Successful: " % Time.log time % s "→ " % Artifact.log arti
       in
       let open Log in
       Document.target ~state target
