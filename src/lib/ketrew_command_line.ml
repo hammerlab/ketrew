@@ -411,13 +411,26 @@ let archive ~state ~interactive ids =
       return ()
   end
 
-let rec explore 
-    ~state ~interactive
-    ?build_process_details
-    ?(with_archived=false) ?(filter_target=fun _ -> true)
-    target_opt =
-  let cancel_menu_item =
-    Interaction.(menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel) in
+module Explorer = struct
+  type exploration_state = {
+    build_process_details: bool;
+    show_archived: bool;
+    target_filter: Target.t -> bool;
+    current_target: Target.id option;
+  }
+  let create_state () =
+    {build_process_details = false;
+     show_archived = false;
+     target_filter = (fun _ -> true);
+     current_target = None}
+
+
+  let cancel_menu_items =
+    Interaction.([
+        menu_item ~char:'Q' ~log:Log.(s "Quick explorer") `Quit;
+        menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
+      ])
+
   let get_filter () =
     Interaction.(
       menu ~sentence:Log.(s "Pick a filter") [
@@ -437,141 +450,159 @@ let rec explore
     | `Failed -> return Target.Is.failed
     | `Finished -> return Target.Is.finished
     | `Successful -> return Target.Is.successful
-  in
-  begin match target_opt with
-  | Some chosen_id -> 
-    begin
-      Ketrew_state.get_target state chosen_id
-      >>= fun chosen ->
-      let sentence =
-        Log.(s "Exploring " 
-             % Document.target ?build_process_details ~state chosen) in
-      Ketrew_state.is_archived state chosen_id
-      >>= fun is_archived ->
-      Interaction.(
-        let kill_item =
-          if Target.Is.killable chosen
-          then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
-          else [] in
-        let archive_item =
-          if not is_archived && Target.Is.finished chosen
-          then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
-          else [] in
-        let build_process_details_item =
-          match build_process_details with
-          | Some true -> []
-          | _ ->
-            [menu_item ~char:'b'
-               ~log:Log.(s "Shot build process details") `Detail_make]
-        in
-        let follow_deps_item =
-          match chosen.Target.dependencies with
-          | [] -> []
-          | some -> 
-            [menu_item ~char:'d'
-               ~log:Log.(s "Follow a dependency") `Follow_dependencies]
-        in
-        menu ~sentence ~always_there:[cancel_menu_item] (
-          build_process_details_item
-          @ follow_deps_item
-          @ kill_item
-          @ archive_item
-          @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
-        ))
-      >>= function
-      | `Cancel ->
-        explore ~state ~interactive ~with_archived ~filter_target None
-      | `Detail_make ->
-        explore ~state ~interactive ~with_archived ~filter_target
-          ~build_process_details:true
-          (Some chosen_id)
-      | `Kill ->
-        Ketrew_state.kill state chosen_id
-        >>= fun what_happened ->
-        Log.(s "Killing target " % s (Target.name chosen) % n
-             % (separate n 
-                  (List.map ~f:Ketrew_state.log_what_happened what_happened) 
-                |> indent)
-             @ warning);
-        explore ~state ~interactive ~with_archived ~filter_target
-          (Some chosen_id)
-      | `Archive ->
-        Ketrew_state.archive_target state chosen_id
-        >>= fun () ->
-        explore ~state ~interactive ~with_archived ~filter_target
-          (Some chosen_id)
-      | `View_json ->
-        let content = Target.serialize chosen in 
-        let tmp =
-          Filename.(concat temp_dir_name (fmt "%s.json" (Unique_id.create ())))
-        in
-        IO.write_file ~content tmp
-        >>= fun () ->
-        let editor =
-          try Sys.getenv "EDITOR" 
-          with _ -> 
-            Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
-            "vi" in
-        let command = fmt "%s %s" editor tmp in
-        Log.(s "Running " % s command @ verbose);
-        (* We actually want (for now) to bloc the whole process and wait for
-           the editor to end. *)
-        ignore (Sys.command command);
-        explore ~state ~interactive ~with_archived ~filter_target
-          (Some chosen_id)
-      | `Follow_dependencies ->
-        let target_ids = chosen.Target.dependencies in
-        Deferred_list.while_sequential target_ids
-          (Ketrew_state.get_target state)
-        >>= fun targets ->
-        Interaction.(
-          menu ~sentence:Log.(s "Pick a target")
-            ~always_there:[
-              cancel_menu_item;
-            ]
-            (make_target_menu ~targets ())
-          >>= function
-          | `Cancel -> 
-            explore ~state ~interactive ~with_archived ~filter_target
-              (Some chosen_id)
-          | `Go t ->
-            explore ~state ~interactive ~with_archived ~filter_target (Some t)
-        )
-    end
-  | None ->
-    Log.(s "Targets: " @ normal);
+
+  let pick_a_target ~state (es : exploration_state) =
     Ketrew_state.current_targets state >>= fun current_targets ->
-    begin match with_archived with
+    begin match es.show_archived with
     | true ->
       Ketrew_state.archived_targets state >>= fun l ->
-      return (current_targets @ l)
+          return (current_targets @ l)
     | false -> return current_targets
     end
-    >>= fun all_targets ->
-    let rec loop () =
-      let open Interaction in
+    >>= fun targets ->
+    Interaction.(
       menu ~sentence:Log.(s "Pick a target")
-        ~always_there:[
-          cancel_menu_item;
-          menu_item ~char:'f' ~log:Log.(s "Add/Change filter") `Filter;
-          menu_item ~char:'a'  (`Set_with_archived (not with_archived))
-            ~log:Log.(s (if with_archived then "Hide" else "Show")
-                      % s " archived targets");
-        ]
-        (make_target_menu ~targets:all_targets ~filter_target ())
-      >>= function
-      | `Cancel -> return ()
-      | `Set_with_archived with_archived ->
-        explore ~state ~interactive ~with_archived ~filter_target None
-      | `Filter ->
-        get_filter ()
-        >>= fun filter_target ->
-        explore ~state ~interactive ~with_archived ~filter_target None
-      | `Go t ->
-        explore ~state ~interactive ~with_archived ~filter_target (Some t)
+        ~always_there:(
+          cancel_menu_items
+          @ [
+            menu_item ~char:'f' ~log:Log.(s "Add/Change filter") `Filter;
+            menu_item ~char:'a'  (`Set_with_archived (not es.show_archived))
+              ~log:Log.(s (if es.show_archived then "Hide" else "Show")
+                        % s " archived targets");
+          ])
+        (make_target_menu ~targets ~filter_target:es.target_filter ()))
+
+  let explore_single_target ~state (es: exploration_state) target =
+    let sentence =
+      let build_process_details = es.build_process_details in
+      Log.(s "Exploring " 
+           % Document.target ~build_process_details ~state target) in
+    Ketrew_state.is_archived state (Target.id target)
+    >>= fun is_archived ->
+    Interaction.(
+      let kill_item =
+        if Target.Is.killable target
+        then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
+        else [] in
+      let archive_item =
+        if not is_archived && Target.Is.finished target
+        then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
+        else [] in
+      let build_process_details_item =
+        match es.build_process_details with
+        | true ->
+          [menu_item ~char:'b'
+             ~log:Log.(s "Hide build process details") `Hide_make]
+        | false ->
+          [menu_item ~char:'b'
+             ~log:Log.(s "Show build process details") `Show_make]
+      in
+      let follow_deps_item =
+        match target.Target.dependencies with
+        | [] -> []
+        | some -> 
+          [menu_item ~char:'d'
+             ~log:Log.(s "Follow a dependency") `Follow_dependencies]
+      in
+      menu ~sentence ~always_there:cancel_menu_items (
+        build_process_details_item
+        @ follow_deps_item
+        @ kill_item
+        @ archive_item
+        @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
+      ))
+
+  let view_json ~state target =
+    let content = Target.serialize target in 
+    let tmp =
+      Filename.(concat temp_dir_name (fmt "%s.json" (Unique_id.create ())))
     in
-    loop ()
-  end
+    IO.write_file ~content tmp
+    >>= fun () ->
+    let editor =
+      try Sys.getenv "EDITOR" 
+      with _ -> 
+        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
+        "vi" in
+    let command = fmt "%s %s" editor tmp in
+    Log.(s "Running " % s command @ verbose);
+    (* We actually want (for now) to bloc the whole process and wait for
+       the editor to end. *)
+    ignore (Sys.command command);
+    return ()
+
+  let pick_a_dependency ~state target =
+    let target_ids = target.Target.dependencies in
+    Deferred_list.while_sequential target_ids
+      (Ketrew_state.get_target state)
+    >>= fun targets ->
+    Interaction.(
+      menu ~sentence:Log.(s "Pick a target")
+        ~always_there:cancel_menu_items
+        (make_target_menu ~targets ()))
+
+  let rec explore ~state exploration_state_stack =
+    let go_back ~state history =
+      match history with
+      | [] -> return ()
+      | some -> explore ~state some in
+    begin match exploration_state_stack with
+    | [] -> explore ~state [create_state ()]
+    | one :: history ->
+      begin match one.current_target with
+      | None ->
+        begin pick_a_target ~state one
+          >>= function
+          | `Cancel -> go_back ~state history (* go back in history *)
+          | `Quit -> return ()
+          | `Set_with_archived b ->
+            explore ~state ({one with show_archived = b } :: history)
+          | `Filter ->
+            get_filter () >>= fun f ->
+            explore ~state ({one with target_filter = f } :: one :: history)
+          | `Go t ->
+            explore ~state ({one with current_target = Some t } :: one :: history)
+        end
+      | Some chosen_id -> 
+        Ketrew_state.get_target state chosen_id >>= fun chosen ->
+        begin explore_single_target ~state one chosen
+          >>= function
+          | `Cancel -> go_back ~state history
+          | `Quit -> return ()
+          | `Show_make ->
+            explore ~state 
+              ({ one with build_process_details = true }  :: history)
+          | `Hide_make ->
+            explore ~state 
+              ({ one with build_process_details = false }  :: history)
+          | `Kill ->
+            Ketrew_state.kill state (Target.id chosen)
+            >>= fun what_happened ->
+            Log.(s "Killing target " % s (Target.name chosen) % n
+                 % (separate n 
+                      (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                    |> indent)
+                 @ warning);
+            explore ~state (one :: history)
+          | `Archive ->
+            Ketrew_state.archive_target state (Target.id chosen) >>= fun () ->
+            explore ~state (one :: history)
+          | `View_json ->
+            view_json ~state chosen >>= fun () ->
+            explore ~state (one :: history)
+          | `Follow_dependencies ->
+            begin pick_a_dependency ~state chosen
+              >>= function
+              | `Cancel -> go_back ~state (one :: history)
+              | `Quit -> return ()
+              | `Go t ->
+                explore ~state 
+                  ({one with current_target = Some t} :: one :: history)
+            end
+        end
+      end
+    end
+end
 
 let interact ~state =
   let rec main_loop () =
@@ -606,7 +637,7 @@ let interact ~state =
       >>= fun () ->
       main_loop ()
     | `Explore ->
-      explore ~interactive:true ~state None
+      Explorer.explore ~state []
       >>= fun () ->
       main_loop ()
   in
