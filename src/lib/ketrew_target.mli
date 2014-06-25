@@ -212,3 +212,8 @@ module Is: sig
   val successful: t -> bool
   val killable: t -> bool
 end
+
+(** Get the most recent serialized 
+    [run_parameters] if the target is a “long-running”,
+    [None] otherwise. *)
+val latest_run_parameters: t -> string option

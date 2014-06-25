@@ -187,3 +187,16 @@ module Is = struct
 end
 
 
+let latest_run_parameters target =
+  match target.history with
+  | `Running (rb, _) -> Some (rb.run_parameters)
+  | `Dead (_, `Running (rb, _), _)
+  | `Successful (_, `Running (rb, _), _) ->
+    Some (rb.run_parameters)
+  | `Created _ | `Activated _ 
+  | `Successful (_, `Activated _, _)
+  | `Dead (_, `Activated _, _) ->
+    begin match target.make with
+    | `Long_running (plugin, rp) -> Some (rp)
+    | _ -> None
+    end
