@@ -219,6 +219,17 @@ module Interaction = struct
         in
         loop ()
 
+  let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
+    let item_format = "$name ($id)" in
+    List.filter_map targets ~f:(fun target ->
+        match filter_target target with
+        | false -> None
+        | true ->
+          Some (
+            menu_item 
+              ~log:Log.(bold_yellow (s (format_target ~item_format target)))
+              (`Go (Target.id target))))
+
 end
 let display_status ~state ~all ~item_format =
   begin
@@ -453,8 +464,16 @@ let rec explore
             [menu_item ~char:'b'
                ~log:Log.(s "Shot build process details") `Detail_make]
         in
+        let follow_deps_item =
+          match chosen.Target.dependencies with
+          | [] -> []
+          | some -> 
+            [menu_item ~char:'d'
+               ~log:Log.(s "Follow a dependency") `Follow_dependencies]
+        in
         menu ~sentence ~always_there:[cancel_menu_item] (
           build_process_details_item
+          @ follow_deps_item
           @ kill_item
           @ archive_item
           @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
@@ -500,10 +519,27 @@ let rec explore
         ignore (Sys.command command);
         explore ~state ~interactive ~with_archived ~filter_target
           (Some chosen_id)
+      | `Follow_dependencies ->
+        let target_ids = chosen.Target.dependencies in
+        Deferred_list.while_sequential target_ids
+          (Ketrew_state.get_target state)
+        >>= fun targets ->
+        Interaction.(
+          menu ~sentence:Log.(s "Pick a target")
+            ~always_there:[
+              cancel_menu_item;
+            ]
+            (make_target_menu ~targets ())
+          >>= function
+          | `Cancel -> 
+            explore ~state ~interactive ~with_archived ~filter_target
+              (Some chosen_id)
+          | `Go t ->
+            explore ~state ~interactive ~with_archived ~filter_target (Some t)
+        )
     end
   | None ->
     Log.(s "Targets: " @ normal);
-    let item_format = "$name ($id)" in
     Ketrew_state.current_targets state >>= fun current_targets ->
     begin match with_archived with
     | true ->
@@ -512,16 +548,6 @@ let rec explore
     | false -> return current_targets
     end
     >>= fun all_targets ->
-    let target_menu () =
-      List.filter_map all_targets ~f:(fun target ->
-          match filter_target target with
-          | false -> None
-          | true ->
-            Some (
-              Interaction.menu_item 
-                ~log:Log.(bold_yellow (s (format_target ~item_format target)))
-                (`Go (Target.id target))))
-    in
     let rec loop () =
       let open Interaction in
       menu ~sentence:Log.(s "Pick a target")
@@ -532,7 +558,7 @@ let rec explore
             ~log:Log.(s (if with_archived then "Hide" else "Show")
                       % s " archived targets");
         ]
-        (target_menu ())
+        (make_target_menu ~targets:all_targets ~filter_target ())
       >>= function
       | `Cancel -> return ()
       | `Set_with_archived with_archived ->
