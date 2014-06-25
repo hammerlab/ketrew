@@ -143,6 +143,9 @@ let of_uri uri =
   let playground =
     match Uri.path uri with
     | "" -> None
+    | rel when Filename.is_relative rel ->
+      let cwd = Sys.getcwd () in
+      Some (Path.absolute_directory_exn (Filename.concat cwd rel))
     | p -> Some (Path.absolute_directory_exn p)
   in
   let default_shell =
@@ -160,12 +163,30 @@ let of_uri uri =
   in
   create ?playground ~connection ?default_shell (Uri.to_string uri)
 
+let to_uri t =
+  let scheme, host, port, userinfo =
+    match t.connection with
+    | `Ssh {Ssh.address; port; user;} -> Some "ssh", Some address, port, user
+    | `Localhost -> None, None, None, None
+  in
+  let query =
+    let {Ketrew_gen_base_v0_t. binary; command_name; options; command_option} =
+      t.default_shell in
+    let shell_spec = [command_name] @ options @ [command_option] in
+    ["shell", [String.concat ~sep:"," shell_spec]]
+  in
+  Uri.make ?scheme ?userinfo ?host ?port 
+    ?path:(Option.map ~f:Path.to_string t.playground)
+    ~query ()
+
 let of_string s =
   let uri = Uri.of_string s in
   of_uri uri
 
-let log t = Log.(s t.name)
-let to_string_hum t = t.name
+let log t = 
+  Log.(brakets ( s "Host " % s (Uri.to_string (to_uri t))))
+
+let to_string_hum t = Log.to_long_string (log t)
 
 module Error = struct
 

@@ -77,8 +77,11 @@ val of_string: string -> t
 (** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
   string into a host, see {!of_uri}. *)
 
+val to_uri: t -> Uri.t
+(** Convert a [Host.t] to an URI representing it. *)
+
 val to_string_hum : t -> string
-(** Get a display-friendly string for the host (“name”, or hostname). *)
+(** Get a display-friendly string for the host. *)
 
 val log : t -> Log.t
 (** Get a {!Log.t} document. *)
