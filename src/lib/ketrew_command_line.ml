@@ -427,7 +427,7 @@ module Explorer = struct
 
   let cancel_menu_items =
     Interaction.([
-        menu_item ~char:'Q' ~log:Log.(s "Quick explorer") `Quit;
+        menu_item ~char:'Q' ~log:Log.(s "Quit explorer") `Quit;
         menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
       ])
 
@@ -505,7 +505,8 @@ module Explorer = struct
              ~log:Log.(s "Follow a dependency") `Follow_dependencies]
       in
       menu ~sentence ~always_there:cancel_menu_items (
-        build_process_details_item
+        [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
+        @ build_process_details_item
         @ follow_deps_item
         @ kill_item
         @ archive_item
@@ -541,6 +542,49 @@ module Explorer = struct
         ~always_there:cancel_menu_items
         (make_target_menu ~targets ()))
 
+  let target_status ~state exploration_state target =
+    let sentence =
+      let rec log_of_status (status: Target.workflow_state) =
+        let open Log in
+        match status with
+        | `Created time -> s "Created: " % Time.log time
+        | `Activated (time, subm, why) ->
+          log_of_status (subm :> Target.workflow_state) % n
+          % s "Activated: " % Time.log time % sp
+          % parens 
+            (match why with `User -> s "user" | `Dependency -> s "dependency")
+        | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
+          log_of_status (act :> Target.workflow_state)
+          % s "Running " % parens (s plugin_name)
+          % indent (
+            separate n
+              (List.map
+                 ~f:(fun (key, value) -> s "* " % s key % s ": " % value)
+                 (Ketrew_state.long_running_log
+                    ~state plugin_name run_parameters)))
+        | `Dead (time, prev, why) ->
+          log_of_status (prev :> Target.workflow_state) % n
+          % s "Dead: " % Time.log time % n
+          % parens (match why with
+            | `Failed reason -> s "Failed: " % s reason
+            | `Killed reason -> s "Killed: " % s reason)
+        | `Successful (time, prev, arti) ->
+          log_of_status (prev :> Target.workflow_state)
+          % s "Successful: " % Time.log time % n
+          % s "→ " % Artifact.log arti
+      in
+      let open Log in
+      Document.target ~state target
+      % s "Status:" % n
+      % indent (log_of_status target.Target.history)
+    in
+    let open Interaction in
+    menu ~sentence
+      ~always_there:cancel_menu_items
+      []
+    >>= function
+    | `Cancel | `Quit as up -> return up
+
   let rec explore ~state exploration_state_stack =
     let go_back ~state history =
       match history with
@@ -575,6 +619,12 @@ module Explorer = struct
           | `Hide_make ->
             explore ~state 
               ({ one with build_process_details = false }  :: history)
+          | `Status ->
+            begin target_status ~state one chosen
+              >>= function
+              | `Cancel -> go_back ~state (one :: history)
+              | `Quit -> return ()
+            end
           | `Kill ->
             Ketrew_state.kill state (Target.id chosen)
             >>= fun what_happened ->
