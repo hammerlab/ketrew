@@ -208,7 +208,7 @@ module Interaction = struct
           menu ~sentence:Log.(s "Add targets to “"
                               % s list_name % s "”")
             ~always_there:[
-              menu_item ~char:'A' ~log:Log.(s "Proceed") `Done;
+              menu_item ~char:'G' ~log:Log.(s "Go; proceed") `Done;
               menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel;
             ]
             (target_menu ())
@@ -859,6 +859,20 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "interact" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Run the interactive menu." ~man:[])
   in
+  let explore_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration 
+              (Explorer.explore []))
+        $ config_file_argument)
+      ~info:(
+        info "explore" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Run the interactive Target Explorer." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
@@ -868,6 +882,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   let cmds = [
     init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
     interact_cmd;
+    explore_cmd;
     print_conf_cmd; make_command_alias print_conf_cmd "pc";
   ] in
   match Term.eval_choice ?argv default_cmd cmds with
