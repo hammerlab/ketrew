@@ -62,6 +62,8 @@ module Time = struct
       (tm.tm_min + 1)
       (tm.tm_sec)
       ((f -. (floor f)) *. 1000. |> int_of_float)
+
+  let log f = Log.s (to_filename f)
 end
 
 
