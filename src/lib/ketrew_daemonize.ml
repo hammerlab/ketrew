@@ -88,7 +88,7 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
-let make_python_script ~out ~err monitored_script_path =
+let make_python_script ~out ~err ~pid_file monitored_script_path =
   fmt "
 import os               # Miscellaneous OS interfaces.
 import sys              # System-specific parameters and functions.
@@ -106,6 +106,9 @@ if __name__ == '__main__':
     os.chdir('/') 
     os.setsid() 
     os.umask(0) 
+    pid_file = file('%s', 'w')
+    pid_file.write('%%d\\n' %% os.getpid())
+    pid_file.close()
     # do second fork
     try: 
         pid = os.fork() 
@@ -121,13 +124,13 @@ if __name__ == '__main__':
             stdout=file('%s', 'w'), 
             stderr=file('%s', 'w'))
 "
+    (Path.to_string pid_file)
     (Path.to_string monitored_script_path)
     (Path.to_string out)
     (Path.to_string err)
 
 
 let start rp =
-  (* let script = Command.monitored_script cmd in *)
   let created = created rp in
   begin match Host.get_fresh_playground created.host with
   | None ->
@@ -139,7 +142,11 @@ let start rp =
     let monitored_script_path = script_path ~playground in
     Host.ensure_directory created.host playground
     >>= fun () ->
-    let content = Ketrew_monitored_script.to_string monitored_script in
+    let content =
+      let write_pid =          (* the python-script creates the process group *)
+        match created.using_hack with     (* so, it will write the PID itself *)
+        | `Nohup_setsid -> true | `Python_daemon -> false in
+      Ketrew_monitored_script.to_string ~write_pid monitored_script in
     Host.put_file ~content created.host ~path:monitored_script_path
     >>= fun () ->
     let out = out_file_path ~playground in
@@ -147,7 +154,6 @@ let start rp =
     begin match created.using_hack with
     | `Nohup_setsid ->
       let cmd =
-        (* TODO find a macosx-compliant version (?) harness tmux/screen? *)
         fmt "nohup setsid bash %s > %s 2> %s &" 
           (Path.to_string_quoted monitored_script_path)
           (Path.to_string_quoted out) (Path.to_string_quoted err) in
@@ -156,7 +162,9 @@ let start rp =
       Log.(s "daemonize: Ran " % s cmd @ very_verbose);
       return ()
     | `Python_daemon ->
-      let content = make_python_script ~out ~err monitored_script_path in
+      let pid_file = Ketrew_monitored_script.pid_file monitored_script in
+      let content =
+        make_python_script ~out ~err ~pid_file monitored_script_path in
       let path = python_hack_path ~playground in
       Host.put_file ~content created.host ~path
       >>= fun () ->

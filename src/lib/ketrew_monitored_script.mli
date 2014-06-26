@@ -23,8 +23,10 @@ val pid_file : t -> Ketrew_path.absolute_file
     running the script, [- pid] will be the process id of the process group
     created by `setsid` (useful for killing the whole process tree). *)
 
-val to_string : t -> string
-(** Render the [monitored_script] to a shell-script string. *)
+val to_string : ?write_pid:bool -> t -> string
+(** Render the [monitored_script] to a shell-script string;
+    if [write_pid] is [true] (the default), the script writes the pid to
+    [pid_file t]. *)
 
 val parse_log : string ->
   [ `After of string * string * string

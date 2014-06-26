@@ -13,7 +13,7 @@ let log_file t =
 let pid_file t =
   Path.(concat t.playground (relative_file_exn "pid"))
 
-let to_string t  =
+let to_string ?(write_pid=true) t  =
   let cmds = Ketrew_program.to_shell_commands t.program in
   let log = log_file t |> Path.to_string in
   let date = "date -u +'%F %T'" in
@@ -44,9 +44,12 @@ let to_string t  =
       "fi";
     ] in
   let script =
-    [ fmt "mkdir -p %s" (Path.to_string t.playground);
-      fmt "echo \"$$\" > %s" (pid_file t |> Path.to_string);
-      tagged_log "start" "" ]
+    [ fmt "mkdir -p %s" (Path.to_string t.playground); ]
+    @ (if write_pid then
+         [fmt "echo \"$$\" > %s" (pid_file t |> Path.to_string)]
+       else
+         [])
+    @ [ tagged_log "start" "" ]
     @ (List.mapi cmds monitor |> List.concat)
     @ [tagged_log "success" ""]
   in
