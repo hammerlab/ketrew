@@ -183,6 +183,17 @@ module Is = struct
     | `Created _ | `Activated _ | `Running _ -> true
     | _ -> false
 
+  let activated_by_user t =
+    let rec go_through_history (history: workflow_state) =
+      match history with
+      | `Created _ -> false
+      | `Activated (_, _, `User) -> true
+      | `Activated (_, _, `Dependency) -> false
+      | `Running (_, prev) -> go_through_history (prev :> workflow_state)
+      | `Successful (_, prev, _) -> go_through_history (prev :> workflow_state)
+      | `Dead (_, prev, _) -> go_through_history (prev :> workflow_state)
+    in
+    go_through_history t.history
 
 end
 

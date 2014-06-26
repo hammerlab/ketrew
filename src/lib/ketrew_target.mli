@@ -211,6 +211,7 @@ module Is: sig
   val failed: t -> bool
   val successful: t -> bool
   val killable: t -> bool
+  val activated_by_user: t -> bool
 end
 
 (** Get the most recent serialized 
