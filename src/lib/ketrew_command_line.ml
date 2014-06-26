@@ -196,16 +196,18 @@ module Interaction = struct
     in 
     menu_loop 0
 
-  let build_sublist_of_targets ~state ~list_name =
+  let build_sublist_of_targets ~state ~list_name ~filter =
     Ketrew_state.current_targets state
     >>= fun all_targets ->
     let to_process = ref [] in
     let target_menu () =
       List.filter_map all_targets ~f:(fun target ->
-          match List.exists !to_process ~f:(fun id -> id = Target.id target) with
+          match not (filter target) 
+                || List.exists !to_process ~f:(fun id -> id = Target.id target)
+          with
           | true -> None
           | false ->
-            let item_format = "$name ($id)" in
+            let item_format = "$name ($status, $id)" in
             Some (
               menu_item 
                 ~log:Log.(s "Add: "
@@ -365,14 +367,18 @@ let kill ~state ~interactive ids =
   begin 
     begin if interactive then
         Interaction.build_sublist_of_targets ~state ~list_name:"Kill list"
+          ~filter:Target.Is.killable
       else
         return (`Go [])
     end
     >>= function
     | `Go additional_ids ->
       let to_kill = additional_ids @ ids in
-      if List.length to_kill = 0 then 
-        Log.(s "There is nothing to kill." @ warning);
+      Log.(
+        (match List.length to_kill with
+         | 0 -> s "There is nothing to kill."
+         | _ -> s "Killing " % OCaml.list s to_kill)
+        @ warning);
       Deferred_list.while_sequential to_kill (fun id ->
           Ketrew_state.kill state ~id
           >>= function
@@ -402,6 +408,7 @@ let archive ~state ~interactive ids =
   begin 
     begin if interactive then
         Interaction.build_sublist_of_targets ~state ~list_name:"Archival list"
+          ~filter:Target.Is.finished
       else
         return (`Go [])
     end
@@ -618,6 +625,7 @@ module Explorer = struct
     | `Set_viewer viewer ->
       target_status ~state ~viewer ~add_info exploration_state target
     | `Call (key, log) ->
+      Log.(s "Calling query " % sf "%S" key @ warning);
       begin Ketrew_state.call_query ~state ~target key
         >>< function 
         | `Ok qlog -> 
@@ -681,9 +689,10 @@ module Explorer = struct
               | `Quit -> return ()
             end
           | `Kill ->
+            Log.(s "Killing target …" @ warning);
             Ketrew_state.kill state (Target.id chosen)
             >>= fun what_happened ->
-            Log.(s "Killing target " % s (Target.name chosen) % n
+            Log.(s "→ " % s (Target.name chosen) % n
                  % (separate n 
                       (List.map ~f:Ketrew_state.log_what_happened what_happened) 
                     |> indent)
