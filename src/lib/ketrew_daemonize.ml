@@ -227,7 +227,7 @@ let _update run_parameters =
     (* fail (`Failed_to_update "Pid file empty") *)
     return (`Still_running run_parameters)
   | Some p ->
-    let cmd = fmt "ps -p %d" p in
+    let cmd = fmt "ps -g %d" p in
     Host.get_shell_command_return_value run.created.host cmd
     >>= fun ps_return ->
     begin match ps_return with
