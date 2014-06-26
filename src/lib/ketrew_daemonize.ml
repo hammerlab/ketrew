@@ -6,13 +6,7 @@ module Host = Ketrew_host
 module Error = Ketrew_error
 module Program = Ketrew_program
 
-type running = Ketrew_gen_daemonize_v0_t.running = {
-  pid: int option;
-  playground: Path.absolute_directory;
-  script: Ketrew_monitored_script.t;
-  host: Host.t;
-}
-type run_parameters = Ketrew_gen_daemonize_v0_t.run_parameters
+include Ketrew_gen_daemonize_v0_t
 
 let running =
   function `Running r -> r 
@@ -28,24 +22,33 @@ let deserialize_exn s =
   | `V0 v0 -> v0
   end
 
-let name = "nohup-setsid"
-let create ?(host=Host.tmp_on_localhost) cmds =
-  `Long_running (name, `Created (host, cmds) |> serialize)
+let name = "daemonize"
+let create ?(host=Host.tmp_on_localhost) program =
+  let c = {host; program; using_hack = `Nohup_setsid } in
+  `Long_running (name, `Created c |> serialize)
+
+let using_hack = function
+| `Created c -> c.using_hack
+| `Running r -> r.created.using_hack
+
+let hack_to_string = function
+| `Nohup_setsid -> "Nohup+Setsid"
 
 let log = 
   let open Log in
   function
-  | `Created (host, prog) -> [
-      "Status", s "Created";
-      "Host", Host.log host;
-      "Program", Program.log prog;
+  | `Created c -> [
+      "Status", s "Created" % sp % parens (s (hack_to_string c.using_hack));
+      "Host", Host.log c.host;
+      "Program", Program.log c.program;
     ]
-| `Running rp -> [
-      "Status", s "Running";
-      "Host", Host.log rp.host;
+  | `Running rp -> [
+      "Status", s "Running" % sp 
+                % parens (s (hack_to_string rp.created.using_hack));
+      "Host", Host.log rp.created.host;
       "PID", OCaml.option i rp.pid;
       "Playground", s (Path.to_string rp.playground);
-  ]
+    ]
 
 let out_file_path ~playground =
   Path.(concat playground (relative_file_exn "out"))
@@ -69,32 +72,34 @@ let query run_parameters item =
     begin match item with
     | "log" -> 
       let log_file = Ketrew_monitored_script.log_file rp.script in
-      Host.grab_file_or_log rp.host log_file
+      Host.grab_file_or_log rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.host out_file
+      Host.grab_file_or_log rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.host err_file
+      Host.grab_file_or_log rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.host monitored_script_path
+      Host.grab_file_or_log rp.created.host monitored_script_path
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
 let start rp =
   (* let script = Command.monitored_script cmd in *)
-  let (host, cmds) = created rp in
-  begin match Host.get_fresh_playground host with
+  let created = created rp in
+  begin match Host.get_fresh_playground created.host with
   | None ->
-    fail_fatal (fmt  "Host %s: Missing playground" (Host.to_string_hum host))
+    fail_fatal (fmt  "Host %s: Missing playground" 
+                  (Host.to_string_hum created.host))
   | Some playground ->
-    let monitored_script = Ketrew_monitored_script.create ~playground cmds in
+    let monitored_script =
+      Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
-    Host.ensure_directory host playground
+    Host.ensure_directory created.host playground
     >>= fun () ->
     let content = Ketrew_monitored_script.to_string monitored_script in
-    Host.put_file ~content host ~path:monitored_script_path
+    Host.put_file ~content created.host ~path:monitored_script_path
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
@@ -103,11 +108,11 @@ let start rp =
       fmt "nohup setsid bash %s > %s 2> %s &" 
         (Path.to_string_quoted monitored_script_path)
         (Path.to_string_quoted out) (Path.to_string_quoted err) in
-    Host.run_shell_command host cmd
+    Host.run_shell_command created.host cmd
     >>= fun () ->
     Log.(s "daemonize: Ran " % s cmd @ very_verbose);
-    return (`Running {pid = None; playground; 
-                      script = monitored_script; host})
+    return (`Running {pid = None; playground;  created;
+                      script = monitored_script;})
   end
   >>< begin function
   | `Ok o -> return o
@@ -128,7 +133,7 @@ let _pid_and_log run_parameters =
   let run = running run_parameters in
   let log_file = Ketrew_monitored_script.log_file run.script in
   let pid_file = Ketrew_monitored_script.pid_file run.script in
-  begin Host.get_file run.host ~path:log_file
+  begin Host.get_file run.created.host ~path:log_file
     >>< function
     | `Ok c -> return (Some c)
     | `Error (`Cannot_read_file _) -> return None
@@ -136,7 +141,7 @@ let _pid_and_log run_parameters =
   end
   >>= fun log_content ->
   let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
-  begin Host.get_file run.host ~path:pid_file
+  begin Host.get_file run.created.host ~path:pid_file
     >>< function
     | `Ok c -> return (Int.of_string (String.strip ~on:`Both c))
     | `Error (`Cannot_read_file _) -> return None
@@ -162,7 +167,7 @@ let _update run_parameters =
     return (`Still_running run_parameters)
   | Some p ->
     let cmd = fmt "ps -p %d" p in
-    Host.get_shell_command_return_value run.host cmd
+    Host.get_shell_command_return_value run.created.host cmd
     >>= fun ps_return ->
     begin match ps_return with
     | 0 -> (* most likely still running *)
@@ -210,7 +215,7 @@ let kill run_parameters =
     | Some p ->
       let cmd = fmt "kill -- -%d" p in
       Log.(s "Killing group " % i p % s " with " % sf "%S" cmd @ very_verbose);
-      Host.run_shell_command run.host cmd
+      Host.run_shell_command run.created.host cmd
       >>= fun () ->
       return (`Killed run_parameters)
     end
