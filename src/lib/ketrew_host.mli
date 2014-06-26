@@ -209,3 +209,8 @@ val get_file :
   Deferred_result.t
 (** Read the file from the host at [path]. *)
 
+val grab_file_or_log: t -> 
+  <kind: Ketrew_path.file; ..> Ketrew_path.t ->
+  (string, Log.t) Deferred_result.t
+(** Weakly typed version of {!get_file}, it fails with a {!Log.t}
+    (for use in “long-running” plugins).  *)

@@ -554,7 +554,7 @@ module Explorer = struct
         ~always_there:cancel_menu_items
         (make_target_menu ~targets ()))
 
-  let target_status ~state exploration_state target =
+  let rec target_status ~state ?(add_info=Log.empty) exploration_state target =
     let sentence =
       let rec log_of_status (status: Target.workflow_state) =
         let open Log in
@@ -588,12 +588,27 @@ module Explorer = struct
       Document.target ~state target
       % s "Status:" % n
       % indent (log_of_status target.Target.history)
+      % n % add_info
     in
     let open Interaction in
-    menu ~sentence
-      ~always_there:cancel_menu_items
-      []
+    let additional =
+      Ketrew_state.additional_queries ~state target
+      |> List.map ~f:(fun (key, log) -> menu_item ~log (`Call (key, log)))
+    in
+    menu ~sentence ~always_there:cancel_menu_items additional
     >>= function
+    | `Call (key, log) ->
+      begin Ketrew_state.call_query ~state ~target key
+        >>< function 
+        | `Ok qlog -> 
+          let formatted =
+            let line = String.make 80 '`' in
+            String.concat ~sep:"\n" [line; qlog; line] in
+          return Log.(log % s ":" % n % verbatim ("\n" ^ formatted ^ "\n") % n)
+        | `Error e -> return Log.(log % s ": ERROR -> " % n % e % n)
+      end
+      >>= fun add_info ->
+      target_status ~state ~add_info exploration_state target
     | `Cancel | `Quit as up -> return up
 
   let rec explore ~state exploration_state_stack =

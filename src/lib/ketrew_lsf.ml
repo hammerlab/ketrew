@@ -44,6 +44,8 @@ let out_file_path ~playground =
   Path.(concat playground (relative_file_exn "out"))
 let err_file_path ~playground =
   Path.(concat playground (relative_file_exn "err"))
+let script_path ~playground =
+  Path.(concat playground (relative_file_exn "monitored_script"))
 
 let parse_bsub_output s =
   (* Output looks like 
@@ -62,6 +64,40 @@ let parse_bsub_output s =
 
 let fail_fatal msg = fail (`Fatal msg)
 
+let additional_queries = [
+  "stdout", Log.(s "LSF output file");
+  "stderr", Log.(s "LSF error file");
+  "log", Log.(s "Monitored-script `log` file");
+  "bpeek", Log.(s "Call `bpeek`");
+  "script", Log.(s "Monitored-script used");
+]
+let query run_parameters item =
+  match run_parameters with
+  | `Created _ -> fail Log.(s "not running")
+  | `Running rp ->
+    begin match item with
+    | "log" -> 
+      let log_file = Ketrew_monitored_script.log_file rp.script in
+      Host.grab_file_or_log rp.created.host log_file
+    | "stdout" ->
+      let out_file = out_file_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.created.host out_file
+    | "stderr" ->
+      let err_file = err_file_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.created.host err_file
+    | "script" ->
+      let monitored_script_path = script_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.created.host monitored_script_path
+    | "bpeek" ->
+      begin Host.get_shell_command_output rp.created.host
+          (fmt "bpeek %d" rp.lsf_id)
+        >>< function
+        | `Ok (o, _) -> return o
+        | `Error e ->
+          fail Log.(s "Command `bpeek` failed: " % s (Error.to_string e))
+      end
+    | other -> fail Log.(s "Unknown query: " % sf "%S" other)
+    end
 
 let start: run_parameters -> (_, _) t = function
 | `Running _ ->
@@ -73,8 +109,7 @@ let start: run_parameters -> (_, _) t = function
                   (Host.to_string_hum created.host))
   | Some playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
-    let monitored_script_path =
-      Path.(concat playground (relative_file_exn "monitored_script")) in
+    let monitored_script_path = script_path ~playground in
     Host.ensure_directory created.host playground
     >>= fun () ->
     let content = Ketrew_monitored_script.to_string script in

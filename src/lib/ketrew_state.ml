@@ -511,12 +511,13 @@ let kill t ~id =
     return []
   end
 
+let find_plugin ~state plugin_name =
+  List.find state.long_running_plugins (fun (n, _) -> n = plugin_name)
+  |> Option.map ~f:(fun (_, m) -> m)
 
 let long_running_log ~state plugin_name content =
-  begin match 
-    List.find state.long_running_plugins (fun (n, _) -> n = plugin_name)
-  with
-  | Some (_, m) ->
+  begin match find_plugin ~state plugin_name with
+  | Some m ->
     let module Long_running = (val m : LONG_RUNNING) in
     begin try
       let c = Long_running.deserialize_exn content in
@@ -526,9 +527,44 @@ let long_running_log ~state plugin_name content =
       Log.(log @ error);
       ["Error", log]
     end
-      
   | None -> 
     let log = Log.(s "Plugin not found: " % sf "%S" plugin_name) in
     Log.(log @ error);
     ["Error", log]
   end
+
+let additional_queries ~state target =
+  match target.Target.make with
+  | `Long_running (plugin, rp) ->
+    begin match find_plugin ~state plugin with
+    | Some m ->
+      let module Long_running = (val m : LONG_RUNNING) in
+      Long_running.additional_queries
+    | None ->
+      let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
+      Log.(log @ error);
+      []
+    end
+  | other -> []
+
+let call_query ~state ~target query =
+  match target.Target.make with
+  | `Long_running (plugin, _) ->
+    begin match Target.latest_run_parameters target with
+    | Some rp ->
+      begin match find_plugin ~state plugin with
+      | Some m ->
+        let module Long_running = (val m : LONG_RUNNING) in
+        begin try
+          let c = Long_running.deserialize_exn rp in
+          Long_running.query c query
+        with e ->
+          fail Log.(s "Run-parameters deserialization" % exn e)
+        end
+      | None ->
+        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
+        fail log
+      end
+    | None -> fail Log.(s "Target has no run-parameters: " % Target.log target)
+    end
+  | other -> fail Log.(s "Target has no queries: " % Target.log target)

@@ -51,8 +51,36 @@ let out_file_path ~playground =
   Path.(concat playground (relative_file_exn "out"))
 let err_file_path ~playground =
   Path.(concat playground (relative_file_exn "err"))
+let script_path ~playground =
+  Path.(concat playground (relative_file_exn "monitored_script"))
 
 let fail_fatal msg = fail (`Fatal msg)
+
+let additional_queries = [
+  "stdout", Log.(s "Stardard output");
+  "stderr", Log.(s "Stardard error");
+  "log", Log.(s "Monitored-script `log` file");
+  "script", Log.(s "Monitored-script used");
+]
+let query run_parameters item =
+  match run_parameters with
+  | `Created _ -> fail Log.(s "not running")
+  | `Running rp ->
+    begin match item with
+    | "log" -> 
+      let log_file = Ketrew_monitored_script.log_file rp.script in
+      Host.grab_file_or_log rp.host log_file
+    | "stdout" ->
+      let out_file = out_file_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.host out_file
+    | "stderr" ->
+      let err_file = err_file_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.host err_file
+    | "script" ->
+      let monitored_script_path = script_path ~playground:rp.playground in
+      Host.grab_file_or_log rp.host monitored_script_path
+    | other -> fail Log.(s "Unknown query: " % sf "%S" other)
+    end
 
 let start rp =
   (* let script = Command.monitored_script cmd in *)
@@ -62,8 +90,7 @@ let start rp =
     fail_fatal (fmt  "Host %s: Missing playground" (Host.to_string_hum host))
   | Some playground ->
     let monitored_script = Ketrew_monitored_script.create ~playground cmds in
-    let monitored_script_path =
-      Path.(concat playground (relative_file_exn "monitored_script")) in
+    let monitored_script_path = script_path ~playground in
     Host.ensure_directory host playground
     >>= fun () ->
     let content = Ketrew_monitored_script.to_string monitored_script in

@@ -362,3 +362,13 @@ let get_file t ~path =
     end
 
 
+let grab_file_or_log host path =
+  begin get_file host ~path
+    >>< function
+    | `Ok c -> return c
+    | `Error (`Cannot_read_file _) ->
+      fail Log.(s "cannot read file" % s (Path.to_string path))
+    | `Error (`IO _ as e) ->
+      fail Log.(s "I/O error: " % s (IO.error_to_string e))
+  end
+

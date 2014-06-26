@@ -153,3 +153,11 @@ val kill:  t -> id:Ketrew_target.id ->
 val long_running_log: state:t -> string -> string -> (string * Log.t) list
 (** [long_running_log ~state plugin_name serialized_run_params]
     calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)
+
+val additional_queries: state:t -> Ketrew_target.t -> (string * Log.t) list
+(** Get the potential additional queries ([(key, description)] pairs) that can
+    be called on the target. *)
+
+val call_query: state:t -> target:Ketrew_target.t -> string ->
+  (string, Log.t) Deferred_result.t
+(** Call a query on a target. *)
