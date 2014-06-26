@@ -143,8 +143,8 @@ let host_cmdliner_term
     end
   )
 
-let nohup_setsid ~host cmds =
-  Ketrew_nohup_setsid.create ~host cmds
+let daemonize ~host cmds =
+  Ketrew_daemonize.create ~host cmds
 
 let direct_execution ?host cmd =
   `Direct_command Target.Command.(program ?host cmd)

@@ -6,25 +6,25 @@ module Host = Ketrew_host
 module Error = Ketrew_error
 module Program = Ketrew_program
 
-type running = Ketrew_gen_nohup_setsid_v0_t.running = {
+type running = Ketrew_gen_daemonize_v0_t.running = {
   pid: int option;
   playground: Path.absolute_directory;
   script: Ketrew_monitored_script.t;
   host: Host.t;
 }
-type run_parameters = Ketrew_gen_nohup_setsid_v0_t.run_parameters
+type run_parameters = Ketrew_gen_daemonize_v0_t.run_parameters
 
 let running =
   function `Running r -> r 
-         | _ -> invalid_argument_exn ~where:"Nohup_setsid" "running"
+         | _ -> invalid_argument_exn ~where:"daemonize" "running"
 let created = 
   function `Created c -> c
-         | _ -> invalid_argument_exn ~where:"Nohup_setsid" "created"
+         | _ -> invalid_argument_exn ~where:"daemonize" "created"
 
 let serialize t =
-  Ketrew_gen_versioned_j.string_of_nohup_setsid_run_parameters (`V0 t)
+  Ketrew_gen_versioned_j.string_of_daemonize_run_parameters (`V0 t)
 let deserialize_exn s = 
-  begin match Ketrew_gen_versioned_j.nohup_setsid_run_parameters_of_string s with
+  begin match Ketrew_gen_versioned_j.daemonize_run_parameters_of_string s with
   | `V0 v0 -> v0
   end
 
@@ -105,7 +105,7 @@ let start rp =
         (Path.to_string_quoted out) (Path.to_string_quoted err) in
     Host.run_shell_command host cmd
     >>= fun () ->
-    Log.(s "Nohup_setsid: Ran " % s cmd @ very_verbose);
+    Log.(s "daemonize: Ran " % s cmd @ very_verbose);
     return (`Running {pid = None; playground; 
                       script = monitored_script; host})
   end
@@ -143,7 +143,7 @@ let _pid_and_log run_parameters =
     | `Error (`IO _ as e) -> fail e
   end
   >>= fun pid ->
-  Log.(s "Nohup_setsid.update: got " % indent (OCaml.option s log_content)
+  Log.(s "daemonize.update: got " % indent (OCaml.option s log_content)
        % s " log values and the Pid: " % OCaml.option i pid
        % sp % brakets (s "pid file: " % s (Path.to_string pid_file))
        @ very_verbose);

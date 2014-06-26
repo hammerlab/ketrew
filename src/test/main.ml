@@ -396,7 +396,7 @@ let test_long_running_nohup () =
             Test.test_targets  ~state ~name:(name "good ls")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ()
-                 ~make:(Nohup_setsid.create ~host 
+                 ~make:(Daemonize.create ~host 
                           (`Shell_command (fmt "ls > /tmp/%s" new_name)))
                  ~condition:(`Volume_exists
                                Artifact.Volume.(create ~host ~root (file new_name)))
@@ -417,7 +417,7 @@ let test_long_running_nohup () =
             Test.test_targets  ~state ~name:(name "sleep 42")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ~id
-                 ~make:(Nohup_setsid.create ~host 
+                 ~make:(Daemonize.create ~host 
                           (`Shell_command (fmt "echo %S && sleep 42" String.(make 60 '='))))
                  ()
               ]
@@ -442,7 +442,7 @@ let test_long_running_nohup () =
             let t =
               Ketrew.EDSL.(
                 active "some name"
-                  ~make:(nohup_setsid ~host Program.(sh "ls > /tmp/some_temp_file"))
+                  ~make:(daemonize ~host Program.(sh "ls > /tmp/some_temp_file"))
                   ~ready_when:(file ~host "/tmp/some_temp_file_with_error")#exists
               )
             in

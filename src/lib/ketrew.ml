@@ -12,7 +12,7 @@ module Artifact = Ketrew_artifact
 
 module Target = Ketrew_target
 
-module Nohup_setsid = Ketrew_nohup_setsid
+module Daemonize = Ketrew_daemonize
 
 module Configuration = Ketrew_configuration
 

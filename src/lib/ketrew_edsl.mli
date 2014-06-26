@@ -110,9 +110,9 @@ val active :
   string -> user_target
 (** Create a new target but with [~active:true]. *)
 
-val nohup_setsid :
+val daemonize :
   host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
-(** Create a nohup_setsid build process. *)
+(** Create a “daemonize” build process. *)
 
 val direct_execution :
   ?host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process

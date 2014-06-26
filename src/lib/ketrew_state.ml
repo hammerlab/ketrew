@@ -10,7 +10,7 @@ module Database = Ketrew_database
 module Configuration = Ketrew_configuration
 
 
-module Nohup_setsid = Ketrew_nohup_setsid
+module Daemonize = Ketrew_daemonize
 
 module Persistent_state = struct
   type t = Ketrew_gen_base_v0_t.persistent_state = {
@@ -44,7 +44,7 @@ type t = {
   long_running_plugins: (string * (module LONG_RUNNING)) list;
 }
 let default_plugins = [
-  Nohup_setsid.name, (module Nohup_setsid: LONG_RUNNING);
+  Daemonize.name, (module Daemonize: LONG_RUNNING);
   Ketrew_lsf.name, (module Ketrew_lsf: LONG_RUNNING);
 ]
 let create ?(plugins=default_plugins) configuration =
