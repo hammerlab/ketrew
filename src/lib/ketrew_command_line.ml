@@ -525,8 +525,7 @@ module Explorer = struct
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
 
-  let view_json ~state target =
-    let content = Target.serialize target in 
+  let view_in_dollar_editor ~state content =
     let tmp =
       Filename.(concat temp_dir_name (fmt "%s.json" (Unique_id.create ())))
     in
@@ -544,6 +543,10 @@ module Explorer = struct
     ignore (Sys.command command);
     return ()
 
+  let view_json ~state target =
+    let content = Target.serialize target in 
+    view_in_dollar_editor ~state content
+
   let pick_a_dependency ~state target =
     let target_ids = target.Target.dependencies in
     Deferred_list.while_sequential target_ids
@@ -554,7 +557,8 @@ module Explorer = struct
         ~always_there:cancel_menu_items
         (make_target_menu ~targets ()))
 
-  let rec target_status ~state ?(add_info=Log.empty) exploration_state target =
+  let rec target_status 
+      ~state ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
     let sentence =
       let rec log_of_status (status: Target.workflow_state) =
         let open Log in
@@ -595,20 +599,43 @@ module Explorer = struct
       Ketrew_state.additional_queries ~state target
       |> List.map ~f:(fun (key, log) -> menu_item ~log (`Call (key, log)))
     in
-    menu ~sentence ~always_there:cancel_menu_items additional
+    let always_there =
+      let viewer_items =
+        let char = 'v' in
+        match viewer with
+        | `Inline -> 
+          [menu_item ~char ~log:Log.(s "Use $EDITOR as viewer")
+             (`Set_viewer `Dollar_editor)]
+        | `Dollar_editor ->
+          [menu_item ~char ~log:Log.(s "View stuff inline")
+             (`Set_viewer `Inline)]
+      in
+      cancel_menu_items @  viewer_items  in
+    menu ~sentence ~always_there additional
     >>= function
+    | `Set_viewer viewer ->
+      target_status ~state ~viewer ~add_info exploration_state target
     | `Call (key, log) ->
       begin Ketrew_state.call_query ~state ~target key
         >>< function 
         | `Ok qlog -> 
-          let formatted =
-            let line = String.make 80 '`' in
-            String.concat ~sep:"\n" [line; qlog; line] in
-          return Log.(log % s ":" % n % verbatim ("\n" ^ formatted ^ "\n") % n)
-        | `Error e -> return Log.(log % s ": ERROR -> " % n % e % n)
+          begin match viewer with
+          | `Inline ->
+            let formatted =
+              let line = String.make 80 '`' in
+              String.concat ~sep:"\n" [line; qlog; line] in
+            return (Some Log.(log % s ":" % n 
+                              % verbatim ("\n" ^ formatted ^ "\n") % n))
+          | `Dollar_editor ->
+            view_in_dollar_editor ~state qlog
+            >>= fun () ->
+            return None
+          end
+        | `Error e ->
+          return (Some Log.(log % s ": ERROR -> " % n % e % n))
       end
       >>= fun add_info ->
-      target_status ~state ~add_info exploration_state target
+      target_status ~state ~viewer ?add_info exploration_state target
     | `Cancel | `Quit as up -> return up
 
   let rec explore ~state exploration_state_stack =
