@@ -143,8 +143,7 @@ let host_cmdliner_term
     end
   )
 
-let daemonize ~host cmds =
-  Ketrew_daemonize.create ~host cmds
+let daemonize  = Ketrew_daemonize.create
 
 let direct_execution ?host cmd =
   `Direct_command Target.Command.(program ?host cmd)

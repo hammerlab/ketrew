@@ -23,8 +23,8 @@ let deserialize_exn s =
   end
 
 let name = "daemonize"
-let create ?(host=Host.tmp_on_localhost) program =
-  let c = {host; program; using_hack = `Nohup_setsid } in
+let create ?(using=`Nohup_setsid) ?(host=Host.tmp_on_localhost) program =
+  let c = {host; program; using_hack = using } in
   `Long_running (name, `Created c |> serialize)
 
 let using_hack = function
@@ -33,6 +33,7 @@ let using_hack = function
 
 let hack_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
+| `Python_daemon -> "Python-script"
 
 let log = 
   let open Log in
@@ -56,6 +57,8 @@ let err_file_path ~playground =
   Path.(concat playground (relative_file_exn "err"))
 let script_path ~playground =
   Path.(concat playground (relative_file_exn "monitored_script"))
+let python_hack_path ~playground =
+  Path.(concat playground (relative_file_exn "daemonizator.py"))
 
 let fail_fatal msg = fail (`Fatal msg)
 
@@ -85,6 +88,44 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
+let make_python_script ~out ~err monitored_script_path =
+  fmt "
+import os               # Miscellaneous OS interfaces.
+import sys              # System-specific parameters and functions.
+import subprocess
+if __name__ == '__main__':
+    try: 
+        pid = os.fork() 
+        if pid > 0:
+            # exit first parent
+            sys.exit(0) 
+    except OSError, e: 
+        print >>sys.stderr, 'fork #1 failed: %%d (%%s)' %% (e.errno, e.strerror) 
+        sys.exit(1)
+    # decouple from parent environment
+    os.chdir('/') 
+    os.setsid() 
+    os.umask(0) 
+    # do second fork
+    try: 
+        pid = os.fork() 
+        if pid > 0:
+            # exit from second parent, print eventual PID before
+            print 'Daemon PID %%d' %% pid 
+            sys.exit(0) 
+    except OSError, e: 
+        print >>sys.stderr, 'fork #2 failed: %%d (%%s)' %% (e.errno, e.strerror) 
+        sys.exit(1) 
+    p = subprocess.Popen(['bash', '%s'],
+            cwd='/',
+            stdout=file('%s', 'w'), 
+            stderr=file('%s', 'w'))
+"
+    (Path.to_string monitored_script_path)
+    (Path.to_string out)
+    (Path.to_string err)
+
+
 let start rp =
   (* let script = Command.monitored_script cmd in *)
   let created = created rp in
@@ -103,14 +144,26 @@ let start rp =
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
-    let cmd =
-      (* TODO find a macosx-compliant version (?) harness tmux/screen? *)
-      fmt "nohup setsid bash %s > %s 2> %s &" 
-        (Path.to_string_quoted monitored_script_path)
-        (Path.to_string_quoted out) (Path.to_string_quoted err) in
-    Host.run_shell_command created.host cmd
+    begin match created.using_hack with
+    | `Nohup_setsid ->
+      let cmd =
+        (* TODO find a macosx-compliant version (?) harness tmux/screen? *)
+        fmt "nohup setsid bash %s > %s 2> %s &" 
+          (Path.to_string_quoted monitored_script_path)
+          (Path.to_string_quoted out) (Path.to_string_quoted err) in
+      Host.run_shell_command created.host cmd
+      >>= fun () ->
+      Log.(s "daemonize: Ran " % s cmd @ very_verbose);
+      return ()
+    | `Python_daemon ->
+      let content = make_python_script ~out ~err monitored_script_path in
+      let path = python_hack_path ~playground in
+      Host.put_file ~content created.host ~path
+      >>= fun () ->
+      Host.run_shell_command created.host 
+        (fmt "python %s" (Path.to_string_quoted path))
+    end
     >>= fun () ->
-    Log.(s "daemonize: Ran " % s cmd @ very_verbose);
     return (`Running {pid = None; playground;  created;
                       script = monitored_script;})
   end

@@ -8,7 +8,7 @@ type monitored_script <ocaml from="Ketrew_gen_base_v0"> = abstract
 type created = {
   host: host;
   program: program;
-  using_hack: [ Nohup_setsid ];
+  using_hack: [ Nohup_setsid | Python_daemon ];
 }
 type running = {
   pid: int option;

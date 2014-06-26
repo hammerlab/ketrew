@@ -111,7 +111,10 @@ val active :
 (** Create a new target but with [~active:true]. *)
 
 val daemonize :
-  host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
+  ?using:[`Nohup_setsid | `Python_daemon] ->
+  ?host:Ketrew_host.t ->
+  Program.t ->
+  Ketrew_target.build_process
 (** Create a “daemonize” build process. *)
 
 val direct_execution :

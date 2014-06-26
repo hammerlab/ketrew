@@ -23,7 +23,9 @@
 (** The “standard” plugin-API. *)
 include Ketrew_long_running.LONG_RUNNING
 
-val create: ?host:Ketrew_host.t -> Ketrew_program.t ->
+val create:
+  ?using:[ `Nohup_setsid | `Python_daemon] ->
+  ?host:Ketrew_host.t -> Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
     already serialized). *)
