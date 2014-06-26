@@ -158,6 +158,19 @@ let run_command_with_lsf ~host ~queue cmd =
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
   )
 
+(*
+  The fourth workflow is like `run_command_with_lsf` but uses
+  `nohup_sedsid` instead of the batch scheduler.
+*)
+let run_command_with_nohup ~host cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run_with_test_configuration (
+    target (sprintf "NhSs: %S" cmd)
+      ~make:(nohup_setsid (Program.sh cmd) ~host)
+  )
+
+
 
 (*
    Command line parsing for this multi-workflow script.
@@ -190,11 +203,19 @@ let () =
     | host :: queue :: cmd :: [] -> 
       run_command_with_lsf ~host ~queue cmd
     | other -> 
-      say "usage: %s call lsf <host> <queue> <cmd>" Sys.argv.(0);
+      say "usage: %s lsf <host> <queue> <cmd>" Sys.argv.(0);
+      failwith "Wrong command line"
+    end
+  | "nohup-setsid" :: more
+  | "nhss" :: more ->
+    begin match more with
+    | host :: cmd :: [] -> run_command_with_nohup ~host cmd
+    | other ->
+      say "usage: %s nhss <host> <cmd>" Sys.argv.(0);
       failwith "Wrong command line"
     end
   | args -> 
-    say "usage: %s call [website|tgz|lsf] ..." Sys.argv.(0);
+    say "usage: %s [website|tgz|lsf] ..." Sys.argv.(0);
     say "Don't know what to do with %s" (String.concat ", " args);
     failwith "Wrong command line"
 
