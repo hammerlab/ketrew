@@ -479,8 +479,10 @@ let kill t ~id =
   begin match target.Target.history with
   | `Created c ->
     add_or_update_target t Target.(
-        kill_exn (activate_exn target ~by:`User)
+        kill_exn (activate_exn target ~by:`Dependency)
           ~msg:(fmt "Manual killing"))
+   (* we use `Dependency` because if a target is there and just "created"
+      it is most likely a dependency. *)
     >>= fun () ->
     return [`Target_died (Target.id target, `Killed)]
   | `Activated _ ->
