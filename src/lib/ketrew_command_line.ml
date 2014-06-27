@@ -534,9 +534,10 @@ module Explorer = struct
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
 
-  let view_in_dollar_editor ~state content =
+  let view_in_dollar_editor ?(extension="txt") ~state content =
     let tmp =
-      Filename.(concat temp_dir_name (fmt "%s.json" (Unique_id.create ())))
+      Filename.(concat temp_dir_name 
+                  (fmt "%s.%s" (Unique_id.create ()) extension))
     in
     IO.write_file ~content tmp
     >>= fun () ->
@@ -554,7 +555,7 @@ module Explorer = struct
 
   let view_json ~state target =
     let content = Target.serialize target in 
-    view_in_dollar_editor ~state content
+    view_in_dollar_editor ~extension:"json" ~state content
 
   let pick_a_dependency ~state target =
     let target_ids = target.Target.dependencies in
