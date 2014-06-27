@@ -1,4 +1,5 @@
 
+type time <ocaml from="Ketrew_gen_base_v0"> = abstract
 type host <ocaml from="Ketrew_gen_base_v0"> = abstract
 type path <ocaml from="Ketrew_gen_base_v0"> = abstract
 type program <ocaml from="Ketrew_gen_base_v0"> = abstract
@@ -9,12 +10,14 @@ type created = {
   host: host;
   program: program;
   using_hack: [ Nohup_setsid | Python_daemon ];
+  starting_timeout: time;
 }
 type running = {
   pid: int option;
   playground: path;
   script: monitored_script;
   created: created;
+  start_time: time;
 }
 type run_parameters = [
   | Created of created

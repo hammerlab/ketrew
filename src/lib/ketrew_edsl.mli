@@ -131,6 +131,7 @@ val active :
 (** Create a new target but with [~active:true]. *)
 
 val daemonize :
+  ?starting_timeout:float ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Ketrew_host.t ->
   Program.t ->

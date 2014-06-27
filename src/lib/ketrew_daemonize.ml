@@ -23,8 +23,10 @@ let deserialize_exn s =
   end
 
 let name = "daemonize"
-let create ?(using=`Nohup_setsid) ?(host=Host.tmp_on_localhost) program =
-  let c = {host; program; using_hack = using } in
+let create 
+  ?(starting_timeout=5.)
+  ?(using=`Nohup_setsid) ?(host=Host.tmp_on_localhost) program =
+  let c = {host; program; using_hack = using; starting_timeout } in
   `Long_running (name, `Created c |> serialize)
 
 let using_hack = function
@@ -42,6 +44,7 @@ let log =
       "Status", s "Created" % sp % parens (s (hack_to_string c.using_hack));
       "Host", Host.log c.host;
       "Program", Program.log c.program;
+      "Starting-timeout", f c.starting_timeout % s " sec."
     ]
   | `Running rp -> [
       "Status", s "Running" % sp 
@@ -49,6 +52,7 @@ let log =
       "Host", Host.log rp.created.host;
       "PID", OCaml.option i rp.pid;
       "Playground", s (Path.to_string rp.playground);
+      "Start-time", Time.log rp.start_time;
     ]
 
 let out_file_path ~playground =
@@ -173,7 +177,7 @@ let start rp =
     end
     >>= fun () ->
     return (`Running {pid = None; playground;  created;
-                      script = monitored_script;})
+                      script = monitored_script; start_time = Time.now ()})
   end
   >>< begin function
   | `Ok o -> return o
@@ -219,12 +223,15 @@ let _update run_parameters =
   _pid_and_log run_parameters
   >>= fun (`Pid pid, `Log log) ->
   let run = running run_parameters in
+  let elapsed = Time.(now ()) -. run.start_time in
   begin match pid with
+  | None when  elapsed > run.created.starting_timeout ->
+    (* no pid after timeout => fail! *)
+    return (`Failed (run_parameters,
+                     fmt "starting timeouted: %.2f > %.2f"
+                       elapsed run.created.starting_timeout))
   | None ->
-    (* either it didn't start yet, or it already crashed …
-       should count the number of retries or compare dates and have a timeout
-    *)
-    (* fail (`Failed_to_update "Pid file empty") *)
+    (* we consider it didn't start yet *)
     return (`Still_running run_parameters)
   | Some p ->
     let cmd = fmt "ps -g %d" p in

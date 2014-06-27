@@ -24,6 +24,7 @@
 include Ketrew_long_running.LONG_RUNNING
 
 val create:
+  ?starting_timeout:float ->
   ?using:[ `Nohup_setsid | `Python_daemon] ->
   ?host:Ketrew_host.t -> Ketrew_program.t ->
   [> `Long_running of string * string ]
