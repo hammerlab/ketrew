@@ -296,6 +296,8 @@ let run_state ~state ~max_sleep ~how =
     | _ -> fix_point ~count (what_happened :: history)
     end
   in
+  Log.(s "Running " % OCaml.list s how % s " with max-spleep: " % f max_sleep 
+       @ warning);
   begin match how with
   | ["step"] ->
     Ketrew_state.step state
