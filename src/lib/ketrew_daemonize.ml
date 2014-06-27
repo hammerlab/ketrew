@@ -238,12 +238,10 @@ let _update run_parameters =
       begin match Option.bind log List.last with
       | None -> (* no log at all *)
         return (`Failed (run_parameters, "no log file"))
-      | Some (`Failure (date, label, ret)) ->
-        return (`Failed (run_parameters, fmt "%s returned %s" label ret))
       | Some (`Success  date) ->
         return (`Succeeded run_parameters)
       | Some other ->
-        return (`Still_running run_parameters)
+        return (`Failed (run_parameters, "failure in log"))
       end
     end
   end
