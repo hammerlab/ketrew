@@ -183,6 +183,96 @@ let run_command_with_python_hack ~host cmd =
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
   )
 
+(*
+
+This workflow builds ketrew on a vagrant host.
+
+*)
+let run_ketrew_on_vagrant () =
+  let open Ketrew.EDSL in
+  let (//) = Filename.concat in
+  let tmp_dir =  Sys.getenv "HOME"  // "tmp/ketrew_vagrant" in
+  let vagrant_tmp = tmp_dir // "vagr_vm" in
+  let vagrant_host = parse_host (tmp_dir // "playground") in
+  let vagrant_file = file ~host:vagrant_host (vagrant_tmp // "Vagrantfile") in
+  let do_on_vagrant_host p =
+    daemonize ~using:`Python_daemon ~host:vagrant_host p in
+  let init =
+    target "init-vagrant"
+      ~ready_when:vagrant_file#exists
+      ~make:(do_on_vagrant_host Program.(
+          exec ["mkdir"; "-p"; vagrant_tmp]
+          && exec ["cd"; vagrant_tmp]
+          && exec ["vagrant"; "init"; "hashicorp/precise64"]
+        ))
+  in
+  let running =
+    target "vagrant-up"
+      ~dependencies:[init]
+      ~make:(do_on_vagrant_host Program.(
+          exec ["cd"; vagrant_tmp]
+          && exec ["vagrant"; "up"]))
+  in
+  let ssh_config = file ~host:vagrant_host (tmp_dir // "ssh_config") in 
+  let fill_ssh_config =
+    target "vagrant-ssh-config" ~dependencies:[running]
+      ~make:(do_on_vagrant_host Program.(
+          exec ["cd"; vagrant_tmp]
+          && shf "vagrant ssh-config --host Vagrew > %s" ssh_config#path))
+  in
+  let vagrant_box =
+    let open Ketrew in
+    Host.ssh ~add_ssh_options:["-F"; ssh_config#path]
+      ~playground:(Path.absolute_directory_exn "/tmp/KT/") "Vagrew"
+  in
+  let do_on_vagrant_box p =
+    daemonize ~using:`Nohup_setsid ~host:vagrant_box p in
+  let get_opam =
+    target "apt-get-opam"
+      ~dependencies:[running; fill_ssh_config]
+      ~ready_when:((file ~host:vagrant_box "/usr/bin/opam")#exists)
+      ~make:(do_on_vagrant_box Program.(
+          sh "echo GO"
+          && sh "sudo apt-get update"
+          && sh "sudo apt-get install -y python-software-properties"
+          && sh "sudo add-apt-repository -y ppa:avsm/ocaml41+opam11"
+          && sh "sudo apt-get update -qq"
+          && sh "sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra aspcud opam"
+        ))
+  in
+  let init_opam =
+    target "init-opam"
+      ~dependencies:[running; fill_ssh_config; get_opam]
+      ~ready_when:((file ~host:vagrant_box 
+                      "/home/vagrant/.opam/opam-init/init.sh")#exists)
+      ~make:(do_on_vagrant_box Program.(
+          sh "opam init"
+        ))
+  in
+  let get_c_dependencies =
+    target "apt-get-c-deps"
+      ~dependencies:[running; fill_ssh_config]
+      ~make:(do_on_vagrant_box Program.(
+          sh "echo GO"
+          && sh "sudo apt-get update"
+          && sh "sudo apt-get install -y m4 build-essential libgdbm-dev"
+        ))
+  in
+  let install_ketrew compiler =
+    target "opam-install-ketrew"
+      ~dependencies:[running; fill_ssh_config; init_opam; get_c_dependencies]
+      ~ready_when:((file ~host:vagrant_box 
+                      (sprintf
+                         "/home/vagrant/.opam/%s/bin/ketrew-client" compiler))
+                   #exists)
+      ~make:(do_on_vagrant_box Program.(
+          shf "opam switch %s" compiler
+          && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo dont_care"
+          && sh "opam pin ketrew https://github.com/smondet/ketrew/"
+          && sh "opam install -y ketrew"
+        ))
+  in
+  run_with_test_configuration (install_ketrew "system")
 
 (*
    Command line parsing for this multi-workflow script.
@@ -234,6 +324,7 @@ let () =
       say "usage: %s pyd <host> <cmd>" Sys.argv.(0);
       failwith "Wrong command line"
     end
+  | "CI" :: more -> run_ketrew_on_vagrant ()
   | args -> 
     say "usage: %s [website|tgz|lsf] ..." Sys.argv.(0);
     say "Don't know what to do with %s" (String.concat ", " args);
