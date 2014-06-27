@@ -124,6 +124,7 @@ module Program = struct
   let sh c = `Shell_command c
   let shf fmt = Printf.ksprintf sh fmt
   let exec l = `Exec l
+  let chain l = `And l
 
   let copy_files ~source:(s_host, src) ~destination:(d_host, dest) 
       ~(f : ?host:Host.t -> t -> 'a) =

@@ -40,12 +40,15 @@ module Program: sig
   val shf: ('a, unit, string, t) format4 -> 'a
   (** Printf-like function to create shell commands. *)
 
-  val (&&): t -> t -> t
-  (** [a && b] is a program than runs [a] then [b] iff [a] succeeded. *)
-
   val exec: string list -> t
   (** Create a program that run in [Unix.exec] mode (i.e. does not need shell
       escaping). *)
+
+  val (&&): t -> t -> t
+  (** [a && b] is a program than runs [a] then [b] iff [a] succeeded. *)
+
+  val chain: t list -> t
+  (** Chain a list of programs like with [&&]. *)
 
   val copy_files :
     source:Ketrew_host.t * string list ->
