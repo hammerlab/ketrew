@@ -125,6 +125,19 @@ module Program = struct
   let shf fmt = Printf.ksprintf sh fmt
   let exec l = `Exec l
 
+  let copy_files ~source:(s_host, src) ~destination:(d_host, dest) 
+      ~(f : ?host:Host.t -> t -> 'a) =
+    let open Ketrew_gen_base_v0_t in
+    match s_host.connection, d_host.connection with
+    | `Localhost, `Localhost ->
+      f ?host:None (exec ("cp" :: src @ [dest])) 
+    | `Ssh ssh, `Localhost -> 
+      f ?host:None (exec (Host.Ssh.scp_pull ssh ~src ~dest))
+    | `Localhost, `Ssh ssh -> 
+      f ?host:None (exec (Host.Ssh.scp_push ssh ~src ~dest))
+    | `Ssh _, `Ssh ssh -> 
+      f ~host:s_host (exec (Host.Ssh.scp_push ssh ~src ~dest))
+
 end
 
 let parse_host: string -> Host.t = Host.of_string
