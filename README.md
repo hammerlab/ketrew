@@ -14,12 +14,8 @@ Build & Install
 If you have `opam` up and running:
 
     opam remote add smondet git@github.com:smondet/dev-opam-repo
-    opam install type_conv
     opam install ketrew
 
-(installing `type_conv` manually will be useless when
-[`ocaml/opam-repository#2240`](https://github.com/ocaml/opam-repository/pull/2240)
-is merged).
 
 
 Usage
@@ -74,7 +70,7 @@ Ketrew is driven from the command-line client.  See:
 
 To display the current status:
 
-    ketrew-client info
+    ketrew-client status
 
 To run as many steps as possible until a “fix-point” is reached:
 
@@ -87,5 +83,13 @@ To kill running jobs use
 or do an interactive murder:
 
     ketrew-client kill --interactive
+
+Once targets are dead, one can “archive” them, i.e. put them in a less-visible
+list.
+
+    ketrew-client archive [--interactive] [<target-ID>]*
+
+See also `ketrew-client interact` or `ketrew-client explore` for fun
+*one-key-based* navigation.
 
 
