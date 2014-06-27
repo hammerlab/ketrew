@@ -61,6 +61,7 @@ val tmp_on_localhost: t
 (** The host ["localhost"], with ["/tmp"] as [playground]. *)
 
 val ssh :
+  ?add_ssh_options:string list ->
   ?default_shell:default_shell ->
   ?playground:Ketrew_path.absolute_directory ->
   ?port:int -> ?user:string -> ?name:string -> string -> t

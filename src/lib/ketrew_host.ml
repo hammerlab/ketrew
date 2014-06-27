@@ -20,11 +20,13 @@ module Ssh = struct
     address: string;
     port: int option;
     user: string option;
+    add_ssh_options: string list;
   }
 
   (** Generate a proper SSH command for the given host. *)
   let do_ssh ssh command =
     ["ssh"; !_configuration_ssh_batch_option]
+    @ ssh.add_ssh_options
     @ (match ssh.port with
       | Some p -> ["-p"; Int.to_string p]
       | None -> [])
@@ -84,6 +86,7 @@ module Ssh = struct
       directory or file path. *)
   let scp_push ssh ~src ~dest =
     ["scp"; !_configuration_ssh_batch_option]
+    @ ssh.add_ssh_options
     @ (match ssh.port with
       | Some p -> ["-P"; "port"]
       | None -> [])
@@ -95,6 +98,7 @@ module Ssh = struct
   (** Generate an SCP command for the given host as source. *)
   let scp_pull  ssh ~src ~dest =
     ["scp"; !_configuration_ssh_batch_option]
+    @ ssh.add_ssh_options
     @ (match ssh.port with
       | Some p -> ["-P"; "port"]
       | None -> [])
@@ -131,14 +135,17 @@ let tmp_on_localhost =
   localhost ~playground:(Path.absolute_directory_exn "/tmp")
     ~name:"file://tmp" ()
 
-let ssh ?default_shell ?playground ?port ?user ?name address =
+let ssh ?(add_ssh_options=[]) ?default_shell ?playground ?port ?user ?name address =
   create ?playground ?default_shell Option.(value name ~default:address)
-    ~connection:(`Ssh {Ssh. address; port; user})
+    ~connection:(`Ssh {Ssh. address; port; user; add_ssh_options})
 
 let of_uri uri =
   let connection =
     Option.value_map ~default:`Localhost (Uri.host uri) ~f:(fun address ->
-        `Ssh {Ssh.address; port = Uri.port uri; user = Uri.userinfo uri})
+        let add_ssh_options =
+          Option.value ~default:[] (Uri.get_query_param' uri "ssh-option") in
+        let user = Uri.userinfo uri in
+        `Ssh {Ssh.address; port = Uri.port uri; user; add_ssh_options})
   in
   let playground =
     match Uri.path uri with

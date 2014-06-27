@@ -8,6 +8,7 @@ type ssh_host = {
   address: string;
   port: int option;
   user: string option;
+  add_ssh_options: string list;
 }
 
 type connection = [
