@@ -4,6 +4,9 @@ open Ketrew_pervasives
 (** Definitions specific to “SSH” hosts (see {!connection}). *)
 module Ssh : sig
 
+  type t = Ketrew_gen_base_v0_t.ssh_host
+  (** The type of SSH-based hosts. *)
+
   val configure_ssh_batch_option :
     [ `Custom of string | `Dropbear | `Openssh ] -> unit
     (** Configure global “Batch option”,
@@ -12,6 +15,13 @@ module Ssh : sig
         {li for OpenSSH, it is ["-oBatchMode=yes"],}
         {li for DropBear, it is ["-s"].  }
       }*)
+
+  val scp_push: t -> src:string list -> dest:string -> string list
+  (** Generate an SCP command for the given host with the destination
+      directory or file path. *)
+
+  val scp_pull: t -> src:string list -> dest:string -> string list
+  (** Generate an SCP command for the given host as source. *)
 
 end
 
