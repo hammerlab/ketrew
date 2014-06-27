@@ -626,8 +626,22 @@ module Explorer = struct
     | `Set_viewer viewer ->
       target_status ~state ~viewer ~add_info exploration_state target
     | `Call (key, log) ->
-      Log.(s "Calling query " % sf "%S" key @ warning);
-      begin Ketrew_state.call_query ~state ~target key
+      Log.(s "Calling query " % sf "%S" key % n
+           % s "Press " % bold_red (s "'K'") % s " for cancelling"
+           @ warning);
+      begin Deferred_list.pick_and_cancel [
+          Ketrew_state.call_query ~state ~target key;
+          begin 
+            let rec loop () =
+              get_key ()
+              >>< function
+              | `Error (`Failure failure) ->
+                fail Log.(s "Interface fails: " % s failure)
+              | `Ok 'K' -> fail Log.(s "Cancelled by user")
+              | `Ok other -> loop () in
+            loop ()
+          end;
+        ]
         >>< function 
         | `Ok qlog -> 
           begin match viewer with
