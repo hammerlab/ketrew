@@ -48,10 +48,10 @@ let deploy_website () =
     (* The target that produces `branch_file` *)
     target "Get current branch"
       ~ready_when:branch_file#exists
-      ~make:(direct_shell_command 
+      ~make:(direct_shell_command
                (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
   in
-  let make_doc = 
+  let make_doc =
     target "Make doc" ~make:(direct_shell_command "please.sh doc")
       ~ready_when:`False in
   let check_out_gh_pages =
@@ -61,7 +61,7 @@ let deploy_website () =
       ~make:(direct_shell_command
                (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
       (* The default value for `?ready_when` is [`False], so this
-         target will always be recomputed. 
+         target will always be recomputed.
          It can fail pretty often, e.g. is the git-tree is not clean, for `git
          checkout`.  *)
   in
@@ -98,7 +98,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
   let dest_base =
     match dest_prefix with
-    | Some s -> s 
+    | Some s -> s
     | None -> sprintf  "/tmp/backup_from_ketrew_cli"
   in
   let destination ext =
@@ -109,7 +109,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let targz = destination "tar.gz" in
   let make_targz =
     target ~ready_when:targz#exists "make-tar.gz" ~dependencies:[]
-      ~make:(daemonize ~host 
+      ~make:(daemonize ~host
                (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
       (* A first target using `daemonize`
         see [nohup(1)](http://linux.die.net/man/1/nohup)
@@ -128,7 +128,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       let gpg_file = destination "gpg" in
       let make_it =
         target "make-gpg-of-tar.gz" ~ready_when:gpg_file#exists ~dependencies:[make_targz]
-          ~make:(daemonize ~host 
+          ~make:(daemonize ~host
                    Program.(shf "gpg -c --passphrase bouh -o '%s' '%s'"
                               gpg_file#path targz#path)) in
       let clean_up =
@@ -213,7 +213,7 @@ let run_ketrew_on_vagrant () =
           exec ["cd"; vagrant_tmp]
           && exec ["vagrant"; "up"]))
   in
-  let ssh_config = file ~host:vagrant_host (tmp_dir // "ssh_config") in 
+  let ssh_config = file ~host:vagrant_host (tmp_dir // "ssh_config") in
   let fill_ssh_config =
     target "vagrant-ssh-config" ~dependencies:[running]
       ~make:(do_on_vagrant_host Program.(
@@ -243,7 +243,7 @@ let run_ketrew_on_vagrant () =
   let init_opam =
     target "init-opam"
       ~dependencies:[running; fill_ssh_config; get_opam]
-      ~ready_when:((file ~host:vagrant_box 
+      ~ready_when:((file ~host:vagrant_box
                       "/home/vagrant/.opam/opam-init/init.sh")#exists)
       ~make:(do_on_vagrant_box Program.(
           sh "opam init"
@@ -261,7 +261,7 @@ let run_ketrew_on_vagrant () =
   let install_ketrew compiler =
     target "opam-install-ketrew"
       ~dependencies:[running; fill_ssh_config; init_opam; get_c_dependencies]
-      ~ready_when:((file ~host:vagrant_box 
+      ~ready_when:((file ~host:vagrant_box
                       (sprintf
                          "/home/vagrant/.opam/%s/bin/ketrew-client" compiler))
                    #exists)
@@ -284,7 +284,7 @@ let run_ketrew_on_vagrant () =
 let () =
   let argl = Array.to_list Sys.argv in
   match List.tl argl with
-  | "website" :: more_args -> 
+  | "website" :: more_args ->
     if more_args <> [] then
       say "Ignoring: [%s]" (String.concat ", " more_args);
     deploy_website ()
@@ -302,9 +302,9 @@ let () =
     end
   | "lsf" :: more ->
     begin match more with
-    | host :: queue :: cmd :: [] -> 
+    | host :: queue :: cmd :: [] ->
       run_command_with_lsf ~host ~queue cmd
-    | other -> 
+    | other ->
       say "usage: %s lsf <host> <queue> <cmd>" Sys.argv.(0);
       failwith "Wrong command line"
     end
@@ -325,7 +325,7 @@ let () =
       failwith "Wrong command line"
     end
   | "CI" :: more -> run_ketrew_on_vagrant ()
-  | args -> 
+  | args ->
     say "usage: %s [website|tgz|lsf] ..." Sys.argv.(0);
     say "Don't know what to do with %s" (String.concat ", " args);
     failwith "Wrong command line"

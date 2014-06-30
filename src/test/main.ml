@@ -27,7 +27,7 @@ module Test = struct
           State.step state >>= fun happening ->
           begin match check happening with
           | true -> return ()
-          | false -> 
+          | false ->
             fail (fmt "T: %S: wrong happening: %s" name
                     (List.map ~f:State.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
@@ -45,7 +45,7 @@ module Test = struct
           >>= fun happening ->
           begin match check happening with
           | true -> return ()
-          | false -> 
+          | false ->
             fail (fmt "T: %S: wrong kill happening: %s" name
                     (List.map ~f:State.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
@@ -60,7 +60,7 @@ module Test = struct
       test_targets ~name ~state [target] [check ~id:(Target.id target)]
     let target_succeeds ~id =
       `Status (id, function `Successful _ -> true | _ -> false)
-    let target_fails ~id = 
+    let target_fails ~id =
       `Status (id, function `Dead _ -> true | _ -> false)
     let check_one_step ~id check = `Happens (check ~id)
     let nothing_happens = `Happens (function [] -> true | _ -> false)
@@ -135,7 +135,7 @@ let test_0 () =
     >>= fun db_file ->
     let configuration = Configuration.create db_file () in
     State.with_state ~configuration begin fun ~state ->
-      State.add_target state 
+      State.add_target state
         Target.(create ~name:"First target" ())
       >>= fun () ->
       begin State.current_targets state
@@ -162,16 +162,16 @@ let test_0 () =
 
       let root = Path.absolute_directory_exn "/tmp" in
       Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
-        ~make:(`Direct_command 
+        ~make:(`Direct_command
                  Target.Command.(shell ~host "ls / > /tmp/ketrew_test"))
         ~condition:(`Volume_exists
                       Artifact.Volume.(create ~host ~root (file "ketrew_test")))
       >>= fun () ->
 
       (* A target that creates a more complex file structure *)
-      let cmd = 
+      let cmd =
         Target.Command.(
-          shell ~host 
+          shell ~host
             "mkdir -p /tmp/ketrew_test2/somedir && \
              mkdir -p /tmp/ketrew_test2/somedir_empty && \
              ls / > /tmp/ketrew_test2/ls && \
@@ -234,7 +234,7 @@ let test_0 () =
             ~condition:(`Volume_exists Artifact.Volume.(create ~host ~root (file tmpfile)))
             ()
         in
-        let target2 = 
+        let target2 =
           let shell_command =
             if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
           Target.active ~name:"count lines of dependency"
@@ -252,50 +252,50 @@ let test_0 () =
         in
         Test.test_targets ~state ~name [target1; target2] (check ~id1 ~id2)
       in
-      two_targets (true, true) (fun ~id1 ~id2 -> 
-          [ 
-            `Happens (function 
+      two_targets (true, true) (fun ~id1 ~id2 ->
+          [
+            `Happens (function
               | [`Target_activated (i, `Dependency)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_succeeded (i, `Process_success)] when i = id2 -> true
               | _ -> false);
             Test.nothing_happens
           ])
       >>= fun () ->
-      two_targets (false, true) (fun ~id1 ~id2 -> 
-          [ 
-            `Happens (function 
+      two_targets (false, true) (fun ~id1 ~id2 ->
+          [
+            `Happens (function
               | [`Target_activated (i, `Dependency)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_died (i, `Process_failure)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_died (i, `Dependencies_died)] when i = id2 -> true
               | _ -> false);
             Test.nothing_happens
           ])
       >>= fun () ->
-      two_targets (true, false) (fun ~id1 ~id2 -> 
-          [ 
-            `Happens (function 
+      two_targets (true, false) (fun ~id1 ~id2 ->
+          [
+            `Happens (function
               | [`Target_activated (i, `Dependency)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_succeeded (i, `Process_success)] when i = id1 -> true
               | _ -> false);
-            `Happens (function 
+            `Happens (function
               | [`Target_died (i, `Process_failure)] when i = id2 -> true
               | _ -> false);
             Test.nothing_happens
           ])
       >>= fun () ->
 
-      let target_with_missing_dep = 
+      let target_with_missing_dep =
         Target.active ~name:"target_with_missing_dep"
           ~dependencies:[ "hope this one is not in the database" ]
           ~make:(`Get_output Target.Command.(shell "ls"))
@@ -324,7 +324,7 @@ let test_ssh_failure_vs_target_failure () =
       Test.new_db_file ()
       >>= fun database_parameters ->
       let configuration =
-        Configuration.create 
+        Configuration.create
           ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
       State.with_state ~configuration (fun ~state ->
           let target_with_wrong_host =
@@ -396,7 +396,7 @@ let test_long_running_nohup () =
             Test.test_targets  ~state ~name:(name "good ls")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ()
-                 ~make:(Daemonize.create ~host 
+                 ~make:(Daemonize.create ~host
                           (`Shell_command (fmt "ls > /tmp/%s" new_name)))
                  ~condition:(`Volume_exists
                                Artifact.Volume.(create ~host ~root (file new_name)))
@@ -417,7 +417,7 @@ let test_long_running_nohup () =
             Test.test_targets  ~state ~name:(name "sleep 42")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ~id
-                 ~make:(Daemonize.create ~host 
+                 ~make:(Daemonize.create ~host
                           (`Shell_command (fmt "echo %S && sleep 42" String.(make 60 '='))))
                  ()
               ]
@@ -474,7 +474,7 @@ let test_config_file_parsing () =
   let open Ketrew.Configuration in
   let () =
     let base = create ~database_parameters:"aaabbb" () in
-    match 
+    match
       parse "# Example config\n\
                   more-useless-key = 42\n\
                   [database] # Section DB\n\
