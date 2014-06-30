@@ -212,6 +212,22 @@ module Interaction = struct
     in 
     menu_loop 0
 
+  let format_target_for_menu t =
+    let open Log in
+    let if_color f x = if !global_with_color then f x else x in
+    if_color bold_yellow (s (Target.name t)) % n
+    % indent (
+      begin match t.Target.history with
+      | `Created _ -> s "Created"
+      | `Activated _ -> s "Activated"
+      | `Running _ -> if_color bold_red (s "Running")
+      | `Dead (_, _, `Killed reason) -> if_color bold_red (sf "Killed: %s" reason)
+      | `Dead (_, _, `Failed reason) -> if_color bold_red (sf "Failed: %s" reason)
+      | `Successful _ -> if_color bold_green (s "Successful")
+      end
+      % s "," % sp % if_color greyish (s (Target.id t))
+    )
+
   let build_sublist_of_targets ~state ~list_name ~filter =
     Ketrew_state.current_targets state
     >>= fun all_targets ->
@@ -223,11 +239,9 @@ module Interaction = struct
           with
           | true -> None
           | false ->
-            let item_format = "$name ($status, $id)" in
             Some (
               menu_item 
-                ~log:Log.(s "Add: "
-                          % bold_yellow (s (format_target ~item_format target)))
+                ~log:Log.(s "Add: " % format_target_for_menu target)
                 (`Add (Target.id target))))
         in
         let rec loop () =
@@ -246,14 +260,13 @@ module Interaction = struct
         loop ()
 
   let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
-    let item_format = "$name ($id)" in
     List.filter_map targets ~f:(fun target ->
         match filter_target target with
         | false -> None
         | true ->
           Some (
             menu_item 
-              ~log:Log.(bold_yellow (s (format_target ~item_format target)))
+              ~log:Log.(format_target_for_menu target)
               (`Go (Target.id target))))
 
 end
