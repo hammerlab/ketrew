@@ -105,10 +105,11 @@ let deploy_website () =
   Take a directory, make a tar.gz, save its MD5 sum, and if `gpg` is `true`,
   call `gpg -c` and delete the tar.gz.
 
-  Warning:
-  Ketrew does not have (yet) “hidden” data, so please, do not use
-  `gpg --password` in real-world settings. Ketrew may write the
-  command in many log files for instance.
+  The passphrase for GPG must be in a file `~/.backup_passphrase` as
+
+  ```shell
+  export BACKUP_PASSPHRASE="some passsphraaase"
+  ```
 *)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
@@ -145,7 +146,9 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       let make_it =
         target "make-gpg-of-tar.gz" ~ready_when:gpg_file#exists ~dependencies:[make_targz]
           ~make:(daemonize ~host
-                   Program.(shf "gpg -c --passphrase bouh -o '%s' '%s'"
+                   Program.(
+                     sh ". ~/.backup_passphrase"
+                     && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
                               gpg_file#path targz#path)) in
       let clean_up =
         target "rm-tar.gz" ~dependencies:[make_it]
