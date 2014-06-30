@@ -614,11 +614,12 @@ module Explorer = struct
     let always_there =
       let viewer_items =
         let char = 'v' in
-        match viewer with
-        | `Inline -> 
+        match additional, viewer with
+        | [], _ -> [] (* No additional → no need for this menu-item. *)
+        | _, `Inline -> 
           [menu_item ~char ~log:Log.(s "Use $EDITOR as viewer")
              (`Set_viewer `Dollar_editor)]
-        | `Dollar_editor ->
+        | _, `Dollar_editor ->
           [menu_item ~char ~log:Log.(s "View stuff inline")
              (`Set_viewer `Inline)]
       in
