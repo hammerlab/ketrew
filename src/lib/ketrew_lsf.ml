@@ -64,13 +64,17 @@ let parse_bsub_output s =
 
 let fail_fatal msg = fail (`Fatal msg)
 
-let additional_queries = [
-  "stdout", Log.(s "LSF output file");
-  "stderr", Log.(s "LSF error file");
-  "log", Log.(s "Monitored-script `log` file");
-  "bpeek", Log.(s "Call `bpeek`");
-  "script", Log.(s "Monitored-script used");
-]
+let additional_queries = function
+| `Created _ -> []
+| `Running _ ->
+  [
+    "stdout", Log.(s "LSF output file");
+    "stderr", Log.(s "LSF error file");
+    "log", Log.(s "Monitored-script `log` file");
+    "bpeek", Log.(s "Call `bpeek`");
+    "script", Log.(s "Monitored-script used");
+  ]
+
 let query run_parameters item =
   match run_parameters with
   | `Created _ -> fail Log.(s "not running")

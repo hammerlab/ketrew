@@ -66,12 +66,16 @@ let python_hack_path ~playground =
 
 let fail_fatal msg = fail (`Fatal msg)
 
-let additional_queries = [
-  "stdout", Log.(s "Stardard output");
-  "stderr", Log.(s "Stardard error");
-  "log", Log.(s "Monitored-script `log` file");
-  "script", Log.(s "Monitored-script used");
-]
+let additional_queries = function
+| `Created _ -> []
+| `Running _ ->
+  [
+    "stdout", Log.(s "Stardard output");
+    "stderr", Log.(s "Stardard error");
+    "log", Log.(s "Monitored-script `log` file");
+    "script", Log.(s "Monitored-script used");
+  ]
+
 let query run_parameters item =
   match run_parameters with
   | `Created _ -> fail Log.(s "not running")

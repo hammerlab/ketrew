@@ -45,7 +45,7 @@ module type LONG_RUNNING = sig
   val log: run_parameters -> (string * Log.t) list
   (** Get a list of things to display. *)
 
-  val additional_queries : (string * Log.t) list
+  val additional_queries : run_parameters -> (string * Log.t) list
   (** List of potential [(query, description)] pairs that can be passed
       to {!query}. *)
 

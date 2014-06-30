@@ -537,14 +537,27 @@ let long_running_log ~state plugin_name content =
 
 let additional_queries ~state target =
   match target.Target.make with
-  | `Long_running (plugin, rp) ->
-    begin match find_plugin ~state plugin with
-    | Some m ->
-      let module Long_running = (val m : LONG_RUNNING) in
-      Long_running.additional_queries
+  | `Long_running (plugin, _) ->
+    begin match Target.latest_run_parameters target with
+    | Some rp ->
+      begin match find_plugin ~state plugin with
+      | Some m ->
+        let module Long_running = (val m : LONG_RUNNING) in
+        begin try
+          let c = Long_running.deserialize_exn rp in
+          Long_running.additional_queries c
+        with e -> 
+          let log = Log.(s "Serialization exception: " % exn e) in
+          Log.(log @ error);
+          []
+        end
+      | None ->
+        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
+        Log.(log @ error);
+        []
+      end
     | None ->
-      let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
-      Log.(log @ error);
+      Log.(s "Target has no run-parameters: " % Target.log target @ error);
       []
     end
   | other -> []
