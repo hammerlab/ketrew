@@ -92,4 +92,9 @@ list.
 See also `ketrew-client interact` or `ketrew-client explore` for fun
 *one-key-based* navigation.
 
+### License
+
+It's [Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+
 
