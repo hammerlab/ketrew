@@ -60,6 +60,7 @@ class type user_target =
     method render: Ketrew_target.t
     method dependencies: user_target list
     method metadata: Ketrew_artifact.Value.t
+    method product: user_artifact
   end
 
 
@@ -70,6 +71,7 @@ let user_target_internal
   ?(make: Target.build_process = Target.nop)
   ?(ready_when = `False)
   ?(metadata = Artifact.Value.unit)
+  ?product
   ()
   =
   let id = Unique_id.create () in
@@ -91,14 +93,24 @@ let user_target_internal
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~name:self#name ~condition:ready_when
         ~make ()
+    method product =
+      Option.value_exn product 
+        ~msg:(fmt "Target %s has no known product" self#name)
         
   end
 
-let target ?active ?dependencies ?make ?ready_when ?metadata name =
-  user_target_internal ?active ?dependencies ~name ?make ?metadata ?ready_when ()
-let active  ?dependencies ?make ?ready_when ?metadata name =
+let target ?active ?dependencies ?make ?ready_when ?metadata ?product name =
+  user_target_internal
+    ?active ?dependencies ~name ?make ?metadata ?ready_when ?product ()
+let active  ?dependencies ?make ?ready_when ?metadata ?product name =
   user_target_internal ~active:true
-    ?dependencies ?metadata ~name ?make ?ready_when ()
+    ?dependencies ?metadata ~name ?make ?ready_when ?product ()
+
+let file_target 
+    ?dependencies ?make ?metadata ?name ?host path =
+  let product = file ?host path in
+  let name = Option.value name ~default:("Make:" ^ path) in
+  target ~product ~ready_when:product#exists ?dependencies ?make ?metadata name
 
 (*
   Run a workflow:

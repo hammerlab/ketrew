@@ -121,6 +121,10 @@ class type user_target =
     method metadata: Ketrew_artifact.Value.t
     (** The metadata that has been set for the target. *)
 
+    method product: user_artifact
+    (** The user-artifact produced by the target, if known (raises exception if
+        unknown). *)
+
     (**/**)
     method is_active: bool
     method id: Ketrew_pervasives.Unique_id.t
@@ -135,6 +139,7 @@ val target :
   ?make:Ketrew_target.build_process ->
   ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.Value.t ->
+  ?product:user_artifact ->
   string -> user_target
 (** Create a new target. *)
 
@@ -143,8 +148,19 @@ val active :
   ?make:Ketrew_target.build_process ->
   ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.Value.t ->
+  ?product:user_artifact ->
   string -> user_target
 (** Create a new target but with [~active:true]. *)
+
+val file_target:
+  ?dependencies:user_target list ->
+  ?make:Ketrew_target.build_process ->
+  ?metadata:Ketrew_artifact.Value.t ->
+  ?name:string ->
+  ?host:host ->
+  string ->
+  user_target
+(** Create a file {!user_artifact} and the {!user_target} that produces it. *)
 
 val daemonize :
   ?starting_timeout:float ->
