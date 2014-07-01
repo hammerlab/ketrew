@@ -177,3 +177,13 @@ val additional_queries: state:t -> Ketrew_target.t -> (string * Log.t) list
 val call_query: state:t -> target:Ketrew_target.t -> string ->
   (string, Log.t) Deferred_result.t
 (** Call a query on a target. *)
+
+val restart_target: state:t -> Ketrew_target.t -> 
+  (Ketrew_target.t * Ketrew_target.t list, 
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Missing_data of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ]
+   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+(** Make new activated targets out of a given target and its “transitive
+    reverse dependencies” *)

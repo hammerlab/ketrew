@@ -216,7 +216,8 @@ module Interaction = struct
     let open Log in
     let if_color f x = if !global_with_color then f x else x in
     if_color bold_yellow (s (Target.name t)) % n
-    % indent (
+    % if_color greyish (s (Target.id t)) % n
+    % (
       begin match t.Target.history with
       | `Created _ -> s "Created"
       | `Activated _ -> s "Activated"
@@ -225,7 +226,6 @@ module Interaction = struct
       | `Dead (_, _, `Failed reason) -> if_color bold_red (sf "Failed: %s" reason)
       | `Successful _ -> if_color bold_green (s "Successful")
       end
-      % s "," % sp % if_color greyish (s (Target.id t))
     )
 
   let build_sublist_of_targets ~state ~list_name ~filter =
@@ -755,13 +755,15 @@ module Explorer = struct
             Ketrew_state.archive_target state (Target.id chosen) >>= fun () ->
             explore ~state (one :: history)
           | `Restart ->
-            let new_target =
-              let with_name = "Re:" ^ Target.name chosen in
-              Target.reactivate ~with_name chosen in
-            Ketrew_state.add_target state new_target >>= fun () ->
-            let new_exploration =
-              {one with current_target = Some (Target.id new_target)} in
-            explore ~state (new_exploration :: one :: history)
+            Ketrew_state.restart_target ~state chosen
+            >>= fun (this_target, new_upper_dag) ->
+            Log.(s "New Targets:" % n
+                 % indent (Interaction.format_target_for_menu this_target) % n
+                 % s "and its reverse dependencies:" % n
+                 % indent (separate n (List.map new_upper_dag
+                                         ~f:Interaction.format_target_for_menu))
+                 @ normal);
+            explore ~state (one :: history)
           | `View_json ->
             view_json ~state chosen >>= fun () ->
             explore ~state (one :: history)
