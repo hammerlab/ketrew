@@ -53,6 +53,8 @@ module Log =  struct
     let name = "ketrew"
   end)
   let to_long_string = to_string ~line_width:max_int ~indent:4
+  let if_color color log = 
+    if !global_with_color then color log else log
 end
 
 (** Function that have a documented, easy to check contract, can raise

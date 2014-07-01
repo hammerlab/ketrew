@@ -228,36 +228,49 @@ module Interaction = struct
       end
     )
 
-  let build_sublist_of_targets ~state ~list_name ~filter =
+  let build_sublist_of_targets 
+      ~state ~list_name ~all_log ~go_verb ~filter =
     Ketrew_state.current_targets state
     >>= fun all_targets ->
     let to_process = ref [] in
+    let all_valid_targets () =
+      List.filter all_targets ~f:(fun target ->
+          filter target 
+          && not (List.exists !to_process ~f:(fun id -> id = Target.id target)))
+    in
     let target_menu () =
-      List.filter_map all_targets ~f:(fun target ->
-          match not (filter target) 
-                || List.exists !to_process ~f:(fun id -> id = Target.id target)
-          with
-          | true -> None
-          | false ->
-            Some (
-              menu_item 
-                ~log:Log.(s "Add: " % format_target_for_menu target)
-                (`Add (Target.id target))))
+      List.map (all_valid_targets ()) ~f:(fun t ->
+          menu_item 
+            ~log:Log.(s "Add: " % format_target_for_menu t)
+            (`Add (Target.id t)))
+    in
+    let rec loop () =
+      let all_valid_ids = all_valid_targets () |> List.map ~f:Target.id in
+      let always_there =
+        let go =
+          if !to_process = [] then []
+          else 
+            let log = Log.(s "Go; " % if_color bold_red go_verb % s " the "
+                           % (match !to_process with
+                             | [one] -> s "target"
+                             | more -> i (List.length more) % s " targets")) in
+            [menu_item ~char:'G' ~log `Done]
         in
-        let rec loop () =
-          menu ~sentence:Log.(s "Add targets to “"
-                              % s list_name % s "”")
-            ~always_there:[
-              menu_item ~char:'G' ~log:Log.(s "Go; proceed") `Done;
-              menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel;
-            ]
-            (target_menu ())
-          >>= function
-          | `Add id -> to_process := id :: !to_process; loop ()
-          | `Cancel -> return `Cancel
-          | `Done -> return (`Go !to_process)
-        in
-        loop ()
+        go @ [ menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel ]
+        @ (if all_valid_ids = [] then []
+           else [ menu_item ~char:'A' ~log:all_log `All; ])
+      in
+      let sentence = 
+        if all_valid_ids = [] then Log.(s "Nothing to " % go_verb)
+        else Log.(s "Add targets to “" % s list_name % s "”") in
+      menu ~sentence ~always_there (target_menu ())
+      >>= function
+      | `Add id -> to_process := id :: !to_process; loop ()
+      | `All -> to_process := all_valid_ids @ !to_process; loop ()
+      | `Cancel -> return `Cancel
+      | `Done -> return (`Go !to_process)
+    in
+    loop ()
 
   let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
     List.filter_map targets ~f:(fun target ->
@@ -398,6 +411,7 @@ let kill ~state ~interactive ids =
   begin 
     begin if interactive then
         Interaction.build_sublist_of_targets ~state ~list_name:"Kill list"
+          ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
           ~filter:Target.Is.killable
       else
         return (`Go [])
@@ -439,6 +453,7 @@ let archive ~state ~interactive ids =
   begin 
     begin if interactive then
         Interaction.build_sublist_of_targets ~state ~list_name:"Archival list"
+          ~all_log:Log.(s "Archive them all") ~go_verb:Log.(s "archive")
           ~filter:Target.Is.finished
       else
         return (`Go [])
