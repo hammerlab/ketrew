@@ -134,6 +134,15 @@ let active ?id
   activate_exn ~by:`User (create ?id ?name ?persistance ?metadata ?condition
                             ?dependencies ?make ())
 
+let reactivate 
+    ?with_id ?with_name ?with_metadata t =
+  activate_exn ~by:`User
+    {t with
+     history = `Created (Time.now ());
+     id = Option.value with_id ~default:(Unique_id.create ());
+     name = Option.value with_name ~default:t.name;
+     metadata = Option.value with_metadata ~default:t.metadata}
+
 let id t : Unique_id.t = t.id
 let name t = t.name
 

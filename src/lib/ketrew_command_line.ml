@@ -556,12 +556,18 @@ module Explorer = struct
           [menu_item ~char:'d'
              ~log:Log.(s "Follow a dependency") `Follow_dependencies]
       in
+      let restart_item =
+        if Target.Is.finished target
+        then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
+                `Restart]
+        else [] in
       menu ~sentence ~always_there:cancel_menu_items (
         [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
         @ build_process_details_item
         @ follow_deps_item
         @ kill_item
         @ archive_item
+        @ restart_item
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
 
@@ -748,6 +754,14 @@ module Explorer = struct
           | `Archive ->
             Ketrew_state.archive_target state (Target.id chosen) >>= fun () ->
             explore ~state (one :: history)
+          | `Restart ->
+            let new_target =
+              let with_name = "Re:" ^ Target.name chosen in
+              Target.reactivate ~with_name chosen in
+            Ketrew_state.add_target state new_target >>= fun () ->
+            let new_exploration =
+              {one with current_target = Some (Target.id new_target)} in
+            explore ~state (new_exploration :: one :: history)
           | `View_json ->
             view_json ~state chosen >>= fun () ->
             explore ~state (one :: history)

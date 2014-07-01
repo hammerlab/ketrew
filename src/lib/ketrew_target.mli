@@ -190,6 +190,13 @@ val active :
   unit -> t
 (** Like {!create} but set as already activated. *)
 
+val reactivate: 
+  ?with_id:string ->
+  ?with_name:string ->
+  ?with_metadata:Ketrew_artifact.Value.t ->
+  t -> t
+(** “Clone” the target as an activated new target. *)
+
 val id : t -> Unique_id.t
 (** Get a target's id. *)
 
