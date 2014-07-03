@@ -44,6 +44,10 @@ module Command = struct
     let cmd = Program.to_single_shell_command action in
     Host.get_shell_command_output host cmd
 
+  let get_return_value {host; action} =
+    let cmd = Program.to_single_shell_command action in
+    Host.get_shell_command_return_value host cmd
+
   let run t =
     get_output t (* TODO optimize to not record the output *)
     >>= fun (_, _) ->
@@ -61,7 +65,13 @@ module Condition = struct
       | `True -> s "True"
       | `False -> s "False"
       | `Volume_exists v -> 
-        parens (s "Volume " % Artifact.Volume.log v % s " exists"))
+        parens (s "Volume " % Artifact.Volume.log v % s " exists")
+      | `Volume_size_bigger_than (v, sz) ->
+        parens (s "Volume " % Artifact.Volume.log v % s " ≥ " 
+                % i sz % nbsp % s "KB")
+      | `Command_returns (c, ret) ->
+        parens (s "Command " % Command.log c % s " returns " % i ret)
+      )
   let to_string_hum c = Log.to_long_string (log c)
 
 end
@@ -165,12 +175,28 @@ let should_start t =
   | `False -> return true
   | `Volume_exists v -> 
     Artifact.Volume.exists v >>| not
+  | `Volume_size_bigger_than (v, sz) ->
+    Artifact.Volume.get_size v
+    >>= fun size ->
+    return (size < sz)
+  | `Command_returns (c, ret) ->
+    Command.get_return_value c  
+    >>= fun return_value ->
+    return (ret <> return_value)
 
 let did_ensure_condition t =
   match t.condition with
   | `True -> return false
   | `False -> return true
   | `Volume_exists v -> Artifact.Volume.exists v
+  | `Volume_size_bigger_than (v, sz) ->
+    Artifact.Volume.get_size v
+    >>= fun size ->
+    return (size >= sz)
+  | `Command_returns (c, ret) ->
+    Command.get_return_value c  
+    >>= fun return_value ->
+    return (ret = return_value)
 
 module Is = struct
 

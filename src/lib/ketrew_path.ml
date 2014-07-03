@@ -66,7 +66,12 @@ let to_string_quoted: 'a t -> string = fun x -> Filename.quote x.path
 let any_kind: <relativity: 'a; kind: 'b> t -> <relativity: 'a; kind: 'c> t =
   fun x -> { x with kind = x.kind }
 
+let size_shell_command = function
+| {kind = `File; path } ->
+  fmt "\\ls -nl %s | awk '{print $5}'" (Filename.quote path)
+| {kind = `Directory; path } ->  "echo '0'"
+
 let exists_shell_condition = function
-| {kind = `File; path } ->  fmt "[ -f %S ]" path
-| {kind = `Directory; path } ->  fmt "[ -d %S ]" path
+| {kind = `File; path } ->  fmt "[ -f %s ]" (Filename.quote path)
+| {kind = `Directory; path } ->  fmt "[ -d %s ]" (Filename.quote path)
 

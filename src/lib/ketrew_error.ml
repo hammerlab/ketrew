@@ -42,3 +42,5 @@ let to_string = function
 | `Failure msg -> fmt "Failure: %S" msg
 | `Process _ as pe -> Ketrew_unix_process.error_to_string pe
 | `Shell _ as se -> System.error_to_string se
+| `Volume (`No_size l) ->
+  fmt "Did not get the size of the volume: %s" (Log.to_long_string l)

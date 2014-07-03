@@ -55,8 +55,9 @@ module Log =  struct
   let to_long_string = to_string ~line_width:max_int ~indent:4
   let if_color color log = 
     if !global_with_color then color log else log
+  let nbsp = s " "
+  let quote = sf "%S"
 end
-
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
 let invalid_argument_exn ?(where="pervasives") what =

@@ -70,6 +70,8 @@ type condition = [
   | True
   | False
   | Volume_exists of volume
+  | Volume_size_bigger_than of (volume * int)
+  | Command_returns of (command * int)
 ]
 
 type id = unique_id

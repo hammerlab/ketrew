@@ -93,3 +93,8 @@ val any_kind :
 val exists_shell_condition:
   < kind : 'any_kind; relativity : 'any_relativity > t -> string
 (** Create a ["/bin/sh"] command that checks if the file or directory exists. *)
+
+val size_shell_command:
+  < kind : 'any_kind; relativity : 'any_relativity > t -> string
+(** Create a ["/bin/sh"] command that outputs ["0"] for directories and
+    their size for files. *)

@@ -120,6 +120,8 @@ module Condition : sig
     | `True
     | `False
     | `Volume_exists of Ketrew_artifact.Volume.t
+    | `Volume_size_bigger_than of Ketrew_artifact.Volume.t * int
+    | `Command_returns of Command.t * int
   ]
   (** A execution anti-condition, the condition defines when a target is
     (already) ready: {ul
@@ -217,12 +219,14 @@ val log : t -> Log.t
 
 val should_start:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target is ready or should start, given its condition.  *)
 
 val did_ensure_condition:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target actually did its job, given its condition.  *)
 
 (** Basic boolean queries on targets. *)

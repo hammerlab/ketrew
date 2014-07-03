@@ -58,6 +58,31 @@ module Volume = struct
     Log.(s "Vol" % parens (Host.log host % s":" % s (Path.to_string root)))
   let to_string_hum v =
     Log.to_long_string (log v)
+
+  let get_size t =
+    let paths = all_paths t in
+    (* let cmds = List.map paths ~f:Path.size_shell_command in *)
+    begin
+      exists t
+      >>= function
+      | true ->
+        Deferred_list.while_sequential paths (fun path ->
+            let cmd = Path.size_shell_command path in
+            Log.(s "while_sequential : " % quote cmd @ warning);
+            Host.get_shell_command_output t.host cmd
+            >>= fun (str, _) ->
+            match  String.strip str |> Int.of_string with
+            | None -> 
+              let msg =
+                Log.(s "Command " % s cmd % s " did not return an int but "
+                     % quote str) in
+              fail (`Volume (`No_size msg))
+            | Some i -> return i
+          )
+        >>| List.fold ~init:0 ~f:(+)
+      | false -> return 0
+    end
+
 end
 
 module Value = struct
