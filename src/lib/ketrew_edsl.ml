@@ -29,14 +29,15 @@ class type user_artifact = object
 
   method path : string
   method exists: Target.Condition.t
-  (** Return the path of the artifact if the artifact is a volume containing
-      a single file or directory. *)
+
+  method is_bigger_than: int -> Target.Condition.t
 
 end
 
 let unit = object
   method path = failwith "Unit has no path"
-  method exists = `False
+  method exists = failwith "Unit does not “exist”"
+  method is_bigger_than _ = failwith "Unit has no size"
 end
 
 let file ?(host= Host.tmp_on_localhost) path  =
@@ -49,6 +50,7 @@ let file ?(host= Host.tmp_on_localhost) path  =
           (file basename))
     method path = path
     method exists = `Volume_exists vol
+    method is_bigger_than n = `Volume_size_bigger_than (vol, n)
   end
 
 class type user_target =

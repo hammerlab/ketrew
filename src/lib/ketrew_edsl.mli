@@ -95,8 +95,10 @@ class type user_artifact = object
       a single file or directory. *)
 
   method exists : Ketrew_target.Condition.t
-  (** Get “is-ready” condition (for the [~ready_when] argument of {!target}. *)
+  (** Get “exists” condition (for the [~ready_when] argument of {!target}. *)
 
+  method is_bigger_than: int -> Ketrew_target.Condition.t
+  (** Get the “is bigger than <size>” condition. *)
 end
 
 val file: ?host:Ketrew_host.t -> string -> user_artifact
