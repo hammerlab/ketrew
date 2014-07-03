@@ -63,7 +63,7 @@ let deploy_website () =
   let write_branch =
     (* The target that produces `branch_file` *)
     target "Get current branch"
-      ~ready_when:branch_file#exists
+      ~ready_when:(branch_file#is_bigger_than 2)
       ~make:(direct_shell_command
                (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
   in
@@ -74,6 +74,10 @@ let deploy_website () =
     (* first target with dependencies: the two previous ones *)
     target "Check out gh-pages"
       ~dependencies:[write_branch; make_doc]
+      ~ready_when:(
+        `Command_returns
+          (Ketrew.Target.Command.shell
+             "branch=`git symbolic-ref --short HEAD` && [ \"$branch\" = \"gh-pages\" ]", 0))
       ~make:(direct_shell_command
                (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
       (* The default value for `?ready_when` is [`False], so this
