@@ -133,7 +133,8 @@ type t = Ketrew_gen_base_v0_t.host = {
   name: string;
   connection: connection;
   playground: Path.absolute_directory option;
-  default_shell: default_shell
+  default_shell: default_shell;
+  execution_timeout: Time.t option;
 }
 
 let default_shell ?binary ?(options=[]) ?(command_option="-c") command_name =
@@ -141,17 +142,20 @@ let default_shell ?binary ?(options=[]) ?(command_option="-c") command_name =
 
 let shell_sh_minus_c = default_shell "sh"
 
-let create ~connection ?(default_shell=shell_sh_minus_c) ?playground name =
-  {name; connection; playground; default_shell}
+let create ~connection ?execution_timeout ?(default_shell=shell_sh_minus_c) ?playground name =
+  {name; connection; playground; default_shell; execution_timeout}
 
-let localhost ?default_shell ?playground ?(name="localhost") () = 
+let localhost 
+    ?execution_timeout ?default_shell ?playground ?(name="localhost") () = 
   create ~connection:`Localhost ?default_shell ?playground name
 
 let tmp_on_localhost = 
   localhost ~playground:(Path.absolute_directory_exn "/tmp")
     ~name:"file://tmp" ()
 
-let ssh ?(add_ssh_options=[]) ?default_shell ?playground ?port ?user ?name address =
+let ssh 
+    ?execution_timeout ?(add_ssh_options=[]) ?default_shell ?playground
+    ?port ?user ?name address =
   create ?playground ?default_shell Option.(value name ~default:address)
     ~connection:(`Ssh {Ssh. address; port; user; add_ssh_options})
 
@@ -184,7 +188,11 @@ let of_uri uri =
           Some (default_shell ~command_option one ~options)
       )
   in
-  create ?playground ~connection ?default_shell (Uri.to_string uri)
+  let execution_timeout =
+    Uri.get_query_param uri "timeout" 
+    |> Option.bind ~f:Float.of_string in
+  create ?playground ~connection ?default_shell ?execution_timeout
+    (Uri.to_string uri)
 
 let to_uri t =
   let scheme, host, port, userinfo =

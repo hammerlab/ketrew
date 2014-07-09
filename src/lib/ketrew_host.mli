@@ -68,6 +68,7 @@ val default_shell :
 *)
 
 val localhost:
+  ?execution_timeout:Time.t ->
   ?default_shell:default_shell ->
   ?playground:Ketrew_path.absolute_directory ->
   ?name:string -> unit -> t
@@ -77,6 +78,7 @@ val tmp_on_localhost: t
 (** The host ["localhost"], with ["/tmp"] as [playground]. *)
 
 val ssh :
+  ?execution_timeout:Time.t ->
   ?add_ssh_options:string list ->
   ?default_shell:default_shell ->
   ?playground:Ketrew_path.absolute_directory ->

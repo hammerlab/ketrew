@@ -43,6 +43,7 @@ type host = {
   connection: connection;
   playground: path option;
   default_shell: default_shell;
+  execution_timeout: time option;
 }
 
 type volume_structure =  [
