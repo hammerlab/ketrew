@@ -168,12 +168,19 @@ module Error: sig
 
 end
 
-type timeout = [ `Host_default | `None | `Seconds of float ]
+type timeout = [ 
+  | `Host_default
+  | `None
+  | `Seconds of float
+  | `At_most_seconds of float
+]
 (** Timeout specification for execution functions below.
     
     - [`Host_default] → use the [excution_timeout] value of the host ({i default}).     
     - [`None] → force no timeout even if the host has a [execution_timeout].
     - [`Seconds f] → use [f] seconds as timeout.
+    - [`At_most_seconds f] -> use [f] seconds, unless the host has a smaller
+    [execution_timeout] field.
 
 *)
 

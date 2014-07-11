@@ -275,13 +275,23 @@ let fail_exec t ?out ?err msg:
   end in
   fail_host (`Execution v)
 
-type timeout = [ `Host_default | `None | `Seconds of float ]
+type timeout = [ 
+  | `Host_default
+  | `None
+  | `Seconds of float
+  | `At_most_seconds of float
+]
 
 let run_with_timeout ?timeout t ~run =
   let actual_timeout = 
     match timeout with
     | Some `None -> None
     | None | Some (`Host_default) -> t.execution_timeout
+    | Some (`At_most_seconds f) ->
+      begin match t.execution_timeout with
+      | Some fe when fe < f -> Some fe
+      | _ -> Some f
+      end
     | Some (`Seconds t) -> Some t in
   match actual_timeout with
   | None -> run ()
