@@ -275,11 +275,14 @@ let fail_exec t ?out ?err msg:
   end in
   fail_host (`Execution v)
 
+type timeout = [ `Host_default | `None | `Seconds of float ]
+
 let run_with_timeout ?timeout t ~run =
   let actual_timeout = 
     match timeout with
-    | None -> t.execution_timeout
-    | Some t -> Some t in
+    | Some `None -> None
+    | None | Some (`Host_default) -> t.execution_timeout
+    | Some (`Seconds t) -> Some t in
   match actual_timeout with
   | None -> run ()
   | Some t -> Pvem_lwt_unix.System.with_timeout t ~f:run

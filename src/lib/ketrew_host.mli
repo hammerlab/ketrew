@@ -168,7 +168,16 @@ module Error: sig
 
 end
 
-val execute: ?timeout:Time.t -> t -> string list ->
+type timeout = [ `Host_default | `None | `Seconds of float ]
+(** Timeout specification for execution functions below.
+    
+    - [`Host_default] → use the [excution_timeout] value of the host ({i default}).     
+    - [`None] → force no timeout even if the host has a [execution_timeout].
+    - [`Seconds f] → use [f] seconds as timeout.
+
+*)
+
+val execute: ?timeout:timeout -> t -> string list ->
   (<stdout: string; stderr: string; exited: int>,
    [> `Host of _ Error.execution ]) Deferred_result.t
 (** Generic execution which tries to behave like [Unix.execv] even
@@ -184,7 +193,7 @@ val shell_sh: sh:string -> shell
    for a known path or command). *)
 
 val get_shell_command_output :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -193,7 +202,7 @@ val get_shell_command_output :
     (succeeds {i iff } the exit status is [0]). *)
 
 val get_shell_command_return_value :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -201,7 +210,7 @@ val get_shell_command_return_value :
 (** Run a shell command on the host, and return its exit status value. *)
 
 val run_shell_command :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -210,7 +219,7 @@ val run_shell_command :
 *)
 
 val do_files_exist :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
@@ -223,7 +232,7 @@ val get_fresh_playground :
 (** Get a new subdirectory in the host's playground *)
 
 val ensure_directory :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
@@ -231,7 +240,7 @@ val ensure_directory :
 (** Make sure the directory [path] exists on the host. *)
 
 val put_file :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   t ->
   path:<kind: Ketrew_path.file; ..>  Ketrew_path.t ->
   content:string ->
@@ -242,7 +251,7 @@ val put_file :
 (** Write a file on the host at [path] containing [contents]. *)
 
 val get_file :
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   t ->
   path:<kind: Ketrew_path.file; ..> Ketrew_path.t ->
   (string,
@@ -252,7 +261,7 @@ val get_file :
 (** Read the file from the host at [path]. *)
 
 val grab_file_or_log:
-  ?timeout:Time.t ->
+  ?timeout:timeout ->
   t -> 
   <kind: Ketrew_path.file; ..> Ketrew_path.t ->
   (string, Log.t) Deferred_result.t
