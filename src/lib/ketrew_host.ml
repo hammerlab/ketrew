@@ -225,6 +225,8 @@ module Error = struct
   [> `Unix_exec of string
   | `Execution of
        <host : string; stdout: string option; stderr: string option; message: string>
+  | `System of [> `With_timeout of float ] * [> `Exn of exn ]
+  | `Timeout of float
   | `Ssh_failure of
        [> `Wrong_log of string
        | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
@@ -234,6 +236,7 @@ module Error = struct
 
   let classify (e : _ non_zero_execution) =
     match e with
+    | `System _ | `Timeout _
     | `Unix_exec _ -> `Unix
     | `Execution _ | `Non_zero _ -> `Execution
     | `Ssh_failure _ -> `Ssh
@@ -243,6 +246,9 @@ module Error = struct
     match e with
     | `Unix_exec failure -> Log.(s "Unix-exec-error: " % s failure)
     | `Non_zero (cmd, ex) -> Log.(s "Cmd " % sf "%S" cmd % s " returned " % i ex)
+    | `System (`With_timeout time, `Exn e) ->
+      Log.(s "System error: with_timeout " % f time % s " failed: " % exn e)
+    | `Timeout t -> Log.(s "Called timed-out " % parens (f t % s " sec"))
     | `Execution exec ->
       Log.(
         s "Process execution failed: "
@@ -269,7 +275,16 @@ let fail_exec t ?out ?err msg:
   end in
   fail_host (`Execution v)
 
-let execute t argl =
+let run_with_timeout ?timeout t ~run =
+  let actual_timeout = 
+    match timeout with
+    | None -> t.execution_timeout
+    | Some t -> Some t in
+  match actual_timeout with
+  | None -> run ()
+  | Some t -> Pvem_lwt_unix.System.with_timeout t ~f:run
+
+let execute ?timeout t argl =
   Log.(s "Host.execute " % s (to_string_hum t) % OCaml.list s argl
        @ very_verbose);
   let ret out err exited =
@@ -283,25 +298,34 @@ let execute t argl =
       method stdout = out method stderr = err method exited = exited
     end)
   in
-  match t.connection with
-  | `Localhost ->
-    begin Ketrew_unix_process.exec argl
-      >>< function
-      | `Ok (out, err, `Exited n) -> ret out err n
-      | `Ok (out, err, other) ->
-        fail_exec t ~out ~err (System.Shell.status_to_string other)
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
-    end
-  | `Ssh ssh ->
-    begin Ssh.generic_ssh_exec ssh argl
-      >>< function
-      | `Ok (out, err, exited) -> ret out err exited
-      | `Error e -> fail (`Host e)
-    end
+  let run () =
+    match t.connection with
+    | `Localhost ->
+      begin Ketrew_unix_process.exec argl
+        >>< function
+        | `Ok (out, err, `Exited n) -> ret out err n
+        | `Ok (out, err, other) ->
+          fail_exec t ~out ~err (System.Shell.status_to_string other)
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+    | `Ssh ssh ->
+      begin Ssh.generic_ssh_exec ssh argl
+        >>< function
+        | `Ok (out, err, exited) -> ret out err exited
+        | `Error e -> fail (`Host e)
+      end
+  in
+  begin run_with_timeout ?timeout t ~run
+    >>< function
+    | `Ok o -> return o
+    | `Error (`Host e) -> fail (`Host e)
+    | `Error (`System _ as e)
+    | `Error (`Timeout _ as e) -> fail (`Host e)
+  end
 
 type shell = string -> string list
 
@@ -317,29 +341,29 @@ let override_shell ?with_shell t =
   let shell = Option.value ~default:(shell_of_default_shell t) with_shell in
   shell
 
-let get_shell_command_output ?with_shell t cmd =
-  execute t (override_shell ?with_shell t cmd)
+let get_shell_command_output ?timeout ?with_shell t cmd =
+  execute ?timeout t (override_shell ?with_shell t cmd)
   >>= fun execution ->
   match execution#exited with
   | 0 -> return (execution#stdout, execution#stderr)
   | n -> fail_host (`Non_zero (cmd, n))
 
-let get_shell_command_return_value ?with_shell t cmd =
-  execute t (override_shell ?with_shell t cmd)
+let get_shell_command_return_value ?timeout ?with_shell t cmd =
+  execute ?timeout t (override_shell ?with_shell t cmd)
   >>= fun execution ->
   return execution#exited
     
-let run_shell_command ?with_shell t cmd =
-  get_shell_command_output ?with_shell t cmd
+let run_shell_command ?timeout ?with_shell t cmd =
+  get_shell_command_output ?timeout ?with_shell t cmd
   >>= fun (_, _) ->
   return ()
 
 
-let do_files_exist ?with_shell t paths =
+let do_files_exist ?timeout ?with_shell t paths =
   let cmd =
     List.map paths ~f:Path.exists_shell_condition 
     |> String.concat ~sep:" && " in
-  get_shell_command_return_value ?with_shell t cmd
+  get_shell_command_return_value ?timeout ?with_shell t cmd
   >>= fun ret ->
   return (ret = 0)
 
@@ -348,58 +372,83 @@ let get_fresh_playground t =
   Option.map  t.playground (fun pg ->
       Path.(concat pg (relative_directory_exn fresh)))
 
-let ensure_directory ?with_shell t ~path =
+let ensure_directory ?timeout ?with_shell t ~path =
   let cmd = fmt "mkdir -p %s" Path.(to_string_quoted path) in
-  run_shell_command ?with_shell t cmd
+  run_shell_command ?timeout ?with_shell t cmd
 
-let put_file t ~path ~content =
+let put_file ?timeout t ~path ~content =
   match t.connection with
   | `Localhost -> IO.write_file ~content Path.(to_string path)
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_put_file" in
-    IO.write_file ~content temp
-    >>= fun () ->
-    let scp_cmd = Ssh.(scp_push ssh ~src:[temp] ~dest:(Path.to_string path)) in
-    begin Ketrew_unix_process.succeed scp_cmd
+    let run () =
+      IO.write_file ~content temp
+      >>= fun () ->
+      let scp_cmd = Ssh.(scp_push ssh ~src:[temp] ~dest:(Path.to_string path)) in
+      begin Ketrew_unix_process.succeed scp_cmd
+        >>< function
+        | `Ok (out, err) -> return ()
+        | `Error (`Process _ as process_error) ->
+          let msg = Ketrew_unix_process.error_to_string process_error in
+          Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
+               % s " failed: " %s msg @ verbose);
+          fail_exec t msg
+      end
+    in
+    begin run_with_timeout ?timeout t ~run
       >>< function
-      | `Ok (out, err) -> return ()
-      | `Error (`Process _ as process_error) ->
-        let msg = Ketrew_unix_process.error_to_string process_error in
-        Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
-             % s " failed: " %s msg @ verbose);
-        fail_exec t msg
+      | `Ok o -> return o
+      | `Error (`IO _ as e) -> fail e
+      | `Error (`Host e) -> fail (`Host e)
+      | `Error (`System _ as e)
+      | `Error (`Timeout _ as e) -> fail (`Host e)
     end
 
-let get_file t ~path =
+let get_file ?timeout t ~path =
   match t.connection with
   | `Localhost -> 
     begin IO.read_file Path.(to_string path)
       >>< function
       | `Ok c -> return c
-      | `Error _ -> 
-        fail (`Cannot_read_file ("localhost", Path.(to_string path)))
+      | `Error (`IO (`Read_file_exn (path, ex))) ->
+        Log.(s "I/O, writing " % s path % s " → " % exn ex @ verbose);
+        fail (`Cannot_read_file ("localhost", path))
     end
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_get_file" in
     let scp_cmd = Ssh.(scp_pull ssh ~dest:temp ~src:[Path.to_string path]) in
-    begin Ketrew_unix_process.succeed scp_cmd
+    begin run_with_timeout ?timeout t 
+        ~run:(fun () ->
+            Ketrew_unix_process.succeed scp_cmd
+            >>= fun _ ->
+            IO.read_file temp)
       >>< function
-      | `Ok (out, err) -> IO.read_file temp
+      | `Ok c -> return c
+      | `Error (`IO (`Read_file_exn (path, ex))) ->
+        Log.(s "I/O, writing " % s path % s " → " % exn ex @ verbose);
+        fail (`Cannot_read_file ("localhost", path))
+      | `Error (`System (`With_timeout time, `Exn e)) ->
+        Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
+             % s " failed: timeout " % f time % s " error: " % exn e @ verbose);
+        fail (`Cannot_read_file (ssh.Ssh.address, Path.(to_string path)))
       | `Error (`Process _ as process_error) ->
         let msg = Ketrew_unix_process.error_to_string process_error in
         Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
              % s " failed: " %s msg @ verbose);
         fail (`Cannot_read_file (ssh.Ssh.address, Path.(to_string path)))
+      | `Error (`Timeout _ as t) -> fail t
     end
 
 
-let grab_file_or_log host path =
-  begin get_file host ~path
+let grab_file_or_log ?timeout host path =
+  begin get_file ?timeout host ~path
     >>< function
     | `Ok c -> return c
     | `Error (`Cannot_read_file _) ->
       fail Log.(s "cannot read file" % s (Path.to_string path))
     | `Error (`IO _ as e) ->
       fail Log.(s "I/O error: " % s (IO.error_to_string e))
+    | `Error (`Timeout time) ->
+      fail Log.(s "Timeout: " % f time)
   end
 

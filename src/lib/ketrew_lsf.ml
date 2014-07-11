@@ -217,7 +217,7 @@ let update = function
       >>< function
       | `Ok c -> return (Some c)
       | `Error (`Cannot_read_file _) -> return None
-      | `Error (`IO _ as e) -> fail e
+      | `Error (`Timeout _ as e) -> fail e
     end
     >>= fun log_content ->
     let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
@@ -248,6 +248,7 @@ let update = function
       | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
       | `Execution -> fail_fatal (Error.to_string e)
       end
+    | `Timeout _ -> fail (`Recoverable "timeout")
     | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
   end

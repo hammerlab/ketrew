@@ -118,14 +118,16 @@ val log : t -> Log.t
 
 module Error: sig
 
-  type 'a execution = 'a constraint 'a =
-    [> `Unix_exec of string
+  type 'a execution = 'a constraint 'a = [>
+    | `Unix_exec of string
     | `Execution of
-         <host : string; stdout: string option; 
-       stderr: string option; message: string>
-                                       | `Ssh_failure of
-         [> `Wrong_log of string
-         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string ]
+        <host : string; stdout: string option; stderr: string option; message: string>
+    | `Ssh_failure of
+        [> `Wrong_log of string
+        | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string 
+    | `System of [> `With_timeout of float ] * [> `Exn of exn ]
+    | `Timeout of float
+  ]
 
   type 'a non_zero_execution = 'a constraint 'a = 
     [> `Non_zero of (string * int) ] execution
@@ -135,6 +137,8 @@ module Error: sig
         < host : string; message : string; stderr : string option;
           stdout : string option >
     | `Non_zero of string * int
+    | `System of [ `With_timeout of float ] * [ `Exn of exn ]
+    | `Timeout of float
     | `Ssh_failure of
         [> `Wrong_log of string
         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] *
@@ -152,6 +156,8 @@ module Error: sig
   val log :
     [< `Unix_exec of string
     | `Non_zero of (string * int)
+    | `System of [< `With_timeout of float ] * [< `Exn of exn ]
+    | `Timeout of float
     | `Execution of
          < host : string; message : string; stderr : string option;
            stdout : string option; .. >
@@ -162,7 +168,7 @@ module Error: sig
 
 end
 
-val execute: t -> string list ->
+val execute: ?timeout:Time.t -> t -> string list ->
   (<stdout: string; stderr: string; exited: int>,
    [> `Host of _ Error.execution ]) Deferred_result.t
 (** Generic execution which tries to behave like [Unix.execv] even
@@ -178,6 +184,7 @@ val shell_sh: sh:string -> shell
    for a known path or command). *)
 
 val get_shell_command_output :
+  ?timeout:Time.t ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -186,6 +193,7 @@ val get_shell_command_output :
     (succeeds {i iff } the exit status is [0]). *)
 
 val get_shell_command_return_value :
+  ?timeout:Time.t ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -193,6 +201,7 @@ val get_shell_command_return_value :
 (** Run a shell command on the host, and return its exit status value. *)
 
 val run_shell_command :
+  ?timeout:Time.t ->
   ?with_shell:shell ->
   t ->
   string ->
@@ -201,6 +210,7 @@ val run_shell_command :
 *)
 
 val do_files_exist :
+  ?timeout:Time.t ->
   ?with_shell:shell ->
   t ->
   < kind : 'a; relativity : 'b > Ketrew_path.t list ->
@@ -213,6 +223,7 @@ val get_fresh_playground :
 (** Get a new subdirectory in the host's playground *)
 
 val ensure_directory :
+  ?timeout:Time.t ->
   ?with_shell:shell ->
   t ->
   path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
@@ -220,6 +231,7 @@ val ensure_directory :
 (** Make sure the directory [path] exists on the host. *)
 
 val put_file :
+  ?timeout:Time.t ->
   t ->
   path:<kind: Ketrew_path.file; ..>  Ketrew_path.t ->
   content:string ->
@@ -230,15 +242,18 @@ val put_file :
 (** Write a file on the host at [path] containing [contents]. *)
 
 val get_file :
+  ?timeout:Time.t ->
   t ->
   path:<kind: Ketrew_path.file; ..> Ketrew_path.t ->
   (string,
    [> `Cannot_read_file of string * string
-    | `IO of [> `Read_file_exn of Ketrew_pervasives.IO.path * exn ] ])
+    | `Timeout of Time.t ])
   Deferred_result.t
 (** Read the file from the host at [path]. *)
 
-val grab_file_or_log: t -> 
+val grab_file_or_log:
+  ?timeout:Time.t ->
+  t -> 
   <kind: Ketrew_path.file; ..> Ketrew_path.t ->
   (string, Log.t) Deferred_result.t
 (** Weakly typed version of {!get_file}, it fails with a {!Log.t}

@@ -275,7 +275,7 @@ let long_running_error_to_potential_target_failure t
     return [`Target_died (Target.id target,
                           make_error plugin_name str)]
   | `Recoverable str, false ->
-    Log.(s "[%s] Recoverable error: " % s str @ warning);
+    Log.(s "Recoverable error: " % s str @ warning);
     return []
 
 let _start_running_target t target =
