@@ -22,6 +22,7 @@ type t = {
   turn_unix_ssh_failure_into_target_failure: bool;
   debug_level: int;
   with_color: bool;
+  host_timeout_upper_bound: float;
 }
 
 let log t =
@@ -35,6 +36,7 @@ let log t =
       % s " into target failure";
       s "Debug-level: " % i t.debug_level;
       s "Client " % s (if t.with_color then "with" else "without") % s " colors";
+      s "Timeout-upper-bound: " % f t.host_timeout_upper_bound % s " seconds";
     ])
 
 
@@ -50,17 +52,19 @@ let default_configuration_path =
 let default_database_path = 
   Sys.getenv "HOME" ^ "/.ketrew/database_dbm"
 
+let host_timeout_upper_bound t = t.host_timeout_upper_bound
 
 let create 
     ?(debug_level=2)
     ?(with_color=true)
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?(persistent_state_key=default_persistent_state_key)
+    ?(host_timeout_upper_bound=60.)
     ~database_parameters () =
   {
     database_parameters; persistent_state_key;
     turn_unix_ssh_failure_into_target_failure;
-    debug_level; with_color;
+    debug_level; with_color; host_timeout_upper_bound;
   }
 
 let parse_exn str =
@@ -73,6 +77,8 @@ let parse_exn str =
   let turn_unix_ssh_failure_into_target_failure =
     toml_option Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
   let debug_level = toml_option Toml.get_int "debug-level" in
+  let host_timeout_upper_bound =
+    toml_option Toml.get_float "host-timeout-upper-bound" in
   let with_color =
     Option.(
       toml_option Toml.get_table "client"
@@ -87,6 +93,7 @@ let parse_exn str =
     ?debug_level 
     ?with_color
     ?persistent_state_key 
+    ?host_timeout_upper_bound
     ~database_parameters ()
 
 let parse s =
@@ -97,6 +104,7 @@ let parse s =
 let apply_globals t =
   global_debug_level := t.debug_level;
   global_with_color := t.with_color;
+  Ketrew_host.default_timeout_upper_bound := t.host_timeout_upper_bound;
   ()
 
 let get_configuration ?(and_apply=true) ?override_configuration path =

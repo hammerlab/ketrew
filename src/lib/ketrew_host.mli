@@ -92,12 +92,13 @@ val of_uri: Uri.t -> t
     If present, a ["shell"] argument defines the [default_shell].
 
     For example
-    [of_string "//user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c"]
+    [of_string "//user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42"]
     will be like using 
     {[
       ssh ~default_shell:(default_shell  "bash"
                             ~command_name ~options:["-l"; "--init-file"; "bouh"]
                             ~command_option:"-c")
+        ~execution_timeout:42.
         ~port:42 ~user:"user" "SomeHost"]}
 
 *)
@@ -168,6 +169,10 @@ module Error: sig
 
 end
 
+
+val default_timeout_upper_bound: float ref
+(** Default (upper bound) of the `?timeout` arguments. *)
+
 type timeout = [ 
   | `Host_default
   | `None
@@ -176,11 +181,13 @@ type timeout = [
 ]
 (** Timeout specification for execution functions below.
     
-    - [`Host_default] → use the [excution_timeout] value of the host ({i default}).     
+    - [`Host_default] → use the [excution_timeout] value of the host.     
     - [`None] → force no timeout even if the host has a [execution_timeout].
     - [`Seconds f] → use [f] seconds as timeout.
     - [`At_most_seconds f] -> use [f] seconds, unless the host has a smaller
     [execution_timeout] field.
+
+    The default value is [`At_most_seconds !default_timeout_upper_bound].
 
 *)
 

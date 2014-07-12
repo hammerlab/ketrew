@@ -27,6 +27,7 @@ val create :
   ?with_color:bool ->
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?persistent_state_key:string -> 
+  ?host_timeout_upper_bound: float ->
   database_parameters:string -> unit -> t
 (** Create a configuration, [persistent_state_key] is the “key” of the
     state storage in the database, [database_parameters] are used to call
@@ -61,7 +62,7 @@ val parse :
 (** Parse the contents of a configuration file. *)
 
 val apply_globals: t -> unit
-(** Apply options that have global impact (debug levels/colors). *)
+(** Apply options that have global impact. *)
 
 val get_configuration :
   ?and_apply:bool ->

@@ -282,36 +282,40 @@ type timeout = [
   | `At_most_seconds of float
 ]
 
+let default_timeout_upper_bound = ref 60.
+
 let run_with_timeout ?timeout t ~run =
   let actual_timeout = 
-    match timeout with
-    | Some `None -> None
-    | None | Some (`Host_default) -> t.execution_timeout
-    | Some (`At_most_seconds f) ->
-      begin match t.execution_timeout with
+    let pick_minimum f =
+      match t.execution_timeout with
       | Some fe when fe < f -> Some fe
       | _ -> Some f
-      end
+    in
+    match timeout with
+    | Some `None -> None
+    | None -> pick_minimum !default_timeout_upper_bound
+    | Some (`At_most_seconds f) -> pick_minimum f
+    | Some (`Host_default) -> t.execution_timeout
     | Some (`Seconds t) -> Some t in
+  let log = Log.(parens (s "timeout: " % OCaml.option f actual_timeout)) in
   match actual_timeout with
-  | None -> run ()
-  | Some t -> Pvem_lwt_unix.System.with_timeout t ~f:run
+  | None -> run ~log ()
+  | Some t -> Pvem_lwt_unix.System.with_timeout t ~f:(run ~log)
 
 let execute ?timeout t argl =
-  Log.(s "Host.execute " % s (to_string_hum t) % OCaml.list s argl
-       @ very_verbose);
+  let final_log = ref Log.empty in
   let ret out err exited =
     let kv k v = Log.(brakets (s k % s " → " % v) |> indent) in
-    Log.(s "Host: " % s (to_string_hum t)
-         % s " executed: " % OCaml.list (sf "%S") argl
-         % kv "status" (sf "exit:%d" exited)
-         % kv "stdout" (sf "%S" out)
-         % kv "stderr" (sf "%S" err) @ very_verbose);
+    final_log := Log.(
+        !final_log %n % s "Success: " % kv "status" (sf "exit:%d" exited)
+        % kv "stdout" (sf "%S" out) % kv "stderr" (sf "%S" err));
     return (object
       method stdout = out method stderr = err method exited = exited
     end)
   in
-  let run () =
+  let run ~log () =
+    final_log := Log.( !final_log % s "Host.execute " % s (to_string_hum t)
+                       % OCaml.list s argl % sp % log);
     match t.connection with
     | `Localhost ->
       begin Ketrew_unix_process.exec argl
@@ -333,7 +337,9 @@ let execute ?timeout t argl =
       end
   in
   begin run_with_timeout ?timeout t ~run
-    >>< function
+    >>< fun result ->
+    Log.(!final_log @ verbose);
+    match result with
     | `Ok o -> return o
     | `Error (`Host e) -> fail (`Host e)
     | `Error (`System _ as e)
@@ -394,7 +400,7 @@ let put_file ?timeout t ~path ~content =
   | `Localhost -> IO.write_file ~content Path.(to_string path)
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_put_file" in
-    let run () =
+    let run ~log () =
       IO.write_file ~content temp
       >>= fun () ->
       let scp_cmd = Ssh.(scp_push ssh ~src:[temp] ~dest:(Path.to_string path)) in
@@ -403,7 +409,7 @@ let put_file ?timeout t ~path ~content =
         | `Ok (out, err) -> return ()
         | `Error (`Process _ as process_error) ->
           let msg = Ketrew_unix_process.error_to_string process_error in
-          Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
+          Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd  % sp % log
                % s " failed: " %s msg @ verbose);
           fail_exec t msg
       end
@@ -431,7 +437,7 @@ let get_file ?timeout t ~path =
     let temp = Filename.temp_file "ketrew" "ssh_get_file" in
     let scp_cmd = Ssh.(scp_pull ssh ~dest:temp ~src:[Path.to_string path]) in
     begin run_with_timeout ?timeout t 
-        ~run:(fun () ->
+        ~run:(fun ~log () ->
             Ketrew_unix_process.succeed scp_cmd
             >>= fun _ ->
             IO.read_file temp)
