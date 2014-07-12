@@ -291,8 +291,8 @@ opam_package () {
 
 }
 
-do_travis() {
-    # install Ubuntu packages
+travis_install_on_linux () {
+    # Install OCaml and OPAM PPAs
     case "$OCAML_VERSION,$OPAM_VERSION" in
         3.12.1,1.0.0) ppa=avsm/ocaml312+opam10 ;;
         3.12.1,1.1.0) ppa=avsm/ocaml312+opam11 ;;
@@ -300,27 +300,43 @@ do_travis() {
         4.00.1,1.1.0) ppa=avsm/ocaml40+opam11 ;;
         4.01.0,1.0.0) ppa=avsm/ocaml41+opam10 ;;
         4.01.0,1.1.0) ppa=avsm/ocaml41+opam11 ;;
-        *) echo Unknown $OCAML_VERSION,$OPAM_VERSION; exit 1 ;;
+      *) echo Unknown $OCAML_VERSION,$OPAM_VERSION; exit 1 ;;
     esac
 
-    sudo add-apt-repository -y ppa:$ppa
+    echo "yes" | sudo add-apt-repository ppa:$ppa
     sudo apt-get update -qq
-    sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra aspcud opam
+    sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra opam time
+}
 
-    # configure and view settings
-    export OPAMYES=1
-    ocaml -version
-    opam --version
-    opam --git-version
+travis_install_on_osx () {
+    curl -OL "http://xquartz.macosforge.org/downloads/SL/XQuartz-2.7.6.dmg"
+    sudo hdiutil attach XQuartz-2.7.6.dmg
+    sudo installer -verbose -pkg /Volumes/XQuartz-2.7.6/XQuartz.pkg -target /
+    brew install opam
+}
 
-    # install OCaml packages
-    opam init
-    eval `opam config env`
+do_travis() {
 
-    get_dependencies
+  case $TRAVIS_OS_NAME in
+    osx) travis_install_on_osx ;;
+    linux) travis_install_on_linux ;;
+    *) echo Unknown $TRAVIS_OS_NAME; exit 1
+  esac
 
-    setup
-    ocp-build build
+  # configure and view settings
+  export OPAMYES=1
+  ocaml -version
+  opam --version
+  opam --git-version
+
+  # install OCaml packages
+  opam init
+  eval `opam config env`
+
+  get_dependencies
+
+  setup
+  ocp-build build
 
 
 }
