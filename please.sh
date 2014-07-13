@@ -338,7 +338,7 @@ do_travis() {
   setup
   ocp-build build
 
-
+  _obuild/ketrew-test/ketrew-test.asm db-test config-file
 }
 
 headache_config () {
