@@ -320,7 +320,7 @@ do_travis() {
   case $TRAVIS_OS_NAME in
     osx) travis_install_on_osx ;;
     linux) travis_install_on_linux ;;
-    *) echo Unknown $TRAVIS_OS_NAME; exit 1
+    *) echo "Unknown $TRAVIS_OS_NAME"; exit 1
   esac
 
   # configure and view settings
