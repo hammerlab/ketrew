@@ -1,5 +1,5 @@
 language: c
-script: ./please.sh travis
+script: bash -e ./please.sh travis
 os:
 - linux
 - osx
