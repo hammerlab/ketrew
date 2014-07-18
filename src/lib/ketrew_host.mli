@@ -89,7 +89,12 @@ val of_uri: Uri.t -> t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
     the “path” part of the URI is the playground.
 
-    If present, a ["shell"] argument defines the [default_shell].
+    Optional arguments can be added to the URL:
+
+    - a ["shell"] argument defines the [default_shell].
+    - a list of ["ssh-option"] parameters can be added for SSH-based host, they
+    add options to SSH/SCP calls.
+    - a ["timeout"] value can be defined (in seconds) for all system/SSH calls.
 
     For example
     [of_string "//user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42"]
