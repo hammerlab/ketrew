@@ -32,8 +32,9 @@ module Persistent_state = struct
   type t = Ketrew_gen_base_v0_t.persistent_state = {
     current_targets: Target.id list;
     archived_targets: Target.id list;
+    pointers: (Target.id * Target.id) list;
   }
-  let create () = {current_targets = []; archived_targets = []}
+  let create () = {current_targets = []; archived_targets = []; pointers = []}
 
   let serialize t = Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
 
@@ -47,11 +48,22 @@ module Persistent_state = struct
   let add t target = { t with current_targets = Target.id target :: t.current_targets }
 
   let archive t target =
-    { current_targets = List.filter t.current_targets (fun i -> i <> target);
+    { t with
+      current_targets = List.filter t.current_targets (fun i -> i <> target);
       archived_targets = target :: t.archived_targets }
 
   let current_targets t = t.current_targets
   let archived_targets t = t.archived_targets
+
+  let add_pointer t ~permanent ~newcomer =
+    let pointers = (newcomer, permanent) :: t.pointers in
+    { t with pointers }
+
+  let rec follow_pointers t ~id =
+    match List.find t.pointers ~f:(fun (left, _) -> left = id) with
+    | Some (_, right) -> follow_pointers t ~id:right
+    | None -> id
+
 end
 
 type t = {
@@ -137,14 +149,6 @@ let add_or_update_target t target =
       fail (`Database_unavailable target.Target.id)
   end
 
-let add_target t target =
-  add_or_update_target t target
-  >>= fun () ->
-  get_persistent t
-  >>= fun persistent ->
-  let new_persistent = Persistent_state.add persistent target in
-  save_persistent t new_persistent
-
 
 let get_target_with_db db id =
   Database.get db id
@@ -154,7 +158,9 @@ let get_target_with_db db id =
 
 let get_target t id =
   database t >>= fun db ->
-  get_target_with_db db id
+  get_persistent t >>= fun persistent ->
+  let actual_id = Persistent_state.follow_pointers persistent id in
+  get_target_with_db db actual_id
 
 let archive_target t target_id =
   database t >>= fun db ->
@@ -174,6 +180,36 @@ let current_targets t =
   begin match errors with
   | [] -> return targets
   | some :: more -> fail some (* TODO do not forget other errors *)
+  end
+
+let add_target t target =
+  add_or_update_target t target
+  >>= fun () ->
+  get_persistent t
+  >>= fun persistent ->
+  begin
+    current_targets t
+    >>| List.filter 
+      ~f:(fun t ->
+          Target.Is.(created t || activated t || running t)
+          && Target.is_equivalent target t)
+    >>= fun targets ->
+    Log.(s "Target " % Target.log target % s " is "
+         % (match targets with
+           | [] -> s "pretty fresh"
+           | more -> s " equivalent to " % OCaml.list Target.log targets)
+         @ very_verbose);
+    begin match targets with
+    | [] ->
+      let new_persistent = Persistent_state.add persistent target in
+      save_persistent t new_persistent
+    | at_least_one :: _ ->
+      let new_persistent =
+        Persistent_state.add_pointer persistent 
+          ~permanent:at_least_one.Target.id
+          ~newcomer:target.Target.id in
+      save_persistent t new_persistent
+    end
   end
 
 let archived_targets t =

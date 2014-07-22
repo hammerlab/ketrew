@@ -41,6 +41,8 @@ val add_target :
   (unit,
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
+   | `Missing_data of Ketrew_target.id
+   | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
   Deferred_result.t
 (** Add a target to the state. *)
@@ -59,6 +61,7 @@ val archive_target: t ->
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
    [> `Database of [> `Get of string | `Load of string ] * string
+   | `Persistent_state of [> `Deserilization of string ]
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
