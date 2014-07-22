@@ -146,16 +146,6 @@ val target :
   string -> user_target
 (** Create a new target. *)
 
-val active :
-  ?dependencies:user_target list ->
-  ?make:Ketrew_target.build_process ->
-  ?ready_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
-  ?product:user_artifact ->
-  ?equivalence:Ketrew_target.Equivalence.t ->
-  string -> user_target
-(** Create a new target but with [~active:true]. *)
-
 val file_target:
   ?dependencies:user_target list ->
   ?make:Ketrew_target.build_process ->

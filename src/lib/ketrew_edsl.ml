@@ -108,11 +108,6 @@ let target ?active ?dependencies ?make ?ready_when ?metadata ?product
   user_target_internal
     ?equivalence
     ?active ?dependencies ~name ?make ?metadata ?ready_when ?product ()
-let active 
-    ?dependencies ?make ?ready_when ?metadata ?product ?equivalence name =
-  user_target_internal ~active:true
-    ?equivalence
-    ?dependencies ?metadata ~name ?make ?ready_when ?product ()
 
 let file_target 
     ?dependencies ?make ?metadata ?name ?host ?equivalence path =
