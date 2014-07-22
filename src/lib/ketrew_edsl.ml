@@ -74,6 +74,7 @@ let user_target_internal
   ?(ready_when = `False)
   ?(metadata = Artifact.Value.unit)
   ?product
+  ?equivalence
   ()
   =
   let id = Unique_id.create () in
@@ -94,6 +95,7 @@ let user_target_internal
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~name:self#name ~condition:ready_when
+        ?equivalence
         ~make ()
     method product =
       Option.value_exn product 
@@ -101,18 +103,18 @@ let user_target_internal
         
   end
 
-let target ?active ?dependencies ?make ?ready_when ?metadata ?product name =
+let target ?active ?dependencies ?make ?ready_when ?metadata ?product
+    ?equivalence name =
   user_target_internal
+    ?equivalence
     ?active ?dependencies ~name ?make ?metadata ?ready_when ?product ()
-let active  ?dependencies ?make ?ready_when ?metadata ?product name =
-  user_target_internal ~active:true
-    ?dependencies ?metadata ~name ?make ?ready_when ?product ()
 
 let file_target 
-    ?dependencies ?make ?metadata ?name ?host path =
+    ?dependencies ?make ?metadata ?name ?host ?equivalence path =
   let product = file ?host path in
   let name = Option.value name ~default:("Make:" ^ path) in
-  target ~product ~ready_when:product#exists ?dependencies ?make ?metadata name
+  target ~product ?equivalence
+    ~ready_when:product#exists ?dependencies ?make ?metadata name
 
 (*
   Run a workflow:

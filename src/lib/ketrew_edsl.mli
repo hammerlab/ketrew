@@ -142,17 +142,9 @@ val target :
   ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?product:user_artifact ->
+  ?equivalence:Ketrew_target.Equivalence.t ->
   string -> user_target
 (** Create a new target. *)
-
-val active :
-  ?dependencies:user_target list ->
-  ?make:Ketrew_target.build_process ->
-  ?ready_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
-  ?product:user_artifact ->
-  string -> user_target
-(** Create a new target but with [~active:true]. *)
 
 val file_target:
   ?dependencies:user_target list ->
@@ -160,6 +152,7 @@ val file_target:
   ?metadata:Ketrew_artifact.Value.t ->
   ?name:string ->
   ?host:host ->
+  ?equivalence:Ketrew_target.Equivalence.t ->
   string ->
   user_target
 (** Create a file {!user_artifact} and the {!user_target} that produces it. *)

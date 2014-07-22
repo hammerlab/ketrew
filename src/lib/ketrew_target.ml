@@ -76,18 +76,31 @@ module Condition = struct
 
 end
 
+module Equivalence = struct
+  type t = Ketrew_gen_target_v0_t.equivalence
+end
 
 let nop : build_process = `Artifact (`Value `Unit)
 
 let create
     ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
     ?(dependencies=[]) ?(make=nop)
-    ?(condition=`False)
+    ?(condition=`False) ?(equivalence=`Same_active_condition)
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; persistance; metadata;
-    dependencies; make; condition; history }
+    dependencies; make; condition; history; equivalence }
+
+let is_equivalent t ext =
+  match t.equivalence with
+  | `None -> false
+  | `Same_active_condition -> 
+    begin match t.condition with
+    | `True | `False -> false
+    | other -> other = ext.condition
+    end
+
 
 (** Create a new  target but activated from a created one; 
     raises [Invalid_argument _] if current status is not [`Created _]. *)
@@ -139,10 +152,10 @@ let update_running_exn t ~run_parameters =
 
 let active ?id
     ?name ?persistance ?metadata
-    ?dependencies ?make ?condition
+    ?dependencies ?make ?condition ?equivalence
     () = 
   activate_exn ~by:`User (create ?id ?name ?persistance ?metadata ?condition
-                            ?dependencies ?make ())
+                            ?equivalence ?dependencies ?make ())
 
 let reactivate 
     ?with_id ?with_name ?with_metadata t =

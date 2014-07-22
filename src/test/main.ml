@@ -457,11 +457,12 @@ let test_long_running_nohup () =
                create the right target: *)
             let t =
               Ketrew.EDSL.(
-                active "some name"
+                target "some name"
                   ~make:(daemonize ~host Program.(sh "ls > /tmp/some_temp_file"))
                   ~ready_when:(file ~host "/tmp/some_temp_file_with_error")#exists
               )
             in
+            t#activate;
             Test.test_targets ~state ~name:(name "wrong 'returns'")
               ~wait_between_steps:0.3 [t#render] [
               `Happens (function

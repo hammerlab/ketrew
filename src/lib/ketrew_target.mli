@@ -137,6 +137,11 @@ module Condition : sig
 
 end
 
+module Equivalence: sig
+  type t = Ketrew_gen_target_v0_t.equivalence
+
+end
+
 type t = {
   id : id;
   name : string;
@@ -145,6 +150,7 @@ type t = {
   dependencies : id list;
   make : build_process;
   condition : Condition.t;
+  equivalence: Equivalence.t;
   history : workflow_state;
 }
 (** The fat record holding targets. *)
@@ -155,6 +161,7 @@ val create :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list -> ?make:build_process -> 
   ?condition:Condition.t ->
+  ?equivalence: Equivalence.t ->
   unit ->
   t
 (** Create a target value (not stored in the DB yet). *)
@@ -189,6 +196,7 @@ val active :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list -> ?make:build_process ->
   ?condition:Condition.t ->
+  ?equivalence: Equivalence.t ->
   unit -> t
 (** Like {!create} but set as already activated. *)
 
@@ -198,6 +206,11 @@ val reactivate:
   ?with_metadata:Ketrew_artifact.Value.t ->
   t -> t
 (** “Clone” the target as an activated new target. *)
+
+val is_equivalent: t -> t -> bool
+(** Tell whether the first on is equivalent to the second one. This not
+    a commutative operation: the function does not look at
+    the second target's [Equivalence] field. *)
 
 val id : t -> Unique_id.t
 (** Get a target's id. *)

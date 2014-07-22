@@ -35,6 +35,8 @@ val run_list :
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
    | `Failure of string
+   | `Missing_data of Ketrew_target.id
+   | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Run a todo-list with the given [state] instance. *)

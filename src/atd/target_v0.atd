@@ -74,6 +74,11 @@ type condition = [
   | Command_returns of (command * int)
 ]
 
+type equivalence = [
+  | None
+  | Same_active_condition
+]
+
 type id = unique_id
 type t = {
   id: id;
@@ -83,6 +88,7 @@ type t = {
   dependencies: id list;
   make: build_process;
   condition: condition;
+  equivalence: equivalence;
   (* result_type: artifact_type; *)
   history: workflow_state;
 }
