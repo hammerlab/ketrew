@@ -150,7 +150,10 @@ let add_or_update_target t target =
   end
 
 
-let get_target_with_db db id =
+(** This internal function gets a target value from the database {b without
+    following pointers}.
+*)
+let _get_target_from_db db id =
   Database.get db id
   >>= function
   | Some t -> of_result (Target.deserialize t)
@@ -160,14 +163,10 @@ let get_target t id =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let actual_id = Persistent_state.follow_pointers persistent id in
-  get_target_with_db db actual_id
+  _get_target_from_db db actual_id (** After following pointers we can say we
+                                       get the target from the DB. *)
 
 let archive_target t target_id =
-  (*
-  database t >>= fun db ->
-  get_target_with_db db target_id (* Making sure that the id exists. *)
-  >>= fun (_ : Target.t) ->
-  *)
   get_persistent t
   >>= fun persistent ->
   let new_persistent = Persistent_state.archive persistent target_id in
@@ -177,7 +176,9 @@ let current_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let target_ids = Persistent_state.current_targets persistent in
-  Deferred_list.for_concurrent target_ids ~f:(get_target_with_db db)
+  (** The [current_targets] are the ones we care about; not pointers which
+      would create a lot useless duplicates. *)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
@@ -218,7 +219,9 @@ let archived_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let target_ids = Persistent_state.archived_targets persistent in
-  Deferred_list.for_concurrent target_ids ~f:(get_target_with_db db)
+  (** Here also we don't want duplicates, [Persistent_state.archived_targets]
+      are “real” targets. *)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
