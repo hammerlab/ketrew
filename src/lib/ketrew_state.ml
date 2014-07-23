@@ -163,9 +163,11 @@ let get_target t id =
   get_target_with_db db actual_id
 
 let archive_target t target_id =
+  (*
   database t >>= fun db ->
   get_target_with_db db target_id (* Making sure that the id exists. *)
   >>= fun (_ : Target.t) ->
+  *)
   get_persistent t
   >>= fun persistent ->
   let new_persistent = Persistent_state.archive persistent target_id in
@@ -229,11 +231,11 @@ let is_archived t tid =
   return (List.exists arch ~f:(fun x -> Target.id x = tid))
 
 let _check_and_activate_dependencies ~t ids =
-  database t >>= fun db ->
+  (* database t >>= fun db -> *)
   let what_happened = ref [] in
   let happened h = what_happened := h :: !what_happened in
   Deferred_list.while_sequential ids ~f:(fun dep ->
-      get_target_with_db db dep >>< function
+      get_target t dep >>< function
       | `Ok dependency ->
         begin match dependency.Target.history with
         | `Created _  ->
@@ -252,6 +254,7 @@ let _check_and_activate_dependencies ~t ids =
         Log.(s "Error while activating dependencies: " %
              s (Ketrew_error.to_string e) @ error);
         return (`Die dep)
+      | `Error (`Persistent_state _ as e)
       | `Error (`Target _ as e) -> fail e
     )
   >>= fun statuses ->
@@ -521,13 +524,12 @@ let step t =
   end 
 
 let get_status t id =
-  database t >>= fun db ->
-  get_target_with_db db id >>= fun target ->
+  (* database t >>= fun db -> *)
+  get_target t id >>= fun target ->
   return target.Target.history 
 
 let kill t ~id =
-  database t >>= fun db ->
-  get_target_with_db db id >>= fun target ->
+  get_target t id >>= fun target ->
   begin match target.Target.history with
   | `Created c ->
     add_or_update_target t Target.(

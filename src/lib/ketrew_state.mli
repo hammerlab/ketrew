@@ -144,12 +144,13 @@ val step :
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
    [> `Database of Ketrew_database.error
-    | `IO of
+   | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Missing_data of string
-    | `System of [> `File_info of string ] * [> `Exn of exn ]
-    | `Target of [> `Deserilization of string ] ])
-  Deferred_result.t
+   | `Missing_data of string
+   | `Persistent_state of [> `Deserilization of string ]
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
 (** Get the state description of a given target (by “id”). *)
 
 val kill:  t -> id:Ketrew_target.id ->
@@ -166,6 +167,7 @@ val kill:  t -> id:Ketrew_target.id ->
         | `Write_file_exn of string * exn ]
    | `Missing_data of string
    | `Not_implemented of string
+   | `Persistent_state of [> `Deserilization of string ]
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Kill a target *)
