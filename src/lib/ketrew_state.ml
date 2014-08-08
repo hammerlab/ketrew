@@ -185,6 +185,52 @@ let current_targets t =
   | some :: more -> fail some (* TODO do not forget other errors *)
   end
 
+module Target_graph = struct
+  type state = t
+  type t = {
+    vertices: Target.t list;
+    edges: (Target.t * Target.t) list;
+  }
+
+  let get_current ~state =
+    current_targets state >>= fun vertices ->
+    get_persistent state >>= fun persistent ->
+    let archived_but_there = ref [] in
+    Deferred_list.while_sequential vertices ~f:(fun trgt ->
+        Deferred_list.while_sequential trgt.Target.dependencies (fun id ->
+            let actual_id = Persistent_state.follow_pointers persistent id in
+            match List.find vertices ~f:(fun t -> Target.id t = actual_id) with
+            | Some t -> return (trgt, t)
+            | None -> 
+              get_target state actual_id
+              >>= fun t ->
+              archived_but_there := t :: !archived_but_there;
+              return (trgt, t)
+          ))
+    >>| List.concat
+    >>= fun edges ->
+    return {vertices = vertices @ !archived_but_there; edges}
+
+  let log g =
+    Log.(
+      OCaml.list (fun (t1, t2) ->
+          s "* " % Target.log t1 % s " → " % Target.log t2) g.edges
+    )
+
+  let vertices g = g.vertices
+
+  let transitive_predecessors g ~target = 
+    let pred g t =
+      List.filter_map g.edges ~f:(fun (t1, t2) ->
+          if Target.id t2 = Target.id t then Some t1 else None) in
+    let rec trans_pred g t =
+      let preds = pred g t in
+      List.dedup (preds @ List.concat_map preds (fun v -> trans_pred g v))
+    in
+    trans_pred g target
+
+end 
+
 let add_target t target =
   add_or_update_target t target
   >>= fun () ->

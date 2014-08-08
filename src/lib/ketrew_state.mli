@@ -193,3 +193,35 @@ val restart_target: state:t -> Ketrew_target.t ->
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
+
+(** A module to manipulate the graph of dependencies. *)
+module Target_graph: sig
+
+  type state = t
+  (** An alias for {!t}, the state. *)
+
+  type t
+  (** The actual representation of the Graph. *)
+
+  val get_current: state:state -> 
+    (t,
+     [> `Database of [> `Get of string | `Load of string ] * string
+     | `Missing_data of Ketrew_target.id
+     | `Persistent_state of [> `Deserilization of string ]
+     | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+  (** Do like {!current_targets} as a graph, hence this may also pull
+      “archived” targets, through dependencies. *)
+
+  val log: t -> Log.t
+  (** Get a displayable {!Log.t} for the graph. *)
+
+  val vertices: t -> Ketrew_target.t list
+  (** Get all the vertices of the graph ({!current_targets} + the transitive
+      closure). *)
+
+  val transitive_predecessors: t -> target:Ketrew_target.t ->
+    Ketrew_target.t list
+  (** Get all the predecessors of a given target; i.e. all the target that
+      dependent (on targets that depend) on that target *)
+
+end
