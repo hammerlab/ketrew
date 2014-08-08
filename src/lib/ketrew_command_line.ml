@@ -472,6 +472,75 @@ let archive ~state ~interactive ids =
       return ()
   end
 
+let autoclean ~state ~how_much ~interactive () =
+  let module G = Ketrew_state.Target_graph in
+  G.get_current ~state
+  >>= fun graph ->
+  Log.(s "Target graph: " % G.log graph @ verbose);
+  let vertices = G.vertices graph in
+  let to_kill =
+    (* a target is going to be killed if it is "created" and no other target
+       that is activated transitively dependends on it.
+    *)
+    List.filter vertices ~f:(fun trgt ->
+        if Ketrew_target.Is.created trgt
+        then
+          let higher = G.transitive_predecessors graph trgt in
+          List.for_all higher (fun trgt -> not (Ketrew_target.Is.activated trgt))
+        else
+          false)
+  in
+  Log.(s "To KILL: " % OCaml.list Ketrew_target.log to_kill @ verbose);
+  let to_archive =
+    (* A target that is just-killed, or finished depending on `how_much` *)
+    List.filter vertices ~f:(fun trgt ->
+        match how_much with
+        | `Soft when Ketrew_target.Is.successful trgt -> true
+        | `Hard when Ketrew_target.Is.finished trgt -> true
+        | other -> false)
+  in
+  Log.(s "To ARCHIVE: " % OCaml.list Ketrew_target.log to_archive @ verbose);
+  let proceed () =
+    let kill_ids = List.map to_kill ~f:Ketrew_target.id in
+    kill ~state ~interactive:false kill_ids
+    >>= fun () ->
+    archive ~state ~interactive:false 
+      (kill_ids @ List.map to_archive ~f:Ketrew_target.id)
+  in
+  begin match interactive, to_kill, to_archive with
+  | _, [], [] -> Log.(s "Nothing to do" @ normal); return ()
+  | true, _, _ -> 
+    let sentence =
+      let open Log in
+      s "Going to"
+      % (match to_kill with
+        | [] -> empty
+        | more ->
+          s " kill & archive: " % OCaml.list Ketrew_target.log to_kill)
+      % (match to_archive with
+        | [] -> empty
+        | more -> 
+          (if to_kill = [] then empty else s " and ")
+          % s " archive: " % OCaml.list Ketrew_target.log to_archive)
+      % n % s "Proceed?"
+    in
+    Interaction.(
+      menu ~sentence ~always_there:[
+        menu_item ~char:'n' ~log:Log.(s "No") `No;
+        menu_item ~char:'Y' ~log:Log.(s "Yes") `Yes;
+      ] []
+      >>= function
+      | `Yes -> proceed ()
+      | `No ->
+        Log.(s "Cancelling" @ normal);
+        return ()
+    )
+  | false, _, _ -> 
+    kill ~state ~interactive:false (List.map to_kill ~f:Ketrew_target.id)
+    >>= fun () ->
+    archive ~state ~interactive:false (List.map to_archive ~f:Ketrew_target.id)
+  end
+
 module Explorer = struct
   type exploration_state = {
     build_process_details: bool;
@@ -807,6 +876,12 @@ let interact ~state =
           menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
           menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
           menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
+          menu_item ~char:'c'
+            ~log:Log.(s "Auto-clean-up: orphans, successes")
+            (`Autoclean `Soft);
+          menu_item ~char:'C'
+            ~log:Log.(s "Auto-clean-up: orphans, successes, and failures")
+            (`Autoclean `Hard);
           menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
         ]
     )
@@ -826,6 +901,10 @@ let interact ~state =
       main_loop ()
     | `Archive ->
       archive ~interactive:true ~state []
+      >>= fun () ->
+      main_loop ()
+    | `Autoclean how_much ->
+      autoclean ~state ~how_much ~interactive:true ()
       >>= fun () ->
       main_loop ()
     | `Explore ->
@@ -968,6 +1047,24 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "archive" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Archive targets." ~man:[])
   in
+  let autoclean_command =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path interactive how_much ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration 
+              (autoclean ~interactive ~how_much ()))
+        $ config_file_argument
+        $ interactive_flag "Ask before proceeding."
+        $ (pure (fun hard -> if hard then `Hard else `Soft)
+           $ Arg.(value & flag & info ["H"; "hard"] 
+                    ~doc:"Also clean-up failed/killed targets")))
+      ~info:(
+        info "autoclean" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Kill & Archive orphan and finished targets." ~man:[])
+  in
   let print_conf_cmd =
     let open Term in
     sub_command
@@ -1025,6 +1122,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
     init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
     interact_cmd;
     explore_cmd;
+    autoclean_command;
     print_conf_cmd; make_command_alias print_conf_cmd "pc";
   ] in
   match Term.eval_choice ?argv default_cmd cmds with
