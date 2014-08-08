@@ -70,7 +70,7 @@ val default_shell :
 val localhost:
   ?execution_timeout:Time.t ->
   ?default_shell:default_shell ->
-  ?playground:Ketrew_path.absolute_directory ->
+  ?playground:Ketrew_path.t ->
   ?name:string -> unit -> t
 (** The host ["localhost"] (i.e. not over SSH).  *)
 
@@ -81,7 +81,7 @@ val ssh :
   ?execution_timeout:Time.t ->
   ?add_ssh_options:string list ->
   ?default_shell:default_shell ->
-  ?playground:Ketrew_path.absolute_directory ->
+  ?playground:Ketrew_path.t ->
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
 
@@ -241,27 +241,27 @@ val do_files_exist :
   ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
-  < kind : 'a; relativity : 'b > Ketrew_path.t list ->
+  Ketrew_path.t list ->
   (bool, [> `Host of _ Error.execution ])
   Deferred_result.t
 (** Check existence of a list of files/directories. *)
 
 val get_fresh_playground :
-  t -> Ketrew_path.absolute_directory option
+  t -> Ketrew_path.t option
 (** Get a new subdirectory in the host's playground *)
 
 val ensure_directory :
   ?timeout:timeout ->
   ?with_shell:shell ->
   t ->
-  path:<kind: Ketrew_path.directory; relativity: 'a> Ketrew_path.t ->
+  path:Ketrew_path.t ->
   (unit, [> `Host of _ Error.non_zero_execution ]) Deferred_result.t
 (** Make sure the directory [path] exists on the host. *)
 
 val put_file :
   ?timeout:timeout ->
   t ->
-  path:<kind: Ketrew_path.file; ..>  Ketrew_path.t ->
+  path: Ketrew_path.t ->
   content:string ->
   (unit,
    [> `Host of _ Error.execution
@@ -272,7 +272,7 @@ val put_file :
 val get_file :
   ?timeout:timeout ->
   t ->
-  path:<kind: Ketrew_path.file; ..> Ketrew_path.t ->
+  path:Ketrew_path.t ->
   (string,
    [> `Cannot_read_file of string * string
     | `Timeout of Time.t ])
@@ -282,7 +282,7 @@ val get_file :
 val grab_file_or_log:
   ?timeout:timeout ->
   t -> 
-  <kind: Ketrew_path.file; ..> Ketrew_path.t ->
+  Ketrew_path.t ->
   (string, Log.t) Deferred_result.t
 (** Weakly typed version of {!get_file}, it fails with a {!Log.t}
     (for use in “long-running” plugins).  *)

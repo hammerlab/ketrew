@@ -16,55 +16,39 @@
 
 open Ketrew_pervasives
 
-type relative 
-type absolute
-type file
-type directory
-type 'c t =
-  (* {kind: [`File | `Directory]; path: string} *)
+type t =
   Ketrew_gen_base_v0_t.path
-  constraint 'c = <relativity: 'relativity; kind: 'file_kind>
 open Ketrew_gen_base_v0_t
-type absolute_directory = <relativity : absolute; kind: directory> t
-type absolute_file = <relativity : absolute; kind: file> t
-type relative_directory = <relativity : relative; kind: directory> t
-type relative_file = <relativity : relative; kind: file> t
 
-let file path : <relativity : 'a; kind: file>  t =
+let file path :  t =
   {kind = `File; path}
 
-let directory path : <relativity : 'a; kind: directory> t  =
+let directory path :  t  =
   {kind = `Directory; path}
 
-let root : <relativity : absolute; kind: directory> t = directory "/"
+let root : t = directory "/"
 
-let absolute_file_exn s : <relativity : absolute; kind: file> t =
+let absolute_file_exn s : t =
   if Filename.is_relative s
   then invalid_argument_exn ~where:"Path" "absolute_file_exn"
   else file s
-let absolute_directory_exn s : <relativity : absolute; kind: directory> t =
+let absolute_directory_exn s : t =
   if Filename.is_relative s
   then invalid_argument_exn ~where:"Path" "absolute_directory_exn"
   else directory s
-let relative_directory_exn s : <relativity : relative; kind: directory> t =
+let relative_directory_exn s : t =
   if Filename.is_relative s
   then directory s
   else invalid_argument_exn ~where:"Path" "relative_directory_exn"
-let relative_file_exn s : <relativity: relative; kind: file> t =
+let relative_file_exn s : t =
   if Filename.is_relative s
   then file s
   else invalid_argument_exn ~where:"Path" "relative_file_exn"
 
-let concat: <relativity: 'a; kind: directory> t ->
-  <relativity: relative; kind: 'b> t -> <relativity: 'a; kind: 'b> t =
-  fun x y ->
-    { kind = y.kind; path = Filename.concat x.path y.path}
+let concat = fun x y -> { kind = y.kind; path = Filename.concat x.path y.path}
 
-let to_string: 'a t -> string = fun x -> x.path
-let to_string_quoted: 'a t -> string = fun x -> Filename.quote x.path
-
-let any_kind: <relativity: 'a; kind: 'b> t -> <relativity: 'a; kind: 'c> t =
-  fun x -> { x with kind = x.kind }
+let to_string: t -> string = fun x -> x.path
+let to_string_quoted: t -> string = fun x -> Filename.quote x.path
 
 let size_shell_command = function
 | {kind = `File; path } ->

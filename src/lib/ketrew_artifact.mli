@@ -52,7 +52,7 @@ module Volume : sig
     (** The container of volumes. *)
 
     val create :
-      host:Ketrew_host.t -> root:Ketrew_path.absolute_directory -> structure ->
+      host:Ketrew_host.t -> root:Ketrew_path.t -> structure ->
       t
     (** Create a volume. Example {[
           let sources =
@@ -60,7 +60,7 @@ module Volume : sig
               src_dir_structure ]}
     *)
 
-    val all_paths : t -> <relativity: Ketrew_path.absolute; ..> Ketrew_path.t list
+    val all_paths : t -> Ketrew_path.t list
     (** Get all the paths of the given Volume (files and directories). *) 
 
     val exists :

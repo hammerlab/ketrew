@@ -132,7 +132,7 @@ type default_shell = Ketrew_gen_base_v0_t.default_shell
 type t = Ketrew_gen_base_v0_t.host = {
   name: string;
   connection: connection;
-  playground: Path.absolute_directory option;
+  playground: Path.t option;
   default_shell: default_shell;
   execution_timeout: Time.t option;
 }

@@ -29,7 +29,7 @@ module Volume = struct
 
   type t = volume = {
     host: Host.t;
-    root: Path.absolute_directory;
+    root: Path.t;
     structure: structure;
   }
   let create ~host ~root structure = {host; root; structure}
@@ -37,17 +37,17 @@ module Volume = struct
   let dir name contents = Directory (name, contents)
 
   let rec all_structure_paths : 
-    type any. structure -> <kind: any; relativity: Path.relative > Path.t list =
+    type any. structure -> Path.t list =
     fun s ->
     match s with
-    | File s -> [Path.relative_file_exn s |> Path.any_kind ]
+    | File s -> [Path.relative_file_exn s ]
     | Directory (name, children) ->
       let children_paths = 
         List.concat_map ~f:all_structure_paths children in
       let this_one = Path.relative_directory_exn name in
-      (this_one |> Path.any_kind) :: List.map ~f:(Path.concat this_one) children_paths
+      this_one :: List.map ~f:(Path.concat this_one) children_paths
 
-  let all_paths t: <kind: 'any; relativity: Path.absolute> Path.t list =
+  let all_paths t: Path.t list =
     List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
 
   let exists t =

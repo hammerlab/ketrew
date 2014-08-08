@@ -24,17 +24,17 @@
 open Ketrew_pervasives
 
 type t = Ketrew_gen_base_v0_t.monitored_script =
-  {playground: Ketrew_path.absolute_directory; program: Ketrew_program.t}
+  {playground: Ketrew_path.t; program: Ketrew_program.t}
 (** The definition of a monitored script. *)
 
-val create:  playground:Ketrew_path.absolute_directory -> Ketrew_program.t -> t
+val create:  playground:Ketrew_path.t -> Ketrew_program.t -> t
 (** Create a new script, which will run the list of commands, and store state
     values in the [playground] directory. *)
 
-val log_file : t -> Ketrew_path.absolute_file
+val log_file : t -> Ketrew_path.t
 (** Path to the log file of the script. *)
 
-val pid_file : t -> Ketrew_path.absolute_file
+val pid_file : t -> Ketrew_path.t
 (** Path to the “PID” file: where the script stores the PID of the process
     running the script, [- pid] will be the process id of the process group
     created by `setsid` (useful for killing the whole process tree). *)
