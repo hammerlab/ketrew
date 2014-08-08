@@ -93,8 +93,8 @@ module Value = struct
     let log_variant name v =
       Log.(brakets (s name % if v <> empty then sp % v else empty)) in
     function
-  | `Number fl ->  log_variant "Number" Log.(f fl)
-  | `String str -> log_variant "String " Log.(s str)
+  | `Number fl ->  log_variant "Number: " Log.(f fl)
+  | `String str -> log_variant "String: " Log.(s str)
   | `Unit -> log_variant "Unit " Log.empty
   
   let unit = `Unit

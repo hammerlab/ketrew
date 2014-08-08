@@ -64,6 +64,7 @@ let deploy_website () =
     (* The target that produces `branch_file` *)
     target "Get current branch"
       ~ready_when:(branch_file#is_bigger_than 2)
+      ~metadata:(`String "Stores current branch in a file")
       ~make:(direct_shell_command
                (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
   in
