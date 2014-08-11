@@ -369,9 +369,21 @@ let long_running_error_to_potential_target_failure t
 let _start_running_target t target =
   begin match target.Target.make with
   | `Artifact a ->
-    add_or_update_target t Target.(make_succeed_exn target a)
-    >>= fun () ->
-    return [`Target_succeeded (Target.id target, `Artifact_literal)]
+    begin Target.did_ensure_condition target
+      >>= function
+      | false ->
+        add_or_update_target t Target.(
+            make_fail_exn target  
+              ~msg:(fmt "artifact-literal %S did not ensure %S" 
+                      (Ketrew_artifact.log a |> Log.to_long_string)
+                      (Condition.to_string_hum target.condition)))
+        >>= fun () ->
+        return [`Target_died (Target.id target, `Process_failure)]
+      | true ->
+        add_or_update_target t Target.(make_succeed_exn target a)
+        >>= fun () ->
+        return [`Target_succeeded (Target.id target, `Artifact_literal)]
+    end
   | `Get_output cmd ->
     begin Target.Command.get_output cmd
       >>< function
