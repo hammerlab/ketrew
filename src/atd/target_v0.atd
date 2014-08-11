@@ -29,7 +29,6 @@ type command = {
 
 type build_process = [
   | Artifact of artifact
-  | Get_output of command
   | Direct_command of command
   | Long_running of (string * string)
 ]

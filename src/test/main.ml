@@ -164,16 +164,16 @@ let test_0 () =
 
 
       Test.test_target_one_step ~state "ls /" Test.target_succeeds
-        ~make:(`Get_output Target.Command.(shell "ls /"))
+        ~make:(`Direct_command Target.Command.(shell "ls /"))
       >>= fun () ->
 
       Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
-        ~make:(`Get_output Target.Command.(shell "ls /crazypath"))
+        ~make:(`Direct_command Target.Command.(shell "ls /crazypath"))
       >>= fun () ->
 
       let host = Test.test_ssh_host in
       Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
-        ~make:(`Get_output Target.Command.(shell ~host "ls /"))
+        ~make:(`Direct_command Target.Command.(shell ~host "ls /"))
       >>= fun () ->
 
       let root = Path.absolute_directory_exn "/tmp" in
@@ -255,7 +255,7 @@ let test_0 () =
             if succeed2 then (fmt "wc -l /tmp/%s" tmpfile) else "exit 42" in
           Target.active ~name:"count lines of dependency"
             ~dependencies:[ Target.id target1 ]
-            ~make:(`Get_output Target.Command.(shell ~host shell_command))
+            ~make:(`Direct_command Target.Command.(shell ~host shell_command))
             ()
         in
         let id1 = Target.id target1 in
@@ -314,7 +314,7 @@ let test_0 () =
       let target_with_missing_dep =
         Target.active ~name:"target_with_missing_dep"
           ~dependencies:[ "hope this one is not in the database" ]
-          ~make:(`Get_output Target.Command.(shell "ls"))
+          ~make:(`Direct_command Target.Command.(shell "ls"))
           ()
       in
       Test.test_targets ~state ~name:"target_with_missing_dep" [target_with_missing_dep] [
@@ -346,7 +346,7 @@ let test_ssh_failure_vs_target_failure () =
           let target_with_wrong_host =
             let host = Test.wrong_ssh_host in
             Target.active ~name:"target_with_missing_dep"
-              ~make:(`Get_output Target.Command.(shell ~host "ls")) ()
+              ~make:(`Direct_command Target.Command.(shell ~host "ls")) ()
           in
           Test.test_targets
             ~state ~name:"target_with_wrong_host" [target_with_wrong_host]

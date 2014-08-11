@@ -384,19 +384,6 @@ let _start_running_target t target =
         >>= fun () ->
         return [`Target_succeeded (Target.id target, `Artifact_literal)]
     end
-  | `Get_output cmd ->
-    begin Target.Command.get_output cmd
-      >>< function
-      | `Ok (out, _) ->
-        Log.(s "Cmd output: " % s out @ very_verbose);
-        let new_target =
-          Target.make_succeed_exn target (`Value (`String out)) in
-        add_or_update_target t new_target
-        >>= fun () ->
-        return [`Target_succeeded (Target.id target, `Process_success)]
-      | `Error (`Host error) ->
-        host_error_to_potential_target_failure ~target ~error t
-    end
   | `Direct_command cmd ->
     begin Target.Command.run cmd
       >>< function

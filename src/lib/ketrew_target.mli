@@ -57,10 +57,8 @@ module Command : sig
 type build_process = [
   | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
   | `Direct_command of Command.t (** [Command.t] to run. *)
-  | `Get_output of Command.t (** [Command.t] to run and get its [stdout]. *) 
   | `Long_running of (string * string) 
-  (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].
-  *)
+  (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
 ]
 (** Specification of how to build a target. {ul
    {li  [`Artifact a]: literal, already-built, artifact, }

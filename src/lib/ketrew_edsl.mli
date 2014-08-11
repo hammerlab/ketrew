@@ -173,11 +173,6 @@ val direct_shell_command :
   ?host:Ketrew_host.t -> string -> Ketrew_target.build_process
 (** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
 
-val get_output :
-  ?host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
-(** Create a direct process (not “long-running”) that stores the output (i.e.
-    [stdout]) of the program. *)
-
 val lsf :
   ?host:Ketrew_host.t ->
   ?queue:string ->
