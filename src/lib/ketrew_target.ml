@@ -68,7 +68,7 @@ module Condition = struct
         parens (s "Volume " % Artifact.Volume.log v % s " exists")
       | `Volume_size_bigger_than (v, sz) ->
         parens (s "Volume " % Artifact.Volume.log v % s " ≥ " 
-                % i sz % nbsp % s "KB")
+                % i sz % nbsp % s "B")
       | `Command_returns (c, ret) ->
         parens (s "Command " % Command.log c % s " returns " % i ret)
       | `And l ->
