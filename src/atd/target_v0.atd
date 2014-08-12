@@ -71,6 +71,7 @@ type condition = [
   | Volume_exists of volume
   | Volume_size_bigger_than of (volume * int)
   | Command_returns of (command * int)
+  | And of condition list
 ]
 
 type equivalence = [
@@ -86,7 +87,7 @@ type t = {
   metadata: artifact_value;
   dependencies: id list;
   make: build_process;
-  condition: condition;
+  condition: condition option;
   equivalence: equivalence;
   (* result_type: artifact_type; *)
   history: workflow_state;

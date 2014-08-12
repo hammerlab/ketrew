@@ -60,7 +60,7 @@ include Ketrew_gen_target_v0_t
 
 module Condition = struct
   type t = condition
-  let log =
+  let rec log =
     Log.(function
       | `True -> s "True"
       | `False -> s "False"
@@ -71,6 +71,8 @@ module Condition = struct
                 % i sz % nbsp % s "KB")
       | `Command_returns (c, ret) ->
         parens (s "Command " % Command.log c % s " returns " % i ret)
+      | `And l ->
+        parens (separate (s " && ") (List.map l ~f:log))
       )
   let to_string_hum c = Log.to_long_string (log c)
 
@@ -85,7 +87,7 @@ let nop : build_process = `Artifact (`Value `Unit)
 let create
     ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
     ?(dependencies=[]) ?(make=nop)
-    ?(condition=`False) ?(equivalence=`Same_active_condition)
+    ?condition ?(equivalence=`Same_active_condition)
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
@@ -97,8 +99,8 @@ let is_equivalent t ext =
   | `None -> false
   | `Same_active_condition -> 
     begin match t.condition with
-    | `True | `False -> false
-    | other -> other = ext.condition
+    | None -> false
+    | Some other -> Some other = ext.condition
     end
 
 
@@ -182,25 +184,10 @@ let deserialize s : (t, _) Result.t =
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
 
-let should_start t =
-  match t.condition with
-  | `True -> return false
-  | `False -> return true
-  | `Volume_exists v -> 
-    Artifact.Volume.exists v >>| not
-  | `Volume_size_bigger_than (v, sz) ->
-    Artifact.Volume.get_size v
-    >>= fun size ->
-    return (size < sz)
-  | `Command_returns (c, ret) ->
-    Command.get_return_value c  
-    >>= fun return_value ->
-    return (ret <> return_value)
-
-let did_ensure_condition t =
-  match t.condition with
-  | `True -> return false
-  | `False -> return true
+let rec eval_condition = 
+  function
+  | `True -> return true
+  | `False -> return false
   | `Volume_exists v -> Artifact.Volume.exists v
   | `Volume_size_bigger_than (v, sz) ->
     Artifact.Volume.get_size v
@@ -210,6 +197,27 @@ let did_ensure_condition t =
     Command.get_return_value c  
     >>= fun return_value ->
     return (ret = return_value)
+  | `And list_of_conditions -> 
+    (* Should start at the first that returns `false` *)
+    let rec go = function
+    | [] -> return true
+    | cond :: rest ->
+      eval_condition cond
+      >>= function
+      | true -> go rest
+      | false -> return false
+    in
+    go list_of_conditions
+
+let should_start t =
+  match t.condition with
+  | Some c -> eval_condition c >>| not
+  | None -> return true
+
+let did_ensure_condition t =
+  match t.condition with
+  | Some c -> eval_condition c
+  | None -> return true
 
 module Is = struct
 

@@ -120,6 +120,7 @@ module Condition : sig
     | `Volume_exists of Ketrew_artifact.Volume.t
     | `Volume_size_bigger_than of Ketrew_artifact.Volume.t * int
     | `Command_returns of Command.t * int
+    | `And of t list
   ]
   (** A execution anti-condition, the condition defines when a target is
     (already) ready: {ul
@@ -127,6 +128,11 @@ module Condition : sig
     {li with [`True] the target never runs (a bit useless),}
     {li with [`Volume_exists v] the target runs if the volume does not exist
     ([make]-like behavior).}
+    {li with [`Volume_size_bigger_than (v, sz)] Ketrew will get the total size
+    of the volume (in bytes) and check that it is bigger.}
+    {li with [`Command_returns (c, v)] Ketrew will run the {!Command.t} and
+    check its return value.}
+    {li [`And list_of_conditions] is a conjunction of conditions.}
       }
   *)
 
@@ -147,7 +153,7 @@ type t = {
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   make : build_process;
-  condition : Condition.t;
+  condition : Condition.t option;
   equivalence: Equivalence.t;
   history : workflow_state;
 }

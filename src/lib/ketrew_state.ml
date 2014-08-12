@@ -376,7 +376,8 @@ let _start_running_target t target =
             make_fail_exn target  
               ~msg:(fmt "artifact-literal %S did not ensure %S" 
                       (Ketrew_artifact.log a |> Log.to_long_string)
-                      (Condition.to_string_hum target.condition)))
+                      (Option.value_map ~default:"None-condition" 
+                         ~f:Condition.to_string_hum target.condition)))
         >>= fun () ->
         return [`Target_died (Target.id target, `Process_failure)]
       | true ->
@@ -395,7 +396,8 @@ let _start_running_target t target =
                 make_fail_exn target  
                   ~msg:(fmt "command %S did not ensure %S" 
                           (Command.to_string_hum cmd)
-                          (Condition.to_string_hum target.condition)))
+                          (Option.value_map ~default:"None-condition" 
+                             ~f:Condition.to_string_hum target.condition)))
             >>= fun () ->
             return [`Target_died (Target.id target, `Process_failure)]
           | true ->
@@ -458,7 +460,8 @@ let _update_status t ~target ~bookkeeping =
               add_or_update_target t Target.(
                   make_fail_exn target  
                     ~msg:(fmt "the target did not ensure %s" 
-                            (Condition.to_string_hum target.condition)))
+                            (Option.value_map ~default:"None-condition" 
+                               ~f:Condition.to_string_hum target.condition)))
               >>= fun () ->
               return [`Target_died (Target.id target, `Process_failure)]
             | true ->
