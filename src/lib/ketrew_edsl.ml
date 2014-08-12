@@ -71,7 +71,7 @@ let user_target_internal
   ?(dependencies = [])
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
-  ?(ready_when = `False)
+  ?ready_when
   ?(metadata = Artifact.Value.unit)
   ?product
   ?equivalence
@@ -94,7 +94,7 @@ let user_target_internal
       creation ~metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
-        ~name:self#name ~condition:ready_when
+        ~name:self#name ?condition:ready_when
         ?equivalence
         ~make ()
     method product =
