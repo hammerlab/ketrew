@@ -70,7 +70,7 @@ let deploy_website () =
   in
   let make_doc =
     target "Make doc" ~make:(direct_shell_command "please.sh doc")
-      ~ready_when:`False in
+  in
   let check_out_gh_pages =
     (* first target with dependencies: the two previous ones *)
     target "Check out gh-pages"
@@ -81,10 +81,6 @@ let deploy_website () =
              "branch=`git symbolic-ref --short HEAD` && [ \"$branch\" = \"gh-pages\" ]", 0))
       ~make:(direct_shell_command
                (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
-      (* The default value for `?ready_when` is [`False], so this
-         target will always be recomputed.
-         It can fail pretty often, e.g. is the git-tree is not clean, for `git
-         checkout`.  *)
   in
   let move_website =
     target "Move _doc/" ~dependencies:[check_out_gh_pages]
