@@ -90,8 +90,16 @@ module Document = struct
         ))
       else empty
         
+  let condition ~state ?(with_details=false) =
+    let open Log in
+    function
+    | None -> s "Always"
+    | Some c ->
+      if with_details 
+      then Target.Condition.log c
+      else s "Conditionally"
 
-  let target ~state ?build_process_details t =
+  let target ~state ?build_process_details ?condition_details t =
     let open Log in
     let open Target in
     let itemize l =
@@ -109,6 +117,7 @@ module Document = struct
       "Metadata", Artifact.Value.log t.metadata;
       "Build-process", 
       build_process ~state ?with_details:build_process_details t.make;
+      "Runs", condition ~state ?with_details:condition_details t.condition;
       "Status",
       (match t.history with
        | `Dead _       -> s "Dead"
@@ -547,9 +556,11 @@ module Explorer = struct
     show_archived: bool;
     target_filter: (Target.t -> bool) * Log.t;
     current_target: Target.id option;
+    condition_details: bool;
   }
   let create_state () =
     {build_process_details = false;
+     condition_details = false;
      show_archived = false;
      target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
      current_target = None}
@@ -611,8 +622,10 @@ module Explorer = struct
   let explore_single_target ~state (es: exploration_state) target =
     let sentence =
       let build_process_details = es.build_process_details in
+      let condition_details = es.condition_details in
       Log.(s "Exploring " 
-           % Document.target ~build_process_details ~state target) in
+           % Document.target
+             ~build_process_details ~condition_details ~state target) in
     Ketrew_state.is_archived state (Target.id target)
     >>= fun is_archived ->
     Interaction.(
@@ -624,15 +637,19 @@ module Explorer = struct
         if not is_archived && Target.Is.finished target
         then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
         else [] in
-      let build_process_details_item =
-        match es.build_process_details with
-        | true ->
-          [menu_item ~char:'b'
-             ~log:Log.(s "Hide build process details") `Hide_make]
-        | false ->
-          [menu_item ~char:'b'
-             ~log:Log.(s "Show build process details") `Show_make]
+      let boolean_item ~value ~char ~to_false ~to_true =
+        match value with
+        | true -> [menu_item ~char ~log:(fst to_false) (snd to_false)]
+        | false -> [menu_item ~char ~log:(fst to_true) (snd to_true)]
       in
+      let build_process_details_item =
+        boolean_item ~value:es.build_process_details ~char:'b'
+          ~to_false:(Log.(s "Hide build process details"), `Show_make false)
+          ~to_true:(Log.(s "Show build process details"), `Show_make true) in
+      let condition_details_item =
+        boolean_item ~value:es.condition_details ~char:'c'
+          ~to_false:(Log.(s "Hide condition details"), `Show_condition false)
+          ~to_true:(Log.(s "Show condition details"), `Show_condition true) in
       let follow_deps_item =
         match target.Target.dependencies with
         | [] -> []
@@ -648,6 +665,7 @@ module Explorer = struct
       menu ~sentence ~always_there:cancel_menu_items (
         [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
         @ build_process_details_item
+        @ condition_details_item
         @ follow_deps_item
         @ kill_item
         @ archive_item
@@ -813,12 +831,10 @@ module Explorer = struct
           >>= function
           | `Cancel -> go_back ~state history
           | `Quit -> return ()
-          | `Show_make ->
-            explore ~state 
-              ({ one with build_process_details = true }  :: history)
-          | `Hide_make ->
-            explore ~state 
-              ({ one with build_process_details = false }  :: history)
+          | `Show_make build_process_details ->
+            explore ~state ({ one with build_process_details }  :: history)
+          | `Show_condition condition_details ->
+            explore ~state ({ one with condition_details }  :: history)
           | `Status ->
             begin target_status ~state one chosen
               >>= function
