@@ -261,6 +261,7 @@ module Is = struct
       | `Created _ -> false
       | `Activated (_, _, `User) -> true
       | `Activated (_, _, `Dependency) -> false
+      | `Activated (_, _, `Fallback) -> false
       | `Running (_, prev) -> go_through_history (prev :> workflow_state)
       | `Successful (_, prev, _) -> go_through_history (prev :> workflow_state)
       | `Dead (_, prev, _) -> go_through_history (prev :> workflow_state)

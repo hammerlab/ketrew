@@ -717,7 +717,10 @@ module Explorer = struct
           log_of_status (subm :> Target.workflow_state) % n
           % s "Activated: " % Time.log time % sp
           % parens 
-            (match why with `User -> s "user" | `Dependency -> s "dependency")
+            (match why with
+             | `User -> s "user"
+             | `Dependency -> s "dependency"
+             | `Fallback -> s "fallback")
         | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
           log_of_status (act :> Target.workflow_state) % n
           % s "Running " % parens (s plugin_name) % s ":" % n

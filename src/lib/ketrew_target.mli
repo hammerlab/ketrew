@@ -74,8 +74,9 @@ val nop : build_process
 (** A build process that does nothing. *)
 
 type submitted_state = [ `Created of Time.t ]
-type activated_state =
-    [ `Activated of Time.t * submitted_state * [ `Dependency | `User ] ]
+type activated_state = [
+  | `Activated of Time.t * submitted_state * [ `Dependency | `User | `Fallback ]
+]
 type run_bookkeeping = {
   plugin_name : string;
   run_parameters : string;
@@ -173,7 +174,7 @@ val create :
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val activate_exn : t -> by:[ `Dependency | `User ] -> t
+val activate_exn : t -> by:[ `Dependency | `User | `Fallback ] -> t
 (** Get an activated target out of a “submitted” one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 

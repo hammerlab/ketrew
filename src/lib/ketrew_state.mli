@@ -103,7 +103,7 @@ val is_archived: t -> Unique_id.t ->
 (** Check whether a target is in the “archive”. *)
   
 type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency ]
+  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback ]
   | `Target_died of
       Ketrew_target.id  *
       [ `Dependencies_died

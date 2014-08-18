@@ -339,8 +339,15 @@ let make_target_die ?explanation t ~target ~reason =
     | other -> Target.make_fail_exn target ~msg in
   add_or_update_target t new_target
   >>= fun () ->
-  (* TODO activate `if_fails_activate` *)
-  return [`Target_died (Target.id target, reason)]
+  Deferred_list.while_sequential target.Target.if_fails_activate ~f:(fun tid ->
+      get_target t tid
+      >>= fun trgt ->
+      let newdep = Target.(activate_exn trgt ~by:`Fallback) in
+      add_or_update_target t newdep
+      >>= fun () ->
+      return (`Target_activated (tid, `Fallback)))
+  >>= fun happens ->
+  return (`Target_died (Target.id target, reason) :: happens)
 
 let with_plugin_or_kill_target t ~target ~plugin_name f =
   begin match 
@@ -487,7 +494,7 @@ let _update_status t ~target ~bookkeeping =
       end)
 
 type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency ]
+  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback]
   | `Target_died of
       Ketrew_target.id  *
       [ `Dependencies_died
@@ -503,8 +510,11 @@ type happening =
 let log_what_happened =
   let open Log in
   function
-  | `Target_activated (id, `Dependency) ->
-    s "Target " % s id % s " activated: " % s "Dependency"
+  | `Target_activated (id, by) ->
+    s "Target " % s id % s " activated: " %
+    (match by with
+     | `Dependency -> s "Dependency"
+     | `Fallback -> s "Fallback")
   | `Target_succeeded (id, how) ->
     s "Target " % s id % s " succeeded: " 
     % (match how with
