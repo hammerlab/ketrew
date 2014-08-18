@@ -152,6 +152,7 @@ type t = {
   persistance : [ `Input_data | `Recomputable of float | `Result ];
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
+  if_fails_activate : id list;
   make : build_process;
   condition : Condition.t option;
   equivalence: Equivalence.t;
@@ -163,7 +164,9 @@ val create :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
-  ?dependencies:id list -> ?make:build_process -> 
+  ?dependencies:id list ->
+  ?if_fails_activate:id list ->
+  ?make:build_process -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit ->
@@ -198,7 +201,9 @@ val active :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
-  ?dependencies:id list -> ?make:build_process ->
+  ?dependencies:id list ->
+  ?if_fails_activate:id list ->
+  ?make:build_process ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit -> t

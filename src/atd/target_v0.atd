@@ -86,6 +86,7 @@ type t = {
   persistance: [ Input_data | Recomputable of float | Result ];
   metadata: artifact_value;
   dependencies: id list;
+  if_fails_activate: id list;
   make: build_process;
   condition: condition option;
   equivalence: equivalence;

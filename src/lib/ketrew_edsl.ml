@@ -69,6 +69,7 @@ class type user_target =
 let user_target_internal
   ?(active = false)
   ?(dependencies = [])
+  ?(if_fails_activate = [])
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
   ?ready_when
@@ -94,6 +95,7 @@ let user_target_internal
       creation ~metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
+        ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
         ~name:self#name ?condition:ready_when
         ?equivalence
         ~make ()
