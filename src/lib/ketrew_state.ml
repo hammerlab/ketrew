@@ -321,6 +321,27 @@ let _check_and_activate_dependencies ~t ids =
   | no_death_but_not_all_go -> return (`Wait, happenings)
   end
 
+let make_target_die ?explanation t ~target ~reason =
+  let msg =
+    begin match reason with
+    | `Dependencies_died -> "Dependencies died"
+    | `Plugin_not_found p -> fmt "Plugin not found: %S" p
+    | `Process_failure -> "Process Failure"
+    | `Long_running_unrecoverable (plugin_name, s) ->
+      fmt "[%s] Unrecoverable: %s" plugin_name s
+    | `Killed -> "Killed"
+    end
+    ^ Option.value_map ~default:"" explanation ~f:(fmt ": %s")
+  in
+  let new_target =
+    match reason with
+    | `Killed -> Target.kill_exn target ~msg
+    | other -> Target.make_fail_exn target ~msg in
+  add_or_update_target t new_target
+  >>= fun () ->
+  (* TODO activate `if_fails_activate` *)
+  return [`Target_died (Target.id target, reason)]
+
 let with_plugin_or_kill_target t ~target ~plugin_name f =
   begin match 
     List.find t.long_running_plugins (fun (n, _) -> n = plugin_name)
@@ -328,11 +349,7 @@ let with_plugin_or_kill_target t ~target ~plugin_name f =
   | Some (_, m) ->
     f m
   | None -> 
-    add_or_update_target t Target.(
-        make_fail_exn target  
-          ~msg:(fmt "Plugin not found: %s" plugin_name))
-    >>= fun () ->
-    return [`Target_died (Target.id target, `Plugin_not_found plugin_name)]
+    make_target_die t ~target ~reason:(`Plugin_not_found plugin_name)
   end
 
 let host_error_to_potential_target_failure t ~target ~error =
@@ -344,12 +361,9 @@ let host_error_to_potential_target_failure t ~target ~error =
          % sp % e @ warning);
     return []
   | _ ->
-    add_or_update_target t Target.(
-        make_fail_exn target  
-          ~msg:(fmt "Host error: %s" 
-                  (Host.Error.log error |> Log.to_long_string)))
-    >>= fun () ->
-    return [`Target_died (Target.id target, `Process_failure)]
+    make_target_die t ~target ~reason:`Process_failure
+      ~explanation:(fmt "Host error: %s" 
+                      (Host.Error.log error |> Log.to_long_string))
 
 let long_running_error_to_potential_target_failure t
     ~target ~make_error ~plugin_name e =
@@ -357,11 +371,7 @@ let long_running_error_to_potential_target_failure t
   match e, should_kill with
   | `Recoverable str, true
   | `Fatal str, _ ->
-    add_or_update_target t Target.(
-        make_fail_exn target  ~msg:(fmt "[%s] Error %s" plugin_name str))
-    >>= fun () ->
-    return [`Target_died (Target.id target,
-                          make_error plugin_name str)]
+    make_target_die t ~target ~reason:(make_error plugin_name str)
   | `Recoverable str, false ->
     Log.(s "Recoverable error: " % s str @ warning);
     return []
@@ -372,14 +382,12 @@ let _start_running_target t target =
     begin Target.did_ensure_condition target
       >>= function
       | false ->
-        add_or_update_target t Target.(
-            make_fail_exn target  
-              ~msg:(fmt "artifact-literal %S did not ensure %S" 
-                      (Ketrew_artifact.log a |> Log.to_long_string)
-                      (Option.value_map ~default:"None-condition" 
-                         ~f:Condition.to_string_hum target.condition)))
-        >>= fun () ->
-        return [`Target_died (Target.id target, `Process_failure)]
+        make_target_die t ~target ~reason:(`Process_failure)
+          ~explanation:
+            (fmt "artifact-literal %S did not ensure %S" 
+               (Ketrew_artifact.log a |> Log.to_long_string)
+               (Option.value_map ~default:"None-condition" 
+                  ~f:Target.Condition.to_string_hum target.Target.condition))
       | true ->
         add_or_update_target t Target.(make_succeed_exn target a)
         >>= fun () ->
@@ -392,14 +400,12 @@ let _start_running_target t target =
         begin Target.did_ensure_condition target
           >>= function
           | false ->
-            add_or_update_target t Target.(
-                make_fail_exn target  
-                  ~msg:(fmt "command %S did not ensure %S" 
-                          (Command.to_string_hum cmd)
-                          (Option.value_map ~default:"None-condition" 
-                             ~f:Condition.to_string_hum target.condition)))
-            >>= fun () ->
-            return [`Target_died (Target.id target, `Process_failure)]
+            make_target_die t ~target ~reason:(`Process_failure)
+              ~explanation:Target.(
+                  fmt "command %S did not ensure %S" 
+                    (Command.to_string_hum cmd)
+                    (Option.value_map ~default:"None-condition" 
+                       ~f:Condition.to_string_hum target.condition))
           | true ->
             add_or_update_target t Target.(make_succeed_exn target (`Value `Unit))
             >>= fun () ->
@@ -421,12 +427,8 @@ let _start_running_target t target =
             >>= fun () ->
             return [`Target_started (Target.id target, plugin_name)]
           | `Error (`Fatal s) ->
-            add_or_update_target t Target.(
-                make_fail_exn target  
-                  ~msg:(fmt "[%s] Fatal error %s" plugin_name s))
-            >>= fun () ->
-            return [`Target_died (Target.id target,
-                                  `Long_running_unrecoverable (plugin_name, s))]
+            make_target_die t ~target
+              ~reason:(`Long_running_unrecoverable (plugin_name, s))
           | `Error e ->
             long_running_error_to_potential_target_failure t e ~target
               ~plugin_name
@@ -457,13 +459,11 @@ let _update_status t ~target ~bookkeeping =
               Log.(log_prefix 
                    % s "succeeded by itself but did not ensure condition"
                    @ very_verbose);
-              add_or_update_target t Target.(
-                  make_fail_exn target  
-                    ~msg:(fmt "the target did not ensure %s" 
-                            (Option.value_map ~default:"None-condition" 
-                               ~f:Condition.to_string_hum target.condition)))
-              >>= fun () ->
-              return [`Target_died (Target.id target, `Process_failure)]
+              make_target_die t ~target ~reason:(`Process_failure)
+                ~explanation:Target.(
+                    fmt "the target did not ensure %s" 
+                      (Option.value_map ~default:"None-condition" 
+                         ~f:Condition.to_string_hum target.condition))
             | true ->
               let run_parameters = Long_running.serialize run_parameters in
               (* result_type must be a Volume: *)
@@ -477,12 +477,8 @@ let _update_status t ~target ~bookkeeping =
           let run_parameters = Long_running.serialize run_parameters in
           Log.(log_prefix % s " failed: " % s msg @ very_verbose);
           (* result_type must be a Volume: *)
-          add_or_update_target t Target.(
-              update_running_exn target ~run_parameters
-              |> fun trgt ->  make_fail_exn trgt ~msg
-            )
-          >>= fun () ->
-          return [`Target_died (Target.id target, `Process_failure)]
+          make_target_die t  ~reason:(`Process_failure)
+            ~target:Target.(update_running_exn target ~run_parameters)
         | `Error e ->
           long_running_error_to_potential_target_failure t e ~target
             ~plugin_name
@@ -496,7 +492,6 @@ type happening =
       Ketrew_target.id  *
       [ `Dependencies_died
       | `Plugin_not_found of string
-      | `Wrong_type
       | `Killed
       | `Long_running_unrecoverable of string * string
       | `Process_failure ]
@@ -526,13 +521,12 @@ let log_what_happened =
       | `Killed -> s "Killed"
       | `Long_running_unrecoverable (plug, str) ->
         brakets (s plug) % s ": Unrecoverable error: " % s str
-      | `Wrong_type ->  s "Wrong typing"
       | `Process_failure -> s "Process_failure")
 
 let what_happened_to_string w =
   Log.to_string ~indent:0 ~line_width:max_int (log_what_happened w)
 
-let step t =
+let step t: (happening list, _) Deferred_result.t =
   begin
     current_targets t >>= fun targets ->
     database t >>= fun db ->
@@ -549,12 +543,11 @@ let step t =
               | `Go_now ->
                 _start_running_target t target
               | `Some_dependencies_died l ->
-                let msg = String.concat ~sep:", " l |>
-                          fmt "Dependencies died: %s" in
-                (* TODO also cancel other running dependencies? *)
-                add_or_update_target t Target.(make_fail_exn target ~msg)
-                >>= fun () ->
-                return (`Target_died (Target.id target, `Dependencies_died) :: happenings)
+                let explanation = String.concat ~sep:", " l ^ " died" in
+                make_target_die t ~target ~reason:(`Dependencies_died)
+                  ~explanation
+                >>= fun happened ->
+                return (happened @ happenings)
               | `Wait -> return happenings
               end
             | false ->
@@ -583,18 +576,12 @@ let kill t ~id =
   get_target t id >>= fun target ->
   begin match target.Target.history with
   | `Created c ->
-    add_or_update_target t Target.(
-        kill_exn (activate_exn target ~by:`Dependency)
-          ~msg:(fmt "Manual killing"))
+    make_target_die t ~reason:(`Killed)
+      ~target:(Target.activate_exn target ~by:`Dependency)
    (* we use `Dependency` because if a target is there and just "created"
       it is most likely a dependency. *)
-    >>= fun () ->
-    return [`Target_died (Target.id target, `Killed)]
   | `Activated _ ->
-    add_or_update_target t Target.(
-        kill_exn target ~msg:(fmt "Manual killing"))
-    >>= fun () ->
-    return [`Target_died (Target.id target, `Killed)]
+    make_target_die t ~target ~reason:(`Killed)
   | `Running (bookkeeping, activation) ->
     let plugin_name = bookkeeping.Target.plugin_name in
     with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
@@ -604,10 +591,7 @@ let kill t ~id =
         Long_running.kill run_parameters
         >>< function
         | `Ok (`Killed rp) ->
-          add_or_update_target t Target.(
-              kill_exn target ~msg:(fmt "Manual killing (%s)" plugin_name))
-          >>= fun () ->
-          return [`Target_died (Target.id target, `Killed)]
+          make_target_die t ~target ~reason:`Killed
         | `Error e ->
           long_running_error_to_potential_target_failure t e ~target
             ~plugin_name

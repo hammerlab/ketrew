@@ -108,7 +108,6 @@ type happening =
       Ketrew_target.id  *
       [ `Dependencies_died
       | `Plugin_not_found of string
-      | `Wrong_type
       | `Killed
       | `Long_running_unrecoverable of string * string
       | `Process_failure ]
@@ -154,11 +153,7 @@ val get_status : t -> Ketrew_target.id ->
 (** Get the state description of a given target (by “id”). *)
 
 val kill:  t -> id:Ketrew_target.id ->
-  ([> `Target_died of Unique_id.t *
-                      [> `Killed 
-                      | `Long_running_unrecoverable of string * string
-                      | `Plugin_not_found of string ] ]
-     list,
+  (happening list,
    [> `Database of Ketrew_database.error
    | `Failed_to_kill of string
    | `Database_unavailable of string
