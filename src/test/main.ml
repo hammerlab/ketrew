@@ -323,6 +323,33 @@ let test_0 () =
           | _ -> false);
         `Dont_care;
       ]
+      >>= fun () ->
+
+    
+      let fallback1 =
+        Target.create ~name:"Fallback 1" ()
+          ~make:(`Direct_command Target.Command.(shell "ls")) in
+      let fallback2 =
+        Target.create ~name:"Fallback 2" ()
+          ~make:(`Direct_command Target.Command.(shell "ls")) in
+      let target_with_fallbacks =
+        Target.active ~name:"target_with_fallbacks"
+          ~if_fails_activate:[Target.id fallback1; Target.id fallback2 ]
+          ~make:(`Direct_command Target.Command.(shell "ls /somelong_STUPID-path"))
+          ()
+      in
+      Test.test_targets ~state ~name:"target_with_fallbacks"
+        [target_with_fallbacks; fallback1; fallback2] [
+        `Happens (function
+          | [`Target_died (_, `Process_failure);
+             `Target_activated (id1, `Fallback);
+             `Target_activated (id2, `Fallback); ]
+            when id1 = Target.id fallback1 && id2 = Target.id fallback2 -> true
+          | _ -> false);
+        `Dont_care;
+        `Dont_care;
+        `Dont_care;
+      ]
     end
     >>= fun () ->
 
