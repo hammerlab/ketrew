@@ -114,6 +114,7 @@ module Document = struct
        | `Result -> s "Result"
        | `Input_data -> s "Input-data");
       "Dependencies", OCaml.list s t.dependencies;
+      "Fallbacks", OCaml.list s t.if_fails_activate;
       "Metadata", Artifact.Value.log t.metadata;
       "Build-process", 
       build_process ~state ?with_details:build_process_details t.make;
@@ -595,6 +596,15 @@ module Explorer = struct
     >>= function
     | `Set f  -> return f
 
+  let pick_a_target_from_list ~state target_ids =
+    Deferred_list.while_sequential target_ids
+      (Ketrew_state.get_target state)
+    >>= fun targets ->
+    Interaction.(
+      menu ~sentence:Log.(s "Pick a target")
+        ~always_there:cancel_menu_items
+        (make_target_menu ~targets ()))
+
   let pick_a_target ~state (es : exploration_state) =
     Ketrew_state.current_targets state >>= fun current_targets ->
     begin match es.show_archived with
@@ -657,6 +667,13 @@ module Explorer = struct
           [menu_item ~char:'d'
              ~log:Log.(s "Follow a dependency") `Follow_dependencies]
       in
+      let follow_fbacks_item =
+        match target.Target.if_fails_activate with
+        | [] -> []
+        | some -> 
+          [menu_item ~char:'f'
+             ~log:Log.(s "Follow a fallback") `Follow_fallbacks]
+      in
       let restart_item =
         if Target.Is.finished target
         then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
@@ -667,6 +684,7 @@ module Explorer = struct
         @ build_process_details_item
         @ condition_details_item
         @ follow_deps_item
+        @ follow_fbacks_item
         @ kill_item
         @ archive_item
         @ restart_item
@@ -695,16 +713,6 @@ module Explorer = struct
   let view_json ~state target =
     let content = Target.serialize target in 
     view_in_dollar_editor ~extension:"json" ~state content
-
-  let pick_a_dependency ~state target =
-    let target_ids = target.Target.dependencies in
-    Deferred_list.while_sequential target_ids
-      (Ketrew_state.get_target state)
-    >>= fun targets ->
-    Interaction.(
-      menu ~sentence:Log.(s "Pick a target")
-        ~always_there:cancel_menu_items
-        (make_target_menu ~targets ()))
 
   let rec target_status 
       ~state ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
@@ -870,8 +878,12 @@ module Explorer = struct
           | `View_json ->
             view_json ~state chosen >>= fun () ->
             explore ~state (one :: history)
-          | `Follow_dependencies ->
-            begin pick_a_dependency ~state chosen
+          | `Follow_dependencies | `Follow_fallbacks as follow ->
+            let target_ids =
+              match follow with
+              | `Follow_fallbacks -> chosen.Target.if_fails_activate
+              | `Follow_dependencies -> chosen.Target.dependencies in
+            begin pick_a_target_from_list ~state target_ids
               >>= function
               | `Cancel -> go_back ~state (one :: history)
               | `Quit -> return ()
