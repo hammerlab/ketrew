@@ -86,13 +86,13 @@ let nop : build_process = `Artifact (`Value `Unit)
 
 let create
     ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
-    ?(dependencies=[]) ?(make=nop)
+    ?(dependencies=[]) ?(if_fails_activate=[]) ?(make=nop)
     ?condition ?(equivalence=`Same_active_condition)
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; persistance; metadata;
-    dependencies; make; condition; history; equivalence }
+    dependencies; make; condition; history; equivalence; if_fails_activate }
 
 let is_equivalent t ext =
   match t.equivalence with
@@ -154,10 +154,11 @@ let update_running_exn t ~run_parameters =
 
 let active ?id
     ?name ?persistance ?metadata
-    ?dependencies ?make ?condition ?equivalence
+    ?dependencies ?if_fails_activate ?make ?condition ?equivalence
     () = 
-  activate_exn ~by:`User (create ?id ?name ?persistance ?metadata ?condition
-                            ?equivalence ?dependencies ?make ())
+  activate_exn ~by:`User 
+    (create ?id ?if_fails_activate ?name ?persistance ?metadata ?condition
+       ?equivalence ?dependencies ?make ())
 
 let reactivate 
     ?with_id ?with_name ?with_metadata t =
@@ -260,6 +261,7 @@ module Is = struct
       | `Created _ -> false
       | `Activated (_, _, `User) -> true
       | `Activated (_, _, `Dependency) -> false
+      | `Activated (_, _, `Fallback) -> false
       | `Running (_, prev) -> go_through_history (prev :> workflow_state)
       | `Successful (_, prev, _) -> go_through_history (prev :> workflow_state)
       | `Dead (_, prev, _) -> go_through_history (prev :> workflow_state)

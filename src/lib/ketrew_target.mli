@@ -74,8 +74,9 @@ val nop : build_process
 (** A build process that does nothing. *)
 
 type submitted_state = [ `Created of Time.t ]
-type activated_state =
-    [ `Activated of Time.t * submitted_state * [ `Dependency | `User ] ]
+type activated_state = [
+  | `Activated of Time.t * submitted_state * [ `Dependency | `User | `Fallback ]
+]
 type run_bookkeeping = {
   plugin_name : string;
   run_parameters : string;
@@ -152,6 +153,7 @@ type t = {
   persistance : [ `Input_data | `Recomputable of float | `Result ];
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
+  if_fails_activate : id list;
   make : build_process;
   condition : Condition.t option;
   equivalence: Equivalence.t;
@@ -163,14 +165,16 @@ val create :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
-  ?dependencies:id list -> ?make:build_process -> 
+  ?dependencies:id list ->
+  ?if_fails_activate:id list ->
+  ?make:build_process -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit ->
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val activate_exn : t -> by:[ `Dependency | `User ] -> t
+val activate_exn : t -> by:[ `Dependency | `User | `Fallback ] -> t
 (** Get an activated target out of a “submitted” one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
@@ -198,7 +202,9 @@ val active :
   ?id:id -> ?name:string ->
   ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
-  ?dependencies:id list -> ?make:build_process ->
+  ?dependencies:id list ->
+  ?if_fails_activate:id list ->
+  ?make:build_process ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit -> t

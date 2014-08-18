@@ -85,20 +85,29 @@ let deploy_website () =
   let move_website =
     target "Move _doc/" ~dependencies:[check_out_gh_pages]
         ~make:(direct_shell_command (sprintf "cp -r _doc/* .")) in
-  let commit_website =
-    target "Commit" ~dependencies:[move_website]
-      ~make:(direct_shell_command
-               (sprintf "git add api && git ci -a -m 'update website' ")) in
-  let get_back =
-    target "Check-out original branch" ~dependencies:[ commit_website]
+  (* A function that creates a `getting back to original branch` target
+     given a list of dependencies. *)
+  let get_back ~name ~dependencies =
+    target name ~dependencies
       ~make:(direct_shell_command
                (sprintf "[ -f %s ] && git checkout `cat %s`"
                   branch_file#path branch_file#path))
   in
-  (* `run` will activate the target `get_back`, and add all its (transitive)
-     dependencies to the system.
+  (* if there is nothing to commit, `git commit -a` will return 1, 
+    so we use `get_back` (without dependencies) as a fallback: *)
+  let commit_website =
+    target "Commit" ~dependencies:[move_website]
+      ~make:(direct_shell_command
+               (sprintf "git add api && git ci -a -m 'update website' "))
+      ~if_fails_activate:[get_back ~name:"Fallback with original branch"
+                            ~dependencies:[]]
+  in
+  (* `run_with_test_configuration` will activate the target `get_back
+     commit_website`, and add all its (transitive) dependencies to the system.
   *)
-  run_with_test_configuration get_back
+  run_with_test_configuration 
+    (get_back ~name:"Last-step: check-out original branch"
+       ~dependencies:[commit_website])
 
 (*
   This second target could the beginning of a “backup” workflow.

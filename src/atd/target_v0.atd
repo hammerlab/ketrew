@@ -37,7 +37,7 @@ type submitted_state = [
   | Created of time
 ]
 type activated_state = [
-  | Activated of (time * submitted_state * [ User | Dependency ])
+  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
 ]
 type run_bookkeeping = 
   { plugin_name: string; run_parameters: string; run_history: string list}
@@ -49,7 +49,7 @@ type death_reason = [
   | Failed of string
 ]
 type activated_or_running = [ (* Must be verbatim [activated_state | running_state] *)
-  | Activated of (time * submitted_state * [ User | Dependency ])
+  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
   | Running of (run_bookkeeping * activated_state) 
 ]
 type finished_state = [ 
@@ -59,7 +59,7 @@ type finished_state = [
 (* [ submitted_state | activated_state | running_state | finished_state] *)
 type workflow_state = [ 
   | Created of time
-  | Activated of (time * submitted_state * [ User | Dependency ])
+  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
   | Running of (run_bookkeeping * activated_state) 
   | Dead of (time * activated_or_running * death_reason)
   | Successful of (time * activated_or_running * artifact)
@@ -86,6 +86,7 @@ type t = {
   persistance: [ Input_data | Recomputable of float | Result ];
   metadata: artifact_value;
   dependencies: id list;
+  if_fails_activate: id list;
   make: build_process;
   condition: condition option;
   equivalence: equivalence;

@@ -132,6 +132,7 @@ class type user_target =
     method id: Ketrew_pervasives.Unique_id.t
     method render: Ketrew_target.t
     method dependencies: user_target list
+    method if_fails_activate: user_target list
     (**/**)
   end
 
@@ -143,6 +144,7 @@ val target :
   ?metadata:Ketrew_artifact.Value.t ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
+  ?if_fails_activate:user_target list ->
   string -> user_target
 (** Create a new target. *)
 
@@ -153,6 +155,7 @@ val file_target:
   ?name:string ->
   ?host:host ->
   ?equivalence:Ketrew_target.Equivalence.t ->
+  ?if_fails_activate:user_target list ->
   string ->
   user_target
 (** Create a file {!user_artifact} and the {!user_target} that produces it. *)

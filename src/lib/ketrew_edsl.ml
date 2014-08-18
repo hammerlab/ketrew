@@ -61,6 +61,7 @@ class type user_target =
     method id: Unique_id.t
     method render: Ketrew_target.t
     method dependencies: user_target list
+    method if_fails_activate: user_target list
     method metadata: Ketrew_artifact.Value.t
     method product: user_artifact
   end
@@ -69,6 +70,7 @@ class type user_target =
 let user_target_internal
   ?(active = false)
   ?(dependencies = [])
+  ?(if_fails_activate = [])
   ?(name: string option)
   ?(make: Target.build_process = Target.nop)
   ?ready_when
@@ -86,6 +88,7 @@ let user_target_internal
       | Some s -> s
     method id = id
     method dependencies = dependencies
+    method if_fails_activate = if_fails_activate
     method activate = active <- true
     method is_active = active
     method metadata = metadata
@@ -94,6 +97,7 @@ let user_target_internal
       creation ~metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
+        ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
         ~name:self#name ?condition:ready_when
         ?equivalence
         ~make ()
@@ -104,30 +108,34 @@ let user_target_internal
   end
 
 let target ?active ?dependencies ?make ?ready_when ?metadata ?product
-    ?equivalence name =
+    ?equivalence ?if_fails_activate name =
   user_target_internal
-    ?equivalence
+    ?equivalence ?if_fails_activate
     ?active ?dependencies ~name ?make ?metadata ?ready_when ?product ()
 
 let file_target 
-    ?dependencies ?make ?metadata ?name ?host ?equivalence path =
+    ?dependencies ?make ?metadata ?name ?host ?equivalence ?if_fails_activate
+    path =
   let product = file ?host path in
   let name = Option.value name ~default:("Make:" ^ path) in
-  target ~product ?equivalence
+  target ~product ?equivalence ?if_fails_activate
     ~ready_when:product#exists ?dependencies ?make ?metadata name
 
 (*
   Run a workflow:
 
    - make sure the run target is active,
-   - get the IDs of all the depdendencies,
+   - render all the depdendencies/fallbacks,
 *)
 let user_command_list t =
   t#activate;
   let rec go_through_deps t =
-    t#render :: List.concat_map t#dependencies ~f:go_through_deps in
+    t#render :: 
+    List.concat_map t#dependencies ~f:go_through_deps
+    @ List.concat_map t#if_fails_activate ~f:go_through_deps
+  in
   let targets =
-    go_through_deps t
+    (go_through_deps t)
     |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id)
   in
   match targets with
