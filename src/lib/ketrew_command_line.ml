@@ -1171,5 +1171,11 @@ let run_client ?plugins ?argv ?override_configuration () =
   | `Error n -> exit n
 
 let run_server ?plugins ?argv ?override_configuration () =
-  assert false
+  match Lwt_main.run (
+      Ketrew_server.start (`Tls (Sys.argv.(1), Sys.argv.(2),
+                                 int_of_string Sys.argv.(3)))
+    ) with
+  | `Ok () -> exit 0
+  | `Error n -> exit n
+
 

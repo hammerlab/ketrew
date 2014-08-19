@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 version_string="0.0.1-prealpha"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojson uri toml dbm"
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd \
+  yojson uri toml dbm cohttp.lwt lwt ssl conduit"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
@@ -388,12 +389,17 @@ remove_license () {
   headache -c $config -r $headache_files 
 
 }
+ssl_cert_key () {
+  openssl req -x509 -newkey rsa:2048 \
+    -keyout _obuild/key.pem -out _obuild/cert.pem \
+    -days 10 -nodes -subj "/CN=test_ketrew" 2> /dev/null
+}
 
 usage () {
     echo "usage: $0"
     echo "       $0 {setup,build,clean,doc,top,sig,get-dependencies,"
     echo "           local-opam,opam,meta-file,install,uninstall,"
-    echo "           travis,put-license,remove-license,help}"
+    echo "           travis,put-license,remove-license,ssl-ck,help}"
 }
 
 while [ "$1" != "" ]; do
@@ -415,6 +421,7 @@ while [ "$1" != "" ]; do
     "travis" ) do_travis ;;
     "put-license" ) put_license ;;
     "remove-license" ) remove_license ;;
+    "ssl-ck" ) ssl_cert_key ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
   shift
