@@ -44,3 +44,4 @@ let to_string = function
 | `Shell _ as se -> System.error_to_string se
 | `Volume (`No_size l) ->
   fmt "Did not get the size of the volume: %s" (Log.to_long_string l)
+| `Start_server_error e -> fmt "Error starting the server: %s" e

@@ -21,13 +21,51 @@ open Ketrew_pervasives
 module Cohttp_server_core = Cohttp_lwt.Make_server
     (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
 
-let start how =
+type answer = [
+  | `Unit
+  | `Json of string
+  | `Wrong_request of string
+]
+
+let handle_request ~state ~body req : (answer, _) Deferred_result.t =
+  match Uri.path (Cohttp_server_core.Request.uri req) with
+  | "/targets" ->
+    let target_ids =
+      Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
+      |> Option.value ~default:[] in
+    begin match target_ids  with
+    | [] ->
+      Ketrew_state.current_targets state
+      >>= fun trgt_list ->
+      let json =
+        Yojson.Basic.pretty_to_string ~std:true
+          (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
+      in
+      Log.(s "Replying: " % s json @ very_verbose);
+      return (`Json json)
+    | more ->
+      Deferred_list.while_sequential more ~f:(fun id ->
+          Ketrew_state.get_target state id
+          >>< function
+          | `Ok t -> return (Ketrew_target.serialize t)
+          | `Error e -> 
+            Log.(s "Error while getting the target " % s id % s ": "
+                 % s (Ketrew_error.to_string e) @ error);
+            return "Not_found")
+      >>= fun jsons ->
+      let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
+      return (`Json json)
+    end
+  | other ->
+    return (`Wrong_request (fmt "path: %S" other))
+
+let start ?(return_error_messages=true) ~state how =
+  let kstate = state in
   begin match how with
   | `Tls (certfile, keyfile, port) ->
     Deferred_result.wrap_deferred
       ~on_exn:(function
-        | e -> `Connection_error (Printexc.to_string e)
-        )
+        | e -> `Start_server_error (Printexc.to_string e))
       Lwt.(fun () ->
           let mode =
             `SSL (
@@ -36,10 +74,23 @@ let start how =
               (* `No_password, `Port port) in *)
           let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
           let callback conn_id req body =
-            (* handle_request ~body req *) 
             Log.(s "HTTP callback" @ verbose);
-            Cohttp_lwt_unix.Server.respond_string 
-              ~status:`Not_found  ~body:"Server error" ()
+            handle_request ~state:kstate ~body req 
+            >>= function
+            | `Ok `Unit ->
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
+            | `Ok (`Json body) ->
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
+            | `Ok (`Wrong_request body) ->
+              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
+            | `Error e ->
+              Log.(s "Error while handling the request: "
+                   % s (Ketrew_error.to_string e) @ error);
+              let body =
+                if return_error_messages
+                then "Error: " ^ (Ketrew_error.to_string e)
+                else "Undisclosed server error" in
+              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found  ~body ()
           in
           let conn_closed conn_id () =
             Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
@@ -50,12 +101,4 @@ let start how =
           let handler_http = Cohttp_server_core.(callback config) in
           Lwt_unix_conduit.serve ~mode ~sockaddr handler_http)
   end
-  >>< function
-  | `Ok () -> return ()
-  | `Error e ->
-    begin match e with
-    | `Connection_error e ->
-      Log.(s "Connection error: " % s e @ error);
-      fail 1
-    end
 

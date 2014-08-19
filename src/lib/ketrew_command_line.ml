@@ -1171,9 +1171,21 @@ let run_client ?plugins ?argv ?override_configuration () =
   | `Error n -> exit n
 
 let run_server ?plugins ?argv ?override_configuration () =
+  let config_path = 
+    (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
+       (try Sys.getenv "KETREW_CONFIG" with _ ->
+          Configuration.default_configuration_path)) in
   match Lwt_main.run (
-      Ketrew_server.start (`Tls (Sys.argv.(1), Sys.argv.(2),
-                                 int_of_string Sys.argv.(3)))
+      begin
+        Configuration.get_configuration ?override_configuration config_path
+        >>= fun configuration ->
+        let return_error_messages = !global_debug_level >= 2 in
+        Ketrew_state.with_state ?plugins ~configuration
+          (Ketrew_server.start ~return_error_messages
+             (`Tls (Sys.argv.(1), Sys.argv.(2),
+                    int_of_string Sys.argv.(3))))
+      end
+      >>< Return_code.transform_error
     ) with
   | `Ok () -> exit 0
   | `Error n -> exit n
