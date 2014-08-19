@@ -9,8 +9,8 @@ parameter variations, running on different *hosts* with various schedulers).
 - an engine taking care of orchestrating the run of those workflows, 
 and keeping track everything that succeeds, fails, or gets lost.
 
-This documentation is available at <http://seb.mondet.org/ketrew/>,
-the source is at <https://github.com/smondet/ketrew/>.
+This documentation is available at <http://hammerlab.github.io/ketrew/>,
+the source is at <https://github.com/hammerlab/ketrew/>.
 
 This is **Work in Progress**, not ready general for use.
 [![Build Status](https://travis-ci.org/smondet/ketrew.svg?branch=master)](https://travis-ci.org/smondet/ketrew)

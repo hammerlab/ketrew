@@ -5,6 +5,7 @@ findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojs
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
+homepage="http://hammerlab.github.io/ketrew/"
 
 
 lib_ml_files=$(find src/lib/ -type f -name '*.ml')
@@ -287,7 +288,7 @@ opam_package () {
     mkdir -p  $package
     opam_file $package/opam
     echo "Ketrew: Keep Track of Experimental Workflows" > $package/descr
-    echo "git: \"git@github.com:smondet/ketrew\"" > $package/url
+    echo "git: \"git@github.com:hammerlab/ketrew\"" > $package/url
 
 }
 
