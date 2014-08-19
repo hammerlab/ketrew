@@ -82,7 +82,7 @@ begin program "ketrew-cli-test"
   install = false
 end
 begin program "ketrew-client"
-  files = [ "src/app/main.ml" ]
+  files = [ "src/client/main.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
