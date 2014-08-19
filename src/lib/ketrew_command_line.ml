@@ -1162,10 +1162,14 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   | `Version | `Help -> exit 0
 
 
-let run_main ?plugins ?argv ?override_configuration () =
+let run_client ?plugins ?argv ?override_configuration () =
   match Lwt_main.run (
       cmdliner_main ?plugins ?argv ?override_configuration ()
       >>< Return_code.transform_error
     ) with
   | `Ok () -> exit 0
   | `Error n -> exit n
+
+let run_server ?plugins ?argv ?override_configuration () =
+  assert false
+

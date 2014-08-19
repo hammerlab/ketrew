@@ -87,6 +87,12 @@ begin program "ketrew-client"
   link = [ "-thread" ]
   comp = ["-thread" ]
 end
+begin program "ketrew-server"
+  files = [ "src/server/main.ml" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+end
 OCP_END
 
 cat << MERLIN_END > .merlin
