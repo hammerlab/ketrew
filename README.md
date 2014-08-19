@@ -13,7 +13,7 @@ This documentation is available at <http://hammerlab.github.io/ketrew/>,
 the source is at <https://github.com/hammerlab/ketrew/>.
 
 This is **Work in Progress**, not ready general for use.
-[![Build Status](https://travis-ci.org/smondet/ketrew.svg?branch=master)](https://travis-ci.org/smondet/ketrew)
+[![Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
 
 
 Build & Install
