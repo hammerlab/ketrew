@@ -49,6 +49,13 @@ and uninstall with:
 
     ./please.sh uninstall <prefix>
 
+
+If you use Opam ≥ *1.2.0~beta4*, you don't need a custom opam-repository:
+
+    ./please.sh local-opam
+    opam pin add -k path ketrew .
+
+
 ### Build The Documentation
 
 The documentation depends on [omd](https://github.com/ocaml/omd),
