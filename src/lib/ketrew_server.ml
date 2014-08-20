@@ -17,6 +17,8 @@
 
 open Ketrew_pervasives
 
+let wrong_request short long = fail (`Wrong_http_request (short, long))
+
 module Authentication = struct
   type token = {name: string; value: string; comments : string list}
   type t = { valid_tokens: token list }
@@ -54,6 +56,12 @@ module Authentication = struct
     | None, _ -> return false
     end
 
+  let ensure_can t ?token do_stuff =
+    can t ?token do_stuff
+    >>= function
+    | true -> return ()
+    | false -> wrong_request "Authentication" "Insufficient credentials"
+
 end
 
 module Server_state = struct
@@ -74,48 +82,56 @@ module Cohttp_server_core = Cohttp_lwt.Make_server
 type answer = [
   | `Unit
   | `Json of string
-  | `Wrong_request of string
 ]
+
+let token_parameter req =
+  Uri.get_query_param (Cohttp_server_core.Request.uri req) "token"
+
+let format_parameter req =
+  match Uri.get_query_param (Cohttp_server_core.Request.uri req) "format" with
+  | Some "json" -> return `Json
+  | Some other ->
+    wrong_request "format-parameter" (fmt "I can't handle %S" other)
+  | None -> wrong_request "format-parameter" "Missing parameter"
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/targets" ->
     begin
-      let token =
-        Uri.get_query_param (Cohttp_server_core.Request.uri req) "token" in
-      Authentication.can server_state.authentication ?token `See_targets
-      >>= function
-      | true ->
-        let target_ids =
-          Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
-          |> Option.value ~default:[] in
-        begin match target_ids  with
-        | [] ->
-          Ketrew_state.current_targets server_state.state
-          >>= fun trgt_list ->
-          let json =
-            Yojson.Basic.pretty_to_string ~std:true
-              (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
-          in
-          Log.(s "Replying: " % s json @ very_verbose);
-          return (`Json json)
-        | more ->
-          Deferred_list.while_sequential more ~f:(fun id ->
-              Ketrew_state.get_target server_state.state id
-              >>< function
-              | `Ok t -> return (Ketrew_target.serialize t)
-              | `Error e -> 
-                Log.(s "Error while getting the target " % s id % s ": "
-                     % s (Ketrew_error.to_string e) @ error);
-                return "Not_found")
-          >>= fun jsons ->
-          let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-          return (`Json json)
-        end
-      | false -> return (`Wrong_request "insufficient credentials")
+      let token = token_parameter req in
+      Authentication.ensure_can server_state.authentication ?token `See_targets
+      >>= fun () ->
+      let target_ids =
+        Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
+        |> Option.value ~default:[] in
+      format_parameter req
+      >>= fun `Json ->
+      begin match target_ids  with
+      | [] ->
+        Ketrew_state.current_targets server_state.state
+        >>= fun trgt_list ->
+        let json =
+          Yojson.Basic.pretty_to_string ~std:true
+            (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
+        in
+        Log.(s "Replying: " % s json @ very_verbose);
+        return (`Json json)
+      | more ->
+        Deferred_list.while_sequential more ~f:(fun id ->
+            Ketrew_state.get_target server_state.state id
+            >>< function
+            | `Ok t -> return (Ketrew_target.serialize t)
+            | `Error e -> 
+              Log.(s "Error while getting the target " % s id % s ": "
+                   % s (Ketrew_error.to_string e) @ error);
+              return "Not_found")
+        >>= fun jsons ->
+        let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
+        return (`Json json)
+      end
     end
   | other ->
-    return (`Wrong_request (fmt "path: %S" other))
+    wrong_request "Wrong path" other
 
 let start ?(return_error_messages=true) ~state ~authentication_file how =
   begin match how with
@@ -141,8 +157,6 @@ let start ?(return_error_messages=true) ~state ~authentication_file how =
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
             | `Ok (`Json body) ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
-            | `Ok (`Wrong_request body) ->
-              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "
                    % s (Ketrew_error.to_string e) @ error);
