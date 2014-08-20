@@ -226,7 +226,7 @@ signature () {
 }
 
 get_dependencies () {
-  opam install ocp-build type_conv $findlib_packages
+  opam install ocp-build type_conv `echo $findlib_packages | sed 's/\./ /g'`
 }
 
 #
