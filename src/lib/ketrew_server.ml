@@ -17,6 +17,56 @@
 
 open Ketrew_pervasives
 
+module Authentication = struct
+  type token = {name: string; value: string; comments : string list}
+  type t = { valid_tokens: token list }
+
+  let load_file file =
+    IO.read_file file
+    >>= fun content ->
+    let valid_tokens =
+      String.split content ~on:(`Character '\n')
+      |> List.filter_map ~f:(fun line ->
+          match String.split line ~on:(`Character ' ')
+                |> List.map ~f:(fun t -> String.strip ~on:`Both t)
+                |> List.filter ~f:(fun s -> s <> "") with
+          | comment :: more when String.get comment ~index:1 = Some '#' -> None
+          | name :: value :: comments -> Some {name; value; comments}
+          | [] -> None
+          | other ->
+            Log.(s "Ignoring line: " % OCaml.string line % s " of file "
+                 % OCaml.string file @ warning);
+            None)
+    in
+    Log.(s "Loaded auth from " % OCaml.string file
+         % OCaml.list (fun t ->
+             OCaml.list OCaml.string [t.name; t.value;
+                                      String.concat ~sep:" "  t.comments])
+           valid_tokens
+         @ verbose);
+    return {valid_tokens}
+
+  let can t ?token do_stuff =
+    let token_is_valid tok =
+      List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
+    begin match token, do_stuff with
+    | Some tok, `See_targets -> return (token_is_valid tok)
+    | None, _ -> return false
+    end
+
+end
+
+module Server_state = struct
+
+  type t = {
+    state: Ketrew_state.t;
+    authentication: Authentication.t;
+  }
+
+  let create ~state ~authentication = {state; authentication}
+
+end
+open Server_state
 
 module Cohttp_server_core = Cohttp_lwt.Make_server
     (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
@@ -27,42 +77,52 @@ type answer = [
   | `Wrong_request of string
 ]
 
-let handle_request ~state ~body req : (answer, _) Deferred_result.t =
+let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/targets" ->
-    let target_ids =
-      Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
-      |> Option.value ~default:[] in
-    begin match target_ids  with
-    | [] ->
-      Ketrew_state.current_targets state
-      >>= fun trgt_list ->
-      let json =
-        Yojson.Basic.pretty_to_string ~std:true
-          (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
-      in
-      Log.(s "Replying: " % s json @ very_verbose);
-      return (`Json json)
-    | more ->
-      Deferred_list.while_sequential more ~f:(fun id ->
-          Ketrew_state.get_target state id
-          >>< function
-          | `Ok t -> return (Ketrew_target.serialize t)
-          | `Error e -> 
-            Log.(s "Error while getting the target " % s id % s ": "
-                 % s (Ketrew_error.to_string e) @ error);
-            return "Not_found")
-      >>= fun jsons ->
-      let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-      return (`Json json)
+    begin
+      let token =
+        Uri.get_query_param (Cohttp_server_core.Request.uri req) "token" in
+      Authentication.can server_state.authentication ?token `See_targets
+      >>= function
+      | true ->
+        let target_ids =
+          Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
+          |> Option.value ~default:[] in
+        begin match target_ids  with
+        | [] ->
+          Ketrew_state.current_targets server_state.state
+          >>= fun trgt_list ->
+          let json =
+            Yojson.Basic.pretty_to_string ~std:true
+              (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
+          in
+          Log.(s "Replying: " % s json @ very_verbose);
+          return (`Json json)
+        | more ->
+          Deferred_list.while_sequential more ~f:(fun id ->
+              Ketrew_state.get_target server_state.state id
+              >>< function
+              | `Ok t -> return (Ketrew_target.serialize t)
+              | `Error e -> 
+                Log.(s "Error while getting the target " % s id % s ": "
+                     % s (Ketrew_error.to_string e) @ error);
+                return "Not_found")
+          >>= fun jsons ->
+          let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
+          return (`Json json)
+        end
+      | false -> return (`Wrong_request "insufficient credentials")
     end
   | other ->
     return (`Wrong_request (fmt "path: %S" other))
 
-let start ?(return_error_messages=true) ~state how =
-  let kstate = state in
+let start ?(return_error_messages=true) ~state ~authentication_file how =
   begin match how with
   | `Tls (certfile, keyfile, port) ->
+    Authentication.load_file authentication_file
+    >>= fun authentication ->
+    let server_state = Server_state.create ~authentication ~state in
     Deferred_result.wrap_deferred
       ~on_exn:(function
         | e -> `Start_server_error (Printexc.to_string e))
@@ -75,7 +135,7 @@ let start ?(return_error_messages=true) ~state how =
           let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
           let callback conn_id req body =
             Log.(s "HTTP callback" @ verbose);
-            handle_request ~state:kstate ~body req 
+            handle_request ~server_state ~body req 
             >>= function
             | `Ok `Unit ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()

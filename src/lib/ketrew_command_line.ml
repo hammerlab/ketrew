@@ -1182,6 +1182,7 @@ let run_server ?plugins ?argv ?override_configuration () =
         let return_error_messages = !global_debug_level >= 2 in
         Ketrew_state.with_state ?plugins ~configuration
           (Ketrew_server.start ~return_error_messages
+             ~authentication_file:Sys.argv.(4)
              (`Tls (Sys.argv.(1), Sys.argv.(2),
                     int_of_string Sys.argv.(3))))
       end
