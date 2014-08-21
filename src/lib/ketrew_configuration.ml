@@ -20,6 +20,9 @@ type server = {
   authorized_tokens_path: string option; 
   listen_to: [ `Tls of (string * string * int) ];
   return_error_messages: bool;
+  command_pipe: string option;
+  daemon: bool;
+  log_path: string option;
 }
 type t = {
   database_parameters: string;
@@ -74,8 +77,11 @@ let default_database_path =
 let host_timeout_upper_bound t = t.host_timeout_upper_bound
 
 let create_server
-    ?authorized_tokens_path ?(return_error_messages=false) listen_to =
-  {authorized_tokens_path; listen_to; return_error_messages;}
+    ?authorized_tokens_path ?(return_error_messages=false)
+    ?command_pipe ?(daemon=false) ?log_path
+    listen_to =
+  {authorized_tokens_path; listen_to; return_error_messages;
+   command_pipe; daemon; log_path; }
 
 let create 
     ?(debug_level=2)
@@ -120,13 +126,19 @@ let parse_exn str =
       toml_option ~table Toml.get_bool "return-error-messages" in
     let authorized_tokens_path =
       toml_option ~table Toml.get_string "authorized-tokens-path" in
+    let command_pipe =
+      toml_option ~table Toml.get_string "command-pipe-path" in
+    let daemon =
+      toml_option ~table Toml.get_bool "daemonize" in
+    let log_path =
+      toml_option ~table Toml.get_string "log-path" in
     let listen_to =
       let cert = toml_mandatory ~table Toml.get_string "certificate" in
       let key = toml_mandatory ~table Toml.get_string "private-key" in
       let port = toml_mandatory ~table Toml.get_int "port" in
       `Tls (cert, key, port) in
-    return (create_server ?return_error_messages
-              ?authorized_tokens_path listen_to)
+    return (create_server ?return_error_messages ?command_pipe
+              ?daemon ?log_path ?authorized_tokens_path listen_to)
   in
   create 
     ?turn_unix_ssh_failure_into_target_failure 
@@ -166,4 +178,6 @@ let server_configuration t = t.server
 let listen_to s = s.listen_to
 let return_error_messages s = s.return_error_messages
 let authorized_tokens_path s = s.authorized_tokens_path
-
+let command_pipe s = s.command_pipe
+let daemon       s = s.daemon
+let log_path     s = s.log_path

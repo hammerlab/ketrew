@@ -26,6 +26,9 @@ type t
 val create_server: 
   ?authorized_tokens_path: string ->
   ?return_error_messages: bool ->
+  ?command_pipe: string ->
+  ?daemon: bool ->
+  ?log_path: string ->
   [ `Tls of string * string * int ] ->
   server
 (** Create a server configuration (to pass as optional argument to the
@@ -91,6 +94,9 @@ val server_configuration: t -> server option
 val authorized_tokens_path: server -> string option 
 val listen_to: server -> [ `Tls of (string * string * int) ]
 val return_error_messages: server -> bool
+val command_pipe: server -> string option
+val daemon: server -> bool
+val log_path: server -> string option
 
 val log: t -> Log.t list
 (** Get a display-friendly list of configuration items. *)
