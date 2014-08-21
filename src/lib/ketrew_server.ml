@@ -168,9 +168,50 @@ let daemonize config =
   | false -> return ()
 
 let mandatory_for_starting opt ~msg =
-  match opt with
-  | Some o -> return o
-  | None -> fail (`Start_server_error msg)
+  Deferred_result.some opt ~or_fail:(`Start_server_error msg)
+
+let start_listening_on_command_pipe conf =
+  match Ketrew_configuration.command_pipe conf with
+  | Some file_path ->
+    System.remove file_path >>= fun () ->
+    wrap_deferred 
+      ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
+      (fun () -> Lwt_unix.mkfifo file_path 0o600)
+    >>= fun () ->
+    let pipe =
+      (* I “stole” this bit from Ocsigenserver:
+         c.f. https://github.com/ocsigen/ocsigenserver/blob/1c4fe43b9244b5121c327c0828f80cec83b94909/src/server/ocsigen_server.ml#L1335
+      *)
+      Lwt_chan.in_channel_of_descr
+        (Lwt_unix.of_unix_file_descr
+           (Unix.openfile file_path
+              [Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] 0o660)) in
+    begin
+      let open Lwt in
+      let rec read_loop ~error_count () =
+        Log.(s "Listening on " % OCaml.string file_path @ verbose);
+        Lwt.catch (fun () ->
+            Lwt_io.read_line pipe
+            >>= function
+            |  "die" -> exit 0
+            |  other ->
+              Log.(s "Cannot understand command: " % OCaml.string other @ error);
+              read_loop ~error_count ())
+          (fun e ->
+             let error_count = error_count + 1 in
+             Log.(s "Exn while reading command pipe: " % exn e 
+                  % sp % parens (i error_count % s "-th error") @ error);
+             if error_count >= 5 then
+               return ()
+             else
+               read_loop ~error_count ())
+      in
+      Lwt.ignore_result (read_loop ~error_count:0 ())
+    end;
+    return ()
+  | None -> 
+    return ()
+
 
 let start ~state  =
   let config =  Ketrew_state.configuration state in
@@ -183,6 +224,8 @@ let start ~state  =
     ~msg:"Authentication-less server not implemented"
   >>= fun authentication_file ->
   daemonize server_config
+  >>= fun () ->
+  start_listening_on_command_pipe server_config
   >>= fun () ->
   let return_error_messages, how =
     Ketrew_configuration.return_error_messages server_config,
