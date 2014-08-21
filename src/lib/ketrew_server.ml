@@ -143,22 +143,50 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | other ->
     wrong_request "Wrong path" other
 
+let daemonize config =
+  let module Conf = Ketrew_configuration in
+  match Conf.daemon config with
+  | true ->
+    let syslog = false in
+    let stdin = `Keep in
+    begin match Conf.log_path config with
+    | None -> return (`Dev_null,`Dev_null)
+    | Some file_name ->
+      wrap_deferred 
+        ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
+        (fun () -> 
+           global_with_color := false;
+           Lwt_log.file ~mode:`Append ~perm:0o600 ~file_name ())
+      >>= fun logger ->
+      return (`Log logger, `Log logger)
+    end
+    >>= fun (stdout, stderr) ->
+    let directory = Sys.getcwd () in
+    let umask = None in (* we keep the default *)
+    Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
+    return ()
+  | false -> return ()
+
+let mandatory_for_starting opt ~msg =
+  match opt with
+  | Some o -> return o
+  | None -> fail (`Start_server_error msg)
+
 let start ~state  =
   let config =  Ketrew_state.configuration state in
-  begin match Ketrew_configuration.server_configuration config with
-  | Some srv ->
-    return (
-      Ketrew_configuration.authorized_tokens_path srv,
-      Ketrew_configuration.return_error_messages srv,
-      Ketrew_configuration.listen_to srv)
-  | None -> fail (`Start_server_error "Server not configured")
-  end
-  >>= fun (authentication_file_opt, return_error_messages, how) ->
-  begin match authentication_file_opt with 
-  | Some s -> return s
-  | None -> fail (`Start_server_error "Authentication-less server not implemented")
-  end
+  mandatory_for_starting
+    (Ketrew_configuration.server_configuration config)
+    ~msg:"Server not configured"
+  >>= fun server_config ->
+  mandatory_for_starting
+    (Ketrew_configuration.authorized_tokens_path server_config)
+    ~msg:"Authentication-less server not implemented"
   >>= fun authentication_file ->
+  daemonize server_config
+  >>= fun () ->
+  let return_error_messages, how =
+    Ketrew_configuration.return_error_messages server_config,
+    Ketrew_configuration.listen_to server_config in
   begin match how with
   | `Tls (certfile, keyfile, port) ->
     Authentication.load_file authentication_file
