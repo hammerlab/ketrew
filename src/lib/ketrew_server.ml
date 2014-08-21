@@ -98,6 +98,12 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/targets" ->
     begin
+      begin match Cohttp_server_core.Request.meth req with
+      | `GET -> return ()
+      | other ->
+        wrong_request "wrong method" (Cohttp.Code.string_of_method other)
+      end
+      >>= fun () ->
       let token = token_parameter req in
       Authentication.ensure_can server_state.authentication ?token `See_targets
       >>= fun () ->
