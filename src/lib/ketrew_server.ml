@@ -109,6 +109,16 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
       begin match target_ids  with
       | [] ->
         Ketrew_state.current_targets server_state.state
+        >>= fun current_targets ->
+        begin
+          if Uri.get_query_param (Cohttp_server_core.Request.uri req) "archived"
+             = Some "true"
+          then
+            Ketrew_state.archived_targets server_state.state
+            >>= fun archived ->
+            return (current_targets @ archived)
+          else return current_targets
+        end
         >>= fun trgt_list ->
         let json =
           Yojson.Basic.pretty_to_string ~std:true
