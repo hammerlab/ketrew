@@ -143,7 +143,22 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | other ->
     wrong_request "Wrong path" other
 
-let start ?(return_error_messages=true) ~state ~authentication_file how =
+let start ~state  =
+  let config =  Ketrew_state.configuration state in
+  begin match Ketrew_configuration.server_configuration config with
+  | Some srv ->
+    return (
+      Ketrew_configuration.authorized_tokens_path srv,
+      Ketrew_configuration.return_error_messages srv,
+      Ketrew_configuration.listen_to srv)
+  | None -> fail (`Start_server_error "Server not configured")
+  end
+  >>= fun (authentication_file_opt, return_error_messages, how) ->
+  begin match authentication_file_opt with 
+  | Some s -> return s
+  | None -> fail (`Start_server_error "Authentication-less server not implemented")
+  end
+  >>= fun authentication_file ->
   begin match how with
   | `Tls (certfile, keyfile, port) ->
     Authentication.load_file authentication_file
@@ -157,7 +172,7 @@ let start ?(return_error_messages=true) ~state ~authentication_file how =
             `SSL (
               `Crt_file_path certfile,
               `Key_file_path keyfile) in
-              (* `No_password, `Port port) in *)
+          (* `No_password, `Port port) in *)
           let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
           let callback conn_id req body =
             Log.(s "HTTP callback" @ verbose);

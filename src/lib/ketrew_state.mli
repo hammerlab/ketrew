@@ -34,6 +34,8 @@ val with_state:
   (unit, 'merge_error) Deferred_result.t
 (** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
 
+val configuration: t -> Ketrew_configuration.t
+(** Retrieve the configuration. *)
 
 val add_target :
   t ->

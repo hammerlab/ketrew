@@ -19,8 +19,17 @@
 
 open Ketrew_pervasives
 
+type server
 type t
 (** The contents of the configuration. *)
+
+val create_server: 
+  ?authorized_tokens_path: string ->
+  ?return_error_messages: bool ->
+  [ `Tls of string * string * int ] ->
+  server
+(** Create a server configuration (to pass as optional argument to the
+      {!create} function). *)
 
 val create :
   ?debug_level:int ->
@@ -28,6 +37,7 @@ val create :
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?persistent_state_key:string -> 
   ?host_timeout_upper_bound: float ->
+  ?server:server ->
   database_parameters:string -> unit -> t
 (** Create a configuration, [persistent_state_key] is the “key” of the
     state storage in the database, [database_parameters] are used to call
@@ -75,6 +85,12 @@ val get_configuration :
     [override_configuration] is provided.
     if [and_apply] is [true] (the default), then {!apply_globals} is called.
 *)
+
+
+val server_configuration: t -> server option
+val authorized_tokens_path: server -> string option 
+val listen_to: server -> [ `Tls of (string * string * int) ]
+val return_error_messages: server -> bool
 
 val log: t -> Log.t list
 (** Get a display-friendly list of configuration items. *)
