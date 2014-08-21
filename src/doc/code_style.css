@@ -14,3 +14,4 @@
 .symbol1 { color: #993300 ; font-weight: bold ; }
 .constant { color: pink; }
 pre { font-family: courier }
+pre.result { background-color: #E0F0B2 }

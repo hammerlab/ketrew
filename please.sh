@@ -165,9 +165,11 @@ END_MD
 
   local index=_doc/index.html
   local devdoc=_doc/development.html
+  local http_api_doc=_doc/http_api.html
   cp src/doc/code_style.css _doc/
   markdown_to_html $index_markdown $index "Ketrew: Home"
   markdown_to_html $dev_markdown $devdoc "Ketrew: Development"
+  markdown_to_html src/doc/http_api.md $http_api_doc "Ketrew: HTTP-API"
 }
 
 markdown_to_html () {
