@@ -29,7 +29,7 @@ We use `curl`, here on the `/targets` service:
 The option `return-error-messages` is set to true, so the server is nice and
 says what went wrong:
 
-```result
+```badresult
 Error: Wrong HTTP Request: Authentication → Insufficient credentials
 ```
 
@@ -37,7 +37,7 @@ In `_obuild/test-authorized-tokens` there is an “easy token” `"nekot"`:
 
     curl -k "$ktest_url/targets?token=nekot"
 
-```result
+```badresult
 Error: Wrong HTTP Request: format-parameter → Missing parameter
 ```
 
@@ -47,7 +47,7 @@ Let's try again:
 
 Yay we get some Json \o/ i.e. a list of target-identifiers.
 
-```result
+```goodresult
 [
   "ketrew_2014-08-21-21h49m48s823ms-UTC_994326685",
   "ketrew_2014-08-21-21h49m48s823ms-UTC_930807020",
@@ -69,7 +69,7 @@ or with a pretty-printer:
 
     curl -k "$ktest_url/targets?token=nekot&format=json&id=$one_of_them" | json_pp
 
-```result
+```goodresult
 [
    [
       "V0",
@@ -121,6 +121,16 @@ or with a pretty-printer:
    ]
 ]
 ```
+
+By the way, the `/targets` service is
+[nullipotent](http://en.wiktionary.org/wiki/nullipotent), and `GET`-only:
+
+    curl -k --data "something to post" "$ktest_url/targets?token=nekot&format=json"
+
+```badresult
+Error: Wrong HTTP Request: wrong method → POST
+```
+
 
 
 <!--
