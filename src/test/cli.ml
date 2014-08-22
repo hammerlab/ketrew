@@ -273,7 +273,7 @@ let run_ketrew_on_vagrant what_to_do =
       file_target ~name:"opam-install-ketrew"
         ~dependencies:[init_opam; get_c_dependencies]
         ~host:vagrant_box
-        (sprintf "/home/vagrant/.opam/%s/bin/ketrew-client" compiler)
+        (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler)
         ~make:(do_on_vagrant_box Program.(
             shf "opam switch %s" compiler
             && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo dont_care"
