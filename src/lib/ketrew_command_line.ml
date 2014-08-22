@@ -39,30 +39,6 @@ module Return_code = struct
 
 end
 
-let default_item_format = 
-  "- $id:$n  Name: $name → $status\n\
-  \  Deps: $dependencies$n"
-
-let format_target ~item_format t =
-  let open Ketrew_target in
-  let buf = Buffer.create 42 in
-  Buffer.add_substitute buf (function
-    | "n" -> "\n"
-    | "id" -> id t
-    | "name" -> t.name
-    | "dependencies" -> String.concat t.dependencies ~sep:", "
-    | "status" -> 
-      begin match t.history with
-      | `Created _ -> "Created"
-      | `Activated _ -> "Activated"
-      | `Running _ -> "Running"
-      | `Dead (date, previous_state, `Killed reason) -> fmt "Killed: %s" reason
-      | `Dead (date, previous_state, `Failed reason) -> fmt "Failed: %s" reason
-      | `Successful _ -> "Successful"
-      end
-    | some_unknown -> fmt "$%s" some_unknown) item_format;
-  Buffer.contents buf
-
 module Document = struct
 
   let build_process ~state ?(with_details=false)  =
@@ -293,15 +269,27 @@ module Interaction = struct
               (`Go (Target.id target))))
 
 end
-let display_status ~state ~all ~item_format =
+let display_status ~state  =
   begin
     Log.(s "display_info !" @ verbose);
     Ketrew_state.current_targets state
     >>= fun targets ->
-    List.iter targets (fun t -> 
-        format_target ~item_format t |> print_string;
-      );
-    flush stdout;
+    let `Running rr, `Created cc, `Activated aa =
+      List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
+        ~f:(fun ((`Running r, `Created c, `Activated a) as prev) t ->
+            let open Target in
+            match t.history with
+            | `Dead _       -> prev
+            | `Successful _ -> prev
+            | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
+            | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
+            | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a))
+    in
+    Log.(s "Current targets: "
+           % i rr % s " Running, "
+           % i aa % s " Activated, "
+           % i cc % s " Created." %n
+           @ normal);
     return ()
   end
 
@@ -919,7 +907,7 @@ let interact ~state =
     >>= function
     | `Quit -> return ()
     | `Status -> 
-      display_status ~item_format:default_item_format ~all:true ~state
+      display_status ~state
       >>= fun () ->
       main_loop ()
     | `Kill ->
@@ -997,18 +985,11 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
       ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
-          pure (fun config_path all item_format ->
+          pure (fun config_path  ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
-              Ketrew_state.with_state ?plugins ~configuration
-                (display_status ~item_format ~all))
+              Ketrew_state.with_state ?plugins ~configuration (display_status))
           $ config_file_argument
-          $ Arg.(value & flag & info ["A"; "all"] 
-                   ~doc:"Display all processes even the completed ones.")
-          $ Arg.(value
-                 & opt string default_item_format
-                 & info ["F"; "item-format"] ~docv:"FORMAT-STRING"
-                   ~doc:"Use $(docv) as format for displaying jobs")
         ) in
   let run_cmd =
     let open Term in
