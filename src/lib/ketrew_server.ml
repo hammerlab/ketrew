@@ -184,14 +184,13 @@ let start_listening_on_command_pipe conf =
       ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
       (fun () -> Lwt_unix.mkfifo file_path 0o600)
     >>= fun () ->
-    let pipe =
-      (* I “stole” this bit from Ocsigenserver:
-         c.f. https://github.com/ocsigen/ocsigenserver/blob/1c4fe43b9244b5121c327c0828f80cec83b94909/src/server/ocsigen_server.ml#L1335
-      *)
-      Lwt_chan.in_channel_of_descr
-        (Lwt_unix.of_unix_file_descr
-           (Unix.openfile file_path
-              [Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] 0o660)) in
+    wrap_deferred
+      ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
+      (fun () ->
+         Lwt_io.open_file ~buffer_size:16
+           ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] ~perm:0o660
+           ~mode:Lwt_io.input file_path)
+    >>= fun pipe ->
     begin
       let open Lwt in
       let rec read_loop ~error_count () =
