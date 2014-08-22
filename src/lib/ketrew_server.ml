@@ -96,6 +96,7 @@ let format_parameter req =
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
+  | "/hello" -> return `Unit
   | "/targets" ->
     begin
       begin match Cohttp_server_core.Request.meth req with
