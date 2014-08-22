@@ -117,6 +117,6 @@ and force its usage with the option `-C` of the client or (the
 For example, with the following bash-aliases:
 
 ```
-alias cli='KETREW_CONFIGURATION=cli-test.toml _obuild/ketrew-client/ketrew-client.asm'
+alias cli='KETREW_CONFIGURATION=cli-test.toml _obuild/ketrew-app/ketrew-app.asm'
 alias CT='_obuild/ketrew-cli-test/ketrew-cli-test.asm'
 ```

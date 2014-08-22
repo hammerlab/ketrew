@@ -34,9 +34,9 @@ Usage
 
 To create a configuration file, run:
 
-    ketrew-client init
+    ketrew init
 
-This creates `$HOME/.ketrew/client.toml` (see `ketrew-client init --help` to
+This creates `$HOME/.ketrew/client.toml` (see `ketrew init --help` to
 choose another path).
 
 ### Workflow Scripts
@@ -71,34 +71,34 @@ See the file `src/test/cli.ml` for more examples (*work-in-progress*),
 and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 
-### Ketrew-client
+### Ketrew
 
 Ketrew is driven from the command-line client.  See:
 
-    ketrew-client --help
+    ketrew --help
 
 To display the current status:
 
-    ketrew-client status
+    ketrew status
 
 To run as many steps as possible until a “fix-point” is reached:
 
-    ketrew-client run fix
+    ketrew run fix
 
 To kill running jobs use
 
-    ketrew-client kill <target-ID>
+    ketrew kill <target-ID>
 
 or do an interactive murder:
 
-    ketrew-client kill --interactive
+    ketrew kill --interactive
 
 Once targets are dead, one can “archive” them, i.e. put them in a less-visible
 list.
 
-    ketrew-client archive [--interactive] [<target-ID>]*
+    ketrew archive [--interactive] [<target-ID>]*
 
-See also `ketrew-client interact` or `ketrew-client explore` for fun
+See also `ketrew interact` or `ketrew explore` for fun
 *one-key-based* navigation.
 
 ### The Configuration File
@@ -139,7 +139,7 @@ host-timeout-upper-bound = 120
 
 One can test their configuration with:
 
-    ketrew-client print-configuration
+    ketrew print-configuration
 
 License
 -------

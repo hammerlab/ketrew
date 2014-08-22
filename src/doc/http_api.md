@@ -16,7 +16,7 @@ Let's add some targets to the database (c.f. `src/test/cli.ml`):
 
 Now we can start the server:
 
-    ktserver
+    ktapp start-server
 
 The sever can be killed anytime with:
 
