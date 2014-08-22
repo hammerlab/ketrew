@@ -290,7 +290,57 @@ let display_status ~state  =
            % i aa % s " Activated, "
            % i cc % s " Created." %n
            @ normal);
-    return ()
+    begin match
+      Configuration.server_configuration (Ketrew_state.configuration state)
+    with
+    | Some server_config ->
+      let local_server_uri =
+        match Configuration.listen_to server_config with
+        | `Tls (_, _, port) ->
+          Uri.make ~scheme:"https" ~host:"127.0.0.1" ~path:"/hello" () ~port in
+      Log.(s "Trying GET on " % uri local_server_uri @ verbose);
+      begin
+        System.with_timeout 5. ~f:(fun () ->
+            wrap_deferred ~on_exn:(fun e -> `Client (`Get_exn e)) (fun () ->
+                Cohttp_lwt_unix.Client.get local_server_uri))
+        >>< function
+        | `Ok (response, body) ->
+          Log.(s "Response: " 
+               % sexp Cohttp.Response.sexp_of_t response @ verbose);
+          begin match Cohttp.Response.status response with
+          | `OK ->
+            Log.(s "The Server seems to be doing well on "
+                 % uri local_server_uri @ normal);
+            return ()
+          | other ->
+            Log.(s "There is a server at " % uri local_server_uri
+                 %s " but it did not reply `OK`: " 
+                 % sexp Cohttp.Response.sexp_of_t response @ warning);
+            return ()
+          end
+        | `Error (`Client (`Get_exn
+                             (Unix.Unix_error (Unix.ECONNREFUSED,
+                                               "connect", "")))) ->
+          Log.(s "No server seems to be listening at " % uri local_server_uri
+               @ warning);
+          return ()
+        | `Error (`System (`With_timeout t, `Exn except)) -> 
+          Log.(s "Could not perform a GET request because Timeout failed! "
+               %s "Exn: " % exn except @ error);
+          return ()
+        | `Error (`Timeout _) ->
+          Log.(s "Could not perform a GET request at " % uri local_server_uri
+               % s " the operation timeouted, some server must be listenting\
+                   on the port but it does not sound like Ketrew"
+               @ error);
+          return ()
+        |  `Error (`Client (`Get_exn other_exn)) ->
+          Log.(s "Could not perform a GET request at " % uri local_server_uri
+               %s " exception: " % exn other_exn @ error);
+          return ()
+      end
+    | None -> Log.(s "No local server configured." @ normal); return ()
+    end
   end
 
 let log_list ~empty l =
