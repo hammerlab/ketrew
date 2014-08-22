@@ -177,6 +177,8 @@ let daemonize config =
 let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
 
+let die_command = "die"
+
 let start_listening_on_command_pipe conf =
   match Ketrew_configuration.command_pipe conf with
   | Some file_path ->
@@ -199,7 +201,11 @@ let start_listening_on_command_pipe conf =
         Lwt.catch (fun () ->
             Lwt_io.read_line pipe
             >>= function
-            |  "die" -> exit 0
+            |  die when die = die_command ->
+              Log.(s "Server killed by “die” command " 
+                   % parens (OCaml.string file_path)
+                   @ normal);
+              exit 0
             |  other ->
               Log.(s "Cannot understand command: " % OCaml.string other @ error);
               read_loop ~error_count ())
@@ -276,5 +282,25 @@ let start ~state  =
             { Cohttp_lwt_unix.Server.callback = callback; conn_closed } in
           let handler_http = Cohttp_server_core.(callback config) in
           Lwt_unix_conduit.serve ~mode ~sockaddr handler_http)
+  end
+
+let stop ~state =
+  let config =  Ketrew_state.configuration state in
+  Deferred_result.some ~or_fail:(`Stop_server_error "No server configured")
+    (Ketrew_configuration.server_configuration config)
+  >>= fun server_config ->
+  Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")
+    (Ketrew_configuration.command_pipe server_config)
+  >>= fun file_path ->
+  begin
+    System.with_timeout 2. (fun () ->
+        IO.with_out_channel (`Append_to_file file_path) ~buffer_size:16 ~f:(fun oc ->
+            IO.write oc die_command;
+            IO.write oc "\n"))
+    >>< function
+    | `Ok () -> return `Done
+    | `Error (`Timeout _) -> return `Timeout
+    | `Error (`IO _ as e) -> fail e
+    | `Error (`System _) -> fail (`Stop_server_error "System.timeout failed!")
   end
 

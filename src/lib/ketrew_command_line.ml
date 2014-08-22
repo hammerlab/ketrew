@@ -1187,6 +1187,26 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "start-server" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Start the server." ~man:[])
   in
+  let stop_server_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration (fun ~state ->
+                Ketrew_server.stop ~state
+                >>= function
+                | `Done -> Log.(s "Server killed."  @ normal); return ()
+                | `Timeout -> 
+                  Log.(s "Write-operation timeout; the server must not be \
+                          running, try sub-command `status`" @ warning);
+                  return ()))
+        $ config_file_argument)
+      ~info:(
+        info "stop-server" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Stop the server." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
@@ -1198,7 +1218,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
     interact_cmd;
     explore_cmd;
     autoclean_command;
-    start_server_cmd;
+    start_server_cmd; stop_server_cmd;
     print_conf_cmd; make_command_alias print_conf_cmd "pc";
   ] in
   match Term.eval_choice ?argv default_cmd cmds with
