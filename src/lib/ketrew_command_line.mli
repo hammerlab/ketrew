@@ -18,21 +18,13 @@
 
 open Ketrew_pervasives
 
-val run_client :
+val run_main :
   ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
   ?argv:string array ->
   ?override_configuration:Ketrew_configuration.t ->
   unit ->
   [ `Never_returns ]
-(** The “main” function for the client-side, it will [exit n] with [n = 0] if
+(** The “main” function for the application, it will [exit n] with [n = 0] if
     succeed or [n > 0] if fails. *)
 
-val run_server :
-  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
-  ?argv:string array ->
-  ?override_configuration:Ketrew_configuration.t ->
-  unit ->
-  [ `Never_returns ]
-(** The “main” function for the server-side, it will [exit n] with [n = 0] if
-    succeed or [n > 0] if fails. *)
 

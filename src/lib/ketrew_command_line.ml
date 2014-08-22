@@ -1143,6 +1143,19 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         info "explore" ~version ~sdocs:"COMMON OPTIONS" 
           ~doc:"Run the interactive Target Explorer." ~man:[])
   in
+  let start_server_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun config_path ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_state.with_state ?plugins ~configuration Ketrew_server.start)
+        $ config_file_argument)
+      ~info:(
+        info "start-server" ~version ~sdocs:"COMMON OPTIONS" 
+          ~doc:"Start the server." ~man:[])
+  in
   let default_cmd = 
     let doc = "A Workflow Engine for Complex Experimental Workflows" in 
     let man = [] in
@@ -1154,6 +1167,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
     interact_cmd;
     explore_cmd;
     autoclean_command;
+    start_server_cmd;
     print_conf_cmd; make_command_alias print_conf_cmd "pc";
   ] in
   match Term.eval_choice ?argv default_cmd cmds with
@@ -1162,7 +1176,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   | `Version | `Help -> exit 0
 
 
-let run_client ?plugins ?argv ?override_configuration () =
+let run_main ?plugins ?argv ?override_configuration () =
   match Lwt_main.run (
       cmdliner_main ?plugins ?argv ?override_configuration ()
       >>< Return_code.transform_error
@@ -1170,20 +1184,5 @@ let run_client ?plugins ?argv ?override_configuration () =
   | `Ok () -> exit 0
   | `Error n -> exit n
 
-let run_server ?plugins ?argv ?override_configuration () =
-  let config_path = 
-    (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
-       (try Sys.getenv "KETREW_CONFIG" with _ ->
-          Configuration.default_configuration_path)) in
-  match Lwt_main.run (
-      begin
-        Configuration.get_configuration ?override_configuration config_path
-        >>= fun configuration ->
-        Ketrew_state.with_state ?plugins ~configuration Ketrew_server.start
-      end
-      >>< Return_code.transform_error
-    ) with
-  | `Ok () -> exit 0
-  | `Error n -> exit n
 
 

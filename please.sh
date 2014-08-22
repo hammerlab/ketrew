@@ -82,14 +82,8 @@ begin program "ketrew-cli-test"
   comp = ["-thread" ]
   install = false
 end
-begin program "ketrew-client"
-  files = [ "src/client/main.ml" ]
-  requires = [ "ketrew" "threads" ]
-  link = [ "-thread" ]
-  comp = ["-thread" ]
-end
-begin program "ketrew-server"
-  files = [ "src/server/main.ml" ]
+begin program "ketrew-app"
+  files = [ "src/app/main.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
@@ -250,17 +244,17 @@ install () {
     local prefix=$1
     meta_file _obuild/ketrew/META
     ocamlfind install ketrew _obuild/ketrew/META _obuild/ketrew/*.*
-    local kclient=_obuild/ketrew-client/ketrew-client
+    local kclient=_obuild/ketrew-app/ketrew-app
     if [ -f $kclient.asm ] ; then
-        cp $kclient.asm $prefix/bin/ketrew-client
+        cp $kclient.asm $prefix/bin/ketrew
     else
-        cp $kclient.byte $prefix/bin/ketrew-client
+        cp $kclient.byte $prefix/bin/ketrew
     fi
 }
 uninstall () {
     local prefix=$1
     ocamlfind remove ketrew
-    rm -f $prefix/bin/ketrew-client
+    rm -f $prefix/bin/ketrew
 }
 
 opam_file () {
@@ -441,9 +435,8 @@ test_environment () {
   local confvar="KETREW_CONFIGURATION=$test_config_file"
   cat << EOBLOB > $test_shell_env
 export ktest_url=https://localhost:8443
-alias ktclient="$confvar _obuild/ketrew-client/ketrew-client.asm"
+alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
 alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
-alias ktserver="$confvar _obuild/ketrew-server/ketrew-server.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
 EOBLOB
 }
