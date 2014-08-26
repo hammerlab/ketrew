@@ -340,10 +340,27 @@ do_travis() {
   opam init
   eval `opam config env`
 
-  get_dependencies
+  ./please.sh get-dependencies
 
+  echo 'ocamlfind list | grep lwt'
+  ocamlfind list | grep lwt
+  echo 'ocamlfind list | grep cohttp'
+  ocamlfind list | grep cohttp
+
+  echo 'eval `opam config env`'
+  eval `opam config env`
+
+  echo 'ocamlfind list | grep lwt'
+  ocamlfind list | grep lwt
+  echo 'ocamlfind list | grep cohttp'
+  ocamlfind list | grep cohttp
+
+  echo "Clean"
+  ./please.sh clean
+  echo "Build"
   ./please.sh build
 
+  echo "Mini-test:"
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
 }
 
