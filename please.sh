@@ -221,8 +221,11 @@ signature () {
   ocamlfind ocamlc -thread -I _obuild/ketrew/ -package $packages -i -c $ml_file
 }
 
+print_opam_depedencies () {
+  echo $findlib_packages | sed 's/\.[a-z]*/ /g'
+}
 get_dependencies () {
-  opam install ocp-build type_conv `echo $findlib_packages | sed 's/\./ /g'`
+  opam install ocp-build type_conv `print_opam_depedencies`
 }
 
 #
@@ -260,7 +263,7 @@ uninstall () {
 opam_file () {
     local out_file=$1
 #    local ocp_build_install_options=' "-install-destdir" prefix '
-    local quoted_findlib_packages=$(for f in $findlib_packages ; do echo -n "\"$f\" " ; done)
+    local quoted_opam_packages=$(for f in $(print_opam_depedencies) ; do echo -n "\"$f\" " ; done)
     cat << END_OPAM > $out_file
 opam-version: "1"
 maintainer: "seb@mondet.org"
@@ -273,7 +276,7 @@ build: [
 remove: [
   ["./please.sh" "uninstall" prefix ]
 ]
-depends: [ "ocp-build" "ocamlfind" $quoted_findlib_packages ]
+depends: [ "ocp-build" "ocamlfind" $quoted_opam_packages ]
 
 END_OPAM
 }
