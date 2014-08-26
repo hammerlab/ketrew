@@ -84,8 +84,28 @@ let release t =
   | Some s -> Database.close s
   | None -> return ()
 
-let with_state ?plugins ~configuration f =
-  create ?plugins configuration
+let global_list_of_plugins: (string * (module LONG_RUNNING)) list ref =
+  ref default_plugins
+
+let register_long_running_plugin ~name m =
+  global_list_of_plugins := (name, m) :: !global_list_of_plugins
+
+let with_state ~configuration f =
+  let plugins_to_load = Configuration.plugins configuration in
+  Deferred_list.while_sequential plugins_to_load ~f:(fun (name, how) ->
+      match how with
+      | `Compiled path ->
+        wrap_deferred ~on_exn:(function
+          | Dynlink.Error e -> `Dynlink_error e
+          | other ->
+            `Failure (fmt "Unknown dynlink-error: %s" (Printexc.to_string other))
+          ) (fun () ->
+            Lwt_preemptive.detach
+              (fun () -> Dynlink.(loadfile (adapt_filename path))) ()
+          )
+    )
+  >>= fun (_ : unit list) ->
+  create ~plugins:!global_list_of_plugins configuration
   >>= fun state ->
   begin try f ~state with
   | e -> 

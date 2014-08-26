@@ -25,12 +25,16 @@ val default_plugins :
   (string * (module Ketrew_long_running.LONG_RUNNING)) list
 (** The “long-running” plugins loaded by default. *)
 
+val register_long_running_plugin :
+  name:string -> (module Ketrew_long_running.LONG_RUNNING) -> unit
+(** Function to be called from dynamically loaded plugins. *)
+
 val with_state: 
-  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
   configuration:Ketrew_configuration.t ->
   (state:t ->
    (unit, [> `Database of Ketrew_database.error 
-          | `Failure of string] as 'merge_error) Deferred_result.t) ->
+          | `Failure of string
+          | `Dynlink_error of Dynlink.error] as 'merge_error) Deferred_result.t) ->
   (unit, 'merge_error) Deferred_result.t
 (** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
 

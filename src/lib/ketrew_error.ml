@@ -50,3 +50,5 @@ let to_string = function
   fmt "Wrong HTTP Request: %s → %s" short long
 | `Client (`Get_exn e) ->
   fmt "HTTP-Client: error while GET-ing: %s" (Printexc.to_string e)
+| `Dynlink_error e ->
+  fmt "Dynamic linking error: %s" (Dynlink.error_message e)

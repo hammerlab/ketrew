@@ -40,6 +40,7 @@ val create :
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?persistent_state_key:string -> 
   ?host_timeout_upper_bound: float ->
+  ?plugins: (string * [ `Compiled of string ]) list ->
   ?server:server ->
   database_parameters:string -> unit -> t
 (** Create a configuration, [persistent_state_key] is the “key” of the
@@ -89,6 +90,7 @@ val get_configuration :
     if [and_apply] is [true] (the default), then {!apply_globals} is called.
 *)
 
+val plugins: t -> (string * [ `Compiled of string ]) list
 
 val server_configuration: t -> server option
 val authorized_tokens_path: server -> string option 

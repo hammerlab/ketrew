@@ -188,7 +188,6 @@ val lsf :
 (** {3 Workflows} *)
 
 val run:
-  ?plugins:(string * (module Ketrew_long_running.LONG_RUNNING)) list ->
   ?override_configuration:Ketrew_configuration.t ->
   user_target ->
   unit

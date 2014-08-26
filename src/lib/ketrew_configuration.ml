@@ -32,6 +32,7 @@ type t = {
   with_color: bool;
   host_timeout_upper_bound: float;
   server: server option;
+  plugins: (string * [ `Compiled of string ]) list;
 }
 
 let log t =
@@ -46,6 +47,10 @@ let log t =
       s "Debug-level: " % i t.debug_level;
       s "Client " % s (if t.with_color then "with" else "without") % s " colors";
       s "Timeout-upper-bound: " % f t.host_timeout_upper_bound % s " seconds";
+      s "Plugins: " % OCaml.list (fun (name, path) ->
+          s "Name: " % quote name
+          % match path with
+          | `Compiled c -> s " → " % quote c) t.plugins;
       s "Server: "
       % (match t.server with
         | None -> s "Not configured"
@@ -89,11 +94,12 @@ let create
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?(persistent_state_key=default_persistent_state_key)
     ?(host_timeout_upper_bound=60.)
+    ?(plugins=[])
     ?server
     ~database_parameters () =
   {
     database_parameters; persistent_state_key;
-    turn_unix_ssh_failure_into_target_failure;
+    turn_unix_ssh_failure_into_target_failure; plugins;
     debug_level; with_color; host_timeout_upper_bound; server;
   }
 
@@ -118,6 +124,23 @@ let parse_exn str =
     let table = toml_mandatory Toml.get_table "database" in
     toml_mandatory ~table Toml.get_string  "path",
     toml_option ~table Toml.get_string "state-key" in
+  let plugins =
+    toml_option Toml.get_table "plugins"
+    |> Option.value_map ~default:[] ~f:Toml.toml_to_list
+    |> List.map ~f:(function
+      | (name, TomlType.TString path) ->
+        if Filename.(
+            check_suffix path ".cma"
+            || check_suffix path ".cmo"
+            || check_suffix path ".cmxs")
+        then
+          (name, `Compiled path)
+        else
+          failwith (fmt "Expecting plugin extension to be .cmo/.cma/.cmxs")
+      | (name, other) ->
+          failwith (fmt "Expecting a string/path for plugin %s" name)
+      )
+  in
   let server =
     let open Option in
     toml_option Toml.get_table "server"
@@ -146,6 +169,7 @@ let parse_exn str =
     ?with_color
     ?persistent_state_key 
     ?host_timeout_upper_bound
+    ~plugins
     ?server
     ~database_parameters ()
 
@@ -172,6 +196,8 @@ let get_configuration ?(and_apply=true) ?override_configuration path =
   >>= fun conf ->
   if and_apply then apply_globals conf;
   return conf
+
+let plugins t = t.plugins
 
 let server_configuration t = t.server
 
