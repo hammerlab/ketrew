@@ -342,8 +342,7 @@ do_travis() {
 
   get_dependencies
 
-  setup
-  ocp-build build
+  ./please.sh build
 
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
 }
