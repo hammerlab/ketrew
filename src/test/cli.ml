@@ -276,9 +276,9 @@ let run_ketrew_on_vagrant what_to_do =
         (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler)
         ~make:(do_on_vagrant_box Program.(
             shf "opam switch %s" compiler
-            && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo dont_care"
-            && sh "opam remove ocamlfind || echo dont_care"
-            && sh "opam pin ketrew https://github.com/smondet/ketrew/"
+            && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo smondet_remote_already_there"
+            && sh "opam remove ocamlfind || echo ocamlfind_not_installed"
+            && sh "opam pin ketrew https://github.com/smondet/ketrew/ || echo ketrew_already_pinned"
             && sh "opam install -y ketrew"
           ))
     in
