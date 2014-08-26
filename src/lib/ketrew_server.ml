@@ -295,7 +295,8 @@ let stop ~state =
   begin
     System.with_timeout 2. (fun () ->
         IO.with_out_channel (`Append_to_file file_path) ~buffer_size:16 ~f:(fun oc ->
-            IO.write oc die_command;
+            IO.write oc die_command
+            >>= fun () ->
             IO.write oc "\n"))
     >>< function
     | `Ok () -> return `Done
