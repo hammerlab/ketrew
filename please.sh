@@ -76,18 +76,28 @@ begin program "ketrew-test"
   comp = ["-thread" ]
   install = false
 end
-begin program "ketrew-cli-test"
-  files = [ "src/test/cli.ml" ]
-  requires = [ "ketrew" "threads" ]
-  link = [ "-thread" ]
-  comp = ["-thread" ]
-  install = false
-end
 begin program "ketrew-app"
   files = [ "src/app/main.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
+end
+begin library "ketrew_dummy_plugin"
+  sort = true
+  files = [
+    "src/test/dummy_plugin.ml"
+  ]
+  requires = [ "ketrew" ]
+  comp = [ "-thread" ]
+  link = [ "-thread" ]
+  install = false
+end
+begin program "ketrew-cli-test"
+  files = [ "src/test/cli.ml" ]
+  requires = [ "ketrew" "threads" "ketrew_dummy_plugin" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+  install = false
 end
 OCP_END
 
@@ -446,6 +456,8 @@ debug-level = 2
   log-path = "$test_server_log"
   daemonize = true
   command-pipe-path = "$test_command_pipe"
+[plugins]
+  Dummy_plugin = "$PWD/_obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cma"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -505,6 +517,8 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
+      ocamlopt -shared _obuild/ketrew_dummy_plugin/dummy_plugin.cmx \
+        -o  _obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cmxs
       ssl_cert_key
       test_config_file
       test_environment ;;
