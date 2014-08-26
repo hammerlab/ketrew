@@ -102,6 +102,7 @@ let with_state ?plugins ~configuration f =
     fail e
   end
 
+let configuration t = t.configuration
 
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);

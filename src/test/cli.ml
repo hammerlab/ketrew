@@ -26,28 +26,6 @@ let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 
 
 (*
-Ketrew will use the default configuration file unless the configuration is
-overridden.
-We do this so that the tests do not impact the user's current
-installation.
-
-To interact with the targets created by this file just use a config-file
-containing:
-
-```toml
-[database]
-    path = "/tmp/ketrew_cli_test_db"
-```
-*)
-let run_with_test_configuration user_target =
-  let open Ketrew.EDSL in
-  let override_configuration =
-    let custom_database_file = "/tmp/ketrew_cli_test_db" in
-    say "Using database: %S" custom_database_file;
-    Ketrew_configuration.create ~database_parameters:custom_database_file () in
-  run user_target ~override_configuration
-
-(*
 
 A first dummy workflow that can compile the documentation, switch to
 the gh-pages branch, commit the new version of the documentation, and get
@@ -102,12 +80,10 @@ let deploy_website () =
       ~if_fails_activate:[get_back ~name:"Fallback with original branch"
                             ~dependencies:[]]
   in
-  (* `run_with_test_configuration` will activate the target `get_back
-     commit_website`, and add all its (transitive) dependencies to the system.
-  *)
-  run_with_test_configuration 
-    (get_back ~name:"Last-step: check-out original branch"
-       ~dependencies:[commit_website])
+  (* `run` will activate the target `get_back commit_website`, and add all its
+     (transitive) dependencies to the system.  *)
+  run (get_back ~name:"Last-step: check-out original branch"
+         ~dependencies:[commit_website])
 
 (*
   This second target could the beginning of a “backup” workflow.
@@ -171,7 +147,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       ~dependencies:(gpg @ [make_targz; md5_targz])
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
-  run_with_test_configuration common_ancestor
+  run common_ancestor
 
 
 (*
@@ -181,7 +157,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  run_with_test_configuration (
+  run (
     target "run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
@@ -195,7 +171,7 @@ let run_command_with_lsf ~host ~queue cmd =
 let run_command_with_nohup ~host cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  run_with_test_configuration (
+  run (
     target (sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
@@ -207,7 +183,7 @@ let run_command_with_nohup ~host cmd =
 let run_command_with_python_hack ~host cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  run_with_test_configuration (
+  run (
     target (sprintf "Pyd: %S" cmd)
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
   )
@@ -297,7 +273,7 @@ let run_ketrew_on_vagrant what_to_do =
       file_target ~name:"opam-install-ketrew"
         ~dependencies:[init_opam; get_c_dependencies]
         ~host:vagrant_box
-        (sprintf "/home/vagrant/.opam/%s/bin/ketrew-client" compiler)
+        (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler)
         ~make:(do_on_vagrant_box Program.(
             shf "opam switch %s" compiler
             && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo dont_care"
@@ -375,11 +351,11 @@ let () =
   | "CI" :: more ->
     begin match more with
     | "prepare" :: [] ->
-      run_with_test_configuration (run_ketrew_on_vagrant `Prepare)
+      Ketrew.EDSL.run (run_ketrew_on_vagrant `Prepare)
     | "go" :: [] ->
-      run_with_test_configuration (run_ketrew_on_vagrant `Go)
+      Ketrew.EDSL.run (run_ketrew_on_vagrant `Go)
     | "clean" :: [] ->
-      run_with_test_configuration (run_ketrew_on_vagrant `Clean)
+      Ketrew.EDSL.run (run_ketrew_on_vagrant `Clean)
     | other ->
       say "usage: %s CI {prepare,go,clean}" Sys.argv.(0);
       failwith "Wrong command line"

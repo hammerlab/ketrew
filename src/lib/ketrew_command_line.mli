@@ -24,6 +24,7 @@ val run_main :
   ?override_configuration:Ketrew_configuration.t ->
   unit ->
   [ `Never_returns ]
-(** The “main” function, it will [exit n] with [n = 0] if succeed or [n > 0] if
-    fails. *)
+(** The “main” function for the application, it will [exit n] with [n = 0] if
+    succeed or [n > 0] if fails. *)
+
 

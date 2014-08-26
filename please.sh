@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 version_string="0.0.1-prealpha"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd yojson uri toml dbm"
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd \
+  yojson uri toml dbm cohttp.lwt lwt ssl conduit"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
@@ -81,7 +82,7 @@ begin program "ketrew-cli-test"
   comp = ["-thread" ]
   install = false
 end
-begin program "ketrew-client"
+begin program "ketrew-app"
   files = [ "src/app/main.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
@@ -158,9 +159,11 @@ END_MD
 
   local index=_doc/index.html
   local devdoc=_doc/development.html
+  local http_api_doc=_doc/http_api.html
   cp src/doc/code_style.css _doc/
   markdown_to_html $index_markdown $index "Ketrew: Home"
   markdown_to_html $dev_markdown $devdoc "Ketrew: Development"
+  markdown_to_html src/doc/http_api.md $http_api_doc "Ketrew: HTTP-API"
 }
 
 markdown_to_html () {
@@ -219,7 +222,7 @@ signature () {
 }
 
 get_dependencies () {
-  opam install ocp-build type_conv $findlib_packages
+  opam install ocp-build type_conv `echo $findlib_packages | sed 's/\./ /g'`
 }
 
 #
@@ -241,17 +244,17 @@ install () {
     local prefix=$1
     meta_file _obuild/ketrew/META
     ocamlfind install ketrew _obuild/ketrew/META _obuild/ketrew/*.*
-    local kclient=_obuild/ketrew-client/ketrew-client
+    local kclient=_obuild/ketrew-app/ketrew-app
     if [ -f $kclient.asm ] ; then
-        cp $kclient.asm $prefix/bin/ketrew-client
+        cp $kclient.asm $prefix/bin/ketrew
     else
-        cp $kclient.byte $prefix/bin/ketrew-client
+        cp $kclient.byte $prefix/bin/ketrew
     fi
 }
 uninstall () {
     local prefix=$1
     ocamlfind remove ketrew
-    rm -f $prefix/bin/ketrew-client
+    rm -f $prefix/bin/ketrew
 }
 
 opam_file () {
@@ -383,11 +386,73 @@ remove_license () {
 
 }
 
+
+test_config_file=_obuild/test-config-file.toml
+test_authorized_tokens=_obuild/test-authorized-tokens
+test_database_prefix=_obuild/test-database
+test_certificate=_obuild/test-cert.pem
+test_privkey=_obuild/test-key.pem
+test_server_log=_obuild/test-server.log
+test_command_pipe=_obuild/test-command.pipe
+test_shell_env=_obuild/test.env
+ssl_cert_key () {
+  mkdir -p _obuild/
+  echo "Creating cert-key pair: $test_certificate, $test_privkey"
+  openssl req -x509 -newkey rsa:2048 \
+    -keyout $test_privkey -out $test_certificate \
+    -days 10 -nodes -subj "/CN=test_ketrew" 2> /dev/null
+}
+test_config_file () {
+  echo "Creating $test_config_file"
+  cat <<EOBLOB > $test_config_file
+# Ketrew test configuration file
+debug-level = 2
+[client]
+  color = true
+[database]
+  path = "$test_database_prefix"
+[server]
+  certificate = "$test_certificate"
+  private-key = "$test_privkey"
+  port = 8443
+  authorized-tokens-path = "$test_authorized_tokens"
+  return-error-messages = true
+  log-path = "$test_server_log"
+  daemonize = true
+  command-pipe-path = "$test_command_pipe"
+EOBLOB
+  echo "Creating $test_authorized_tokens"
+  cat << EOBLOB  >> $test_authorized_tokens
+test1 dsafkdjshh4383497hfvfnfdsfli some comments
+test2 dsaifdksafhkd8437189437tfodslcjdsacfaeo some more comments for test2
+easy_auth nekot easy authentication
+# commented line
+weird-line-that-makes-a-warning
+EOBLOB
+}
+test_environment () {
+  echo "Creating $test_shell_env"
+  local confvar="KETREW_CONFIGURATION=$test_config_file"
+  cat << EOBLOB > $test_shell_env
+export ktest_url=https://localhost:8443
+alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
+alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
+alias ktkillserver='echo "die" > $test_command_pipe'
+EOBLOB
+}
+
 usage () {
-    echo "usage: $0"
-    echo "       $0 {setup,build,clean,doc,top,sig,get-dependencies,"
-    echo "           local-opam,opam,meta-file,install,uninstall,"
-    echo "           travis,put-license,remove-license,help}"
+  cat << EOBLOB
+usage:
+    $0 {setup,build,install,uninstall,clean,
+        doc,top,
+        sig,get-dependencies,
+        local-opam,opam,meta-file,
+        travis,
+        put-license,remove-license,
+        test-env, test-ssl-ck,test-config-file,test-shell-env
+        help}"
+EOBLOB
 }
 
 while [ "$1" != "" ]; do
@@ -409,6 +474,14 @@ while [ "$1" != "" ]; do
     "travis" ) do_travis ;;
     "put-license" ) put_license ;;
     "remove-license" ) remove_license ;;
+    "test-ssl-ck" ) ssl_cert_key ;;
+    "test-config-file" ) test_config_file ;;
+    "test-shell-env" )
+      test_environment ;;
+    "test-env" )
+      ssl_cert_key
+      test_config_file
+      test_environment ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
   esac
   shift

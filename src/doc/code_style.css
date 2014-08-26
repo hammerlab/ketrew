@@ -14,3 +14,5 @@
 .symbol1 { color: #993300 ; font-weight: bold ; }
 .constant { color: pink; }
 pre { font-family: courier }
+pre.goodresult { background-color: #E0F0B2; margin-left: 3em; margin-right: 3em;  }
+pre.badresult { background-color: #FF8080; margin-left: 3em; margin-right: 3em; }

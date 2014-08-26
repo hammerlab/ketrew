@@ -57,6 +57,8 @@ module Log =  struct
     if !global_with_color then color log else log
   let nbsp = s " "
   let quote = sf "%S"
+  let sexp sexp_of_t t = s (sexp_of_t t |> Sexplib.Sexp.to_string)
+  let uri theuri = s (Uri.to_string theuri)
 end
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
