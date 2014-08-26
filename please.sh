@@ -340,6 +340,7 @@ do_travis() {
   opam init
   eval `opam config env`
 
+  opam pin ocp-build 1.99.6-beta
   ./please.sh get-dependencies
 
   echo 'ocamlfind list | grep lwt'
