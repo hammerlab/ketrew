@@ -8,6 +8,7 @@ seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
 homepage="http://hammerlab.github.io/ketrew/"
 
+ocp_build_version=1.99.6-beta
 
 lib_ml_files=$(find src/lib/ -type f -name '*.ml')
 lib_mli_files=$(find src/lib/ -type f -name '*.mli')
@@ -225,6 +226,12 @@ print_opam_depedencies () {
   echo $findlib_packages | sed 's/\.[a-z]*/ /g'
 }
 get_dependencies () {
+  local opam_version=`opam --version`
+  if [[ $opam_version =~ ^1.2 ]] ; then
+    opam pin add ocp-build $ocp_build_version
+  else
+    opam pin ocp-build $ocp_build_version
+  fi
   opam install ocp-build type_conv `print_opam_depedencies`
 }
 
@@ -276,7 +283,7 @@ build: [
 remove: [
   ["./please.sh" "uninstall" prefix ]
 ]
-depends: [ "ocp-build" "ocamlfind" $quoted_opam_packages ]
+depends: [ "ocp-build" {= "$ocp_build_version" } "ocamlfind" $quoted_opam_packages ]
 
 END_OPAM
 }
@@ -340,7 +347,6 @@ do_travis() {
   opam init
   eval `opam config env`
 
-  opam pin ocp-build 1.99.6-beta
   ./please.sh get-dependencies
 
   echo 'ocamlfind list | grep lwt'
