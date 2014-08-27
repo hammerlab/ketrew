@@ -437,8 +437,8 @@ test_server_log=_obuild/test-server.log
 test_command_pipe=_obuild/test-command.pipe
 test_shell_env=_obuild/test.env
 
-test_additional_findlib_plugin="graphics"
-test_additional_findlib_plugin_code="let f () = Graphics.create_image 42 42"
+test_additional_findlib_plugin="findlib"
+test_additional_findlib_plugin_code="let f () = Findlib.init ()"
 set_test_additional_findlib_plugin () {
   if  ocamlfind query lwt.react > /dev/null  ; then
     export test_additional_findlib_plugin="lwt.react"
@@ -475,7 +475,7 @@ debug-level = 2
   daemonize = true
   command-pipe-path = "$test_command_pipe"
 [plugins]
-  ocamlfind = "$test_additional_findlib_plugin"
+  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
   compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 EOBLOB
   echo "Creating $test_authorized_tokens"
