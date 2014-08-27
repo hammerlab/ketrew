@@ -354,6 +354,8 @@ do_travis() {
   opam init
   eval `opam config env`
 
+  # We add the react dependency for lwt.react in the tests
+  opam install react
   ./please.sh get-dependencies
 
   echo 'ocamlfind list | grep lwt'
@@ -377,13 +379,17 @@ do_travis() {
   echo "Mini-test:"
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
 
+
   echo "Test environment:"
   ./please.sh test-env
   . _obuild/test.env
 
-  echo "Load ketrew once"
+  echo "Do some command line tests, with the server and all"
   export KETREW_CONFIGURATION=_obuild/test-config-file.toml
   ktapp="_obuild/ketrew-app/ketrew-app.asm"
+  $ktapp start-server
+  $ktapp status
+  $ktapp stop-server
   $ktapp status
 }
 
