@@ -179,17 +179,13 @@ let run_command_with_nohup ~host cmd =
 (*
   The fifth workflow is like `run_command_with_nohup` but uses
   the “python daemon hack”.
-
-  It also uses the plugin `dummy_plugin.ml` (which just aliases
-  `Ketrew_deamonize` with ~using:`Python_daemon already applied).
 *)
 let run_command_with_python_hack ~host cmd =
   let open Ketrew.EDSL in
   let host = parse_host host in
-  let daemonize = Dummy_plugin.create in
   run (
     target (sprintf "Pyd: %S" cmd)
-      ~make:(daemonize (Program.sh cmd) ~host)
+      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
   )
 
 (*

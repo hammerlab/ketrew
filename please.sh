@@ -82,19 +82,9 @@ begin program "ketrew-app"
   link = [ "-thread" ]
   comp = ["-thread" ]
 end
-begin library "ketrew_dummy_plugin"
-  sort = true
-  files = [
-    "src/test/dummy_plugin.ml"
-  ]
-  requires = [ "ketrew" ]
-  comp = [ "-thread" ]
-  link = [ "-thread" ]
-  install = false
-end
 begin program "ketrew-cli-test"
   files = [ "src/test/cli.ml" ]
-  requires = [ "ketrew" "threads" "ketrew_dummy_plugin" ]
+  requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
   install = false
@@ -457,7 +447,7 @@ debug-level = 2
   daemonize = true
   command-pipe-path = "$test_command_pipe"
 [plugins]
-  compiled = "$PWD/_obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cma"
+  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -468,6 +458,23 @@ easy_auth nekot easy authentication
 weird-line-that-makes-a-warning
 EOBLOB
 }
+compile_dummy_plugin () {
+  echo "Compiling the Dummy-plugin and its user"
+  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
+  local compile="ocamlfind opt -thread $ocamlfind_package_options  -I _obuild/ketrew/ "
+  set -e
+  local compile_dir=_obuild/dummy_plugin_stuff/
+  rm -fr $compile_dir
+  mkdir -p $compile_dir
+  cp src/test/dummy_plugin.ml $compile_dir
+  cp src/test/dummy_plugin_user.ml $compile_dir
+  $compile -shared $compile_dir/dummy_plugin.ml \
+    -o  $compile_dir/test_dummy_plugin.cmxs
+  $compile -linkpkg _obuild/ketrew/ketrew.cmxa \
+    -I $compile_dir $compile_dir/dummy_plugin.cmx \
+    $compile_dir/dummy_plugin_user.ml \
+    -o $compile_dir/test_dummy_plugin_user.asm
+}
 test_environment () {
   echo "Creating $test_shell_env"
   local confvar="KETREW_CONFIGURATION=$test_config_file"
@@ -476,6 +483,7 @@ export ktest_url=https://localhost:8443
 alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
 alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
+alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
 }
 
@@ -517,8 +525,7 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
-      ocamlopt -shared _obuild/ketrew_dummy_plugin/dummy_plugin.cmx \
-        -o  _obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cmxs
+      compile_dummy_plugin
       ssl_cert_key
       test_config_file
       test_environment ;;
