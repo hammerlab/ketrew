@@ -135,11 +135,16 @@ let parse_exn str =
     (* Toml.toml_to_list seems to reverse the order of the table, so 
        we reverse back: *)
     |> List.rev_map ~f:(function
-      | ("compiled", TomlType.TString path) -> `Compiled path
-      | ("ocamlfind", TomlType.TString pack) -> `OCamlfind pack
+      | ("compiled", TomlType.TString path) -> [`Compiled path]
+      | ("ocamlfind", TomlType.TString pack) -> [`OCamlfind pack]
+      | ("compiled", TomlType.TArray (TomlType.NodeString paths)) ->
+         List.map paths ~f:(fun p -> `Compiled p)
+      | ("ocamlfind", TomlType.TArray (TomlType.NodeString packs)) ->
+         List.map packs ~f:(fun p -> `OCamlfind p)
       | (other, _) ->
         failwith (fmt "Expecting “compiled” plugins only")
       )
+    |> List.concat
   in
   let server =
     let open Option in
