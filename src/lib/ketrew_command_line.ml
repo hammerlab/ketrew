@@ -999,7 +999,7 @@ let make_command_alias cmd ?(options="") name =
 
 let cmdliner_main ?override_configuration ?argv ?additional_term () =
   let open Cmdliner in
-  let version = Ketrew_version.version in
+  let version = Ketrew_metadata.version in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
     let default = 

@@ -23,17 +23,24 @@ setup() {
     quoted_authors_list="$quoted_authors_list \"$name <$email>\""
   done
 
-  mkdir -p _obuild/atdgen/
+
+  mkdir -p _obuild/gen/
   local lib_atd_files=$(find src/atd/ -type f -name '*.atd')
   for atd in $lib_atd_files ; do
     name=`basename $atd`
-    atdgen -t -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
-    atdgen -j -j-std -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
+    atdgen -t -o _obuild/gen/ketrew_gen_${name%.atd} $atd
+    atdgen -j -j-std -o _obuild/gen/ketrew_gen_${name%.atd} $atd
   done
-  local lib_gen_files=$(find _obuild/atdgen/ -type f -name '*.ml')
+
+  local ocaml_findlib_packages_list=$(for f in $findlib_packages ; do echo "\"$f\"; " ; done)
+  cat <<EOBLOB > _obuild/gen/ketrew_metadata.ml
+  let version = "$version_string"
+  let findlib_packages = [$ocaml_findlib_packages_list]
+  let homepage = "$homepage"
+EOBLOB
+  local lib_gen_files=$(find _obuild/gen/ -type f -name '*.ml')
 
   local quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
-  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
   local quoted_gen_files=$(for f in $lib_gen_files ; do echo "\"$f\" " ; done)
 
   local yojson_hack_dir=$PWD/_prebuild/yojson
@@ -44,6 +51,7 @@ setup() {
   ocamlopt -a -o yojson.cmxa `ocamlfind query easy-format`/easy_format.cmx yojson.cmx
   cd -
 
+  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
 cat << OCP_END > build.ocp
 version = "$version_string"
 license = "$license_name"
@@ -61,7 +69,6 @@ end
 begin  library "ketrew"
   sort = true
   files = [
-    "ketrew_version.ml" (ocp2ml)
     $quoted_lib_files
     $quoted_gen_files
   ]
