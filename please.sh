@@ -376,6 +376,14 @@ do_travis() {
 
   echo "Mini-test:"
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
+
+  echo "Test environment:"
+  ./please.sh test-env
+  . _obuild/test.env
+
+  echo "Load ketrew once"
+  ktapp status
+
 }
 
 headache_config () {
