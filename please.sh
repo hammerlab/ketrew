@@ -382,8 +382,8 @@ do_travis() {
   . _obuild/test.env
 
   echo "Load ketrew once"
-  ktapp status
-
+  ktapp="KETREW_CONFIGURATION=_obuild/test-config-file.toml _obuild/ketrew-app/ketrew-app.asm"
+  $ktapp status
 }
 
 headache_config () {
