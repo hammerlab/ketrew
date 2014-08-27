@@ -24,6 +24,7 @@ type server = {
   daemon: bool;
   log_path: string option;
 }
+type plugin = [ `Compiled of string | `OCamlfind of string ]
 type t = {
   database_parameters: string;
   persistent_state_key: string;
@@ -32,7 +33,7 @@ type t = {
   with_color: bool;
   host_timeout_upper_bound: float;
   server: server option;
-  plugins: [ `Compiled of string ] list;
+  plugins: plugin list;
 }
 
 let log t =
@@ -51,7 +52,9 @@ let log t =
       % begin match t.plugins with
       | [] -> s "None"
       | more -> n % indent (separate n (List.map more ~f:(function
-        | `Compiled path -> s "* Compiled: " % quote path)))
+        | `Compiled path -> s "* Compiled: " % quote path
+        | `OCamlfind pack -> s "* OCamlfind package: " % quote pack
+        ))) % n
       end
       % s "Server: "
       % (match t.server with
@@ -129,9 +132,11 @@ let parse_exn str =
   let plugins =
     toml_option Toml.get_table "plugins"
     |> Option.value_map ~default:[] ~f:Toml.toml_to_list
-    |> List.map ~f:(function
-      | ("compiled", TomlType.TString path) ->
-        `Compiled path
+    (* Toml.toml_to_list seems to reverse the order of the table, so 
+       we reverse back: *)
+    |> List.rev_map ~f:(function
+      | ("compiled", TomlType.TString path) -> `Compiled path
+      | ("ocamlfind", TomlType.TString pack) -> `OCamlfind pack
       | (other, _) ->
         failwith (fmt "Expecting “compiled” plugins only")
       )

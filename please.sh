@@ -2,7 +2,7 @@
 
 version_string="0.0.1-prealpha"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd \
-  yojson uri toml dbm cohttp.lwt lwt ssl conduit dynlink"
+  yojson uri toml dbm cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
@@ -230,7 +230,7 @@ signature () {
 }
 
 print_opam_depedencies () {
-  echo $findlib_packages | sed 's/\.[a-z]*/ /g' | sed 's/dynlink//g'
+  echo $findlib_packages | sed 's/\.[a-z]*/ /g' | sed 's/dynlink//g' | sed 's/findlib//g'
 }
 get_dependencies () {
   local opam_version=`opam --version`

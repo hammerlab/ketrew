@@ -34,7 +34,9 @@ val with_state:
   (state:t ->
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string
-          | `Dynlink_error of Dynlink.error] as 'merge_error) Deferred_result.t) ->
+          | `Dyn_plugin of
+               [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+          ] as 'merge_error) Deferred_result.t) ->
   (unit, 'merge_error) Deferred_result.t
 (** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
 

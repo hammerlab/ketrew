@@ -101,3 +101,7 @@ module Unique_id = struct
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
 
+let wrap_preemptively ~on_exn f =
+  wrap_deferred (fun () -> 
+      Lwt_preemptive.detach f ())
+    ~on_exn
