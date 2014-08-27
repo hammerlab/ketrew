@@ -382,7 +382,8 @@ do_travis() {
   . _obuild/test.env
 
   echo "Load ketrew once"
-  ktapp="KETREW_CONFIGURATION=_obuild/test-config-file.toml _obuild/ketrew-app/ketrew-app.asm"
+  export KETREW_CONFIGURATION=_obuild/test-config-file.toml
+  ktapp="_obuild/ketrew-app/ketrew-app.asm"
   $ktapp status
 }
 
