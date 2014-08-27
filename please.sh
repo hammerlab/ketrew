@@ -457,7 +457,7 @@ debug-level = 2
   daemonize = true
   command-pipe-path = "$test_command_pipe"
 [plugins]
-  Dummy_plugin = "$PWD/_obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cma"
+  compiled = "$PWD/_obuild/ketrew_dummy_plugin/ketrew_dummy_plugin.cma"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
