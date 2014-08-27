@@ -428,6 +428,19 @@ test_privkey=_obuild/test-key.pem
 test_server_log=_obuild/test-server.log
 test_command_pipe=_obuild/test-command.pipe
 test_shell_env=_obuild/test.env
+
+test_additional_findlib_plugin="graphics"
+test_additional_findlib_plugin_code="let f () = Graphics.create_image 42 42"
+set_test_additional_findlib_plugin () {
+  if  ocamlfind query lwt.react > /dev/null  ; then
+    export test_additional_findlib_plugin="lwt.react"
+    export test_additional_findlib_plugin_code="let f () = Lwt_react.E.app"
+  else
+    export test_additional_findlib_plugin="graphics"
+    export test_additional_findlib_plugin_code="let f () = Graphics.create_image 42 42"
+  fi
+  echo "Using package $test_additional_findlib_plugin add findlin-plugin"
+}
 ssl_cert_key () {
   mkdir -p _obuild/
   echo "Creating cert-key pair: $test_certificate, $test_privkey"
@@ -454,6 +467,7 @@ debug-level = 2
   daemonize = true
   command-pipe-path = "$test_command_pipe"
 [plugins]
+  ocamlfind = "$test_additional_findlib_plugin"
   compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 EOBLOB
   echo "Creating $test_authorized_tokens"
@@ -468,12 +482,16 @@ EOBLOB
 compile_dummy_plugin () {
   echo "Compiling the Dummy-plugin and its user"
   local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
-  local compile="ocamlfind opt -thread $ocamlfind_package_options  -I _obuild/ketrew/ "
+  local additional_package="-package $test_additional_findlib_plugin"
+  local compile="ocamlfind opt -thread $ocamlfind_package_options $additional_package  -I _obuild/ketrew/ "
   set -e
   local compile_dir=_obuild/dummy_plugin_stuff/
   rm -fr $compile_dir
   mkdir -p $compile_dir
   cp src/test/dummy_plugin.ml $compile_dir
+  echo "(* Code that really depends on $test_additional_findlib_plugin *)" >> \
+    $compile_dir/dummy_plugin.ml
+  echo $test_additional_findlib_plugin_code >> $compile_dir/dummy_plugin.ml
   cp src/test/dummy_plugin_user.ml $compile_dir
   $compile -shared $compile_dir/dummy_plugin.ml \
     -o  $compile_dir/test_dummy_plugin.cmxs
@@ -532,6 +550,7 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
+      set_test_additional_findlib_plugin
       compile_dummy_plugin
       ssl_cert_key
       test_config_file
