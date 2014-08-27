@@ -92,17 +92,16 @@ let register_long_running_plugin ~name m =
 
 let with_state ~configuration f =
   let plugins_to_load = Configuration.plugins configuration in
-  Deferred_list.while_sequential plugins_to_load ~f:(fun (name, how) ->
-      match how with
-      | `Compiled path ->
-        wrap_deferred ~on_exn:(function
-          | Dynlink.Error e -> `Dynlink_error e
-          | other ->
-            `Failure (fmt "Unknown dynlink-error: %s" (Printexc.to_string other))
-          ) (fun () ->
-            Lwt_preemptive.detach
-              (fun () -> Dynlink.(loadfile (adapt_filename path))) ()
-          )
+  Deferred_list.while_sequential plugins_to_load ~f:(function
+    | `Compiled path ->
+      wrap_deferred ~on_exn:(function
+        | Dynlink.Error e -> `Dynlink_error e
+        | other ->
+          `Failure (fmt "Unknown dynlink-error: %s" (Printexc.to_string other))
+        ) (fun () ->
+          Lwt_preemptive.detach
+            (fun () -> Dynlink.(loadfile (adapt_filename path))) ()
+        )
     )
   >>= fun (_ : unit list) ->
   create ~plugins:!global_list_of_plugins configuration

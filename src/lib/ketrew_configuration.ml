@@ -32,7 +32,7 @@ type t = {
   with_color: bool;
   host_timeout_upper_bound: float;
   server: server option;
-  plugins: (string * [ `Compiled of string ]) list;
+  plugins: [ `Compiled of string ] list;
 }
 
 let log t =
@@ -47,11 +47,13 @@ let log t =
       s "Debug-level: " % i t.debug_level;
       s "Client " % s (if t.with_color then "with" else "without") % s " colors";
       s "Timeout-upper-bound: " % f t.host_timeout_upper_bound % s " seconds";
-      s "Plugins: " % OCaml.list (fun (name, path) ->
-          s "Name: " % quote name
-          % match path with
-          | `Compiled c -> s " → " % quote c) t.plugins;
-      s "Server: "
+      s "Plugins: "
+      % begin match t.plugins with
+      | [] -> s "None"
+      | more -> n % indent (separate n (List.map more ~f:(function
+        | `Compiled path -> s "* Compiled: " % quote path)))
+      end
+      % s "Server: "
       % (match t.server with
         | None -> s "Not configured"
         | Some srv -> indent (
@@ -128,17 +130,10 @@ let parse_exn str =
     toml_option Toml.get_table "plugins"
     |> Option.value_map ~default:[] ~f:Toml.toml_to_list
     |> List.map ~f:(function
-      | (name, TomlType.TString path) ->
-        if Filename.(
-            check_suffix path ".cma"
-            || check_suffix path ".cmo"
-            || check_suffix path ".cmxs")
-        then
-          (name, `Compiled path)
-        else
-          failwith (fmt "Expecting plugin extension to be .cmo/.cma/.cmxs")
-      | (name, other) ->
-          failwith (fmt "Expecting a string/path for plugin %s" name)
+      | ("compiled", TomlType.TString path) ->
+        `Compiled path
+      | (other, _) ->
+        failwith (fmt "Expecting “compiled” plugins only")
       )
   in
   let server =
