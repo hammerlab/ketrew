@@ -1,3 +1,13 @@
+
+(*M
+
+Command Line Test
+-----------------
+
+This “test” provides a few user defined targets. It gets compiled to a command
+line application that submits targets to Ketrew.
+M*)
+
 (**************************************************************************)
 (*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
@@ -14,28 +24,80 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*
-
-This “test” provides a few user defined targets.
-
-*)
-
 open Printf
 module List = ListLabels
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 
 
+(*M
 
-(*
+Workflows
+---------
 
-A first dummy workflow that can compile the documentation, switch to
-the gh-pages branch, commit the new version of the documentation, and get
-back to the original branch.
+### Example From The README
 
-It can also fail in many ways (e.g. Git checkout forbidden because of dirty
-tree) which show ketrew's handling of errors in dependencies.
+The third workflow is a parametrized version of the example in the
+`README.md` file (`host` and `queue` come from the command line).
 
-*)
+M*)
+let run_command_with_lsf ~host ~queue cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run (
+    target "run_command_with_lsf"
+      ~make:(lsf (Program.sh cmd)
+               ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
+  )
+
+(*M
+
+### Daemonize With Nohup/Setsid
+
+The fourth workflow is like `run_command_with_lsf` but uses
+`daemonize` with the “nohup-setsid hack” instead of the batch scheduler.
+
+M*)
+let run_command_with_nohup ~host cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run (
+    target (sprintf "NhSs: %S" cmd)
+      ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
+  )
+
+(*M
+
+### Daemonize With “The Python Hack”
+
+The fifth workflow is like `run_command_with_nohup` but uses
+the “python daemon hack”.
+
+M*)
+let run_command_with_python_hack ~host cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run (
+    target (sprintf "Pyd: %S" cmd)
+      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
+  )
+
+(*M
+
+### Website Building Workfow
+
+A first workflow that used to be simple but got pretty complex with time:
+
+- take a list of branch names (`[]` meaning “default branch”)
+- clone the repository in a temporary locations
+- *for each branch:* checkout the branch, and build the documentation
+- checkout the `gh-pages` branch
+- put `_doc/` at the top-level
+- commit and push back to the **current repository
+
+The workflow can also fail in many ways (e.g. Git commit forbidden because of
+nothing is new) which show ketrew's handling of errors in dependencies.
+
+M*)
 let deploy_website branches =
   let open Ketrew.EDSL in
   let host = (parse_host "/tmp") in
@@ -128,18 +190,22 @@ let deploy_website branches =
      add all their (transitive) dependencies to the system.  *)
   run (ancestor "Success" ~dependencies:[commit_website])
 
-(*
-  This second target could the beginning of a “backup” workflow.
+(*M
 
-  Take a directory, make a tar.gz, save its MD5 sum, and if `gpg` is `true`,
-  call `gpg -c` and delete the tar.gz.
+### Example “Backup” Workflow
 
-  The passphrase for GPG must be in a file `~/.backup_passphrase` as
+This second target could the beginning of a “backup” workflow.
 
-  ```shell
-  export BACKUP_PASSPHRASE="some passsphraaase"
-  ```
-*)
+Take a directory, make a tar.gz, save its MD5 sum, and if `gpg` is `true`,
+call `gpg -c` and delete the tar.gz.
+
+The passphrase for GPG must be in a file `~/.backup_passphrase` as
+
+```shell
+export BACKUP_PASSPHRASE="some passsphraaase"
+```
+    
+M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
   let dest_base =
@@ -191,51 +257,17 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
   run common_ancestor
+(*M
 
+### Build Ketrew On a Vagrant VM
 
-(*
-  The third workflow is a parametrized version of the example in the
-  `README.md` file (`host` and `queue` come from the command line).
-*)
-let run_command_with_lsf ~host ~queue cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target "run_command_with_lsf"
-      ~make:(lsf (Program.sh cmd)
-               ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
-  )
+This function builds a workflows depedending on the input command:
+  
+- `prepare` → prepare a vagrant VM, ready to SSH to
+- `go` → build Ketrew on the on vagrant VM
+- `clean` → shutdown and delete the VM
 
-(*
-  The fourth workflow is like `run_command_with_lsf` but uses
-  `daemonize` with the “nohup-setsid hack”
-  instead of the batch scheduler.
-*)
-let run_command_with_nohup ~host cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target (sprintf "NhSs: %S" cmd)
-      ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
-  )
-
-(*
-  The fifth workflow is like `run_command_with_nohup` but uses
-  the “python daemon hack”.
-*)
-let run_command_with_python_hack ~host cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target (sprintf "Pyd: %S" cmd)
-      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
-  )
-
-(*
-
-This workflow builds ketrew on a vagrant host.
-
-*)
+M*)
 let run_ketrew_on_vagrant what_to_do =
   let open Ketrew.EDSL in
   let (//) = Filename.concat in
@@ -341,13 +373,16 @@ let run_ketrew_on_vagrant what_to_do =
     in
     rm_temp
 
-(*
-   Command line parsing for this multi-workflow script.
+(*M
 
-   Here it is kept very basic but one may use usual OCaml tools
-   (`Arg` module, or `Cmdliner` -- which is already linked-in with Ketrew).
+## “Main” Of the Module  
 
-*)
+Command line parsing for this multi-workflow script.
+
+Here it is kept very basic but one may use usual OCaml tools
+(`Arg` module, or `Cmdliner` -- which is already linked-in with Ketrew).
+
+M*)
 let () =
   let argl = Array.to_list Sys.argv in
   match List.tl argl with

@@ -68,7 +68,7 @@ then one should be able to add and activate mini-workflow with:
     <script.ml> "<some shell command to run on the cluster>"
 
 
-See the file `src/test/cli.ml` for more examples (*work-in-progress*),
+See the file [`src/test/cli.ml`](src/test/cli.ml) for more examples (*work-in-progress*),
 and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 
