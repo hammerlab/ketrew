@@ -111,20 +111,21 @@ ocp-build root
 
 make_doc () {
   local outdir=_doc/
-  local apidoc=$outdir/api/
-  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
-  mkdir -p $apidoc
-  ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
-    -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
-    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-  local dot_file=_doc/modules.dot
-  local image_file=modules.svg
-  ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
-    -t "Ketrew $version_string" \
-    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-  dot -Tsvg $dot_file -o_doc/$image_file
-  rm $dot_file
-
+  if [ "$KAPI_DOC" != "no" ] ; then
+    local apidoc=$outdir/api/
+    local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
+    mkdir -p $apidoc
+    ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
+      -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
+      -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+    local dot_file=_doc/modules.dot
+    local image_file=modules.svg
+    ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
+      -t "Ketrew $version_string" \
+      -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+    grep -v rotat $dot_file | dot -Tsvg  -o_doc/$image_file
+    rm $dot_file
+  fi
   local markdown_authors_list=""
   for idx in "${authors[@]}" ; do
     eval name=\${$idx[0]}
@@ -140,38 +141,32 @@ make_doc () {
   sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
   cat << END_MD >> $index_markdown
 
+Documentation
+-------------
+
+More documents:
+
+END_MD
+  for md in src/doc/*.md ; do
+    local name=`basename ${md%.md} | sed 's/_/ /g'`
+    printf -- "- [$name]($md)\n" >> $index_markdown
+  done
+  cat << END_MD >> $index_markdown
+- [ocaml-doc for the API](api/index.html) ([modules overview (SVG)](modules.svg))
+
 Authors
 -------
 
 $markdown_authors_list
 
-Development
------------
-
-See the [development documentation](development.html).
-
-END_MD
-
-    cp src/doc/development.md $dev_markdown
-    cat <<END_MD >> $dev_markdown
-Code Documentation
-------------------
-
-- [ocaml-doc for the API](api/index.html)
-
-<object class="img-rounded"  type="image/svg+xml" data="$image_file"
-style="transform-origin: 0% 100% 0;
-       transform: translateY(-100%) rotate(90deg);"
-  >Your browser does not support SVG</object>
 END_MD
 
   local index=_doc/index.html
-  local devdoc=_doc/development.html
-  local http_api_doc=_doc/http_api.html
-  cp src/doc/code_style.css _doc/
+  cp src/doc/* _doc/
   markdown_to_html $index_markdown $index "Ketrew: Home"
-  markdown_to_html $dev_markdown $devdoc "Ketrew: Development"
-  markdown_to_html src/doc/http_api.md $http_api_doc "Ketrew: HTTP-API"
+  for md in _doc/*.md ; do
+    markdown_to_html $md ${md%.md}.html "Ketrew: `basename ${md%.md}`"
+  done
 }
 
 markdown_to_html () {
@@ -192,8 +187,10 @@ markdown_to_html () {
   <h1>$title</h1>
   <h2>Contents</h2>
 END_HTML
-  omd -otoc -ts 1 -td 4 $input >> $output
-  omd -r ocaml='higlo' $input | grep -v '<h1' >> $output
+  local tmp=/tmp/kmd2html_$(basename input)
+  sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input > $tmp
+  omd -otoc -ts 1 -td 4 $tmp >> $output
+  omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
   echo "</div></body><html>" >> $output
 }
 
