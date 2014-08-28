@@ -167,10 +167,25 @@ END_MD
 
   local index=$outdir/index.html
   cp src/doc/* $outdir/
+  ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
   markdown_to_html $index_markdown $index "Ketrew: Home"
   for md in $outdir/*.md ; do
     markdown_to_html $md ${md%.md}.html "Ketrew: `basename ${md%.md}`"
   done
+}
+ocaml_to_markdown () {
+  local input=$1
+  local output=$2
+  cat <<EOBLOB > $output
+# File \`$input\`
+
+\`\`\`ocaml
+EOBLOB
+  cat $input | sed 's/^(\*M/```/' | sed 's/^M\*)/```ocaml/' >> $output
+  cat <<EOBLOB >> $output
+\`\`\`ocaml
+EOBLOB
+
 }
 
 markdown_to_html () {
@@ -192,7 +207,8 @@ markdown_to_html () {
   <h2>Contents</h2>
 END_HTML
   local tmp=/tmp/kmd2html_$(basename input)
-  sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input > $tmp
+  sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input | \
+    sed 's:(src/test/\(.*\)\.ml):(test_\1.html):g' > $tmp
   omd -otoc -ts 1 -td 4 $tmp >> $output
   omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
   echo "</div></body><html>" >> $output
