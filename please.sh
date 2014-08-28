@@ -110,7 +110,11 @@ ocp-build root
 }
 
 make_doc () {
+  local git_branch=`git symbolic-ref --short HEAD`
   local outdir=_doc/
+  if [ "$git_branch" != "master" ]; then
+    outdir=_doc/$git_branch
+  fi
   if [ "$KAPI_DOC" != "no" ] ; then
     local apidoc=$outdir/api/
     local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
@@ -118,12 +122,12 @@ make_doc () {
     ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
       -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
       -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-    local dot_file=_doc/modules.dot
+    local dot_file=$outdir/modules.dot
     local image_file=modules.svg
     ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
       -t "Ketrew $version_string" \
       -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-    grep -v rotat $dot_file | dot -Tsvg  -o_doc/$image_file
+    grep -v rotat $dot_file | dot -Tsvg  -o$outdir/$image_file
     rm $dot_file
   fi
   local markdown_authors_list=""
@@ -161,10 +165,10 @@ $markdown_authors_list
 
 END_MD
 
-  local index=_doc/index.html
-  cp src/doc/* _doc/
+  local index=$outdir/index.html
+  cp src/doc/* $outdir/
   markdown_to_html $index_markdown $index "Ketrew: Home"
-  for md in _doc/*.md ; do
+  for md in $outdir/*.md ; do
     markdown_to_html $md ${md%.md}.html "Ketrew: `basename ${md%.md}`"
   done
 }
