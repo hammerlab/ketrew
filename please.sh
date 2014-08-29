@@ -168,10 +168,29 @@ END_MD
   local index=$outdir/index.html
   cp src/doc/* $outdir/
   ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
+  ketrew_help_to_html init $outdir
+  ketrew_help_to_html "" $outdir
+  ketrew_help_to_html status $outdir
+  ketrew_help_to_html run-engine $outdir
+  ketrew_help_to_html kill $outdir
+  ketrew_help_to_html archive $outdir
+  ketrew_help_to_html interact $outdir
+  ketrew_help_to_html explore $outdir
+  ketrew_help_to_html autoclean $outdir
+  ketrew_help_to_html start-server $outdir
+  ketrew_help_to_html stop-server $outdir
   markdown_to_html $index_markdown $index "Ketrew: Home"
   for md in $outdir/*.md ; do
     markdown_to_html $md ${md%.md}.html "Ketrew: `basename ${md%.md}`"
   done
+}
+ketrew_help_to_html () {
+  local cmd=$1
+  local outdir=$2
+  local output=$outdir/ketrew_${cmd}_help.html
+  #echo "Creating $output"
+  ketrew $cmd --help=groff | groff -Thtml -mandoc >  $output
+
 }
 ocaml_to_markdown () {
   local input=$1
@@ -208,7 +227,8 @@ markdown_to_html () {
 END_HTML
   local tmp=/tmp/kmd2html_$(basename input)
   sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input | \
-    sed 's:(src/test/\(.*\)\.ml):(test_\1.html):g' > $tmp
+    sed 's:(src/test/\(.*\)\.ml):(test_\1.html):g' | \
+    sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $tmp
   omd -otoc -ts 1 -td 4 $tmp >> $output
   omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
   echo "</div></body><html>" >> $output
