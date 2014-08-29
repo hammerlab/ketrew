@@ -92,7 +92,10 @@ The new one succeeds:
     * Plugins:
         * OCamlfind package: "lwt.react"
         * OCamlfind package: "lwt.unix"
-    Server: Authorized tokens: Some "/tmp/tokens"
-        Listen: TLS:4242 (Certificate: somecert.pemKey: somekey.pem)Return-error-messages: false
+    Server:
+        Authorized tokens: Some "/tmp/tokens"
+        Listen: TLS:4242 (Certificate: "somecert.pem",
+            Key: "somekey.pem")
+        Return-error-messages: false
 ```
 
