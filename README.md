@@ -74,35 +74,25 @@ and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 ### Ketrew
 
-Ketrew is driven from the command-line client.  See:
+Ketrew is driven from the command-line client.  See first:
+`ketrew --help`; then:
 
-    ketrew --help
-
-To display the current status:
-
-    ketrew status
-
-To run as many steps as possible until a “fix-point” is reached:
-
-    ketrew run fix
-
-To kill running jobs use
-
-    ketrew kill <target-ID>
-
-or do an interactive murder:
-
-    ketrew kill --interactive
-
-Once targets are dead, one can “archive” them, i.e. put them in a less-visible
-list.
-
-    ketrew archive [--interactive] [<target-ID>]*
+- To display the current status: `ketrew status`.
+- To run as many steps as possible until a “fix-point” is reached:
+`ketrew run fix` (see `ketrew run-engine --help`).
+- To kill running jobs use `ketrew kill` + the target Identifier,<br/>
+or do an interactive murder: `ketrew kill --interactive`
+- Once targets are dead, one can “archive” them, i.e. put them in a
+less-visible list: `ketrew archive --help`.
 
 See also `ketrew interact` or `ketrew explore` for fun
 *one-key-based* navigation.
 
+Ketrew can try to be clever about killing an archiving;
+see `ketrew autoclean --help`.
 
+There is an HTTP API (work in progress); with the commands
+`ketrew start-server` and `ketrew stop-server`.
 
 License
 -------
