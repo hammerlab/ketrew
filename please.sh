@@ -142,7 +142,7 @@ make_doc () {
   local index_markdown=/tmp/ketrew_index_markdown
   local dev_markdown=/tmp/ketrew_devdoc_markdown
 
-  sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
+  cp README.md $index_markdown
   cat << END_MD >> $index_markdown
 
 Documentation
@@ -168,6 +168,8 @@ END_MD
   local index=$outdir/index.html
   cp src/doc/* $outdir/
   ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
+  ocaml_to_markdown src/test/dummy_plugin.ml $outdir/test_dummy_plugin.md
+  ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/test_dummy_plugin_user.md
   ketrew_help_to_html init $outdir
   ketrew_help_to_html "" $outdir
   ketrew_help_to_html status $outdir
@@ -189,7 +191,7 @@ ketrew_help_to_html () {
   local outdir=$2
   local output=$outdir/ketrew_${cmd}_help.html
   #echo "Creating $output"
-  ketrew $cmd --help=groff | groff -Thtml -mandoc >  $output
+  _obuild/ketrew-app/ketrew-app.asm  $cmd --help=groff | groff -Thtml -mandoc >  $output
 
 }
 ocaml_to_markdown () {
@@ -202,7 +204,7 @@ ocaml_to_markdown () {
 EOBLOB
   cat $input | sed 's/^(\*M/```/' | sed 's/^M\*)/```ocaml/' >> $output
   cat <<EOBLOB >> $output
-\`\`\`ocaml
+\`\`\`
 EOBLOB
 
 }
@@ -226,8 +228,11 @@ markdown_to_html () {
   <h2>Contents</h2>
 END_HTML
   local tmp=/tmp/kmd2html_$(basename input)
+  #sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
   sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input | \
     sed 's:(src/test/\(.*\)\.ml):(test_\1.html):g' | \
+    sed 's:(src/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
+    sed 's:(src/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
     sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $tmp
   omd -otoc -ts 1 -td 4 $tmp >> $output
   omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
