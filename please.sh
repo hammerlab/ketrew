@@ -170,6 +170,7 @@ END_MD
   ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
   ocaml_to_markdown src/test/dummy_plugin.ml $outdir/test_dummy_plugin.md
   ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/test_dummy_plugin_user.md
+  ocaml_to_markdown src/test/preconfigured_main.ml $outdir/test_preconfigured_main.md
   ketrew_help_to_html init $outdir
   ketrew_help_to_html "" $outdir
   ketrew_help_to_html status $outdir
@@ -557,6 +558,9 @@ compile_dummy_plugin () {
     -I $compile_dir $compile_dir/dummy_plugin.cmx \
     $compile_dir/dummy_plugin_user.ml \
     -o $compile_dir/test_dummy_plugin_user.asm
+   # just for the sake of it we compile the `preconfigured_main.ml` example:  
+  cp src/test/preconfigured_main.ml $compile_dir
+  $compile -linkpkg ketrew.cmxa $compile_dir/preconfigured_main.ml -o $compile_dir/preconfigured.asm
 }
 test_environment () {
   echo "Creating $test_shell_env"
