@@ -5,7 +5,7 @@ Long-Running Process Plugins
 Implementation
 --------------
 
-The long-plugins *must*:
+The long-running plugins *must*:
 
 - implement a module satisfying the `LONG_RUNNING` interface defined in
 [`src/lib/ketrew_long_running.ml`](src/lib/ketrew_long_running.ml)
@@ -31,6 +31,16 @@ implementation of `Ketrew_daemonize` and adds a (stupid) custom runtime-query:
 [`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml).
 - Workflow script that uses the plugin:
 [`src/test/dummy_plugin_user.ml`](src/test/dummy_plugin_user.ml).
+
+Alternative
+-----------
+
+Dynamic linking can be annoying: some libraries do not install `.cmxs` files,
+some architectures do not support native dynlink, … Hopefully there is an
+alternative, one can link plugins statically with `src/app/mail.ml` (or another
+version of that), see the
+[documentation](src/doc/Alternative_CLI_Application.md).
+
 
 
 
