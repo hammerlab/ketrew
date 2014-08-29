@@ -156,7 +156,7 @@ END_MD
     printf -- "- [$name]($md)\n" >> $index_markdown
   done
   cat << END_MD >> $index_markdown
-- [ocaml-doc for the API](api/index.html) ([modules overview (SVG)](modules.svg))
+- [Generated Documentaiton For The API](api/index.html) ([Modules Overview (SVG)](modules.svg))
 
 Authors
 -------
@@ -183,7 +183,8 @@ END_MD
   ketrew_help_to_html stop-server $outdir
   markdown_to_html $index_markdown $index "Ketrew: Home"
   for md in $outdir/*.md ; do
-    markdown_to_html $md ${md%.md}.html "Ketrew: `basename ${md%.md}`"
+    local name=`basename ${md%.md} | sed 's/_/ /g'`
+    markdown_to_html $md ${md%.md}.html "Ketrew: $name"
   done
 }
 ketrew_help_to_html () {
