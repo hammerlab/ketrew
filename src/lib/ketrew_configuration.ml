@@ -49,16 +49,18 @@ let log t =
       s "Server: "
       % (match t.server with
         | None -> s "Not configured"
-        | Some srv -> indent (
+        | Some srv -> n % indent (
             s "Authorized tokens: " 
             % OCaml.(option string) srv.authorized_tokens_path % n
             % s  "Listen: "
             % (match srv.listen_to with
               | `Tls (cert, key, port) -> 
                 s "TLS:" % i port % sp
-                % parens (s "Certificate: " % s cert % s "Key: " % s key))
+                % parens (indent (s "Certificate: " % quote cert % s ", " % n
+                                      % s "Key: " % quote key))
+              ) % n
             % s "Return-error-messages: "
-            % OCaml.bool srv.return_error_messages))
+            % OCaml.bool srv.return_error_messages %n))
     ])
 
 
