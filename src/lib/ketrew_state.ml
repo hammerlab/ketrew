@@ -398,10 +398,15 @@ let make_target_die ?explanation t ~target ~reason =
   Deferred_list.while_sequential target.Target.if_fails_activate ~f:(fun tid ->
       get_target t tid
       >>= fun trgt ->
-      let newdep = Target.(activate_exn trgt ~by:`Fallback) in
-      add_or_update_target t newdep
-      >>= fun () ->
-      return (`Target_activated (tid, `Fallback)))
+      begin match trgt.Target.history with
+      | `Created _ ->
+        let newdep = Target.(activate_exn trgt ~by:`Fallback) in
+        add_or_update_target t newdep
+        >>= fun () ->
+        return (Some (`Target_activated (tid, `Fallback)))
+      | other -> return None
+      end)
+  >>| List.filter_opt
   >>= fun happens ->
   return (`Target_died (Target.id target, reason) :: happens)
 
