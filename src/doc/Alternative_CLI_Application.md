@@ -47,11 +47,11 @@ Configuration
 The function `Ketrew_command_line.run_main` can take an `~override_configuration` parameter, which can be created with
 `Ketrew_configuration.{create,create_server}`
 (c.f. 
-[`src/lib/ketrew_command_line.mli`](src/lib/ketrew_command_line.mli) and
-[`src/lib/ketrew_configuration.mli`](src/lib/ketrew_configuration.mli)).
+[`Ketrew_command_line`](../lib/ketrew_command_line.mli) and
+[`Ketrew_configuration`](../lib/ketrew_configuration.mli)).
 
 See the example in
-[`src/test/preconfigured_main.ml`](src/test/preconfigured_main.ml), here is how
+[`src/test/preconfigured_main.ml`](../test/preconfigured_main.ml), here is how
 to compile it:
 
     tmp_dir=/tmp/with_preconfiguration

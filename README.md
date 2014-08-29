@@ -37,7 +37,7 @@ To create a configuration file, run:
     ketrew init
 
 This creates `$HOME/.ketrew/configuration.toml` (see `ketrew init --help` to
-choose another path, and see the [documentation](src/doc/configuration_file.md)
+choose another path, and see the [documentation](src/doc/The_Configuration_File.md)
 on the configuration file to tweak it).
 
 ### Workflow Scripts

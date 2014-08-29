@@ -231,11 +231,11 @@ markdown_to_html () {
 END_HTML
   local tmp=/tmp/kmd2html_$(basename input)
   #sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
-  sed 's:(src/doc/\(.*\)\.md):(\1.html):g' $input | \
-    sed 's:(src/test/\(.*\)\.ml):(test_\1.html):g' | \
-    sed 's:(src/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
-    sed 's:(src/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
-    sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $tmp
+  sed 's:([^()]*/\([^/]*\)\.md):(\1.html):g' $input | \
+      sed 's:([^()]*/test/\(.*\)\.ml):(test_\1.html):g' | \
+      sed 's:([^()]*/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
+      sed 's:([a-z\.]*/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
+      sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $tmp
   omd -otoc -ts 1 -td 4 $tmp >> $output
   omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
   echo "</div></body><html>" >> $output
