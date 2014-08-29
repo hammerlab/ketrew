@@ -326,6 +326,7 @@ let test_0 () =
       >>= fun () ->
 
     
+      (* A target with 2 fallback targets: *)
       let fallback1 =
         Target.create ~name:"Fallback 1" ()
           ~make:(`Direct_command Target.Command.(shell "ls")) in
@@ -350,9 +351,39 @@ let test_0 () =
         `Dont_care;
         `Dont_care;
       ]
+      >>= fun () ->
+
+      (* Two targets with the same fallback *)
+      let fallback =
+        Target.create ~name:"Fallback" ()
+          ~make:(`Direct_command Target.Command.(shell "ls")) in
+      let target_with_fallback_1 =
+        Target.active ~name:"target_with_fallback_1"
+          ~if_fails_activate:[Target.id fallback]
+          ~make:(`Direct_command Target.Command.(shell "ls /somelong_STUPID-path"))
+          ()
+      in
+      let target_with_fallback_2 =
+        Target.active ~name:"target_with_fallback_2"
+          ~if_fails_activate:[Target.id fallback]
+          ~make:(`Direct_command Target.Command.(shell "ls /somelong_STUPID-path"))
+          ()
+      in
+      Test.test_targets ~state ~name:"targets_with_same_fallback"
+        [target_with_fallback_1; target_with_fallback_2; fallback] [
+        `Happens (function
+          | [`Target_died (_, `Process_failure);
+             `Target_activated (_, `Fallback);
+             `Target_died (_, `Process_failure); ] -> true
+          | _ -> false);
+        `Dont_care;
+        `Dont_care;
+        `Dont_care;
+      ]
+
+
     end
     >>= fun () ->
-
     return ()
   end |> function
   | `Ok () -> ()
@@ -407,8 +438,8 @@ let test_ssh_failure_vs_target_failure () =
   end |> function
   | `Ok () -> ()
   | `Error e ->
-    Log.(s "test_0: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
-    Test.fail "test_0 ends with error"
+    Log.(s "test_ssh_failure_vs_target_failure: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
+    Test.fail "test_ssh_failure_vs_target_failure ends with error"
 
 
 
