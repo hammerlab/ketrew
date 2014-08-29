@@ -11,8 +11,11 @@ Top-level options:
 
 - `debug-level`: integer specifying the amount of verbose messages: `0`: none,
 `1`: verbose, `2`: very verbose.
-- `turn-unix-ssh-failure-into-target-failure`: boolean; if `false` (default) an
-SSH connection problem will not make targets fail, if `true` it will.
+- `turn-unix-ssh-failure-into-target-failure`: boolean;
+when an SSH or system call fails it may not mean that the command in your
+workflow is wrong (could be an SSH configuration or tunneling problem), by
+default (i.e. `false`), Ketrew tries to be clever and does not make targets
+fail. To change this behavior put the option to `true`.
 - `host-timeout-upper-bound`: float (seconds, default: `60.`); every
 connection/command time-out will be `≤ upper-bound`.
 
@@ -48,6 +51,9 @@ for control commands (*recommended*).
 - `daemonize`: if `true`, ask the server to detach from current terminal.
 - `log-path`: if set, ask the server to redirect logs to this path (if not set
 logs go to `/dev/null`).
+- `return-error-messages`: if `true`, the server will return real error
+messages (in the *body* of the response) to the client; if `false` (the
+default), any kind of error will result in the same uninformative message.
 
 ### The `plugins` Section
 
@@ -61,23 +67,15 @@ and to load.
 Example
 -------
 
-Here is a complete and commented example:
+Here is a somewhat complete example:
 
 ```toml
-# Ketrew configuration file
-
 # How much noise do you want on your terminal:
 debug-level = 2
 
-# When an SSH or system call fails it may not mean that the command in your
-# workflow is wrong (could be an SSH config or tunneling problem), by default,
-# Ketrew tries to be clever and does not make targets fail. To change this
-# behavior put the following option to `true`:
 turn-unix-ssh-failure-into-target-failure = false
 
-# Unless explicitly told, all SSH/system calls are bounded by a timeout.  A
-# given Host can have a specific timeout, but Ketrew has an upper-bound of all
-# timeouts allowed  (default 60 seconds) here is how to set it:
+# Unless explicitly told, all SSH/system calls are bounded by a timeout.
 host-timeout-upper-bound = 120
 
 [client]
@@ -88,8 +86,7 @@ host-timeout-upper-bound = 120
 [database]
   # The path to the database (mandatory):
   path = "/path/to/some/file"
-  # What is the 'master-key' of the state inside the database
-  # (normal users should not change that):
+  # Normal users should not change that:
   state-key = "some-string"
 
 [server]
