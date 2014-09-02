@@ -21,17 +21,15 @@ module Error = Ketrew_error
 module User_command = Ketrew_user_command
 module Configuration = Ketrew_configuration
 
+(** Display errors, and return an exit code (integer). *)
 module Return_code = struct
-  let user_todo_failure = 2
-  let not_implemented = 3
-  let cmdliner_error = 4
-  let ketew_error = 5
-  let wrong_command = 6
+  let cmdliner_error = 3
+  let ketrew_error = 5
 
   let of_error = function
   | e -> 
     Log.(s "Error: " % s (Error.to_string e) @ error);
-    ketew_error
+    ketrew_error
 
   let transform_error = function
   | `Ok () -> return ()
@@ -39,7 +37,17 @@ module Return_code = struct
 
 end
 
+(** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
 module Document = struct
+
+  let log_list ~empty l =
+    let empty_log = empty in (** renaming because of {!Log.empty} *)
+    let open Log in
+    let if_empty = sp % empty_log in
+    match l with 
+    | [] -> if_empty
+  | more ->
+    n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
 
   let build_process ~state ?(with_details=false)  =
     let open Log in
@@ -106,6 +114,7 @@ module Document = struct
     ]
 end
 
+(** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
 module Interaction = struct
 
   (** [with_cbreak f] calls with the terminal in “get key” mode. 
@@ -269,6 +278,9 @@ module Interaction = struct
               (`Go (Target.id target))))
 
 end
+
+(** The function behind the [ketrew status] sub-command (and the equivalent
+    command in [ketrew interactive]). *)
 let display_status ~state  =
   begin
     Log.(s "display_info !" @ verbose);
@@ -343,15 +355,8 @@ let display_status ~state  =
     end
   end
 
-let log_list ~empty l =
-  let empty_log = empty in (* renaming because og Log.empty *)
-  let open Log in
-  let if_empty = sp % empty_log in
-  match l with 
-  | [] -> if_empty
-  | more ->
-    n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
-
+(** The function behind the [ketrew run <how>] sub-command (and the equivalent
+    command in [ketrew interactive]). *)
 let run_state ~state ~max_sleep ~how =
   let log_happening ~what_happened =
     let open Log in
@@ -370,7 +375,7 @@ let run_state ~state ~max_sleep ~how =
       | more -> i more % s " steps were executed"
     in
     Log.(step_sentence % s ":"  %
-         log_list ~empty:(s "Nothing happened") happening_list
+         Document.log_list ~empty:(s "Nothing happened") happening_list
          @ normal); 
     return ()
   in
@@ -455,6 +460,8 @@ let run_state ~state ~max_sleep ~how =
     fail (`Wrong_command_line sl)
   end
 
+(** Kill targets (command line, ["--interactive"], or within 
+    [ketrew interactive]. *)
 let kill ~state ~interactive ids =
   begin 
     begin if interactive then
@@ -497,6 +504,8 @@ let kill ~state ~interactive ids =
       return ()
   end
 
+(** Archive targets (command line, ["--interactive"], or within 
+    [ketrew interactive]. *)
 let archive ~state ~interactive ids =
   begin 
     begin if interactive then
@@ -520,6 +529,7 @@ let archive ~state ~interactive ids =
       return ()
   end
 
+(** Kill and archive targets that are done or useless. *)
 let autoclean ~state ~how_much ~interactive () =
   let module G = Ketrew_state.Target_graph in
   G.get_current ~state
@@ -589,6 +599,7 @@ let autoclean ~state ~how_much ~interactive () =
     archive ~state ~interactive:false (List.map to_archive ~f:Ketrew_target.id)
   end
 
+(** The “Target Explorer™“ *)
 module Explorer = struct
   type exploration_state = {
     build_process_details: bool;
@@ -934,6 +945,7 @@ module Explorer = struct
     end
 end
 
+(** The function behind [ketrew interact]. *)
 let interact ~state =
   let rec main_loop () =
     Interaction.(
@@ -983,6 +995,7 @@ let interact ~state =
   in
   main_loop ()
 
+(** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
   let open Cmdliner in
   let term, info = cmd in
@@ -997,7 +1010,8 @@ let make_command_alias cmd ?(options="") name =
   ] in
   (term, Term.info name ~docs:"COMMAND ALIASES" ~doc ~man)
 
-let cmdliner_main ?override_configuration ?argv ?additional_term () =
+(** The configuration of the command line, using the [Cmdliner] library. *)
+let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let open Cmdliner in
   let version = Ketrew_metadata.version in
   let sub_command ~info ~term = (term, info) in
@@ -1213,14 +1227,15 @@ let cmdliner_main ?override_configuration ?argv ?additional_term () =
     sub_command
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
-  let cmds = [
-    init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
-    interact_cmd;
-    explore_cmd;
-    autoclean_command;
-    start_server_cmd; stop_server_cmd;
-    print_conf_cmd; make_command_alias print_conf_cmd "pc";
-  ] in
+  let cmds =
+    additional_commands @ [
+      init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+      interact_cmd;
+      explore_cmd;
+      autoclean_command;
+      start_server_cmd; stop_server_cmd;
+      print_conf_cmd; make_command_alias print_conf_cmd "pc";
+    ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
   | `Error _ -> exit Return_code.cmdliner_error

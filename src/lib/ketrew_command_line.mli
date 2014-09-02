@@ -24,6 +24,13 @@ val run_main :
   unit ->
   [ `Never_returns ]
 (** The “main” function for the application, it will [exit n] with [n = 0] if
-    succeed or [n > 0] if fails. *)
+    succeed or [n > 0] if an error occurs.
+
+    - [argv]: one can provide an array of arguments to be used instead of
+    {!Sys.argv}.
+    - [override_configuration]: providing a custom configuration will prevent
+    Ketrew from looking up a configuration file.
+
+*)
 
 
