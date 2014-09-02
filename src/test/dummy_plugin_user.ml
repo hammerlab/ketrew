@@ -1,4 +1,9 @@
 
+(*M
+
+This is a workflow script using `Dummy_plugin` to create a (local) target.
+
+M*)
 open Printf
 let () =
   let open Ketrew.EDSL in

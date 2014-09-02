@@ -1,6 +1,6 @@
 .id { color: #333333 ; font-style: italic }
 .kw { color: #990000 ; font-weight: bold ;}
-.kw1 { color: orange ; font-weight: bold ;}
+.kw1 { color: #900 ; font-weight: bold ;}
 .kw2 { color: #009 ; font-weight: bold ;}
 .kw3 { color: #274388 ; font-weight: bold ;}
 .kw4 { color: brown ; font-weight: bold ;}
@@ -12,7 +12,9 @@
 .escape { color: #409290 ; }
 .symbol { color: orange ; font-weight: bold ; }
 .symbol1 { color: #993300 ; font-weight: bold ; }
-.constant { color: pink; }
+.constant { color: #999900; }
 pre { font-family: courier }
 pre.goodresult { background-color: #E0F0B2; margin-left: 3em; margin-right: 3em;  }
 pre.badresult { background-color: #FF8080; margin-left: 3em; margin-right: 3em; }
+/* Make code links visible: */
+a code { text-decoration: underline; }

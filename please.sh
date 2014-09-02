@@ -110,21 +110,26 @@ ocp-build root
 }
 
 make_doc () {
+  local git_branch=`git symbolic-ref --short HEAD`
   local outdir=_doc/
-  local apidoc=$outdir/api/
-  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
-  mkdir -p $apidoc
-  ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
-    -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
-    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-  local dot_file=_doc/modules.dot
-  local image_file=modules.svg
-  ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
-    -t "Ketrew $version_string" \
-    -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
-  dot -Tsvg $dot_file -o_doc/$image_file
-  rm $dot_file
-
+  if [ "$git_branch" != "master" ]; then
+    outdir=_doc/$git_branch
+  fi
+  if [ "$KAPI_DOC" != "no" ] ; then
+    local apidoc=$outdir/api/
+    local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
+    mkdir -p $apidoc
+    ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
+      -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
+      -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+    local dot_file=$outdir/modules.dot
+    local image_file=modules.svg
+    ocamlfind ocamldoc -dot -o $dot_file $ocamlfind_package_options  -thread \
+      -t "Ketrew $version_string" \
+      -I _obuild/ketrew/ $lib_mli_files $lib_ml_files 
+    grep -v rotat $dot_file | dot -Tsvg  -o$outdir/$image_file
+    rm $dot_file
+  fi
   local markdown_authors_list=""
   for idx in "${authors[@]}" ; do
     eval name=\${$idx[0]}
@@ -137,7 +142,7 @@ make_doc () {
   local index_markdown=/tmp/ketrew_index_markdown
   local dev_markdown=/tmp/ketrew_devdoc_markdown
 
-  sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
+  cp README.md $index_markdown
   cat << END_MD >> $index_markdown
 
 Authors
@@ -145,35 +150,67 @@ Authors
 
 $markdown_authors_list
 
-Development
------------
-
-See the [development documentation](development.html).
-
 END_MD
 
-    cp src/doc/development.md $dev_markdown
-    cat <<END_MD >> $dev_markdown
-Code Documentation
-------------------
-
-- [ocaml-doc for the API](api/index.html)
-
-<object class="img-rounded"  type="image/svg+xml" data="$image_file"
-style="transform-origin: 0% 100% 0;
-       transform: translateY(-100%) rotate(90deg);"
-  >Your browser does not support SVG</object>
-END_MD
-
-  local index=_doc/index.html
-  local devdoc=_doc/development.html
-  local http_api_doc=_doc/http_api.html
-  cp src/doc/code_style.css _doc/
+  local index=$outdir/index.html
+  cp src/doc/* $outdir/
+  ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
+  ocaml_to_markdown src/test/dummy_plugin.ml $outdir/test_dummy_plugin.md
+  ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/test_dummy_plugin_user.md
+  ocaml_to_markdown src/test/preconfigured_main.ml $outdir/test_preconfigured_main.md
+  ketrew_help_to_html init $outdir
+  ketrew_help_to_html "--help" $outdir
+  ketrew_help_to_html status $outdir
+  ketrew_help_to_html run-engine $outdir
+  ketrew_help_to_html kill $outdir
+  ketrew_help_to_html archive $outdir
+  ketrew_help_to_html interact $outdir
+  ketrew_help_to_html explore $outdir
+  ketrew_help_to_html autoclean $outdir
+  ketrew_help_to_html start-server $outdir
+  ketrew_help_to_html stop-server $outdir
   markdown_to_html $index_markdown $index "Ketrew: Home"
-  markdown_to_html $dev_markdown $devdoc "Ketrew: Development"
-  markdown_to_html src/doc/http_api.md $http_api_doc "Ketrew: HTTP-API"
+  for md in $outdir/*.md ; do
+    local name=`basename ${md%.md} | sed 's/_/ /g'`
+    markdown_to_html $md ${md%.md}.html "Ketrew: $name"
+  done
+}
+ketrew_help_to_html () {
+  local cmd=$1
+  local outdir=$2
+  local output=$outdir/ketrew_${cmd}_help.html
+  #echo "Creating $output"
+  if [ "$cmd" = "--help" ]; then
+      _obuild/ketrew-app/ketrew-app.asm --help=groff | groff -Thtml -mandoc >  $output
+  else
+      _obuild/ketrew-app/ketrew-app.asm  $cmd --help=groff | groff -Thtml -mandoc >  $output
+  fi
+
+}
+ocaml_to_markdown () {
+  local input=$1
+  local output=$2
+  cat <<EOBLOB > $output
+# File \`$input\`
+
+\`\`\`ocaml
+EOBLOB
+  cat $input | sed 's/^(\*M/```/' | sed 's/^M\*)/```ocaml/' >> $output
+  cat <<EOBLOB >> $output
+\`\`\`
+EOBLOB
+
 }
 
+markdown_transform_links () {
+    local input=$1
+    local output=$2
+    sed 's:([^()]*/\([^/]*\)\.md):(\1.html):g' $input | \
+        sed 's:([^()]*/test/\(.*\)\.ml):(test_\1.html):g' | \
+        sed 's:([^()]*/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
+        sed 's:([a-z\.]*/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
+        sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $output
+}
 markdown_to_html () {
     local input=$1
     local output=$2
@@ -190,11 +227,29 @@ markdown_to_html () {
 </head>
   <body><div class="container">
   <h1>$title</h1>
+  <div class="row">
+  <div class="col-md-3">
   <h2>Contents</h2>
 END_HTML
-  omd -otoc -ts 1 -td 4 $input >> $output
-  omd -r ocaml='higlo' $input | grep -v '<h1' >> $output
-  echo "</div></body><html>" >> $output
+  local tmp=/tmp/kmd2html_$(basename input)
+  #sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
+  markdown_transform_links $input $tmp
+  omd -otoc -ts 1 -td 4 $tmp >> $output
+  echo "<h2>Menu</h2>" >> $output
+  local menu_md=/tmp/ketrrew_doc_menu.md
+  printf -- "- [Home](./index.html)\n" > $menu_md
+  for md in src/doc/*.md ; do
+    local name=`basename ${md%.md} | sed 's/_/ /g'`
+    printf -- "- [$name]($md)\n" >> $menu_md
+  done
+  cat << END_MD >> $menu_md
+- [Generated Documentaiton For The API](api/index.html) ([Modules Overview (SVG)](modules.svg))
+END_MD
+  markdown_transform_links $menu_md $menu_md.transofrm.md
+  omd $menu_md.transofrm.md >> $output
+  echo "</div><div class=\"col-md-9\">" >> $output
+  omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
+  echo "</div></div></div></body><html>" >> $output
 }
 
 run_top () {
@@ -514,6 +569,9 @@ compile_dummy_plugin () {
     -I $compile_dir $compile_dir/dummy_plugin.cmx \
     $compile_dir/dummy_plugin_user.ml \
     -o $compile_dir/test_dummy_plugin_user.asm
+   # just for the sake of it we compile the `preconfigured_main.ml` example:  
+  cp src/test/preconfigured_main.ml $compile_dir
+  $compile -linkpkg ketrew.cmxa $compile_dir/preconfigured_main.ml -o $compile_dir/preconfigured.asm
 }
 test_environment () {
   echo "Creating $test_shell_env"

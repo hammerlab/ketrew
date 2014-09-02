@@ -1,3 +1,13 @@
+
+(*M
+
+Command Line Test
+-----------------
+
+This “test” provides a few user defined targets. It gets compiled to a command
+line application that submits targets to Ketrew.
+M*)
+
 (**************************************************************************)
 (*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
@@ -14,89 +24,188 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*
-
-This “test” provides a few user defined targets.
-
-*)
-
 open Printf
+module List = ListLabels
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 
 
+(*M
 
-(*
+Workflows
+---------
 
-A first dummy workflow that can compile the documentation, switch to
-the gh-pages branch, commit the new version of the documentation, and get
-back to the original branch.
+### Example From The README
 
-It can also fail in many ways (e.g. Git checkout forbidden because of dirty
-tree) which show ketrew's handling of errors in dependencies.
+The third workflow is a parametrized version of the example in the
+`README.md` file (`host` and `queue` come from the command line).
 
-*)
-let deploy_website () =
+M*)
+let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
-  let branch_file = file (sprintf "/tmp/branch_%s" (Ketrew_pervasives.Unique_id.create ())) in
-  let write_branch =
-    (* The target that produces `branch_file` *)
-    target "Get current branch"
-      ~ready_when:(branch_file#is_bigger_than 2)
-      ~metadata:(`String "Stores current branch in a file")
-      ~make:(direct_shell_command
-               (sprintf "git symbolic-ref --short HEAD > %s" branch_file#path))
+  let host = parse_host host in
+  run (
+    target "run_command_with_lsf"
+      ~make:(lsf (Program.sh cmd)
+               ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
+  )
+
+(*M
+
+### Daemonize With Nohup/Setsid
+
+The fourth workflow is like `run_command_with_lsf` but uses
+`daemonize` with the “nohup-setsid hack” instead of the batch scheduler.
+
+M*)
+let run_command_with_nohup ~host cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run (
+    target (sprintf "NhSs: %S" cmd)
+      ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
+  )
+
+(*M
+
+### Daemonize With “The Python Hack”
+
+The fifth workflow is like `run_command_with_nohup` but uses
+the “python daemon hack”.
+
+M*)
+let run_command_with_python_hack ~host cmd =
+  let open Ketrew.EDSL in
+  let host = parse_host host in
+  run (
+    target (sprintf "Pyd: %S" cmd)
+      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
+  )
+
+(*M
+
+### Website Building Workfow
+
+A first workflow that used to be simple but got pretty complex with time:
+
+- take a list of branch names (`[]` meaning “default branch”)
+- clone the repository in a temporary locations
+- *for each branch:* checkout the branch, and build the documentation
+- checkout the `gh-pages` branch
+- put `_doc/` at the top-level
+- commit and push back to the **current repository
+
+The workflow can also fail in many ways (e.g. Git commit forbidden because of
+nothing is new) which show ketrew's handling of errors in dependencies.
+
+M*)
+let deploy_website branches =
+  let open Ketrew.EDSL in
+  let host = (parse_host "/tmp") in
+  let local_deamonize = daemonize ~host ~using:`Python_daemon in
+  let current_path = Sys.getenv "PWD" in
+  let dest_path =
+    sprintf "/tmp/deploy_website_%s" (Ketrew_pervasives.Unique_id.create ())
   in
+  let clone_repo =
+    let readme = file (sprintf "%s/ketrew/README.md" dest_path) in
+    target (sprintf "Clone to %s" dest_path)
+      ~ready_when:(readme #exists)
+      ~make:(local_deamonize
+               Program.(
+                 shf "mkdir -p %s" dest_path
+                 && shf "cd %s" dest_path
+                 && shf "git clone %s" current_path))
+  in
+  let in_cloned_repo = Program.shf "cd %s/ketrew" dest_path in
+  (* A function that creates a target that checks-out a given git branch
+     (and actively verifies that it was successful) *)
+  let check_out ~dependencies branch =
+    target (sprintf "Check out %s" branch)
+      ~dependencies:(clone_repo :: dependencies)
+      ~make:(local_deamonize
+              Program.(in_cloned_repo &&
+                       shf "git checkout %s || git checkout -t origin/%s"
+                         branch branch
+                       && shf "[ \"`git symbolic-ref --short HEAD`\" = \"%s\" ]" branch
+                      ))
+  in
+  let build_doc_prgram =
+    Program.(
+      in_cloned_repo && sh "bash ./please.sh clean build doc") in
   let make_doc =
-    target "Make doc" ~make:(direct_shell_command "please.sh doc")
+    match branches with
+    | [] ->
+      target "Make documentation (default branch)" 
+        ~dependencies:[clone_repo]
+        ~make:(local_deamonize build_doc_prgram)
+    | more -> 
+      (* we build a chain of targets depending on each other:
+         clone_repo -> check_out branch1 -> build_doc ->
+         -> check_out branch2 -> build_doc -> ...
+         -> check_out last_branch -> build_doc
+      *)
+      List.fold_left ~init:clone_repo more ~f:(fun previous_dep branch ->
+          let co = check_out ~dependencies:[previous_dep] branch in
+          target (sprintf "Make documentation (branch %s)" branch)
+            ~dependencies:[co]
+            ~make:(local_deamonize build_doc_prgram))
   in
   let check_out_gh_pages =
     (* first target with dependencies: the two previous ones *)
-    target "Check out gh-pages"
-      ~dependencies:[write_branch; make_doc]
-      ~ready_when:(
-        `Command_returns
-          (Ketrew.Target.Command.shell
-             "branch=`git symbolic-ref --short HEAD` && [ \"$branch\" = \"gh-pages\" ]", 0))
-      ~make:(direct_shell_command
-               (sprintf "git checkout gh-pages || git checkout -t origin/gh-pages"))
-  in
+    check_out ~dependencies:[make_doc] "gh-pages" in
   let move_website =
     target "Move _doc/" ~dependencies:[check_out_gh_pages]
-        ~make:(direct_shell_command (sprintf "cp -r _doc/* .")) in
-  (* A function that creates a `getting back to original branch` target
-     given a list of dependencies. *)
-  let get_back ~name ~dependencies =
-    target name ~dependencies
-      ~make:(direct_shell_command
-               (sprintf "[ -f %s ] && git checkout `cat %s`"
-                  branch_file#path branch_file#path))
-  in
+      ~make:(local_deamonize 
+               Program.(in_cloned_repo && sh "rsync -a _doc/ .")) in
   (* if there is nothing to commit, `git commit -a` will return 1, 
-    so we use `get_back` (without dependencies) as a fallback: *)
+     so we use `ancestor` (without dependencies) as a fallback.
+     But `ancestor` will also be run in case of success. *)
+  let ancestor ~dependencies status =
+    target (sprintf "Common ancestor: %s" status) ~dependencies
+      ~make:(local_deamonize
+               Program.(
+                 shf "echo 'Status: %S'" status
+                 && chain
+                   (List.map branches ~f:(function
+                      | "master" ->
+                        shf "echo 'See file://%s/ketrew/index.html'" dest_path
+                      | br ->
+                        shf "echo 'See file://%s/ketrew/%s/index.html'"
+                          dest_path br)
+                   )))
+  in
   let commit_website =
     target "Commit" ~dependencies:[move_website]
-      ~make:(direct_shell_command
-               (sprintf "git add api && git ci -a -m 'update website' "))
-      ~if_fails_activate:[get_back ~name:"Fallback with original branch"
-                            ~dependencies:[]]
+      ~make:(local_deamonize
+               Program.(
+                 in_cloned_repo
+                 && shf "git add api *.html *.svg %s "
+                   (String.concat " " (List.filter ~f:((<>) "master") branches))
+                 && sh "git commit -a -m 'update website'"
+                 && shf "git push origin gh-pages"
+               ))
+      ~if_fails_activate:[ancestor "Failed" ~dependencies:[]]
   in
-  (* `run` will activate the target `get_back commit_website`, and add all its
-     (transitive) dependencies to the system.  *)
-  run (get_back ~name:"Last-step: check-out original branch"
-         ~dependencies:[commit_website])
+  (* `run` will activate the target `ancestor` and then `commit_website`, and
+     add all their (transitive) dependencies to the system.  *)
+  run (ancestor "Success" ~dependencies:[commit_website])
 
-(*
-  This second target could the beginning of a “backup” workflow.
+(*M
 
-  Take a directory, make a tar.gz, save its MD5 sum, and if `gpg` is `true`,
-  call `gpg -c` and delete the tar.gz.
+### Example “Backup” Workflow
 
-  The passphrase for GPG must be in a file `~/.backup_passphrase` as
+This second target could the beginning of a “backup” workflow.
 
-  ```shell
-  export BACKUP_PASSPHRASE="some passsphraaase"
-  ```
-*)
+Take a directory, make a tar.gz, save its MD5 sum, and if `gpg` is `true`,
+call `gpg -c` and delete the tar.gz.
+
+The passphrase for GPG must be in a file `~/.backup_passphrase` as
+
+```shell
+export BACKUP_PASSPHRASE="some passsphraaase"
+```
+    
+M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
   let dest_base =
@@ -148,51 +257,17 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
   run common_ancestor
+(*M
 
+### Build Ketrew On a Vagrant VM
 
-(*
-  The third workflow is a parametrized version of the example in the
-  `README.md` file (`host` and `queue` come from the command line).
-*)
-let run_command_with_lsf ~host ~queue cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target "run_command_with_lsf"
-      ~make:(lsf (Program.sh cmd)
-               ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
-  )
+This function builds a workflows depedending on the input command:
+  
+- `prepare` → prepare a vagrant VM, ready to SSH to
+- `go` → build Ketrew on the on vagrant VM
+- `clean` → shutdown and delete the VM
 
-(*
-  The fourth workflow is like `run_command_with_lsf` but uses
-  `daemonize` with the “nohup-setsid hack”
-  instead of the batch scheduler.
-*)
-let run_command_with_nohup ~host cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target (sprintf "NhSs: %S" cmd)
-      ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
-  )
-
-(*
-  The fifth workflow is like `run_command_with_nohup` but uses
-  the “python daemon hack”.
-*)
-let run_command_with_python_hack ~host cmd =
-  let open Ketrew.EDSL in
-  let host = parse_host host in
-  run (
-    target (sprintf "Pyd: %S" cmd)
-      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
-  )
-
-(*
-
-This workflow builds ketrew on a vagrant host.
-
-*)
+M*)
 let run_ketrew_on_vagrant what_to_do =
   let open Ketrew.EDSL in
   let (//) = Filename.concat in
@@ -298,20 +373,25 @@ let run_ketrew_on_vagrant what_to_do =
     in
     rm_temp
 
-(*
-   Command line parsing for this multi-workflow script.
+(*M
 
-   Here it is kept very basic but one may use usual OCaml tools
-   (`Arg` module, or `Cmdliner` -- which is already linked-in with Ketrew).
+## “Main” Of the Module  
 
-*)
+Command line parsing for this multi-workflow script.
+
+Here it is kept very basic but one may use usual OCaml tools
+(`Arg` module, or `Cmdliner` -- which is already linked-in with Ketrew).
+
+M*)
 let () =
   let argl = Array.to_list Sys.argv in
   match List.tl argl with
   | "website" :: more_args ->
-    if more_args <> [] then
-      say "Ignoring: [%s]" (String.concat ", " more_args);
-    deploy_website ()
+    say "Deploying website for %s"
+      (match more_args with
+       | [] -> "The current branch"
+       | _ -> "branches: " ^ String.concat ", " more_args);
+    deploy_website more_args
   | "tgz" :: more_args ->
     begin match more_args with
     | host_uri :: dir :: [] ->

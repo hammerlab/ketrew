@@ -23,6 +23,8 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 - `atdgen/atd`: definition of serialization formats (used with `Yojson`).
 - `toml`: config-file parsing
 - `dbm`: unix key-value database
+- `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
+- `findlib` + `dynlink`: dynamic loading of plugins 
 
 and uses the `ocp-build` build system.
 
@@ -64,7 +66,8 @@ and Graphviz's `dot`:
 
     please.sh doc
 
-and check-out `_doc/index.html`.
+and check-out `_doc/<branch>/index.html` (unless branch is `master`, then
+`_doc/index.html`).
 
 ### Run a Toplevel
 
@@ -93,30 +96,27 @@ in its `/tmp` directory.
 
 ### The `cli` Test
 
-There is also a more interactive test: `src/test/cli.ml` which provides
-workflows to be created from the command line. In order to not impact a
-potential “global” installation of Ketrew it uses `/tmp/ketrew_cli_test_db` as
-database.
+There is also a more interactive test:
+[`src/test/cli.ml` ](../test/cli.ml) which provides
+workflows to be created from the command line.
 
-Hence to interact with the workflows, use a config-file like this:
+### Generating a Test Environment
 
-```toml
-# Ketrew configuration file
+In order to not impact a potential “global” installation of Ketrew, one can
+use:
 
-debug-level = 2
+    ./please.sh test-env
 
-[client]
-  color = true
+```goodresult
+Using package lwt.react add findlin-plugin
+Compiling the Dummy-plugin and its user
 
-[database]
-  path = "/tmp/ketrew_cli_test_db"
+Creating cert-key pair: _obuild/test-cert.pem, _obuild/test-key.pem
+Creating _obuild/test-config-file.toml
+Creating _obuild/test-authorized-tokens
+Creating _obuild/test.env
 ```
 
-and force its usage with the option `-C` of the client or (the
-`KETREW_CONFIGURATION` environment variable).
-For example, with the following bash-aliases:
+then sourcing `_obuild/test.env` will give a few aliases to run the tests (like
+`kttest`, `ktapp`, etc. see inside the file).
 
-```
-alias cli='KETREW_CONFIGURATION=cli-test.toml _obuild/ketrew-app/ketrew-app.asm'
-alias CT='_obuild/ketrew-cli-test/ketrew-cli-test.asm'
-```
