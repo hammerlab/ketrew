@@ -31,6 +31,8 @@ val run_main :
     {!Sys.argv}.
     - [override_configuration]: providing a custom configuration will prevent
     Ketrew from looking up a configuration file.
+    - [additional_commands]: a list of {!Cmdliner} commands to add to the
+    interface.
 
 *)
 

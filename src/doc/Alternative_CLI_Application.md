@@ -99,3 +99,12 @@ The new one succeeds:
         Return-error-messages: false
 ```
 
+Command Line “Sub-commands”
+---------------------------
+
+One can also *even* add their own sub-commands to the command-line parsing:
+this is also in the example
+[`src/test/preconfigured_main.ml`](../test/preconfigured_main.ml).
+
+
+
