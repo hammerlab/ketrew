@@ -24,6 +24,12 @@ type t
 (** The contents of the configuration. *)
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
+(** The 2 kinds of dynamically loaded “plugins” accepted by Ketrew:
+
+    - [`Compiled path]: path to a `.cma` or `.cmxs` compiled file.
+    - [`OCamlfind package]: name of a Findlib package.
+
+*)
 
 val create_server: 
   ?authorized_tokens_path: string ->
@@ -34,7 +40,19 @@ val create_server:
   [ `Tls of string * string * int ] ->
   server
 (** Create a server configuration (to pass as optional argument to the
-      {!create} function). *)
+    {!create} function).
+
+    - [authorized_tokens_path] is a path to a file similar to an SSH
+    [authorized_keys] file.
+    - [return_error_messages]: whether the server should return explicit error
+    messages to clients (default [false]).
+    - [command_pipe]: path to a named-piped for the server to listen to
+    commands.
+    - [daemon]: whether to daemonize the server or not  (default [false]).
+    - [log_path]: path to write logs.
+    - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
+    server to listen on [port].
+*)
 
 val create :
   ?debug_level:int ->
@@ -54,6 +72,9 @@ val create :
     assuredly “their fault” (e.g. a call to [ssh] may fail
     because of network settings, and succeed when tried again later);
     the default value is [false].
+
+    See the documentation on the configuration file for further explanations on
+    the parameters.
 *)
 
 val default_configuration_path: string
@@ -93,14 +114,28 @@ val get_configuration :
 *)
 
 val plugins: t ->  plugin list
+(** Get the configured list of plugins. *)
 
 val server_configuration: t -> server option
+(** Get the potentiel server configuration. *)
+
 val authorized_tokens_path: server -> string option 
+(** The path to the [authorized_tokens] file. *)
+
 val listen_to: server -> [ `Tls of (string * string * int) ]
+(** Get the OpenSSL server configuration. *)
+
 val return_error_messages: server -> bool
+(** Get the value of [return_error_messages]. *)
+
 val command_pipe: server -> string option
+(** Get the path to the “command” named pipe. *)
+
 val daemon: server -> bool
+(** Tell whether the server should detach. *)
+
 val log_path: server -> string option
+(** Get the path to the server's log file. *)
 
 val log: t -> Log.t list
 (** Get a display-friendly list of configuration items. *)
