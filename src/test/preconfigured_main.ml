@@ -28,6 +28,30 @@ let override_configuration =
 
 (*M
 
+A Cmdliner Command To Add
+-------------------------
+
+This just shows how to add one or more sub-commands to the command-line
+interface:
+
+M*)
+let additional_cmdliner_command =
+  let open Ketrew_pervasives in
+  let open Cmdliner in
+  let open Term in
+  let term =
+    pure (fun stuff_to_say ->
+        Log.(s "From custom-main: " % OCaml.list quote stuff_to_say @ normal);
+        return ())
+    $ Arg.(non_empty @@ pos_all string [] @@
+           info [] ~docv:"STUFF-TO-SAY" 
+             ~doc:"Tell Ketrew to say $(docv)") 
+  in
+  (term, info "say-stuff" ~doc:"Say stuff")
+
+
+(*M
+
 Start The Application
 ---------------------
 
@@ -36,4 +60,6 @@ just like `src/app/main.ml` but preconfigured:
 
 M*)
 let `Never_returns =
-  Ketrew.Command_line.run_main ~override_configuration ()
+  Ketrew.Command_line.run_main
+    ~additional_commands:[additional_cmdliner_command]
+    ~override_configuration ()
