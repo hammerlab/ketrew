@@ -1,7 +1,7 @@
 Ketrew: Keep Track of Experimental Workflows
 ============================================
 
-Ketrew is:
+**Ketrew** is:
 
 - an OCaml library providing an EDSL API to define complex and convoluted
 workflows (interdependent steps/programs using a lot of data, with many
@@ -93,6 +93,32 @@ see `ketrew autoclean --help`.
 
 There is an HTTP API (work in progress); with the commands
 `ketrew start-server` and `ketrew stop-server`.
+
+Where to Go Next
+----------------
+
+From here:
+
+- To write workflows for Ketrew,
+see [`src/test/cli.ml`](src/test/cli.ml) for examples
+and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+- To configure Ketrew use the configuration file
+[documentation](src/doc/The_Configuration_File.md).
+- You may want to “extend” Ketrew with new ways of running “long-running"
+computations:  see the documentation on
+[plugins](src/doc/Long-Running_Plugins.md),
+and the examples in the library:
+like [`Ketrew_lsf`](src/lib/ketrew_lsf.mli) or in the tests:
+[`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml).
+- You may want to extend Ketrew, or preconfigure it, *without* configuration
+files or dynamically loaded libraries: just
+[create](src/doc/Alternative_CLI_Application.md) your own comand-line app.
+- You may want to try out the [HTTP API](src/doc/The_HTTP_API.md)
+(*work in progress*).
+- If you want to help or simply to understand Ketrew
+see the [development](src/doc/Developer_Documentation.md)
+documentation, and have a look at the modules
+like [`Ketrew_state`](src/lib/ketrew_state.mli).
 
 License
 -------
