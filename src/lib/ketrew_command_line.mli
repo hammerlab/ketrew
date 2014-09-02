@@ -21,6 +21,7 @@ open Ketrew_pervasives
 val run_main :
   ?argv:string array ->
   ?override_configuration:Ketrew_configuration.t ->
+  ?additional_commands: ((unit, string) Deferred_result.t Cmdliner.Term.t * Cmdliner.Term.info) list ->
   unit ->
   [ `Never_returns ]
 (** The “main” function for the application, it will [exit n] with [n = 0] if
