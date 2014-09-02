@@ -172,7 +172,7 @@ END_MD
   ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/test_dummy_plugin_user.md
   ocaml_to_markdown src/test/preconfigured_main.ml $outdir/test_preconfigured_main.md
   ketrew_help_to_html init $outdir
-  ketrew_help_to_html "" $outdir
+  ketrew_help_to_html "--help" $outdir
   ketrew_help_to_html status $outdir
   ketrew_help_to_html run-engine $outdir
   ketrew_help_to_html kill $outdir
@@ -193,7 +193,11 @@ ketrew_help_to_html () {
   local outdir=$2
   local output=$outdir/ketrew_${cmd}_help.html
   #echo "Creating $output"
-  _obuild/ketrew-app/ketrew-app.asm  $cmd --help=groff | groff -Thtml -mandoc >  $output
+  if [ "$cmd" = "--help" ]; then
+      _obuild/ketrew-app/ketrew-app.asm --help=groff | groff -Thtml -mandoc >  $output
+  else
+      _obuild/ketrew-app/ketrew-app.asm  $cmd --help=groff | groff -Thtml -mandoc >  $output
+  fi
 
 }
 ocaml_to_markdown () {
