@@ -346,8 +346,7 @@ let () =
     | host :: cmd :: [] -> run_command_with_python_hack ~host cmd
     | other ->
       say "usage: %s pyd <host> <cmd>" Sys.argv.(0);
-      failwith "Wrong command line"
-    end
+      failwith "Wrong command line" end
   | "CI" :: more ->
     begin match more with
     | "prepare" :: [] ->

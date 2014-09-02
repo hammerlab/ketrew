@@ -143,7 +143,7 @@ let user_command_list t =
   | [] -> assert false (* there is at least the argument one *)
 
 
-let run ?plugins ?override_configuration t =
+let run ?override_configuration t =
   let todo_list = user_command_list t in
   let config_path = 
     (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
@@ -153,7 +153,7 @@ let run ?plugins ?override_configuration t =
     Ketrew_configuration.(
       get_configuration ?override_configuration config_path)
     >>= fun configuration ->
-    Ketrew_state.with_state ?plugins ~configuration (fun ~state ->
+    Ketrew_state.with_state ~configuration (fun ~state ->
         Ketrew_user_command.run_list ~state todo_list)
   ) with
   | `Ok () -> ()

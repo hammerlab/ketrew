@@ -997,9 +997,9 @@ let make_command_alias cmd ?(options="") name =
   ] in
   (term, Term.info name ~docs:"COMMAND ALIASES" ~doc ~man)
 
-let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
+let cmdliner_main ?override_configuration ?argv ?additional_term () =
   let open Cmdliner in
-  let version = Ketrew_version.version in
+  let version = Ketrew_metadata.version in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
     let default = 
@@ -1038,7 +1038,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
           pure (fun config_path  ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
-              Ketrew_state.with_state ?plugins ~configuration (display_status))
+              Ketrew_state.with_state ~configuration (display_status))
           $ config_file_argument
         ) in
   let run_cmd =
@@ -1048,7 +1048,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path max_sleep how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration 
+            Ketrew_state.with_state ~configuration 
               (run_state ~max_sleep ~how))
         $ config_file_argument
         $ Arg.(value & opt float 60.
@@ -1079,7 +1079,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path interactive ids ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration 
+            Ketrew_state.with_state ~configuration 
               (kill ~interactive ids))
         $ config_file_argument
         $ interactive_flag "Go through running targets and kill them with 'y' \
@@ -1098,7 +1098,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path interactive ids ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration 
+            Ketrew_state.with_state ~configuration 
               (archive ~interactive ids))
         $ config_file_argument
         $ interactive_flag "Go through running targets and kill them with 'y' \
@@ -1116,7 +1116,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path interactive how_much ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration 
+            Ketrew_state.with_state ~configuration 
               (autoclean ~interactive ~how_much ()))
         $ config_file_argument
         $ interactive_flag "Ask before proceeding."
@@ -1154,7 +1154,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration interact)
+            Ketrew_state.with_state ~configuration interact)
         $ config_file_argument)
       ~info:(
         info "interact" ~version ~sdocs:"COMMON OPTIONS" 
@@ -1167,7 +1167,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration 
+            Ketrew_state.with_state ~configuration 
               (Explorer.explore []))
         $ config_file_argument)
       ~info:(
@@ -1181,7 +1181,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration Ketrew_server.start)
+            Ketrew_state.with_state ~configuration Ketrew_server.start)
         $ config_file_argument)
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS" 
@@ -1194,7 +1194,7 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ?plugins ~configuration (fun ~state ->
+            Ketrew_state.with_state ~configuration (fun ~state ->
                 Ketrew_server.stop ~state
                 >>= function
                 | `Done -> Log.(s "Server killed."  @ normal); return ()
@@ -1227,9 +1227,9 @@ let cmdliner_main ?plugins ?override_configuration ?argv ?additional_term () =
   | `Version | `Help -> exit 0
 
 
-let run_main ?plugins ?argv ?override_configuration () =
+let run_main ?argv ?override_configuration () =
   match Lwt_main.run (
-      cmdliner_main ?plugins ?argv ?override_configuration ()
+      cmdliner_main ?argv ?override_configuration ()
       >>< Return_code.transform_error
     ) with
   | `Ok () -> exit 0

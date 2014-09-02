@@ -2,7 +2,7 @@
 
 version_string="0.0.1-prealpha"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd \
-  yojson uri toml dbm cohttp.lwt lwt ssl conduit"
+  yojson uri toml dbm cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
@@ -23,17 +23,24 @@ setup() {
     quoted_authors_list="$quoted_authors_list \"$name <$email>\""
   done
 
-  mkdir -p _obuild/atdgen/
+
+  mkdir -p _obuild/gen/
   local lib_atd_files=$(find src/atd/ -type f -name '*.atd')
   for atd in $lib_atd_files ; do
     name=`basename $atd`
-    atdgen -t -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
-    atdgen -j -j-std -o _obuild/atdgen/ketrew_gen_${name%.atd} $atd
+    atdgen -t -o _obuild/gen/ketrew_gen_${name%.atd} $atd
+    atdgen -j -j-std -o _obuild/gen/ketrew_gen_${name%.atd} $atd
   done
-  local lib_gen_files=$(find _obuild/atdgen/ -type f -name '*.ml')
+
+  local ocaml_findlib_packages_list=$(for f in $findlib_packages ; do echo "\"$f\"; " ; done)
+  cat <<EOBLOB > _obuild/gen/ketrew_metadata.ml
+  let version = "$version_string"
+  let findlib_packages = [$ocaml_findlib_packages_list]
+  let homepage = "$homepage"
+EOBLOB
+  local lib_gen_files=$(find _obuild/gen/ -type f -name '*.ml')
 
   local quoted_lib_files=$(for f in $lib_files ; do echo "\"$f\" " ; done)
-  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
   local quoted_gen_files=$(for f in $lib_gen_files ; do echo "\"$f\" " ; done)
 
   local yojson_hack_dir=$PWD/_prebuild/yojson
@@ -44,6 +51,7 @@ setup() {
   ocamlopt -a -o yojson.cmxa `ocamlfind query easy-format`/easy_format.cmx yojson.cmx
   cd -
 
+  local quoted_findlib_packages=$(for f in $findlib_packages ; do echo "\"$f\" " ; done)
 cat << OCP_END > build.ocp
 version = "$version_string"
 license = "$license_name"
@@ -61,7 +69,6 @@ end
 begin  library "ketrew"
   sort = true
   files = [
-    "ketrew_version.ml" (ocp2ml)
     $quoted_lib_files
     $quoted_gen_files
   ]
@@ -76,18 +83,18 @@ begin program "ketrew-test"
   comp = ["-thread" ]
   install = false
 end
+begin program "ketrew-app"
+  files = [ "src/app/main.ml" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+end
 begin program "ketrew-cli-test"
   files = [ "src/test/cli.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
   install = false
-end
-begin program "ketrew-app"
-  files = [ "src/app/main.ml" ]
-  requires = [ "ketrew" "threads" ]
-  link = [ "-thread" ]
-  comp = ["-thread" ]
 end
 OCP_END
 
@@ -223,7 +230,7 @@ signature () {
 }
 
 print_opam_depedencies () {
-  echo $findlib_packages | sed 's/\.[a-z]*/ /g'
+  echo $findlib_packages | sed 's/\.[a-z]*/ /g' | sed 's/dynlink//g' | sed 's/findlib//g'
 }
 get_dependencies () {
   local opam_version=`opam --version`
@@ -347,6 +354,8 @@ do_travis() {
   opam init
   eval `opam config env`
 
+  # We add the react dependency for lwt.react in the tests
+  opam install react
   ./please.sh get-dependencies
 
   echo 'ocamlfind list | grep lwt'
@@ -369,6 +378,19 @@ do_travis() {
 
   echo "Mini-test:"
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
+
+
+  echo "Test environment:"
+  ./please.sh test-env
+  . _obuild/test.env
+
+  echo "Do some command line tests, with the server and all"
+  export KETREW_CONFIGURATION=_obuild/test-config-file.toml
+  ktapp="_obuild/ketrew-app/ketrew-app.asm"
+  $ktapp start-server
+  $ktapp status
+  $ktapp stop-server
+  $ktapp status
 }
 
 headache_config () {
@@ -421,6 +443,19 @@ test_privkey=_obuild/test-key.pem
 test_server_log=_obuild/test-server.log
 test_command_pipe=_obuild/test-command.pipe
 test_shell_env=_obuild/test.env
+
+test_additional_findlib_plugin="findlib"
+test_additional_findlib_plugin_code="let f () = Findlib.init ()"
+set_test_additional_findlib_plugin () {
+  if  ocamlfind query lwt.react > /dev/null  ; then
+    export test_additional_findlib_plugin="lwt.react"
+    export test_additional_findlib_plugin_code="let f () = Lwt_react.E.app"
+  else
+    export test_additional_findlib_plugin="graphics"
+    export test_additional_findlib_plugin_code="let f () = Graphics.create_image 42 42"
+  fi
+  echo "Using package $test_additional_findlib_plugin add findlin-plugin"
+}
 ssl_cert_key () {
   mkdir -p _obuild/
   echo "Creating cert-key pair: $test_certificate, $test_privkey"
@@ -446,6 +481,9 @@ debug-level = 2
   log-path = "$test_server_log"
   daemonize = true
   command-pipe-path = "$test_command_pipe"
+[plugins]
+  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
+  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -456,6 +494,27 @@ easy_auth nekot easy authentication
 weird-line-that-makes-a-warning
 EOBLOB
 }
+compile_dummy_plugin () {
+  echo "Compiling the Dummy-plugin and its user"
+  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
+  local additional_package="-package $test_additional_findlib_plugin"
+  local compile="ocamlfind opt -thread $ocamlfind_package_options $additional_package  -I _obuild/ketrew/ "
+  set -e
+  local compile_dir=_obuild/dummy_plugin_stuff/
+  rm -fr $compile_dir
+  mkdir -p $compile_dir
+  cp src/test/dummy_plugin.ml $compile_dir
+  echo "(* Code that really depends on $test_additional_findlib_plugin *)" >> \
+    $compile_dir/dummy_plugin.ml
+  echo $test_additional_findlib_plugin_code >> $compile_dir/dummy_plugin.ml
+  cp src/test/dummy_plugin_user.ml $compile_dir
+  $compile -shared $compile_dir/dummy_plugin.ml \
+    -o  $compile_dir/test_dummy_plugin.cmxs
+  $compile -linkpkg _obuild/ketrew/ketrew.cmxa \
+    -I $compile_dir $compile_dir/dummy_plugin.cmx \
+    $compile_dir/dummy_plugin_user.ml \
+    -o $compile_dir/test_dummy_plugin_user.asm
+}
 test_environment () {
   echo "Creating $test_shell_env"
   local confvar="KETREW_CONFIGURATION=$test_config_file"
@@ -464,6 +523,7 @@ export ktest_url=https://localhost:8443
 alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
 alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
+alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
 }
 
@@ -505,6 +565,8 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
+      set_test_additional_findlib_plugin
+      compile_dummy_plugin
       ssl_cert_key
       test_config_file
       test_environment ;;

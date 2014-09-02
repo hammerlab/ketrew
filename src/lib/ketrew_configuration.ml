@@ -24,6 +24,7 @@ type server = {
   daemon: bool;
   log_path: string option;
 }
+type plugin = [ `Compiled of string | `OCamlfind of string ]
 type t = {
   database_parameters: string;
   persistent_state_key: string;
@@ -32,6 +33,7 @@ type t = {
   with_color: bool;
   host_timeout_upper_bound: float;
   server: server option;
+  plugins: plugin list;
 }
 
 let log t =
@@ -46,7 +48,15 @@ let log t =
       s "Debug-level: " % i t.debug_level;
       s "Client " % s (if t.with_color then "with" else "without") % s " colors";
       s "Timeout-upper-bound: " % f t.host_timeout_upper_bound % s " seconds";
-      s "Server: "
+      s "Plugins: "
+      % begin match t.plugins with
+      | [] -> s "None"
+      | more -> n % indent (separate n (List.map more ~f:(function
+        | `Compiled path -> s "* Compiled: " % quote path
+        | `OCamlfind pack -> s "* OCamlfind package: " % quote pack
+        ))) % n
+      end
+      % s "Server: "
       % (match t.server with
         | None -> s "Not configured"
         | Some srv -> n % indent (
@@ -91,11 +101,12 @@ let create
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?(persistent_state_key=default_persistent_state_key)
     ?(host_timeout_upper_bound=60.)
+    ?(plugins=[])
     ?server
     ~database_parameters () =
   {
     database_parameters; persistent_state_key;
-    turn_unix_ssh_failure_into_target_failure;
+    turn_unix_ssh_failure_into_target_failure; plugins;
     debug_level; with_color; host_timeout_upper_bound; server;
   }
 
@@ -120,6 +131,23 @@ let parse_exn str =
     let table = toml_mandatory Toml.get_table "database" in
     toml_mandatory ~table Toml.get_string  "path",
     toml_option ~table Toml.get_string "state-key" in
+  let plugins =
+    toml_option Toml.get_table "plugins"
+    |> Option.value_map ~default:[] ~f:Toml.toml_to_list
+    (* Toml.toml_to_list seems to reverse the order of the table, so 
+       we reverse back: *)
+    |> List.rev_map ~f:(function
+      | ("compiled", TomlType.TString path) -> [`Compiled path]
+      | ("ocamlfind", TomlType.TString pack) -> [`OCamlfind pack]
+      | ("compiled", TomlType.TArray (TomlType.NodeString paths)) ->
+         List.map paths ~f:(fun p -> `Compiled p)
+      | ("ocamlfind", TomlType.TArray (TomlType.NodeString packs)) ->
+         List.map packs ~f:(fun p -> `OCamlfind p)
+      | (other, _) ->
+        failwith (fmt "Expecting “compiled” plugins only")
+      )
+    |> List.concat
+  in
   let server =
     let open Option in
     toml_option Toml.get_table "server"
@@ -148,6 +176,7 @@ let parse_exn str =
     ?with_color
     ?persistent_state_key 
     ?host_timeout_upper_bound
+    ~plugins
     ?server
     ~database_parameters ()
 
@@ -174,6 +203,8 @@ let get_configuration ?(and_apply=true) ?override_configuration path =
   >>= fun conf ->
   if and_apply then apply_globals conf;
   return conf
+
+let plugins t = t.plugins
 
 let server_configuration t = t.server
 
