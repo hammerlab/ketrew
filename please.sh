@@ -145,19 +145,6 @@ make_doc () {
   cp README.md $index_markdown
   cat << END_MD >> $index_markdown
 
-Documentation
--------------
-
-More documents:
-
-END_MD
-  for md in src/doc/*.md ; do
-    local name=`basename ${md%.md} | sed 's/_/ /g'`
-    printf -- "- [$name]($md)\n" >> $index_markdown
-  done
-  cat << END_MD >> $index_markdown
-- [Generated Documentaiton For The API](api/index.html) ([Modules Overview (SVG)](modules.svg))
-
 Authors
 -------
 
@@ -215,6 +202,15 @@ EOBLOB
 
 }
 
+markdown_transform_links () {
+    local input=$1
+    local output=$2
+    sed 's:([^()]*/\([^/]*\)\.md):(\1.html):g' $input | \
+        sed 's:([^()]*/test/\(.*\)\.ml):(test_\1.html):g' | \
+        sed 's:([^()]*/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
+        sed 's:([a-z\.]*/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
+        sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $output
+}
 markdown_to_html () {
     local input=$1
     local output=$2
@@ -231,18 +227,29 @@ markdown_to_html () {
 </head>
   <body><div class="container">
   <h1>$title</h1>
+  <div class="row">
+  <div class="col-md-3">
   <h2>Contents</h2>
 END_HTML
   local tmp=/tmp/kmd2html_$(basename input)
   #sed 's:src/lib/ketrew_edsl\.mli:api/Ketrew_edsl\.html:g' README.md > $index_markdown
-  sed 's:([^()]*/\([^/]*\)\.md):(\1.html):g' $input | \
-      sed 's:([^()]*/test/\(.*\)\.ml):(test_\1.html):g' | \
-      sed 's:([^()]*/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
-      sed 's:([a-z\.]*/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
-      sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $tmp
+  markdown_transform_links $input $tmp
   omd -otoc -ts 1 -td 4 $tmp >> $output
+  echo "<h2>Menu</h2>" >> $output
+  local menu_md=/tmp/ketrrew_doc_menu.md
+  printf -- "- [Home](./index.html)\n" > $menu_md
+  for md in src/doc/*.md ; do
+    local name=`basename ${md%.md} | sed 's/_/ /g'`
+    printf -- "- [$name]($md)\n" >> $menu_md
+  done
+  cat << END_MD >> $menu_md
+- [Generated Documentaiton For The API](api/index.html) ([Modules Overview (SVG)](modules.svg))
+END_MD
+  markdown_transform_links $menu_md $menu_md.transofrm.md
+  omd $menu_md.transofrm.md >> $output
+  echo "</div><div class=\"col-md-9\">" >> $output
   omd -r ocaml='higlo' $tmp | grep -v '<h1' >> $output
-  echo "</div></body><html>" >> $output
+  echo "</div></div></div></body><html>" >> $output
 }
 
 run_top () {
