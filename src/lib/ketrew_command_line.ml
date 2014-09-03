@@ -824,7 +824,7 @@ module Explorer = struct
     menu ~sentence ~always_there additional
     >>= function
     | `Set_viewer viewer ->
-      target_status ~state ~viewer ~add_info exploration_state target
+      target_status ~state ~viewer exploration_state target
     | `Call (key, log) ->
       Log.(s "Calling query " % sf "%S" key % n
            % s "Press " % bold_red (s "'K'") % s " for cancelling"
@@ -1228,7 +1228,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
   let cmds =
-    additional_commands @ [
+    List.map additional_commands
+      ~f:(fun (t, i) ->
+          let open Term in
+          pure (fun res ->
+              res >>< function
+              | `Ok o -> return o
+              | `Error s -> fail (`Failure s)) $ t, i)
+    @ [
       init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
       interact_cmd;
       explore_cmd;
@@ -1242,9 +1249,9 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   | `Version | `Help -> exit 0
 
 
-let run_main ?argv ?override_configuration () =
+let run_main ?argv ?override_configuration ?additional_commands () =
   match Lwt_main.run (
-      cmdliner_main ?argv ?override_configuration ()
+      cmdliner_main ?argv ?override_configuration ?additional_commands ()
       >>< Return_code.transform_error
     ) with
   | `Ok () -> exit 0
