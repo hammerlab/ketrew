@@ -824,7 +824,7 @@ module Explorer = struct
     menu ~sentence ~always_there additional
     >>= function
     | `Set_viewer viewer ->
-      target_status ~state ~viewer ~add_info exploration_state target
+      target_status ~state ~viewer exploration_state target
     | `Call (key, log) ->
       Log.(s "Calling query " % sf "%S" key % n
            % s "Press " % bold_red (s "'K'") % s " for cancelling"
