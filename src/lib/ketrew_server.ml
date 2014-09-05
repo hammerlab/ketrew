@@ -52,7 +52,8 @@ module Authentication = struct
     let token_is_valid tok =
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
-    | Some tok, `See_targets -> return (token_is_valid tok)
+    | Some tok, `See_targets
+    | Some tok, `Query_targets -> return (token_is_valid tok)
     | None, _ -> return false
     end
 
@@ -85,26 +86,41 @@ type answer = [
 ]
 
 let token_parameter req =
-  Uri.get_query_param (Cohttp_server_core.Request.uri req) "token"
+  let token =
+    Uri.get_query_param (Cohttp_server_core.Request.uri req) "token" in
+  Log.(s "Got token: " % OCaml.option quote token @ very_verbose);
+  token
+
+
+let mandatory_parameter req ~name =
+  match Uri.get_query_param (Cohttp_server_core.Request.uri req) name with
+  | Some v ->
+    Log.(s "Got " % quote name % s ": " % quote v @ very_verbose);
+    return v
+  | None ->
+    wrong_request (fmt "%s-mandatory-parameter" name) (fmt "Missing mandatory parameter: %S" name)
 
 let format_parameter req =
-  match Uri.get_query_param (Cohttp_server_core.Request.uri req) "format" with
-  | Some "json" -> return `Json
-  | Some other ->
-    wrong_request "format-parameter" (fmt "I can't handle %S" other)
-  | None -> wrong_request "format-parameter" "Missing parameter"
+  mandatory_parameter req ~name:"format"
+  >>= function
+  | "json" -> return `Json
+  | other ->
+    wrong_request "unknown-format-parameter" (fmt "I can't handle %S" other)
+
+let check_that_it_is_a_get request =
+  begin match Cohttp_server_core.Request.meth request with
+  | `GET ->
+    Log.(s "It is a GET request" @ very_verbose);
+    return ()
+  | other -> wrong_request "wrong method" (Cohttp.Code.string_of_method other)
+  end
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/hello" -> return `Unit
   | "/targets" ->
     begin
-      begin match Cohttp_server_core.Request.meth req with
-      | `GET -> return ()
-      | other ->
-        wrong_request "wrong method" (Cohttp.Code.string_of_method other)
-      end
-      >>= fun () ->
+      check_that_it_is_a_get req >>= fun () ->
       let token = token_parameter req in
       Authentication.ensure_can server_state.authentication ?token `See_targets
       >>= fun () ->
@@ -146,6 +162,51 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
         let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
         return (`Json json)
       end
+    end
+  | "/target-available-queries" ->
+    check_that_it_is_a_get req >>= fun () ->
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    >>= fun () ->
+    mandatory_parameter req ~name:"id"
+    >>= fun target_id ->
+    format_parameter req
+    >>= fun `Json ->
+    Ketrew_state.get_target server_state.state target_id
+    >>= fun target ->
+    let json =
+      Ketrew_state.additional_queries ~state:server_state.state target
+      |> List.map ~f:(fun (name, descr) ->
+          (`List [`String name; `String (Log.to_long_string descr)]))
+      |> (fun l ->
+          Yojson.Basic.pretty_to_string ~std:true (`List l)) in
+    Log.(s "Replying: " % s json @ very_verbose);
+    return (`Json json)
+  | "/target-call-query" ->
+    check_that_it_is_a_get req >>= fun () ->
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    >>= fun () ->
+    mandatory_parameter req ~name:"id"
+    >>= fun target_id ->
+    format_parameter req
+    >>= fun `Json ->
+    mandatory_parameter req ~name:"query"
+    >>= fun query_name ->
+    Ketrew_state.get_target server_state.state target_id
+    >>= fun target ->
+    Log.(s "Calling query " % quote query_name % s " on "
+         % Ketrew_target.log target @ very_verbose);
+    begin
+      Ketrew_state.call_query ~state:server_state.state ~target query_name
+      >>< function
+      | `Ok string -> 
+        let json = 
+          Yojson.Basic.pretty_to_string ~std:true (`List [`String string]) in
+        Log.(s "Replying: " % s json @ very_verbose);
+        return (`Json json)
+      | `Error error_log ->
+        wrong_request "Failed Query" (Log.to_long_string error_log)
     end
   | other ->
     wrong_request "Wrong path" other
