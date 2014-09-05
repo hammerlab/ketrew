@@ -329,7 +329,10 @@ let stop ~state =
   Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")
     (Ketrew_configuration.command_pipe server_config)
   >>= fun file_path ->
-  begin
+  System.file_info ~follow_symlink:true file_path
+  >>= function
+  | `Fifo ->
+    begin
     System.with_timeout 2. (fun () ->
         IO.with_out_channel (`Append_to_file file_path) ~buffer_size:16 ~f:(fun oc ->
             IO.write oc die_command
@@ -341,4 +344,7 @@ let stop ~state =
     | `Error (`IO _ as e) -> fail e
     | `Error (`System _) -> fail (`Stop_server_error "System.timeout failed!")
   end
+  | other -> 
+    fail (`Stop_server_error (fmt "%S is not a named-pipe (%s)"
+                                file_path (System.file_info_to_string other)))
 
