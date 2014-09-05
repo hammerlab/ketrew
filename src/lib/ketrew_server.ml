@@ -69,10 +69,13 @@ module Server_state = struct
 
   type t = {
     state: Ketrew_state.t;
-    authentication: Authentication.t;
+    server_configuration: Ketrew_configuration.server;
+    authentication_file: string;
+    mutable authentication: Authentication.t;
   }
 
-  let create ~state ~authentication = {state; authentication}
+  let create ~state ~authentication ~authentication_file server_configuration =
+    {state; authentication; authentication_file; server_configuration}
 
 end
 open Server_state
@@ -216,8 +219,16 @@ let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
 
 let die_command = "die"
+let reload_authorized_tokens = "reload-auth"
 
-let start_listening_on_command_pipe conf =
+let reload_authentication_file ~server_state =
+  Authentication.load_file server_state.authentication_file
+  >>= fun authentication ->
+  server_state.authentication <- authentication;
+  return ()
+
+let start_listening_on_command_pipe ~server_state =
+  let conf = server_state.server_configuration in
   match Ketrew_configuration.command_pipe conf with
   | Some file_path ->
     System.remove file_path >>= fun () ->
@@ -244,6 +255,18 @@ let start_listening_on_command_pipe conf =
                    % parens (OCaml.string file_path)
                    @ normal);
               exit 0
+            | reload_auth when reload_auth = reload_authorized_tokens ->
+              begin reload_authentication_file ~server_state
+                >>= function
+                | `Ok () -> return ()
+                | `Error e ->
+                  Log.(s "Could not reload " 
+                       % quote server_state.authentication_file
+                       % s": " % s (Ketrew_error.to_string e) @ error);
+                  return ()
+              end
+              >>= fun () ->
+              read_loop ~error_count ()
             |  other ->
               Log.(s "Cannot understand command: " % OCaml.string other @ error);
               read_loop ~error_count ())
@@ -274,8 +297,6 @@ let start ~state  =
     (Ketrew_configuration.authorized_tokens_path server_config)
     ~msg:"Authentication-less server not implemented"
   >>= fun authentication_file ->
-  start_listening_on_command_pipe server_config
-  >>= fun () ->
   let return_error_messages, how =
     Ketrew_configuration.return_error_messages server_config,
     Ketrew_configuration.listen_to server_config in
@@ -283,7 +304,12 @@ let start ~state  =
   | `Tls (certfile, keyfile, port) ->
     Authentication.load_file authentication_file
     >>= fun authentication ->
-    let server_state = Server_state.create ~authentication ~state in
+    let server_state =
+      Server_state.create ~authentication ~state
+        ~authentication_file server_config
+    in
+    start_listening_on_command_pipe ~server_state
+    >>= fun () ->
     Deferred_result.wrap_deferred
       ~on_exn:(function
         | e -> `Start_server_error (Printexc.to_string e))
