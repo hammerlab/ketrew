@@ -995,6 +995,39 @@ let interact ~state =
   in
   main_loop ()
 
+let daemonize_if_applicable config =
+  let module Conf = Ketrew_configuration in
+  match Conf.server_configuration config with
+  | Some server_config when Conf.daemon server_config ->
+    let syslog = false in
+    let stdin = `Dev_null in
+    let (stdout, stderr) =
+      begin match Conf.log_path server_config with
+      | None -> (`Dev_null,`Dev_null)
+      | Some file_name ->
+        global_with_color := false;
+        Log.(s "Creating logger" @ very_verbose);
+        let logger =
+          Lwt_log.channel  ()
+          ~template:"[$(date):$(milliseconds)] $(message)"
+          ~close_mode:`Keep
+          ~channel:(Lwt_io.of_unix_fd 
+                      ~mode:Lwt_io.output
+                      (UnixLabels.(
+                          openfile 
+                            ~perm:0o600 file_name
+                            ~mode:[O_APPEND; O_CREAT; O_WRONLY])))
+          in
+          (`Log logger, `Log logger)
+      end
+    in
+    let directory = Sys.getcwd () in
+    let umask = None in (* we keep the default *)
+    Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
+    Log.(s "Daemonized!" @ very_verbose);
+    ()
+  | None | Some _ -> ()
+
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
   let open Cmdliner in
@@ -1193,6 +1226,15 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     sub_command
       ~term:(
         pure (fun config_path ->
+            (* We need a Lwt-less processing until the potential 
+               daemonization: *)
+            let configuration =
+              Configuration.get_configuration_non_deferred_exn
+                ?override_configuration config_path in
+            Log.(s "Got configuration: " % 
+                 separate n (Configuration.log configuration)
+                 @ very_verbose);
+            daemonize_if_applicable configuration;
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
             Ketrew_state.with_state ~configuration Ketrew_server.start)
@@ -1250,10 +1292,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
 
 
 let run_main ?argv ?override_configuration ?additional_commands () =
-  match Lwt_main.run (
-      cmdliner_main ?argv ?override_configuration ?additional_commands ()
-      >>< Return_code.transform_error
-    ) with
+  let main_lwt_thread =
+    cmdliner_main ?argv ?override_configuration ?additional_commands ()
+  in
+  Log.(s "Calling Lwt_main.run" @ very_verbose);
+  match Lwt_main.run (main_lwt_thread >>< Return_code.transform_error) with
   | `Ok () -> exit 0
   | `Error n -> exit n
 

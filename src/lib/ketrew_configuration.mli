@@ -113,6 +113,10 @@ val get_configuration :
     if [and_apply] is [true] (the default), then {!apply_globals} is called.
 *)
 
+val get_configuration_non_deferred_exn :
+  ?and_apply:bool -> ?override_configuration:t -> string -> t
+(** Do like {!get_configuration} but in a dirty Lwt-less way. *)
+
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
 

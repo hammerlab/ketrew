@@ -150,29 +150,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | other ->
     wrong_request "Wrong path" other
 
-let daemonize config =
-  let module Conf = Ketrew_configuration in
-  match Conf.daemon config with
-  | true ->
-    let syslog = false in
-    let stdin = `Keep in
-    begin match Conf.log_path config with
-    | None -> return (`Dev_null,`Dev_null)
-    | Some file_name ->
-      wrap_deferred 
-        ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
-        (fun () -> 
-           global_with_color := false;
-           Lwt_log.file ~mode:`Append ~perm:0o600 ~file_name ())
-      >>= fun logger ->
-      return (`Log logger, `Log logger)
-    end
-    >>= fun (stdout, stderr) ->
-    let directory = Sys.getcwd () in
-    let umask = None in (* we keep the default *)
-    Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
-    return ()
-  | false -> return ()
 
 let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
@@ -227,6 +204,7 @@ let start_listening_on_command_pipe conf =
 
 let start ~state  =
   let config =  Ketrew_state.configuration state in
+  Log.(s "Starting server!" @ very_verbose);
   mandatory_for_starting
     (Ketrew_configuration.server_configuration config)
     ~msg:"Server not configured"
@@ -235,8 +213,6 @@ let start ~state  =
     (Ketrew_configuration.authorized_tokens_path server_config)
     ~msg:"Authentication-less server not implemented"
   >>= fun authentication_file ->
-  daemonize server_config
-  >>= fun () ->
   start_listening_on_command_pipe server_config
   >>= fun () ->
   let return_error_messages, how =

@@ -207,6 +207,35 @@ let get_configuration ?(and_apply=true) ?override_configuration path =
   if and_apply then apply_globals conf;
   return conf
 
+let get_configuration_non_deferred_exn
+    ?(and_apply=true) ?override_configuration path =
+  let conf =
+    begin match override_configuration with
+    | Some c -> c
+    | None ->
+      begin
+        let i = open_in path in
+        let content =
+          let buf = Buffer.create 1023 in
+          let rec get_all () =
+            begin try
+              let line = input_line i in
+              Buffer.add_string buf (line ^ "\n");
+              get_all ()
+            with e -> ()
+            end;
+          in
+          get_all ();
+          Buffer.contents buf in
+        close_in i;
+        let conf = parse_exn content in
+        conf
+      end
+    end
+  in
+  if and_apply then apply_globals conf;
+  conf
+
 let plugins t = t.plugins
 
 let server_configuration t = t.server
