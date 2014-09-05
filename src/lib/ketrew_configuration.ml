@@ -62,6 +62,9 @@ let log t =
         | Some srv -> n % indent (
             s "Authorized tokens: " 
             % OCaml.(option string) srv.authorized_tokens_path % n
+            % s "Daemonize: " % OCaml.bool srv.daemon % n
+            % s "Command Pipe: " % OCaml.option quote srv.command_pipe % n
+            % s "Log-path: " % OCaml.option quote srv.log_path % n
             % s  "Listen: "
             % (match srv.listen_to with
               | `Tls (cert, key, port) -> 
