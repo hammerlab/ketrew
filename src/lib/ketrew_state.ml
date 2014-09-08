@@ -222,12 +222,6 @@ let get_target t id =
   _get_target_from_db db actual_id (** After following pointers we can say we
                                        get the target from the DB. *)
 
-let archive_target t target_id =
-  get_persistent t
-  >>= fun persistent ->
-  let new_persistent = Persistent_state.archive persistent target_id in
-  save_persistent t new_persistent
-
 let current_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
@@ -240,6 +234,22 @@ let current_targets t =
   | [] -> return targets
   | some :: more -> fail some (* TODO do not forget other errors *)
   end
+
+let archive_target t target_id =
+  get_target t target_id (* Assert this targets "exists" *)
+  >>= fun actual_target ->
+  get_persistent t
+  >>= fun persistent ->
+  let target_ids = Persistent_state.current_targets persistent in
+  begin match List.exists target_ids ~f:((=) (Target.id actual_target)) with
+  | true ->
+    let new_persistent = Persistent_state.archive persistent target_id in
+    save_persistent t new_persistent
+    >>= fun () ->
+    return [`Target_archived target_id]
+  | false -> return [] (* already archived no-op *)
+  end
+
 
 module Target_graph = struct
   type state = t
@@ -564,6 +574,7 @@ type happening =
       | `Long_running_unrecoverable of string * string
       | `Process_failure ]
   | `Target_started of Ketrew_target.id * string
+  | `Target_archived of Ketrew_target.id
   | `Target_succeeded of
       Ketrew_target.id *
       [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
@@ -584,6 +595,8 @@ let log_what_happened =
       | `Process_success -> s "Process success")
   | `Target_started (id, plugin_name) ->
     s "Target " % s id % s " started " % parens (s plugin_name)
+  | `Target_archived id ->
+    s "Target " % s id % s " was archived "
   | `Target_died (id, how) ->
     s "Target " % s id % s " died: " 
     % (match how with

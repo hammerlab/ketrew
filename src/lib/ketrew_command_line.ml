@@ -522,7 +522,13 @@ let archive ~state ~interactive ids =
         Log.(s "There is nothing to archive." @ warning);
       Deferred_list.while_sequential to_archive (fun id ->
           Ketrew_state.archive_target state id)
-      >>= fun (_ : unit list) ->
+      >>| List.concat
+      >>= fun what_happened ->
+      Log.(s "→ " % n
+           % (separate n 
+                (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+              |> indent)
+           @ warning);
       return ()
     | `Cancel ->
       Log.(s "Cancelling archival" @ normal);
@@ -912,7 +918,13 @@ module Explorer = struct
                  @ warning);
             explore ~state (one :: history)
           | `Archive ->
-            Ketrew_state.archive_target state (Target.id chosen) >>= fun () ->
+            Ketrew_state.archive_target state (Target.id chosen)
+            >>= fun what_happened ->
+            Log.(s "Archival of " % s (Target.name chosen) % n
+                 % (separate n 
+                      (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                    |> indent)
+                 @ warning);
             explore ~state (one :: history)
           | `Restart ->
             Ketrew_state.restart_target ~state chosen

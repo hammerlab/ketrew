@@ -55,17 +55,6 @@ val add_target :
   Deferred_result.t
 (** Add a target to the state. *)
 
-val archive_target: t ->
-  Ketrew_target.id ->
-  (unit,
-   [> `Database of Ketrew_database.error
-   | `Database_unavailable of Ketrew_target.id
-   | `Missing_data of Ketrew_target.id
-   | `Target of [> `Deserilization of string ]
-   | `Persistent_state of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Move a target to the “archived” list. *)
-
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
    [> `Database of [> `Get of string | `Load of string ] * string
@@ -120,6 +109,7 @@ type happening =
       | `Long_running_unrecoverable of string * string
       | `Process_failure ]
   | `Target_started of Ketrew_target.id * string
+  | `Target_archived of Ketrew_target.id
   | `Target_succeeded of
       Ketrew_target.id *
       [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
@@ -174,6 +164,17 @@ val kill:  t -> id:Ketrew_target.id ->
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Kill a target *)
+
+val archive_target: t ->
+  Ketrew_target.id ->
+  (happening list,
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Missing_data of Ketrew_target.id
+   | `Target of [> `Deserilization of string ]
+   | `Persistent_state of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Move a target to the “archived” list. *)
 
 val long_running_log: state:t -> string -> string -> (string * Log.t) list
 (** [long_running_log ~state plugin_name serialized_run_params]
