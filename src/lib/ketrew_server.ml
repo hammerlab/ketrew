@@ -279,27 +279,31 @@ let add_targets_service  ~server_state ~body req =
   >>= fun ids ->
   return (`Json (`List ids |> Yojson.Basic.to_string))
 
-let kill_targets_service: _ service = fun ~server_state ~body req ->
-  get_post_body req ~body 
-  >>= fun body ->
-  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () ->
-       let parsed = Yojson.Basic.from_string body in
-       match parsed with
-       | `List json_target_ids ->
-         List.map json_target_ids (function
-           | `String id -> id
-           | other -> failwith "wrong-format: expecting list of strings")
-       | other ->  failwith "wrong-format: expecting list of strings")
-  >>= fun target_ids ->
-  Deferred_list.while_sequential target_ids (fun id ->
-      Ketrew_state.kill server_state.state id
-      >>= fun happenings ->
-      return (List.map happenings (fun l ->
-          `String (Ketrew_state.log_what_happened l |> Log.to_long_string))))
-  >>| List.concat
-  >>= fun happenings ->
-  return (`Json (`List happenings |> Yojson.Basic.to_string))
+let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service = 
+  fun what_to_do ~server_state ~body req ->
+    get_post_body req ~body 
+    >>= fun body ->
+    wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+      (fun () ->
+         let parsed = Yojson.Basic.from_string body in
+         match parsed with
+         | `List json_target_ids ->
+           List.map json_target_ids (function
+             | `String id -> id
+             | other -> failwith "wrong-format: expecting list of strings")
+         | other ->  failwith "wrong-format: expecting list of strings")
+    >>= fun target_ids ->
+    Deferred_list.while_sequential target_ids (fun id ->
+        begin match what_to_do with
+        | `Kill -> Ketrew_state.kill server_state.state id
+        | `Archive -> Ketrew_state.archive_target server_state.state id
+        end
+        >>= fun happenings ->
+        return (List.map happenings (fun l ->
+            `String (Ketrew_state.log_what_happened l |> Log.to_long_string))))
+    >>| List.concat
+    >>= fun happenings ->
+    return (`Json (`List happenings |> Yojson.Basic.to_string))
 
 (** {2 Dispatcher} *)
 
@@ -311,7 +315,10 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
     target_available_queries_service ~server_state ~body req
   | "/target-call-query" -> target_call_query_service ~server_state ~body req
   | "/add-targets" -> add_targets_service  ~server_state ~body req
-  | "/kill-targets" -> kill_targets_service  ~server_state ~body req
+  | "/kill-targets" ->
+    kill_or_archive_targets_service `Kill  ~server_state ~body req
+  | "/archive-targets" ->
+    kill_or_archive_targets_service `Archive  ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 
