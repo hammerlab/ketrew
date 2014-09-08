@@ -17,9 +17,17 @@
 
 open Ketrew_pervasives
 
+(** A common error that simply means “invalid argument”. *)
 let wrong_request short long = fail (`Wrong_http_request (short, long))
 
+(** Module dealing with access tokens and access rights. There are no
+    “sessions” here; just a file that looks like SSH's `authorized_keys`, and a
+    function: token × capability → bool.
+
+    Capabilities are defined with polymorphic variants.
+*)
 module Authentication = struct
+
   type token = {name: string; value: string; comments : string list}
   type t = { valid_tokens: token list }
 
@@ -65,6 +73,7 @@ module Authentication = struct
 
 end
 
+(** THe state maintained by the HTTP server. *)
 module Server_state = struct
 
   type t = {
@@ -80,21 +89,32 @@ module Server_state = struct
 end
 open Server_state
 
+(** To use SSL we need to apply the server Cohhtp functor ourselves. *)
 module Cohttp_server_core = Cohttp_lwt.Make_server
     (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
+
 
 type answer = [
   | `Unit
   | `Json of string
 ]
+(** A service can replay one of those cases; or an error. *)
 
+type 'error service =
+  server_state:Server_state.t ->
+  body:Cohttp_lwt_body.t ->
+  Cohttp_server_core.Request.t ->
+  (answer, 'error) Deferred_result.t
+(** A service is something that replies an [answer] on a ["/<path>"] URL. *)
+
+(** Get the ["token"] parameter from an URI. *)
 let token_parameter req =
   let token =
     Uri.get_query_param (Cohttp_server_core.Request.uri req) "token" in
   Log.(s "Got token: " % OCaml.option quote token @ very_verbose);
   token
 
-
+(** Get a parameter or fail. *)
 let mandatory_parameter req ~name =
   match Uri.get_query_param (Cohttp_server_core.Request.uri req) name with
   | Some v ->
@@ -103,6 +123,7 @@ let mandatory_parameter req ~name =
   | None ->
     wrong_request (fmt "%s-mandatory-parameter" name) (fmt "Missing mandatory parameter: %S" name)
 
+(** Get the ["format"] parameter from an URI. *)
 let format_parameter req =
   mandatory_parameter req ~name:"format"
   >>= function
@@ -110,6 +131,7 @@ let format_parameter req =
   | other ->
     wrong_request "unknown-format-parameter" (fmt "I can't handle %S" other)
 
+(** Fail if the request is not a [`GET]. *)
 let check_that_it_is_a_get request =
   begin match Cohttp_server_core.Request.meth request with
   | `GET ->
@@ -118,6 +140,7 @@ let check_that_it_is_a_get request =
   | other -> wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
+(** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
 let get_post_body request ~body =
   begin match Cohttp_server_core.Request.meth request with
   | `POST ->
@@ -136,128 +159,141 @@ let get_post_body request ~body =
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
+(** {2 Services} *)
+
+let targets_service: _ service = fun ~server_state ~body req ->
+  check_that_it_is_a_get req >>= fun () ->
+  let token = token_parameter req in
+  Authentication.ensure_can server_state.authentication ?token `See_targets
+  >>= fun () ->
+  let target_ids =
+    Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
+    |> Option.value ~default:[] in
+  format_parameter req
+  >>= fun `Json ->
+  begin match target_ids  with
+  | [] ->
+    Ketrew_state.current_targets server_state.state
+    >>= fun current_targets ->
+    begin
+      if Uri.get_query_param (Cohttp_server_core.Request.uri req) "archived"
+         = Some "true"
+      then
+        Ketrew_state.archived_targets server_state.state
+        >>= fun archived ->
+        return (current_targets @ archived)
+      else return current_targets
+    end
+    >>= fun trgt_list ->
+    let json =
+      Yojson.Basic.pretty_to_string ~std:true
+        (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
+    in
+    Log.(s "Replying: " % s json @ very_verbose);
+    return (`Json json)
+  | more ->
+    Deferred_list.while_sequential more ~f:(fun id ->
+        Ketrew_state.get_target server_state.state id
+        >>< function
+        | `Ok t -> return (Ketrew_target.serialize t)
+        | `Error e -> 
+          Log.(s "Error while getting the target " % s id % s ": "
+               % s (Ketrew_error.to_string e) @ error);
+          return "Not_found")
+    >>= fun jsons ->
+    let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
+    return (`Json json)
+  end
+
+let target_available_queries_service ~server_state ~body req =
+  check_that_it_is_a_get req >>= fun () ->
+  let token = token_parameter req in
+  Authentication.ensure_can server_state.authentication ?token `Query_targets
+  >>= fun () ->
+  mandatory_parameter req ~name:"id"
+  >>= fun target_id ->
+  format_parameter req
+  >>= fun `Json ->
+  Ketrew_state.get_target server_state.state target_id
+  >>= fun target ->
+  let json =
+    Ketrew_state.additional_queries ~state:server_state.state target
+    |> List.map ~f:(fun (name, descr) ->
+        (`List [`String name; `String (Log.to_long_string descr)]))
+    |> (fun l ->
+        Yojson.Basic.pretty_to_string ~std:true (`List l)) in
+  Log.(s "Replying: " % s json @ very_verbose);
+  return (`Json json)
+
+let target_call_query_service ~server_state ~body req =
+  check_that_it_is_a_get req >>= fun () ->
+  let token = token_parameter req in
+  Authentication.ensure_can server_state.authentication ?token `Query_targets
+  >>= fun () ->
+  mandatory_parameter req ~name:"id"
+  >>= fun target_id ->
+  format_parameter req
+  >>= fun `Json ->
+  mandatory_parameter req ~name:"query"
+  >>= fun query_name ->
+  Ketrew_state.get_target server_state.state target_id
+  >>= fun target ->
+  Log.(s "Calling query " % quote query_name % s " on "
+       % Ketrew_target.log target @ very_verbose);
+  begin
+    Ketrew_state.call_query ~state:server_state.state ~target query_name
+    >>< function
+    | `Ok string -> 
+      let json = 
+        Yojson.Basic.pretty_to_string ~std:true (`List [`String string]) in
+      Log.(s "Replying: " % s json @ very_verbose);
+      return (`Json json)
+    | `Error error_log ->
+      wrong_request "Failed Query" (Log.to_long_string error_log)
+  end
+
+let add_targets_service  ~server_state ~body req =
+  get_post_body req ~body 
+  >>= fun body ->
+  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    (fun () ->
+       let parsed = Yojson.Basic.from_string body in
+       match parsed with
+       | `List json_targets ->
+         List.map json_targets ~f:(fun jt ->
+             match Ketrew_target.deserialize (Yojson.Basic.to_string jt)  with
+             | `Ok o -> o
+             | `Error e -> failwith (Ketrew_error.to_string e)) 
+       | other -> 
+         failwith "wrong-format: expecting Json list")
+  >>= fun targets ->
+  Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
+  Deferred_list.while_sequential targets ~f:(fun t ->
+      Ketrew_state.add_target server_state.state t
+      >>= fun () ->
+      let original_id = Ketrew_target.id t in
+      Ketrew_state.get_target server_state.state original_id
+      >>= fun freshen ->
+      return (`List [`String original_id; `String (Ketrew_target.id freshen)])
+    )
+  >>= fun ids ->
+  return (`Json (`List ids |> Yojson.Basic.to_string))
+
+(** {2 Dispatcher} *)
+
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/hello" -> return `Unit
-  | "/targets" ->
-    begin
-      check_that_it_is_a_get req >>= fun () ->
-      let token = token_parameter req in
-      Authentication.ensure_can server_state.authentication ?token `See_targets
-      >>= fun () ->
-      let target_ids =
-        Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
-        |> Option.value ~default:[] in
-      format_parameter req
-      >>= fun `Json ->
-      begin match target_ids  with
-      | [] ->
-        Ketrew_state.current_targets server_state.state
-        >>= fun current_targets ->
-        begin
-          if Uri.get_query_param (Cohttp_server_core.Request.uri req) "archived"
-             = Some "true"
-          then
-            Ketrew_state.archived_targets server_state.state
-            >>= fun archived ->
-            return (current_targets @ archived)
-          else return current_targets
-        end
-        >>= fun trgt_list ->
-        let json =
-          Yojson.Basic.pretty_to_string ~std:true
-            (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
-        in
-        Log.(s "Replying: " % s json @ very_verbose);
-        return (`Json json)
-      | more ->
-        Deferred_list.while_sequential more ~f:(fun id ->
-            Ketrew_state.get_target server_state.state id
-            >>< function
-            | `Ok t -> return (Ketrew_target.serialize t)
-            | `Error e -> 
-              Log.(s "Error while getting the target " % s id % s ": "
-                   % s (Ketrew_error.to_string e) @ error);
-              return "Not_found")
-        >>= fun jsons ->
-        let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-        return (`Json json)
-      end
-    end
+  | "/targets" -> targets_service ~server_state ~body req
   | "/target-available-queries" ->
-    check_that_it_is_a_get req >>= fun () ->
-    let token = token_parameter req in
-    Authentication.ensure_can server_state.authentication ?token `Query_targets
-    >>= fun () ->
-    mandatory_parameter req ~name:"id"
-    >>= fun target_id ->
-    format_parameter req
-    >>= fun `Json ->
-    Ketrew_state.get_target server_state.state target_id
-    >>= fun target ->
-    let json =
-      Ketrew_state.additional_queries ~state:server_state.state target
-      |> List.map ~f:(fun (name, descr) ->
-          (`List [`String name; `String (Log.to_long_string descr)]))
-      |> (fun l ->
-          Yojson.Basic.pretty_to_string ~std:true (`List l)) in
-    Log.(s "Replying: " % s json @ very_verbose);
-    return (`Json json)
-  | "/target-call-query" ->
-    check_that_it_is_a_get req >>= fun () ->
-    let token = token_parameter req in
-    Authentication.ensure_can server_state.authentication ?token `Query_targets
-    >>= fun () ->
-    mandatory_parameter req ~name:"id"
-    >>= fun target_id ->
-    format_parameter req
-    >>= fun `Json ->
-    mandatory_parameter req ~name:"query"
-    >>= fun query_name ->
-    Ketrew_state.get_target server_state.state target_id
-    >>= fun target ->
-    Log.(s "Calling query " % quote query_name % s " on "
-         % Ketrew_target.log target @ very_verbose);
-    begin
-      Ketrew_state.call_query ~state:server_state.state ~target query_name
-      >>< function
-      | `Ok string -> 
-        let json = 
-          Yojson.Basic.pretty_to_string ~std:true (`List [`String string]) in
-        Log.(s "Replying: " % s json @ very_verbose);
-        return (`Json json)
-      | `Error error_log ->
-        wrong_request "Failed Query" (Log.to_long_string error_log)
-    end
-  | "/add-targets" ->
-    get_post_body req ~body 
-    >>= fun body ->
-    wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-      (fun () ->
-         let parsed = Yojson.Basic.from_string body in
-         match parsed with
-         | `List json_targets ->
-           List.map json_targets ~f:(fun jt ->
-               match Ketrew_target.deserialize (Yojson.Basic.to_string jt)  with
-               | `Ok o -> o
-               | `Error e -> failwith (Ketrew_error.to_string e)) 
-         | other -> 
-           failwith "wrong-format: expecting Json list")
-    >>= fun targets ->
-    Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
-    Deferred_list.while_sequential targets ~f:(fun t ->
-        Ketrew_state.add_target server_state.state t
-        >>= fun () ->
-        let original_id = Ketrew_target.id t in
-        Ketrew_state.get_target server_state.state original_id
-        >>= fun freshen ->
-        return (`List [`String original_id; `String (Ketrew_target.id freshen)])
-      )
-    >>= fun ids ->
-    return (`Json (`List ids |> Yojson.Basic.to_string))
+    target_available_queries_service ~server_state ~body req
+  | "/target-call-query" -> target_call_query_service ~server_state ~body req
+  | "/add-targets" -> add_targets_service  ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 
+
+(** {2 Start/Stop The Server} *)
 
 let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
