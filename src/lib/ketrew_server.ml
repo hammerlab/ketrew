@@ -118,6 +118,24 @@ let check_that_it_is_a_get request =
   | other -> wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
+let get_post_body request ~body =
+  begin match Cohttp_server_core.Request.meth request with
+  | `POST ->
+    Log.(s "It is a GET request" @ very_verbose);
+    begin match body with
+    | `Empty -> wrong_request "empty body" ""
+    | `String s -> return s
+    | `Stream lwt_stream ->
+      wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+        Lwt.(fun () ->
+            Lwt_stream.to_list lwt_stream
+            >>= fun l ->
+            return (String.concat ~sep:"" l))
+    end
+  | other ->
+    wrong_request "wrong method" (Cohttp.Code.string_of_method other)
+  end
+
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/hello" -> return `Unit
@@ -211,6 +229,32 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
       | `Error error_log ->
         wrong_request "Failed Query" (Log.to_long_string error_log)
     end
+  | "/add-targets" ->
+    get_post_body req ~body 
+    >>= fun body ->
+    wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+      (fun () ->
+         let parsed = Yojson.Basic.from_string body in
+         match parsed with
+         | `List json_targets ->
+           List.map json_targets ~f:(fun jt ->
+               match Ketrew_target.deserialize (Yojson.Basic.to_string jt)  with
+               | `Ok o -> o
+               | `Error e -> failwith (Ketrew_error.to_string e)) 
+         | other -> 
+           failwith "wrong-format: expecting Json list")
+    >>= fun targets ->
+    Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
+    Deferred_list.while_sequential targets ~f:(fun t ->
+        Ketrew_state.add_target server_state.state t
+        >>= fun () ->
+        let original_id = Ketrew_target.id t in
+        Ketrew_state.get_target server_state.state original_id
+        >>= fun freshen ->
+        return (`List [`String original_id; `String (Ketrew_target.id freshen)])
+      )
+    >>= fun ids ->
+    return (`Json (`List ids |> Yojson.Basic.to_string))
   | other ->
     wrong_request "Wrong path" other
 
