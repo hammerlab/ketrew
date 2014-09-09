@@ -158,6 +158,19 @@ available for this particular target:
 ```
 
 
+
+
+    curl -d "[]" -k "$ktest_url/add-targets?token=nekot&format=json"
+    curl -d "[slkdjf]" -k "$ktest_url/add-targets?token=nekot&format=json"
+    echo "[]" | curl -d @- -k "$ktest_url/add-targets?token=nekot&format=json"
+    curl -d @sometarget.json -k "$ktest_url/add-targets?token=nekot&format=json"
+    curl  -k "$ktest_url/targets?token=nekot&format=json"
+    curl -d '["ketrew_2014-09-08-23h19m31s733ms-UTC_781944104"]' -k "$ktest_url/kill-targets?token=nekot&format=json"
+    curl -d '["ketrew_2014-09-08-23h19m31s733ms-UTC_781944104"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
+    curl -d '["lksjdaflkdjs"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
+    curl -d '["ketrew_2014-09-08-23h19m31s732ms-UTC_641907500"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
+    curl -d '["ketrew_2014-08-21-21h49m48s823ms-UTC_781944104"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
+
 <!--
 " Vim stuff:
 

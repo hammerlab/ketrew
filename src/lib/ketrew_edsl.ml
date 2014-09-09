@@ -139,12 +139,11 @@ let user_command_list t =
     |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id)
   in
   match targets with
-  | first :: more -> [`Make (first, more)]
+  | first :: more -> (first, more)
   | [] -> assert false (* there is at least the argument one *)
 
-
 let run ?override_configuration t =
-  let todo_list = user_command_list t in
+  let active, dependencies = user_command_list t in
   let config_path = 
     (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
        (try Sys.getenv "KETREW_CONFIG" with _ ->
@@ -153,8 +152,8 @@ let run ?override_configuration t =
     Ketrew_configuration.(
       get_configuration ?override_configuration config_path)
     >>= fun configuration ->
-    Ketrew_state.with_state ~configuration (fun ~state ->
-        Ketrew_user_command.run_list ~state todo_list)
+    Ketrew_client.as_client ~configuration ~f:(fun ~client ->
+        Ketrew_client.add_targets client (active :: dependencies))
   ) with
   | `Ok () -> ()
   | `Error e ->

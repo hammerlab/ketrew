@@ -14,34 +14,28 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
+
 open Ketrew_pervasives
 
-type t = [
-  | `Fail of Log.t
-  | `Make of Ketrew_target.t * Ketrew_target.t list
-]
 
-let log = function
-| `Fail l -> Log.(s "Fail with: " % brakets l)
-| `Make (act, deps) -> 
-  Log.(s "Make target :" % Ketrew_target.log act
-       % (match deps with
-         | [] -> empty
-         | more ->
-           parens (s "with " % separate (s ", ") 
-                     (List.map ~f:Ketrew_target.log more))))
+val default_plugins :
+  (string * (module Ketrew_long_running.LONG_RUNNING)) list
+(** The “long-running” plugins loaded by default. *)
 
-let run_list ~state todo_list =
-  Deferred_list.while_sequential todo_list (function
-    | `Make (active, dependencies) ->
-      begin 
-        Deferred_list.while_sequential (active :: dependencies) (fun t ->
-            Ketrew_state.add_target state t)
-        >>= fun (_ : unit list) ->
-        return ()
-      end
-    | `Fail l ->
-      Log.(s "Fail: " % l @ error);
-      fail (`Failure (Log.to_long_string l)))
-  >>= fun (_ : unit list) ->
-  return ()
+val register_long_running_plugin :
+  name:string -> (module Ketrew_long_running.LONG_RUNNING) -> unit
+(** Function to be called from dynamically loaded plugins. *)
+
+val long_running_log: string -> string -> (string * Log.t) list
+(** [long_running_log ~state plugin_name serialized_run_params]
+    calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)
+
+val additional_queries: Ketrew_target.t -> (string * Log.t) list
+(** Get the potential additional queries ([(key, description)] pairs) that can
+    be called on the target. *)
+
+val call_query:  target:Ketrew_target.t -> string ->
+  (string, Log.t) Deferred_result.t
+(** Call a query on a target. *)
+
+val find_plugin: string -> (module Ketrew_long_running.LONG_RUNNING) option

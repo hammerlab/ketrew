@@ -63,6 +63,6 @@ Registration
 Registering the plugin is a simple function call using first class modules:
 M*)
 let () =
-  Ketrew_state.register_long_running_plugin ~name (module Another_long_running)
+  Ketrew_plugin.register_long_running_plugin ~name (module Another_long_running)
 
 

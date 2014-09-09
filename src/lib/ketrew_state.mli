@@ -21,16 +21,8 @@ open Ketrew_pervasives
 type t
 (** The contents of the application state. *)
 
-val default_plugins :
-  (string * (module Ketrew_long_running.LONG_RUNNING)) list
-(** The “long-running” plugins loaded by default. *)
-
-val register_long_running_plugin :
-  name:string -> (module Ketrew_long_running.LONG_RUNNING) -> unit
-(** Function to be called from dynamically loaded plugins. *)
-
 val with_state: 
-  configuration:Ketrew_configuration.t ->
+  configuration:Ketrew_configuration.engine ->
   (state:t ->
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string
@@ -40,7 +32,20 @@ val with_state:
   (unit, 'merge_error) Deferred_result.t
 (** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
 
-val configuration: t -> Ketrew_configuration.t
+val load: 
+  configuration:Ketrew_configuration.engine ->
+  (t,
+   [> `Database of Ketrew_database.error 
+   | `Failure of string
+   | `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   ]) Deferred_result.t
+
+val unload: state:t -> 
+  (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
+
+
+val configuration: t -> Ketrew_configuration.engine
 (** Retrieve the configuration. *)
 
 val add_target :
@@ -175,18 +180,6 @@ val archive_target: t ->
    | `Persistent_state of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Move a target to the “archived” list. *)
-
-val long_running_log: state:t -> string -> string -> (string * Log.t) list
-(** [long_running_log ~state plugin_name serialized_run_params]
-    calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)
-
-val additional_queries: state:t -> Ketrew_target.t -> (string * Log.t) list
-(** Get the potential additional queries ([(key, description)] pairs) that can
-    be called on the target. *)
-
-val call_query: state:t -> target:Ketrew_target.t -> string ->
-  (string, Log.t) Deferred_result.t
-(** Call a query on a target. *)
 
 val restart_target: state:t -> Ketrew_target.t -> 
   (Ketrew_target.t * Ketrew_target.t list, 

@@ -523,10 +523,13 @@ test_config_file () {
   cat <<EOBLOB > $test_config_file
 # Ketrew test configuration file
 debug-level = 2
-[client]
+[plugins]
+  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
+  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
+[engine]
+  database-path = "$test_database_prefix"
+[ui]
   color = true
-[database]
-  path = "$test_database_prefix"
 [server]
   certificate = "$test_certificate"
   private-key = "$test_privkey"
@@ -536,9 +539,6 @@ debug-level = 2
   log-path = "$test_server_log"
   daemonize = true
   command-pipe-path = "$test_command_pipe"
-[plugins]
-  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
-  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens

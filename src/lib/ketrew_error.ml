@@ -26,6 +26,8 @@ let to_string = function
 | `System _ as s -> System.error_to_string s
 | `Configuration (`Parsing e) ->
   fmt "Parsing error in config-file: %S" e
+| `Wrong_configuration (`Found f, `Expected e) ->
+  fmt "Wrong configuration: expecting %S and got %S" e f
 | `Database _ as dberr ->
   Ketrew_database.log_error dberr |> Log.to_long_string
 | `Host e ->

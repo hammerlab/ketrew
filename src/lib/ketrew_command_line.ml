@@ -18,7 +18,6 @@ open Ketrew_pervasives
 module Target = Ketrew_target
 module Artifact = Ketrew_artifact
 module Error = Ketrew_error
-module User_command = Ketrew_user_command
 module Configuration = Ketrew_configuration
 
 (** Display errors, and return an exit code (integer). *)
@@ -49,7 +48,7 @@ module Document = struct
   | more ->
     n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
 
-  let build_process ~state ?(with_details=false)  =
+  let build_process ?(with_details=false)  =
     let open Log in
     let open Target in
     let add_details details =
@@ -69,12 +68,12 @@ module Document = struct
         s ":" % n %
         indent (concat (
             List.map
-              (Ketrew_state.long_running_log ~state name content)
+              (Ketrew_plugin.long_running_log name content)
               ~f:(fun (title, descr) -> s title % s ": " % descr % n)
         ))
       else empty
         
-  let condition ~state ?(with_details=false) =
+  let condition ?(with_details=false) =
     let open Log in
     function
     | None -> s "Always"
@@ -83,7 +82,7 @@ module Document = struct
       then Target.Condition.log c
       else s "Conditionally"
 
-  let target ~state ?build_process_details ?condition_details t =
+  let target ?build_process_details ?condition_details t =
     let open Log in
     let open Target in
     let itemize l =
@@ -101,8 +100,8 @@ module Document = struct
       "Fallbacks", OCaml.list s t.if_fails_activate;
       "Metadata", Artifact.Value.log t.metadata;
       "Build-process", 
-      build_process ~state ?with_details:build_process_details t.make;
-      "Runs", condition ~state ?with_details:condition_details t.condition;
+      build_process  ?with_details:build_process_details t.make;
+      "Runs", condition  ?with_details:condition_details t.condition;
       "Status",
       (match t.history with
        | `Dead _       -> s "Dead"
@@ -224,8 +223,8 @@ module Interaction = struct
     )
 
   let build_sublist_of_targets 
-      ~state ~list_name ~all_log ~go_verb ~filter =
-    Ketrew_state.current_targets state
+      ~client ~list_name ~all_log ~go_verb ~filter =
+    Ketrew_client.current_targets client
     >>= fun all_targets ->
     let to_process = ref [] in
     let all_valid_targets () =
@@ -281,10 +280,10 @@ end
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
-let display_status ~state  =
+let display_status ~client  =
   begin
     Log.(s "display_info !" @ verbose);
-    Ketrew_state.current_targets state
+    Ketrew_client.current_targets client
     >>= fun targets ->
     let `Running rr, `Created cc, `Activated aa =
       List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
@@ -302,8 +301,11 @@ let display_status ~state  =
            % i aa % s " Activated, "
            % i cc % s " Created." %n
            @ normal);
+    return ()
+  end
+      (*
     begin match
-      Configuration.server_configuration (Ketrew_state.configuration state)
+      Configuration.server_configuration (Ketrew_client.configuration client)
     with
     | Some server_config ->
       let local_server_uri =
@@ -354,10 +356,11 @@ let display_status ~state  =
     | None -> Log.(s "No local server configured." @ normal); return ()
     end
   end
+*)
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
     command in [ketrew interactive]). *)
-let run_state ~state ~max_sleep ~how =
+let run_state ~client ~max_sleep ~how =
   let log_happening ~what_happened =
     let open Log in
     let step_count = List.length what_happened in
@@ -379,93 +382,98 @@ let run_state ~state ~max_sleep ~how =
          @ normal); 
     return ()
   in
-  let rec fix_point ~count history =
-    Ketrew_state.step state
-    >>= fun what_happened ->
-    let count = count + 1 in
-    begin match history with
-    | _ when what_happened = [] ->
-      return (count, what_happened :: history)
-    | previous :: _ when previous = what_happened ->
-      return (count, what_happened :: history)
-    | _ -> fix_point ~count (what_happened :: history)
-    end
-  in
-  Log.(s "Running " % OCaml.list s how % s " with max-spleep: " % f max_sleep 
-       @ warning);
-  begin match how with
-  | ["step"] ->
-    Ketrew_state.step state
-    >>= fun what_happened ->
-    log_happening ~what_happened:[what_happened]
-  | ["fix"] ->
-    fix_point 0 []
-    >>= fun (step_count, what_happened) ->
-    log_happening ~what_happened:List.(rev what_happened)
-  | ["loop"] ->
-    let keep_going = ref true in
-    let traffic_light = Light.create () in
-    let rec loop previous_sleep happenings =
-      fix_point 0 []
-      >>= fun (step_count, what_happened) ->
-      let new_happenings = what_happened @ happenings in
-      let seconds =
-        match what_happened with
-        | [] | [[]] -> 
-          min (previous_sleep *. 2.) max_sleep
-        | something -> 2.
-      in
-      Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-      log_happening ~what_happened:what_happened
-      >>= fun () ->
-      begin Deferred_list.pick_and_cancel [
-          System.sleep seconds;
-          Light.try_to_pass traffic_light;
-        ] >>< function
-        | `Ok () when !keep_going -> loop seconds new_happenings
-        | `Ok () ->
-          log_happening ~what_happened:(List.rev new_happenings)
-        | `Error e ->
-          Log.(s "System.Sleep Error!!"  @ error);
-          fail (`Failure "System.sleep")
+  begin match Ketrew_client.get_local_engine client with
+  | None ->
+    Log.(s "Cannot get local-engine to run things." @ warning);
+    return ()
+  | Some state ->
+    let rec fix_point ~count history =
+      Ketrew_state.step state
+      >>= fun what_happened ->
+      let count = count + 1 in
+      begin match history with
+      | _ when what_happened = [] ->
+        return (count, what_happened :: history)
+      | previous :: _ when previous = what_happened ->
+        return (count, what_happened :: history)
+      | _ -> fix_point ~count (what_happened :: history)
       end
     in
-    Deferred_list.for_concurrent ~f:(fun x -> x) [
-      begin loop 2. [] end;
-      begin
-        let rec kbd_loop () =
-          Log.(s "Press the 'q' key to stop loopping." @ normal);
-          Interaction.get_key ()
-          >>= function
-          | 'q' | 'Q' ->
-            keep_going := false;
-            Light.green traffic_light;
-            return ()
-          | _ -> kbd_loop ()
+    Log.(s "Running " % OCaml.list s how % s " with max-spleep: " % f max_sleep 
+         @ warning);
+    begin match how with
+    | ["step"] ->
+      Ketrew_state.step state
+      >>= fun what_happened ->
+      log_happening ~what_happened:[what_happened]
+    | ["fix"] ->
+      fix_point 0 []
+      >>= fun (step_count, what_happened) ->
+      log_happening ~what_happened:List.(rev what_happened)
+    | ["loop"] ->
+      let keep_going = ref true in
+      let traffic_light = Light.create () in
+      let rec loop previous_sleep happenings =
+        fix_point 0 []
+        >>= fun (step_count, what_happened) ->
+        let new_happenings = what_happened @ happenings in
+        let seconds =
+          match what_happened with
+          | [] | [[]] -> 
+            min (previous_sleep *. 2.) max_sleep
+          | something -> 2.
         in
-        kbd_loop ()
-      end;
-    ]
-    >>= fun ((_ : unit list), errors) ->
-    begin match errors with
-    | [] -> return ()
-    | some -> 
-      Log.(s "Errors: "
-           % OCaml.list (fun e -> s (Error.to_string e)) some @ error);
-      fail (`Failure "run")
+        Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+        log_happening ~what_happened:what_happened
+        >>= fun () ->
+        begin Deferred_list.pick_and_cancel [
+            System.sleep seconds;
+            Light.try_to_pass traffic_light;
+          ] >>< function
+          | `Ok () when !keep_going -> loop seconds new_happenings
+          | `Ok () ->
+            log_happening ~what_happened:(List.rev new_happenings)
+          | `Error e ->
+            Log.(s "System.Sleep Error!!"  @ error);
+            fail (`Failure "System.sleep")
+        end
+      in
+      Deferred_list.for_concurrent ~f:(fun x -> x) [
+        begin loop 2. [] end;
+        begin
+          let rec kbd_loop () =
+            Log.(s "Press the 'q' key to stop loopping." @ normal);
+            Interaction.get_key ()
+            >>= function
+            | 'q' | 'Q' ->
+              keep_going := false;
+              Light.green traffic_light;
+              return ()
+            | _ -> kbd_loop ()
+          in
+          kbd_loop ()
+        end;
+      ]
+      >>= fun ((_ : unit list), errors) ->
+      begin match errors with
+      | [] -> return ()
+      | some -> 
+        Log.(s "Errors: "
+             % OCaml.list (fun e -> s (Error.to_string e)) some @ error);
+        fail (`Failure "run")
+      end
+    | sl -> 
+      Log.(s "Unknown client-running command: " % OCaml.list (sf "%S") sl
+           @ error);
+      fail (`Wrong_command_line sl)
     end
-  | sl -> 
-    Log.(s "Unknown state-running command: " % OCaml.list (sf "%S") sl
-         @ error);
-    fail (`Wrong_command_line sl)
   end
-
 (** Kill targets (command line, ["--interactive"], or within 
     [ketrew interactive]. *)
-let kill ~state ~interactive ids =
+let kill ~client ~interactive ids =
   begin 
     begin if interactive then
-        Interaction.build_sublist_of_targets ~state ~list_name:"Kill list"
+        Interaction.build_sublist_of_targets ~client ~list_name:"Kill list"
           ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
           ~filter:Target.Is.killable
       else
@@ -480,7 +488,7 @@ let kill ~state ~interactive ids =
          | _ -> s "Killing " % OCaml.list s to_kill)
         @ warning);
       Deferred_list.while_sequential to_kill (fun id ->
-          Ketrew_state.kill state ~id
+          Ketrew_client.kill client ~id
           >>= function
           | [`Target_died (_, `Killed)] -> 
             Log.(s "Target " % s id % s " killed" @ normal); 
@@ -506,10 +514,10 @@ let kill ~state ~interactive ids =
 
 (** Archive targets (command line, ["--interactive"], or within 
     [ketrew interactive]. *)
-let archive ~state ~interactive ids =
+let archive ~client ~interactive ids =
   begin 
     begin if interactive then
-        Interaction.build_sublist_of_targets ~state ~list_name:"Archival list"
+        Interaction.build_sublist_of_targets ~client ~list_name:"Archival list"
           ~all_log:Log.(s "Archive them all") ~go_verb:Log.(s "archive")
           ~filter:Target.Is.finished
       else
@@ -521,7 +529,7 @@ let archive ~state ~interactive ids =
       if List.length to_archive = 0 then 
         Log.(s "There is nothing to archive." @ warning);
       Deferred_list.while_sequential to_archive (fun id ->
-          Ketrew_state.archive_target state id)
+          Ketrew_client.archive client ~id)
       >>| List.concat
       >>= fun what_happened ->
       Log.(s "→ " % n
@@ -536,9 +544,9 @@ let archive ~state ~interactive ids =
   end
 
 (** Kill and archive targets that are done or useless. *)
-let autoclean ~state ~how_much ~interactive () =
+let autoclean ~client ~how_much ~interactive () =
   let module G = Ketrew_state.Target_graph in
-  G.get_current ~state
+  Ketrew_client.get_current_graph client
   >>= fun graph ->
   Log.(s "Target graph: " % G.log graph @ verbose);
   let vertices = G.vertices graph in
@@ -566,9 +574,9 @@ let autoclean ~state ~how_much ~interactive () =
   Log.(s "To ARCHIVE: " % OCaml.list Ketrew_target.log to_archive @ verbose);
   let proceed () =
     let kill_ids = List.map to_kill ~f:Ketrew_target.id in
-    kill ~state ~interactive:false kill_ids
+    kill ~client ~interactive:false kill_ids
     >>= fun () ->
-    archive ~state ~interactive:false 
+    archive ~client ~interactive:false 
       (kill_ids @ List.map to_archive ~f:Ketrew_target.id)
   in
   begin match interactive, to_kill, to_archive with
@@ -600,9 +608,9 @@ let autoclean ~state ~how_much ~interactive () =
         return ()
     )
   | false, _, _ -> 
-    kill ~state ~interactive:false (List.map to_kill ~f:Ketrew_target.id)
+    kill ~client ~interactive:false (List.map to_kill ~f:Ketrew_target.id)
     >>= fun () ->
-    archive ~state ~interactive:false (List.map to_archive ~f:Ketrew_target.id)
+    archive ~client ~interactive:false (List.map to_archive ~f:Ketrew_target.id)
   end
 
 (** The “Target Explorer™“ *)
@@ -651,20 +659,20 @@ module Explorer = struct
     >>= function
     | `Set f  -> return f
 
-  let pick_a_target_from_list ~state target_ids =
+  let pick_a_target_from_list ~client target_ids =
     Deferred_list.while_sequential target_ids
-      (Ketrew_state.get_target state)
+      (fun id -> Ketrew_client.get_target client ~id)
     >>= fun targets ->
     Interaction.(
       menu ~sentence:Log.(s "Pick a target")
         ~always_there:cancel_menu_items
         (make_target_menu ~targets ()))
 
-  let pick_a_target ~state (es : exploration_state) =
-    Ketrew_state.current_targets state >>= fun current_targets ->
+  let pick_a_target ~client (es : exploration_state) =
+    Ketrew_client.current_targets client >>= fun current_targets ->
     begin match es.show_archived with
     | true ->
-      Ketrew_state.archived_targets state >>= fun l ->
+      Ketrew_client.archived_targets client >>= fun l ->
           return (current_targets @ l)
     | false -> return current_targets
     end
@@ -684,14 +692,14 @@ module Explorer = struct
           ])
         (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
 
-  let explore_single_target ~state (es: exploration_state) target =
+  let explore_single_target ~client (es: exploration_state) target =
     let sentence =
       let build_process_details = es.build_process_details in
       let condition_details = es.condition_details in
       Log.(s "Exploring " 
-           % Document.target
-             ~build_process_details ~condition_details ~state target) in
-    Ketrew_state.is_archived state (Target.id target)
+           % Document.target ~build_process_details ~condition_details target)
+    in
+    Ketrew_client.is_archived client ~id:(Target.id target)
     >>= fun is_archived ->
     Interaction.(
       let kill_item =
@@ -746,7 +754,7 @@ module Explorer = struct
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
 
-  let view_in_dollar_editor ?(extension="txt") ~state content =
+  let view_in_dollar_editor ?(extension="txt") ~client content =
     let tmp =
       Filename.(concat temp_dir_name 
                   (fmt "%s.%s" (Unique_id.create ()) extension))
@@ -765,12 +773,12 @@ module Explorer = struct
     ignore (Sys.command command);
     return ()
 
-  let view_json ~state target =
+  let view_json ~client target =
     let content = Target.serialize target in 
-    view_in_dollar_editor ~extension:"json" ~state content
+    view_in_dollar_editor ~extension:"json" ~client content
 
   let rec target_status 
-      ~state ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
+      ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
     let sentence =
       let rec log_of_status (status: Target.workflow_state) =
         let open Log in
@@ -791,8 +799,7 @@ module Explorer = struct
             separate n
               (List.map
                  ~f:(fun (key, value) -> s "* " % s key % s ": " % value)
-                 (Ketrew_state.long_running_log
-                    ~state plugin_name run_parameters)))
+                 (Ketrew_plugin.long_running_log plugin_name run_parameters)))
         | `Dead (time, prev, why) ->
           log_of_status (prev :> Target.workflow_state) % n
           % s "Dead: " % Time.log time % n
@@ -804,14 +811,14 @@ module Explorer = struct
           % s "Successful: " % Time.log time % s "→ " % Artifact.log arti
       in
       let open Log in
-      Document.target ~state target
+      Document.target target
       % s "Status:" % n
       % indent (log_of_status target.Target.history)
       % n % add_info
     in
     let open Interaction in
     let additional =
-      Ketrew_state.additional_queries ~state target
+      Ketrew_plugin.additional_queries target
       |> List.map ~f:(fun (key, log) -> menu_item ~log (`Call (key, log)))
     in
     let always_there =
@@ -830,13 +837,13 @@ module Explorer = struct
     menu ~sentence ~always_there additional
     >>= function
     | `Set_viewer viewer ->
-      target_status ~state ~viewer exploration_state target
+      target_status ~client ~viewer exploration_state target
     | `Call (key, log) ->
       Log.(s "Calling query " % sf "%S" key % n
            % s "Press " % bold_red (s "'K'") % s " for cancelling"
            @ warning);
       begin Deferred_list.pick_and_cancel [
-          Ketrew_state.call_query ~state ~target key;
+          Ketrew_client.call_query client ~target key;
           begin 
             let rec loop () =
               get_key ()
@@ -858,7 +865,7 @@ module Explorer = struct
             return (Some Log.(log % s ":" % n 
                               % verbatim ("\n" ^ formatted ^ "\n") % n))
           | `Dollar_editor ->
-            view_in_dollar_editor ~state qlog
+            view_in_dollar_editor ~client qlog
             >>= fun () ->
             return None
           end
@@ -866,68 +873,68 @@ module Explorer = struct
           return (Some Log.(log % s ": ERROR -> " % n % e % n))
       end
       >>= fun add_info ->
-      target_status ~state ~viewer ?add_info exploration_state target
+      target_status ~client ~viewer ?add_info exploration_state target
     | `Cancel | `Quit as up -> return up
 
-  let rec explore ~state exploration_state_stack =
-    let go_back ~state history =
+  let rec explore ~client exploration_state_stack =
+    let go_back ~client history =
       match history with
       | [] -> return ()
-      | some -> explore ~state some in
+      | some -> explore ~client some in
     begin match exploration_state_stack with
-    | [] -> explore ~state [create_state ()]
+    | [] -> explore ~client [create_state ()]
     | one :: history ->
       begin match one.current_target with
       | None ->
-        begin pick_a_target ~state one
+        begin pick_a_target ~client one
           >>= function
-          | `Cancel -> go_back ~state history (* go back in history *)
+          | `Cancel -> go_back ~client history (* go back in history *)
           | `Quit -> return ()
           | `Set_with_archived b ->
-            explore ~state ({one with show_archived = b } :: history)
+            explore ~client ({one with show_archived = b } :: history)
           | `Filter ->
             get_filter () >>= fun f ->
-            explore ~state ({one with target_filter = f } :: one :: history)
+            explore ~client ({one with target_filter = f } :: one :: history)
           | `Go t ->
-            explore ~state ({one with current_target = Some t } :: one :: history)
+            explore ~client ({one with current_target = Some t } :: one :: history)
         end
       | Some chosen_id -> 
-        Ketrew_state.get_target state chosen_id >>= fun chosen ->
-        begin explore_single_target ~state one chosen
+        Ketrew_client.get_target client chosen_id >>= fun chosen ->
+        begin explore_single_target ~client one chosen
           >>= function
-          | `Cancel -> go_back ~state history
+          | `Cancel -> go_back ~client history
           | `Quit -> return ()
           | `Show_make build_process_details ->
-            explore ~state ({ one with build_process_details }  :: history)
+            explore ~client ({ one with build_process_details }  :: history)
           | `Show_condition condition_details ->
-            explore ~state ({ one with condition_details }  :: history)
+            explore ~client ({ one with condition_details }  :: history)
           | `Status ->
-            begin target_status ~state one chosen
+            begin target_status ~client one chosen
               >>= function
-              | `Cancel -> go_back ~state (one :: history)
+              | `Cancel -> go_back ~client (one :: history)
               | `Quit -> return ()
             end
           | `Kill ->
             Log.(s "Killing target …" @ warning);
-            Ketrew_state.kill state (Target.id chosen)
+            Ketrew_client.kill client (Target.id chosen)
             >>= fun what_happened ->
             Log.(s "→ " % s (Target.name chosen) % n
                  % (separate n 
                       (List.map ~f:Ketrew_state.log_what_happened what_happened) 
                     |> indent)
                  @ warning);
-            explore ~state (one :: history)
+            explore ~client (one :: history)
           | `Archive ->
-            Ketrew_state.archive_target state (Target.id chosen)
+            Ketrew_client.archive client (Target.id chosen)
             >>= fun what_happened ->
             Log.(s "Archival of " % s (Target.name chosen) % n
                  % (separate n 
                       (List.map ~f:Ketrew_state.log_what_happened what_happened) 
                     |> indent)
                  @ warning);
-            explore ~state (one :: history)
+            explore ~client (one :: history)
           | `Restart ->
-            Ketrew_state.restart_target ~state chosen
+            Ketrew_client.restart_target client ~target:chosen
             >>= fun (this_target, new_upper_dag) ->
             Log.(s "New Targets:" % n
                  % indent (Interaction.format_target_for_menu this_target) % n
@@ -935,21 +942,21 @@ module Explorer = struct
                  % indent (separate n (List.map new_upper_dag
                                          ~f:Interaction.format_target_for_menu))
                  @ normal);
-            explore ~state (one :: history)
+            explore ~client (one :: history)
           | `View_json ->
-            view_json ~state chosen >>= fun () ->
-            explore ~state (one :: history)
+            view_json ~client chosen >>= fun () ->
+            explore ~client (one :: history)
           | `Follow_dependencies | `Follow_fallbacks as follow ->
             let target_ids =
               match follow with
               | `Follow_fallbacks -> chosen.Target.if_fails_activate
               | `Follow_dependencies -> chosen.Target.dependencies in
-            begin pick_a_target_from_list ~state target_ids
+            begin pick_a_target_from_list ~client target_ids
               >>= function
-              | `Cancel -> go_back ~state (one :: history)
+              | `Cancel -> go_back ~client (one :: history)
               | `Quit -> return ()
               | `Go t ->
-                explore ~state 
+                explore ~client 
                   ({one with current_target = Some t} :: one :: history)
             end
         end
@@ -958,7 +965,7 @@ module Explorer = struct
 end
 
 (** The function behind [ketrew interact]. *)
-let interact ~state =
+let interact ~client =
   let rec main_loop () =
     Interaction.(
       menu ~sentence:Log.(s "Main menu")
@@ -981,27 +988,27 @@ let interact ~state =
     >>= function
     | `Quit -> return ()
     | `Status -> 
-      display_status ~state
+      display_status ~client
       >>= fun () ->
       main_loop ()
     | `Kill ->
-      kill ~interactive:true ~state []
+      kill ~interactive:true ~client []
       >>= fun () ->
       main_loop ()
     | `Run how ->
-      run_state ~state  ~max_sleep:120. ~how
+      run_state ~client  ~max_sleep:120. ~how
       >>= fun () ->
       main_loop ()
     | `Archive ->
-      archive ~interactive:true ~state []
+      archive ~interactive:true ~client []
       >>= fun () ->
       main_loop ()
     | `Autoclean how_much ->
-      autoclean ~state ~how_much ~interactive:true ()
+      autoclean ~client ~how_much ~interactive:true ()
       >>= fun () ->
       main_loop ()
     | `Explore ->
-      Explorer.explore ~state []
+      Explorer.explore ~client []
       >>= fun () ->
       main_loop ()
   in
@@ -1097,7 +1104,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           pure (fun config_path  ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
-              Ketrew_state.with_state ~configuration (display_status))
+              Ketrew_client.as_client ~configuration ~f:(display_status))
           $ config_file_argument
         ) in
   let run_cmd =
@@ -1107,8 +1114,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path max_sleep how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration 
-              (run_state ~max_sleep ~how))
+            Ketrew_client.as_client ~configuration 
+              ~f:(run_state ~max_sleep ~how))
         $ config_file_argument
         $ Arg.(value & opt float 60.
                & info ["max-sleep"] ~docv:"SECONDS" 
@@ -1138,8 +1145,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path interactive ids ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration 
-              (kill ~interactive ids))
+            Ketrew_client.as_client ~configuration 
+              ~f:(kill ~interactive ids))
         $ config_file_argument
         $ interactive_flag "Go through running targets and kill them with 'y' \
                             or 'n'."
@@ -1157,8 +1164,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path interactive ids ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration 
-              (archive ~interactive ids))
+            Ketrew_client.as_client ~configuration 
+              ~f:(archive ~interactive ids))
         $ config_file_argument
         $ interactive_flag "Go through running targets and kill them with 'y' \
                             or 'n'."
@@ -1175,8 +1182,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path interactive how_much ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration 
-              (autoclean ~interactive ~how_much ()))
+            Ketrew_client.as_client ~configuration 
+              ~f:(autoclean ~interactive ~how_much ()))
         $ config_file_argument
         $ interactive_flag "Ask before proceeding."
         $ (pure (fun hard -> if hard then `Hard else `Soft)
@@ -1198,9 +1205,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   | None -> sf "%S" config_path
                   | Some _ -> s "user-overriden")
                  % s ":" % n
-                 % concat
-                   (List.map (Configuration.log configuration)
-                      ~f:(fun conflog ->  s "* " % conflog % n))
+                 % Configuration.log configuration
                  @ normal); return ())
         $ config_file_argument)
       ~info:(info "print-configuration" ~version 
@@ -1213,7 +1218,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration interact)
+            Ketrew_client.as_client ~configuration ~f:interact)
         $ config_file_argument)
       ~info:(
         info "interact" ~version ~sdocs:"COMMON OPTIONS" 
@@ -1226,8 +1231,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration 
-              (Explorer.explore []))
+            Ketrew_client.as_client ~configuration 
+              ~f:(Explorer.explore []))
         $ config_file_argument)
       ~info:(
         info "explore" ~version ~sdocs:"COMMON OPTIONS" 
@@ -1243,13 +1248,15 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             let configuration =
               Configuration.get_configuration_non_deferred_exn
                 ?override_configuration config_path in
-            Log.(s "Got configuration: " % 
-                 separate n (Configuration.log configuration)
+            Log.(s "Got configuration: " % Configuration.log configuration
                  @ very_verbose);
             daemonize_if_applicable configuration;
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration Ketrew_server.start)
+            match Configuration.mode configuration with
+            | `Server srv -> Ketrew_server.start srv
+            | other -> fail (`Failure "not a server")
+          )
         $ config_file_argument)
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS" 
@@ -1262,14 +1269,16 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
-            Ketrew_state.with_state ~configuration (fun ~state ->
-                Ketrew_server.stop ~state
-                >>= function
-                | `Done -> Log.(s "Server killed."  @ normal); return ()
-                | `Timeout -> 
-                  Log.(s "Write-operation timeout; the server must not be \
-                          running, try sub-command `status`" @ warning);
-                  return ()))
+            begin match Configuration.mode configuration with
+            | `Server srv -> Ketrew_server.stop srv
+            | other -> fail (`Failure "not a server")
+            end
+            >>= function
+            | `Done -> Log.(s "Server killed."  @ normal); return ()
+            | `Timeout -> 
+              Log.(s "Write-operation timeout; the server must not be \
+                      running, try sub-command `status`" @ warning);
+              return ())
         $ config_file_argument)
       ~info:(
         info "stop-server" ~version ~sdocs:"COMMON OPTIONS" 

@@ -217,7 +217,7 @@ let target_available_queries_service ~server_state ~body req =
   Ketrew_state.get_target server_state.state target_id
   >>= fun target ->
   let json =
-    Ketrew_state.additional_queries ~state:server_state.state target
+    Ketrew_plugin.additional_queries target
     |> List.map ~f:(fun (name, descr) ->
         (`List [`String name; `String (Log.to_long_string descr)]))
     |> (fun l ->
@@ -241,7 +241,7 @@ let target_call_query_service ~server_state ~body req =
   Log.(s "Calling query " % quote query_name % s " on "
        % Ketrew_target.log target @ very_verbose);
   begin
-    Ketrew_state.call_query ~state:server_state.state ~target query_name
+    Ketrew_plugin.call_query ~target query_name
     >>< function
     | `Ok string -> 
       let json = 
@@ -396,27 +396,24 @@ let start_listening_on_command_pipe ~server_state =
     return ()
 
 
-let start ~state  =
-  let config =  Ketrew_state.configuration state in
+let start ~configuration  =
   Log.(s "Starting server!" @ very_verbose);
   mandatory_for_starting
-    (Ketrew_configuration.server_configuration config)
-    ~msg:"Server not configured"
-  >>= fun server_config ->
-  mandatory_for_starting
-    (Ketrew_configuration.authorized_tokens_path server_config)
+    (Ketrew_configuration.authorized_tokens_path configuration)
     ~msg:"Authentication-less server not implemented"
   >>= fun authentication_file ->
   let return_error_messages, how =
-    Ketrew_configuration.return_error_messages server_config,
-    Ketrew_configuration.listen_to server_config in
+    Ketrew_configuration.return_error_messages configuration,
+    Ketrew_configuration.listen_to configuration in
   begin match how with
   | `Tls (certfile, keyfile, port) ->
     Authentication.load_file authentication_file
     >>= fun authentication ->
+    Ketrew_state.load (Ketrew_configuration.server_engine configuration) 
+    >>= fun engine ->
     let server_state =
-      Server_state.create ~authentication ~state
-        ~authentication_file server_config
+      Server_state.create ~authentication ~state:engine
+        ~authentication_file configuration
     in
     start_listening_on_command_pipe ~server_state
     >>= fun () ->
@@ -457,13 +454,9 @@ let start ~state  =
           Lwt_unix_conduit.serve ~mode ~sockaddr handler_http)
   end
 
-let stop ~state =
-  let config =  Ketrew_state.configuration state in
-  Deferred_result.some ~or_fail:(`Stop_server_error "No server configured")
-    (Ketrew_configuration.server_configuration config)
-  >>= fun server_config ->
+let stop ~configuration =
   Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")
-    (Ketrew_configuration.command_pipe server_config)
+    (Ketrew_configuration.command_pipe configuration)
   >>= fun file_path ->
   System.file_info ~follow_symlink:true file_path
   >>= function

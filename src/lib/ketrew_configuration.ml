@@ -16,6 +16,14 @@
 
 open Ketrew_pervasives
 
+type plugin = [ `Compiled of string | `OCamlfind of string ]
+
+type engine = {
+  database_parameters: string;
+  persistent_state_key: string;
+  turn_unix_ssh_failure_into_target_failure: bool;
+  host_timeout_upper_bound: float option;
+}
 type server = {
   authorized_tokens_path: string option; 
   listen_to: [ `Tls of (string * string * int) ];
@@ -23,63 +31,88 @@ type server = {
   command_pipe: string option;
   daemon: bool;
   log_path: string option;
+  server_engine: engine;
 }
-type plugin = [ `Compiled of string | `OCamlfind of string ]
-type t = {
-  database_parameters: string;
-  persistent_state_key: string;
-  turn_unix_ssh_failure_into_target_failure: bool;
-  debug_level: int;
+type ui = {
   with_color: bool;
-  host_timeout_upper_bound: float;
-  server: server option;
+}
+type client = {
+  (* client_engine: engine; *)
+  connection: string;
+  client_ui: ui;
+}
+type standalone = {
+  standalone_engine: engine;
+  standalone_ui: ui;
+}
+type mode = [
+  | `Standalone of standalone
+  | `Client of client
+  | `Server of server
+]
+
+type t = {
+  debug_level: int;
   plugins: plugin list;
+  mode: mode;
 }
 
 let log t =
-  Log.([
-      s "Database: " % sf "%S" t.database_parameters;
-      s "State-key: " % sf "%S" t.persistent_state_key;
-      s "Unix-failure "
-      % (if t.turn_unix_ssh_failure_into_target_failure
-         then s "turns"
-         else s "does not turn")
-      % s " into target failure";
-      s "Debug-level: " % i t.debug_level;
-      s "Client " % s (if t.with_color then "with" else "without") % s " colors";
-      s "Timeout-upper-bound: " % f t.host_timeout_upper_bound % s " seconds";
-      s "Plugins: "
-      % begin match t.plugins with
-      | [] -> s "None"
-      | more -> n % indent (separate n (List.map more ~f:(function
-        | `Compiled path -> s "* Compiled: " % quote path
-        | `OCamlfind pack -> s "* OCamlfind package: " % quote pack
-        ))) % n
-      end
-      % s "Server: "
-      % (match t.server with
-        | None -> s "Not configured"
-        | Some srv -> n % indent (
-            s "Authorized tokens: " 
-            % OCaml.(option string) srv.authorized_tokens_path % n
-            % s "Daemonize: " % OCaml.bool srv.daemon % n
-            % s "Command Pipe: " % OCaml.option quote srv.command_pipe % n
-            % s "Log-path: " % OCaml.option quote srv.log_path % n
-            % s  "Listen: "
-            % (match srv.listen_to with
-              | `Tls (cert, key, port) -> 
-                s "TLS:" % i port % sp
-                % parens (indent (s "Certificate: " % quote cert % s ", " % n
-                                      % s "Key: " % quote key))
-              ) % n
-            % s "Return-error-messages: "
-            % OCaml.bool srv.return_error_messages %n))
-    ])
-
-
-let database_parameters t = t.database_parameters
-let persistent_state_key t = t.persistent_state_key
-let is_unix_ssh_failure_fatal t = t.turn_unix_ssh_failure_into_target_failure
+  let open Log in
+  let item name l = s name % s ": " % l % n in
+  let sublist l = n % indent (separate empty l) in
+  let common = 
+    sublist [
+      item "Debug-level" (i t.debug_level);
+      item "Plugins" (match t.plugins with
+        | [] -> s "None"
+        | more -> sublist (List.map more ~f:(function
+          | `Compiled path -> item "Compiled"  (quote path)
+          | `OCamlfind pack -> item "OCamlfind package" (quote pack))))
+    ] in
+  let ui t =
+    item "Colors"
+      (s (if t.with_color then "with" else "without") % s " colors")
+  in
+  let engine t = 
+    sublist [
+      item "Database" (quote t.database_parameters);
+      item "State-key" (quote t.persistent_state_key);
+      item "Unix-failure"
+        ((if t.turn_unix_ssh_failure_into_target_failure
+          then s "turns"
+          else s "does not turn") % s " into target failure");
+    ] in
+  match t.mode with
+  | `Standalone {standalone_engine; standalone_ui} ->
+    item "Mode" (s "Standalone")
+    % item "Engine" (engine standalone_engine)
+    % item "UI" (ui standalone_ui)
+    % item "Misc" common
+  | `Client client ->
+    item "Mode" (s "Client")
+    % item "Connection" (quote client.connection)
+    % item "UI" (ui client.client_ui)
+    % item "Misc" common
+  | `Server srv ->
+    item "Mode" (s "Server")
+    % item "Engine" (engine srv.server_engine)
+    % item "HTTP-server" (sublist [
+        item "Authorized tokens" 
+          OCaml.(option string srv.authorized_tokens_path);
+        item "Daemonize" (OCaml.bool srv.daemon);
+        item "Command Pipe" (OCaml.option quote srv.command_pipe);
+        item "Log-path" (OCaml.option quote srv.log_path);
+        item "Return-error-messages" (OCaml.bool srv.return_error_messages);
+        item "Listen"
+          (let `Tls (cert, key, port) = srv.listen_to in
+           sublist [
+             item "Port" (i port);
+             item "Certificate" (quote cert);
+             item "Key" (quote key); 
+           ])
+      ])
+    % item "Misc" common
 
 let default_persistent_state_key = "ketrew_persistent_state"
 
@@ -89,29 +122,41 @@ let default_configuration_path =
 let default_database_path = 
   Sys.getenv "HOME" ^ "/.ketrew/database_dbm"
 
-let host_timeout_upper_bound t = t.host_timeout_upper_bound
+let create ?(debug_level=0) ?(plugins=[]) mode =
+  {debug_level; plugins; mode;}
 
-let create_server
-    ?authorized_tokens_path ?(return_error_messages=false)
-    ?command_pipe ?(daemon=false) ?log_path
-    listen_to =
-  {authorized_tokens_path; listen_to; return_error_messages;
-   command_pipe; daemon; log_path; }
 
-let create 
-    ?(debug_level=2)
-    ?(with_color=true)
-    ?(turn_unix_ssh_failure_into_target_failure=false)
+let ui ?(with_color=true) () = {with_color}
+let default_ui = ui ()
+
+let engine 
+    ?(database_parameters=default_database_path)
     ?(persistent_state_key=default_persistent_state_key)
-    ?(host_timeout_upper_bound=60.)
-    ?(plugins=[])
-    ?server
-    ~database_parameters () =
-  {
-    database_parameters; persistent_state_key;
-    turn_unix_ssh_failure_into_target_failure; plugins;
-    debug_level; with_color; host_timeout_upper_bound; server;
-  }
+    ?(turn_unix_ssh_failure_into_target_failure=false)
+    ?host_timeout_upper_bound () = {
+  database_parameters;
+  persistent_state_key;
+  turn_unix_ssh_failure_into_target_failure;
+  host_timeout_upper_bound;
+}
+let default_engine = engine ()
+
+let standalone ?(ui=default_ui) ?engine () =
+  let standalone_engine = Option.value engine ~default:default_engine in
+  (`Standalone {standalone_engine; standalone_ui = ui}) 
+
+let client ?(ui=default_ui) connection =
+  (`Client {client_ui = ui; connection})
+
+let server
+    ?engine 
+    ?authorized_tokens_path ?(return_error_messages=false)
+    ?command_pipe ?(daemon=false) ?log_path listen_to =
+  let server_engine = Option.value engine ~default:default_engine in
+  (`Server {server_engine; authorized_tokens_path; listen_to;
+            return_error_messages; command_pipe; daemon; log_path; })
+
+
 
 let parse_exn str =
   let toml = Toml.from_string str in
@@ -120,20 +165,7 @@ let parse_exn str =
   let toml_mandatory ?(table=toml) get name =
     try get table name
     with _ -> failwith (fmt "Mandatory field %S missing" name) in
-  let turn_unix_ssh_failure_into_target_failure =
-    toml_option Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
   let debug_level = toml_option Toml.get_int "debug-level" in
-  let host_timeout_upper_bound =
-    toml_option Toml.get_float "host-timeout-upper-bound" in
-  let with_color =
-    Option.(
-      toml_option Toml.get_table "client"
-      >>= fun table ->
-      toml_option ~table Toml.get_bool "color") in
-  let database_parameters, persistent_state_key =
-    let table = toml_mandatory Toml.get_table "database" in
-    toml_mandatory ~table Toml.get_string  "path",
-    toml_option ~table Toml.get_string "state-key" in
   let plugins =
     toml_option Toml.get_table "plugins"
     |> Option.value_map ~default:[] ~f:Toml.toml_to_list
@@ -143,14 +175,37 @@ let parse_exn str =
       | ("compiled", TomlType.TString path) -> [`Compiled path]
       | ("ocamlfind", TomlType.TString pack) -> [`OCamlfind pack]
       | ("compiled", TomlType.TArray (TomlType.NodeString paths)) ->
-         List.map paths ~f:(fun p -> `Compiled p)
+        List.map paths ~f:(fun p -> `Compiled p)
       | ("ocamlfind", TomlType.TArray (TomlType.NodeString packs)) ->
-         List.map packs ~f:(fun p -> `OCamlfind p)
+        List.map packs ~f:(fun p -> `OCamlfind p)
       | (other, _) ->
         failwith (fmt "Expecting “compiled” plugins only")
       )
     |> List.concat
   in
+  let engine =
+    Option.(
+      toml_option Toml.get_table "engine"
+      >>= fun table ->
+      let database_parameters =
+        toml_option ~table Toml.get_string "database-path" in
+      let persistent_state_key =
+        toml_option ~table Toml.get_string "state-key" in
+      let turn_unix_ssh_failure_into_target_failure =
+        toml_option Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
+      let host_timeout_upper_bound =
+        toml_option Toml.get_float "host-timeout-upper-bound" in
+      return (engine ?database_parameters ?persistent_state_key
+                ?turn_unix_ssh_failure_into_target_failure
+                ?host_timeout_upper_bound ()))
+  in
+  let ui =
+    Option.(
+      toml_option Toml.get_table "ui"
+      >>= fun table ->
+      let with_color = toml_option ~table Toml.get_bool "color" in
+      return (ui ?with_color ())
+    ) in
   let server =
     let open Option in
     toml_option Toml.get_table "server"
@@ -170,18 +225,25 @@ let parse_exn str =
       let key = toml_mandatory ~table Toml.get_string "private-key" in
       let port = toml_mandatory ~table Toml.get_int "port" in
       `Tls (cert, key, port) in
-    return (create_server ?return_error_messages ?command_pipe
-              ?daemon ?log_path ?authorized_tokens_path listen_to)
+    return (server ?return_error_messages ?command_pipe ?engine ?daemon
+              ?log_path ?authorized_tokens_path listen_to)
   in
-  create 
-    ?turn_unix_ssh_failure_into_target_failure 
-    ?debug_level 
-    ?with_color
-    ?persistent_state_key 
-    ?host_timeout_upper_bound
-    ~plugins
-    ?server
-    ~database_parameters ()
+  let client =
+    Option.(
+      toml_option Toml.get_table "client"
+      >>= fun table ->
+      toml_option ~table Toml.get_string "connection"
+      >>= fun connection ->
+      return (client ?ui connection)
+    ) in
+  let mode =
+    match client, server with
+    | Some s, None | None, Some s -> s
+    | None, None ->  standalone ?engine ?ui ()
+    | _, _ -> failwith "Cannot handle multiple configurations in the same file"
+  in
+  create ?debug_level ~plugins mode
+
 
 let parse s =
   let open Result in
@@ -190,9 +252,19 @@ let parse s =
 
 let apply_globals t =
   global_debug_level := t.debug_level;
-  global_with_color := t.with_color;
-  Ketrew_host.default_timeout_upper_bound := t.host_timeout_upper_bound;
-  ()
+  let color, host_timeout =
+    match t.mode with
+    | `Client {client_ui; connection} -> (client_ui.with_color, None)
+  | `Standalone {standalone_ui; standalone_engine} ->
+    (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound)
+  | `Server {server_engine; _} ->
+    (false, server_engine.host_timeout_upper_bound)
+  in
+  global_with_color := color;
+  begin match host_timeout with
+  | Some ht -> Ketrew_host.default_timeout_upper_bound := ht
+  | None -> ()
+  end
 
 let get_configuration ?(and_apply=true) ?override_configuration path =
   begin match override_configuration with
@@ -238,11 +310,19 @@ let get_configuration_non_deferred_exn
 
 let plugins t = t.plugins
 
-let server_configuration t = t.server
-
+let server_configuration t =
+  match t.mode with
+  | `Server s -> Some s
+  | other -> None
 let listen_to s = s.listen_to
 let return_error_messages s = s.return_error_messages
 let authorized_tokens_path s = s.authorized_tokens_path
 let command_pipe s = s.command_pipe
 let daemon       s = s.daemon
 let log_path     s = s.log_path
+let database_parameters e = e.database_parameters
+let persistent_state_key e = e.persistent_state_key
+let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
+let mode t = t.mode
+let standalone_engine st = st.standalone_engine
+let server_engine s = s.server_engine
