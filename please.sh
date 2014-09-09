@@ -524,22 +524,22 @@ test_config_file () {
   cat <<EOBLOB > $test_config_file
 # Ketrew test configuration file
 debug-level = 2
-[plugins]
-  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
-  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
+#[plugins]
+#  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
+#  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 [engine]
   database-path = "$test_database_prefix"
 [ui]
   color = true
-[server]
-  certificate = "$test_certificate"
-  private-key = "$test_privkey"
-  port = 8443
-  authorized-tokens-path = "$test_authorized_tokens"
-  return-error-messages = true
-  log-path = "$test_server_log"
-  daemonize = true
-  command-pipe-path = "$test_command_pipe"
+#[server]
+#  certificate = "$test_certificate"
+#  private-key = "$test_privkey"
+#  port = 8443
+#  authorized-tokens-path = "$test_authorized_tokens"
+#  return-error-messages = true
+#  log-path = "$test_server_log"
+#  daemonize = true
+#  command-pipe-path = "$test_command_pipe"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -628,9 +628,7 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
-      set_test_additional_findlib_plugin
-      compile_dummy_plugin
-      ssl_cert_key
+      echo "=> Test environment in “Standalone” mode"
       test_config_file
       test_environment ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
