@@ -443,9 +443,6 @@ do_travis() {
   echo "Do some command line tests, with the server and all"
   export KETREW_CONFIGURATION=_obuild/test-config-file.toml
   ktapp="_obuild/ketrew-app/ketrew-app.asm"
-  $ktapp start-server
-  $ktapp status
-  $ktapp stop-server
   $ktapp status
 }
 
