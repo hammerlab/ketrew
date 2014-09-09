@@ -107,6 +107,7 @@ MERLIN_END
 for p in $findlib_packages ; do echo "PKG $p" >> .merlin ; done
 
 ocp-build root
+
 }
 
 make_doc () {
@@ -602,7 +603,11 @@ EOBLOB
 while [ "$1" != "" ]; do
   case $1 in
     "setup" ) setup ;;
-    "build" ) setup; ocp-build build  ;;
+    "build" )
+      setup
+      ocp-build build
+      echo "Compiling also dummy-plugins and stuff"
+      compile_dummy_plugin ;;
     "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
     "clean" ) rm -fr _prebuild _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
