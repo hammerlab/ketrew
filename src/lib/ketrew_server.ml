@@ -77,7 +77,7 @@ end
 module Server_state = struct
 
   type t = {
-    state: Ketrew_state.t;
+    state: Ketrew_engine.t;
     server_configuration: Ketrew_configuration.server;
     authentication_file: string;
     mutable authentication: Authentication.t;
@@ -173,13 +173,13 @@ let targets_service: _ service = fun ~server_state ~body req ->
   >>= fun `Json ->
   begin match target_ids  with
   | [] ->
-    Ketrew_state.current_targets server_state.state
+    Ketrew_engine.current_targets server_state.state
     >>= fun current_targets ->
     begin
       if Uri.get_query_param (Cohttp_server_core.Request.uri req) "archived"
          = Some "true"
       then
-        Ketrew_state.archived_targets server_state.state
+        Ketrew_engine.archived_targets server_state.state
         >>= fun archived ->
         return (current_targets @ archived)
       else return current_targets
@@ -193,7 +193,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
     return (`Json json)
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
-        Ketrew_state.get_target server_state.state id
+        Ketrew_engine.get_target server_state.state id
         >>< function
         | `Ok t -> return (Ketrew_target.serialize t)
         | `Error e -> 
@@ -214,7 +214,7 @@ let target_available_queries_service ~server_state ~body req =
   >>= fun target_id ->
   format_parameter req
   >>= fun `Json ->
-  Ketrew_state.get_target server_state.state target_id
+  Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
   let json =
     Ketrew_plugin.additional_queries target
@@ -236,7 +236,7 @@ let target_call_query_service ~server_state ~body req =
   >>= fun `Json ->
   mandatory_parameter req ~name:"query"
   >>= fun query_name ->
-  Ketrew_state.get_target server_state.state target_id
+  Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
   Log.(s "Calling query " % quote query_name % s " on "
        % Ketrew_target.log target @ very_verbose);
@@ -269,10 +269,10 @@ let add_targets_service  ~server_state ~body req =
   >>= fun targets ->
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
   Deferred_list.while_sequential targets ~f:(fun t ->
-      Ketrew_state.add_target server_state.state t
+      Ketrew_engine.add_target server_state.state t
       >>= fun () ->
       let original_id = Ketrew_target.id t in
-      Ketrew_state.get_target server_state.state original_id
+      Ketrew_engine.get_target server_state.state original_id
       >>= fun freshen ->
       return (`List [`String original_id; `String (Ketrew_target.id freshen)])
     )
@@ -295,12 +295,12 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
     >>= fun target_ids ->
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
-        | `Kill -> Ketrew_state.kill server_state.state id
-        | `Archive -> Ketrew_state.archive_target server_state.state id
+        | `Kill -> Ketrew_engine.kill server_state.state id
+        | `Archive -> Ketrew_engine.archive_target server_state.state id
         end
         >>= fun happenings ->
         return (List.map happenings (fun l ->
-            `String (Ketrew_state.log_what_happened l |> Log.to_long_string))))
+            `String (Ketrew_engine.log_what_happened l |> Log.to_long_string))))
     >>| List.concat
     >>= fun happenings ->
     return (`Json (`List happenings |> Yojson.Basic.to_string))
@@ -409,7 +409,7 @@ let start ~configuration  =
   | `Tls (certfile, keyfile, port) ->
     Authentication.load_file authentication_file
     >>= fun authentication ->
-    Ketrew_state.load (Ketrew_configuration.server_engine configuration) 
+    Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
     >>= fun engine ->
     let server_state =
       Server_state.create ~authentication ~state:engine

@@ -32,38 +32,38 @@ module Test = struct
 
   let test_targets ?wait_between_steps ~state ~name targets checks =
     let open Ketrew in
-    Deferred_list.while_sequential targets (State.add_target state)
+    Deferred_list.while_sequential targets (Ketrew_engine.add_target state)
     >>= fun (_ : unit list) ->
     Deferred_list.while_sequential checks ~f:(fun check ->
         Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
         >>< fun _ ->
         match check with
-        | `Dont_care -> State.step state >>= fun _ -> return ()
+        | `Dont_care -> Ketrew_engine.step state >>= fun _ -> return ()
         | `Happens check ->
-          State.step state >>= fun happening ->
+          Ketrew_engine.step state >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
             fail (fmt "T: %S: wrong happening: %s" name
-                    (List.map ~f:State.what_happened_to_string happening
+                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end
         | `Status (id, check) ->
-          State.step state >>= fun _ ->
-          begin State.get_status state id
+          Ketrew_engine.step state >>= fun _ ->
+          begin Ketrew_engine.get_status state id
             >>= function
             | s when check s -> return ()
             | other -> fail (fmt "T: %S: wrong status" name); return ()
           end
         | `Kill_and (id, check) ->
-          State.kill state id
+          Ketrew_engine.kill state id
           >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
             fail (fmt "T: %S: wrong kill happening: %s" name
-                    (List.map ~f:State.what_happened_to_string happening
+                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end)
@@ -151,11 +151,11 @@ let test_0 () =
     >>= fun db_file ->
     let configuration = 
       Configuration.engine ~database_parameters:db_file () in
-    State.with_state ~configuration begin fun ~state ->
-      State.add_target state
+    Ketrew_engine.with_state ~configuration begin fun ~state ->
+      Ketrew_engine.add_target state
         Target.(create ~name:"First target" ())
       >>= fun () ->
-      begin State.current_targets state
+      begin Ketrew_engine.current_targets state
         >>= function
         | [one] when one.Target.name = "First target" -> return ()
         | other ->
@@ -401,7 +401,7 @@ let test_ssh_failure_vs_target_failure () =
       let configuration =
         Configuration.engine
           ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
-      State.with_state ~configuration (fun ~state ->
+      Ketrew_engine.with_state ~configuration (fun ~state ->
           let target_with_wrong_host =
             let host = Test.wrong_ssh_host in
             Target.active ~name:"target_with_missing_dep"
@@ -450,7 +450,7 @@ let test_long_running_nohup () =
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = Configuration.engine ~database_parameters:db_file () in
-    State.with_state ~configuration (fun ~state ->
+    Ketrew_engine.with_state ~configuration (fun ~state ->
 
         Test.test_targets  ~state ~name:("one bad plugin")
           [Target.active ~name:"one"

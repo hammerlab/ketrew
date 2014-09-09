@@ -19,16 +19,16 @@ open Ketrew_pervasives
 module Standalone = struct
   type t = {
     configuration: Ketrew_configuration.standalone;
-    engine: Ketrew_state.t;
+    engine: Ketrew_engine.t;
   }
   let create configuration =
-    Ketrew_state.load 
+    Ketrew_engine.load 
       ~configuration:(Ketrew_configuration.standalone_engine configuration)
     >>= fun engine ->
     return { engine; configuration }
 
   let release t =
-    Ketrew_state.unload t.engine
+    Ketrew_engine.unload t.engine
 
 end
 module Http_client = struct
@@ -83,7 +83,7 @@ let add_targets t tlist =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Deferred_list.while_sequential tlist ~f:(Ketrew_state.add_target s.engine)
+    Deferred_list.while_sequential tlist ~f:(Ketrew_engine.add_target s.engine)
     >>= fun _ ->
     return ()
   | `Http_client c -> fail (`Failure "not implemented")
@@ -91,20 +91,20 @@ let add_targets t tlist =
 let current_targets = function
 | `Standalone s ->
   let open Standalone in
-  Ketrew_state.current_targets s.engine
+  Ketrew_engine.current_targets s.engine
 | `Http_client c -> fail (`Failure "not implemented")
 
 let archived_targets = function
 | `Standalone s ->
   let open Standalone in
-  Ketrew_state.archived_targets s.engine
+  Ketrew_engine.archived_targets s.engine
 | `Http_client c -> fail (`Failure "not implemented")
 
 let kill t ~id =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.kill s.engine ~id
+    Ketrew_engine.kill s.engine ~id
   | `Http_client c ->
     fail (`Failure "not implemented")
 
@@ -112,7 +112,7 @@ let archive t ~id =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.archive_target s.engine id
+    Ketrew_engine.archive_target s.engine id
   | `Http_client c ->
     fail (`Failure "not implemented")
 
@@ -120,7 +120,7 @@ let is_archived t ~id =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.is_archived s.engine id
+    Ketrew_engine.is_archived s.engine id
   | `Http_client c ->
     fail (`Failure "not implemented")
 
@@ -128,7 +128,7 @@ let get_target t ~id =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.get_target s.engine id
+    Ketrew_engine.get_target s.engine id
   | `Http_client c ->
     fail (`Failure "not implemented")
 
@@ -137,7 +137,7 @@ let get_current_graph t =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.Target_graph.get_current s.engine
+    Ketrew_engine.Target_graph.get_current s.engine
   | `Http_client c ->
     fail (`Failure "not implemented")
 
@@ -153,7 +153,7 @@ let restart_target t ~target =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_state.restart_target ~state:s.engine target
+    Ketrew_engine.restart_target s.engine target
   | `Http_client c ->
     fail (`Failure "not implemented")
 

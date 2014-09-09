@@ -368,7 +368,7 @@ let run_state ~client ~max_sleep ~how =
       List.mapi what_happened ~f:(fun step_index happening_list ->
           List.map happening_list ~f:(fun happening ->
               brakets (s "step " % i (step_index + 1)) % sp % 
-              s (Ketrew_state.what_happened_to_string happening)))
+              s (Ketrew_engine.what_happened_to_string happening)))
       |> List.concat
     in
     let step_sentence =
@@ -388,7 +388,7 @@ let run_state ~client ~max_sleep ~how =
     return ()
   | Some state ->
     let rec fix_point ~count history =
-      Ketrew_state.step state
+      Ketrew_engine.step state
       >>= fun what_happened ->
       let count = count + 1 in
       begin match history with
@@ -403,7 +403,7 @@ let run_state ~client ~max_sleep ~how =
          @ warning);
     begin match how with
     | ["step"] ->
-      Ketrew_state.step state
+      Ketrew_engine.step state
       >>= fun what_happened ->
       log_happening ~what_happened:[what_happened]
     | ["fix"] ->
@@ -502,7 +502,7 @@ let kill ~client ~interactive ids =
             return ()
           | more ->
             Log.(s "Target " % s id % s ": too much happened :" %
-                 OCaml.list Ketrew_state.log_what_happened more @ error); 
+                 OCaml.list Ketrew_engine.log_what_happened more @ error); 
             return ()
         )
       >>= fun (_ : unit list) ->
@@ -534,7 +534,7 @@ let archive ~client ~interactive ids =
       >>= fun what_happened ->
       Log.(s "→ " % n
            % (separate n 
-                (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                (List.map ~f:Ketrew_engine.log_what_happened what_happened) 
               |> indent)
            @ warning);
       return ()
@@ -545,7 +545,7 @@ let archive ~client ~interactive ids =
 
 (** Kill and archive targets that are done or useless. *)
 let autoclean ~client ~how_much ~interactive () =
-  let module G = Ketrew_state.Target_graph in
+  let module G = Ketrew_engine.Target_graph in
   Ketrew_client.get_current_graph client
   >>= fun graph ->
   Log.(s "Target graph: " % G.log graph @ verbose);
@@ -920,7 +920,7 @@ module Explorer = struct
             >>= fun what_happened ->
             Log.(s "→ " % s (Target.name chosen) % n
                  % (separate n 
-                      (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                      (List.map ~f:Ketrew_engine.log_what_happened what_happened) 
                     |> indent)
                  @ warning);
             explore ~client (one :: history)
@@ -929,7 +929,7 @@ module Explorer = struct
             >>= fun what_happened ->
             Log.(s "Archival of " % s (Target.name chosen) % n
                  % (separate n 
-                      (List.map ~f:Ketrew_state.log_what_happened what_happened) 
+                      (List.map ~f:Ketrew_engine.log_what_happened what_happened) 
                     |> indent)
                  @ warning);
             explore ~client (one :: history)
