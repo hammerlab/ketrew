@@ -14,23 +14,23 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** The “application” state; the Engine. *)
+(** The engine of the actual Workflow Engine. *)
 
 open Ketrew_pervasives
 
 type t
-(** The contents of the application state. *)
+(** The contents of the application engine. *)
 
-val with_state: 
+val with_engine: 
   configuration:Ketrew_configuration.engine ->
-  (state:t ->
+  (engine:t ->
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string
           | `Dyn_plugin of
                [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
           ] as 'merge_error) Deferred_result.t) ->
   (unit, 'merge_error) Deferred_result.t
-(** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
+(** Create a {!engine.t}, run the function passed as argument, and properly dispose of it. *)
 
 val load: 
   configuration:Ketrew_configuration.engine ->
@@ -41,7 +41,7 @@ val load:
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
    ]) Deferred_result.t
 
-val unload: state:t -> 
+val unload: t -> 
   (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
 
 
@@ -58,7 +58,7 @@ val add_target :
    | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
   Deferred_result.t
-(** Add a target to the state. *)
+(** Add a target to the engine. *)
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
@@ -181,7 +181,7 @@ val archive_target: t ->
     Deferred_result.t
 (** Move a target to the “archived” list. *)
 
-val restart_target: state:t -> Ketrew_target.t -> 
+val restart_target: engine:t -> Ketrew_target.t -> 
   (Ketrew_target.t * Ketrew_target.t list, 
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
@@ -194,13 +194,13 @@ val restart_target: state:t -> Ketrew_target.t ->
 (** A module to manipulate the graph of dependencies. *)
 module Target_graph: sig
 
-  type state = t
-  (** An alias for {!t}, the state. *)
+  type engine = t
+  (** An alias for {!t}, the engine. *)
 
   type t
   (** The actual representation of the Graph. *)
 
-  val get_current: state:state -> 
+  val get_current: engine:engine -> 
     (t,
      [> `Database of [> `Get of string | `Load of string ] * string
      | `Missing_data of Ketrew_target.id

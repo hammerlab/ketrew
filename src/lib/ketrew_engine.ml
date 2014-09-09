@@ -81,24 +81,24 @@ let release t =
 let load ~configuration =
   create configuration
 
-let unload ~state =
-  release state
+let unload engine =
+  release engine
 
-let with_state ~configuration f =
+let with_engine ~configuration f =
   create configuration
-  >>= fun state ->
-  begin try f ~state with
+  >>= fun engine ->
+  begin try f ~engine with
   | e -> 
-    release state
+    release engine
     >>= fun () ->
     fail (`Failure (fmt "with_state: client function threw exception: %s" 
                       (Printexc.to_string e)))
   end
   >>< begin function
   | `Ok () ->
-    release state
+    release engine
   | `Error e ->
-    release state >>< fun _ ->
+    release engine >>< fun _ ->
     fail e
   end
 
@@ -197,15 +197,15 @@ let archive_target t target_id =
 
 
 module Target_graph = struct
-  type state = t
+  type engine = t
   type t = {
     vertices: Target.t list;
     edges: (Target.t * Target.t) list;
   }
 
-  let get_current ~state =
-    current_targets state >>= fun vertices ->
-    get_persistent state >>= fun persistent ->
+  let get_current ~engine =
+    current_targets engine >>= fun vertices ->
+    get_persistent engine >>= fun persistent ->
     let archived_but_there = ref [] in
     Deferred_list.while_sequential vertices ~f:(fun trgt ->
         Deferred_list.while_sequential trgt.Target.dependencies (fun id ->
@@ -213,7 +213,7 @@ module Target_graph = struct
             match List.find vertices ~f:(fun t -> Target.id t = actual_id) with
             | Some t -> return (trgt, t)
             | None -> 
-              get_target state actual_id
+              get_target engine actual_id
               >>= fun t ->
               archived_but_there := t :: !archived_but_there;
               return (trgt, t)
@@ -627,8 +627,8 @@ let kill t ~id =
     return []
   end
 
-let restart_target ~state target =
-  current_targets state
+let restart_target ~engine target =
+  current_targets engine
   >>= fun targets ->
   let id_translation = ref [] in
   let new_target trgt  =
@@ -665,7 +665,7 @@ let restart_target ~state target =
                        | None -> dep) })
   in
   Deferred_list.while_sequential (this_new_target :: upper_dag) (fun trgt ->
-      add_target state trgt)
+      add_target engine trgt)
   >>= fun (_ : unit list) ->
   return (this_new_target, upper_dag)
     
