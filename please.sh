@@ -488,7 +488,9 @@ remove_license () {
 }
 
 
-test_config_file=_obuild/test-config-file.toml
+test_standalone_config_file=_obuild/test-standalone-config-file.toml
+test_server_config_file=_obuild/test-server-config-file.toml
+test_client_config_file=_obuild/test-client-config-file.toml
 test_authorized_tokens=_obuild/test-authorized-tokens
 test_database_prefix=_obuild/test-database
 test_certificate=_obuild/test-cert.pem
@@ -517,26 +519,40 @@ ssl_cert_key () {
     -days 10 -nodes -subj "/CN=test_ketrew" 2> /dev/null
 }
 test_config_file () {
-  echo "Creating $test_config_file"
-  cat <<EOBLOB > $test_config_file
+  echo "Creating $test_standalone_config_file"
+  cat <<EOBLOB > $test_standalone_config_file
 # Ketrew test configuration file
 debug-level = 2
-#[plugins]
-#  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
-#  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
+[plugins]
+  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
+  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 [engine]
-  database-path = "$test_database_prefix"
+  database-path = "$test_database_prefix-standalone"
 [ui]
   color = true
-#[server]
-#  certificate = "$test_certificate"
-#  private-key = "$test_privkey"
-#  port = 8443
-#  authorized-tokens-path = "$test_authorized_tokens"
-#  return-error-messages = true
-#  log-path = "$test_server_log"
-#  daemonize = true
-#  command-pipe-path = "$test_command_pipe"
+EOBLOB
+  echo "Creating $test_server_config_file"
+  cat <<EOBLOB > $test_server_config_file
+# Ketrew test configuration file
+debug-level = 2
+[engine]
+  database-path = "$test_database_prefix-client-server"
+[server]
+  certificate = "$test_certificate"
+  private-key = "$test_privkey"
+  port = 8443
+  authorized-tokens-path = "$test_authorized_tokens"
+  return-error-messages = true
+  log-path = "$test_server_log"
+  daemonize = true
+  command-pipe-path = "$test_command_pipe"
+EOBLOB
+  echo "Creating $test_client_config_file"
+  cat <<EOBLOB > $test_client_config_file
+# Ketrew test configuration file
+debug-level = 2
+[client]
+  connection = "https://localhost:8443"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -573,11 +589,13 @@ compile_dummy_plugin () {
 }
 test_environment () {
   echo "Creating $test_shell_env"
-  local confvar="KETREW_CONFIGURATION=$test_config_file"
+  local confvar="KETREW_CONFIGURATION=$test_standalone_config_file"
   cat << EOBLOB > $test_shell_env
 export ktest_url=https://localhost:8443
 alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
 alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
+alias ktserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
+alias ktclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
 alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
