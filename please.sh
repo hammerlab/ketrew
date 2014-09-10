@@ -340,6 +340,7 @@ maintainer: "seb@mondet.org"
 homepage: "$homepage"
 ocaml-version: [ >= "4.01.0" ]
 build: [
+  ["./please.sh" "setup"]
   ["./please.sh" "build"]
   ["./please.sh" "install" prefix ]
 ]
@@ -525,7 +526,7 @@ test_config_file () {
 debug-level = 2
 [plugins]
   ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
-  compiled = "$PWD/_obuild/dummy_plugin_stuff/test_dummy_plugin.cmxs"
+  compiled = "$PWD/_build/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 [engine]
   database-path = "$test_database_prefix-standalone"
 [ui]
@@ -537,6 +538,8 @@ EOBLOB
 debug-level = 2
 [engine]
   database-path = "$test_database_prefix-client-server"
+[ui]
+  color = true
 [server]
   certificate = "$test_certificate"
   private-key = "$test_privkey"
@@ -563,30 +566,34 @@ easy_auth nekot easy authentication
 weird-line-that-makes-a-warning
 EOBLOB
 }
+
 compile_dummy_plugin () {
   echo "Compiling the Dummy-plugin and its user"
   local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
   local additional_package="-package $test_additional_findlib_plugin"
   local compile="ocamlfind opt -thread $ocamlfind_package_options $additional_package  -I _obuild/ketrew/ "
-  set -e
-  local compile_dir=_obuild/dummy_plugin_stuff/
-  rm -fr $compile_dir
+  #set -e
+  local compile_dir=_build/dummy_plugin_stuff/
   mkdir -p $compile_dir
   cp src/test/dummy_plugin.ml $compile_dir
   echo "(* Code that really depends on $test_additional_findlib_plugin *)" >> \
     $compile_dir/dummy_plugin.ml
   echo $test_additional_findlib_plugin_code >> $compile_dir/dummy_plugin.ml
   cp src/test/dummy_plugin_user.ml $compile_dir
-  $compile -shared $compile_dir/dummy_plugin.ml \
-    -o  $compile_dir/test_dummy_plugin.cmxs
-  $compile -linkpkg _obuild/ketrew/ketrew.cmxa \
-    -I $compile_dir $compile_dir/dummy_plugin.cmx \
-    $compile_dir/dummy_plugin_user.ml \
-    -o $compile_dir/test_dummy_plugin_user.asm
-   # just for the sake of it we compile the `preconfigured_main.ml` example:  
-  cp src/test/preconfigured_main.ml $compile_dir
-  $compile -linkpkg ketrew.cmxa $compile_dir/preconfigured_main.ml -o $compile_dir/preconfigured.asm
+  if [ _obuild/ketrew/ketrew.cmxa  -nt $compile_dir/test_dummy_plugin.cmxs ]; then
+    echo " $compile_dir/test_dummy_plugin.cmxs -ot _obuild/ketrew/ketrew.cmxa ]"
+    $compile -shared $compile_dir/dummy_plugin.ml \
+      -o  $compile_dir/test_dummy_plugin.cmxs
+    $compile -linkpkg _obuild/ketrew/ketrew.cmxa \
+      -I $compile_dir $compile_dir/dummy_plugin.cmx \
+      $compile_dir/dummy_plugin_user.ml \
+      -o $compile_dir/test_dummy_plugin_user.asm
+    # just for the sake of it we compile the `preconfigured_main.ml` example:  
+    cp src/test/preconfigured_main.ml $compile_dir
+    $compile -linkpkg ketrew.cmxa $compile_dir/preconfigured_main.ml -o $compile_dir/preconfigured.asm
+  fi
 }
+
 test_environment () {
   echo "Creating $test_shell_env"
   local confvar="KETREW_CONFIGURATION=$test_standalone_config_file"
@@ -599,6 +606,19 @@ alias ktclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-ap
 alias ktkillserver='echo "die" > $test_command_pipe'
 alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
+}
+
+build () {
+  set -e
+  if [ -f build.ocp ]; then
+    echo "Not redoing setup"
+  else
+    echo "Calling setup"
+    setup
+  fi
+  ocp-build $* ketrew  ketrew-app ketrew-cli-test ketrew-test
+  echo "Compiling also dummy-plugins and stuff"
+  compile_dummy_plugin
 }
 
 usage () {
@@ -618,12 +638,8 @@ EOBLOB
 while [ "$1" != "" ]; do
   case $1 in
     "setup" ) setup ;;
-    "build" )
-      setup
-      ocp-build build
-      echo "Compiling also dummy-plugins and stuff"
-      compile_dummy_plugin ;;
-    "build-no-color" ) setup; ocp-build -no-color ketrew-test ketrew-cli-test ;;
+    "build" ) build ;;
+    "build-no-color" ) build -no-color ;;
     "clean" ) rm -fr _prebuild _obuild build.ocp .merlin ocp-build.root* ;;
     "doc" ) make_doc ;;
     "top" ) run_top ;;
@@ -643,7 +659,7 @@ while [ "$1" != "" ]; do
     "test-shell-env" )
       test_environment ;;
     "test-env" )
-      echo "=> Test environment in “Standalone” mode"
+      ssl_cert_key
       test_config_file
       test_environment ;;
     * ) echo "Unknown command \"$1\"" ; usage ; exit 1 ;;
