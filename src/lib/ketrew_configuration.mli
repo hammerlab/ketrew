@@ -42,6 +42,7 @@ val engine:
 
 type server
 val server: 
+  ?ui:ui ->
   ?engine:engine ->
   ?authorized_tokens_path: string ->
   ?return_error_messages: bool ->

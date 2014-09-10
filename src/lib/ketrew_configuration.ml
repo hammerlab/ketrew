@@ -24,6 +24,9 @@ type engine = {
   turn_unix_ssh_failure_into_target_failure: bool;
   host_timeout_upper_bound: float option;
 }
+type ui = {
+  with_color: bool;
+}
 type server = {
   authorized_tokens_path: string option; 
   listen_to: [ `Tls of (string * string * int) ];
@@ -32,9 +35,7 @@ type server = {
   daemon: bool;
   log_path: string option;
   server_engine: engine;
-}
-type ui = {
-  with_color: bool;
+  server_ui: ui;
 }
 type client = {
   (* client_engine: engine; *)
@@ -97,6 +98,7 @@ let log t =
   | `Server srv ->
     item "Mode" (s "Server")
     % item "Engine" (engine srv.server_engine)
+    % item "UI" (ui srv.server_ui)
     % item "HTTP-server" (sublist [
         item "Authorized tokens" 
           OCaml.(option string srv.authorized_tokens_path);
@@ -149,11 +151,12 @@ let client ?(ui=default_ui) connection =
   (`Client {client_ui = ui; connection})
 
 let server
-    ?engine 
+    ?ui ?engine
     ?authorized_tokens_path ?(return_error_messages=false)
     ?command_pipe ?(daemon=false) ?log_path listen_to =
   let server_engine = Option.value engine ~default:default_engine in
-  (`Server {server_engine; authorized_tokens_path; listen_to;
+  let server_ui = Option.value ui ~default:default_ui in
+  (`Server {server_engine; authorized_tokens_path; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path; })
 
 
@@ -226,7 +229,7 @@ let parse_exn str =
       let port = toml_mandatory ~table Toml.get_int "port" in
       `Tls (cert, key, port) in
     return (server ?return_error_messages ?command_pipe ?engine ?daemon
-              ?log_path ?authorized_tokens_path listen_to)
+              ?ui ?log_path ?authorized_tokens_path listen_to)
   in
   let client =
     Option.(
@@ -257,8 +260,8 @@ let apply_globals t =
     | `Client {client_ui; connection} -> (client_ui.with_color, None)
   | `Standalone {standalone_ui; standalone_engine} ->
     (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound)
-  | `Server {server_engine; _} ->
-    (false, server_engine.host_timeout_upper_bound)
+  | `Server {server_engine; server_ui; _} ->
+    (server_ui.with_color, server_engine.host_timeout_upper_bound)
   in
   global_with_color := color;
   begin match host_timeout with
