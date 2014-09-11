@@ -182,25 +182,21 @@ let targets_service: _ service = fun ~server_state ~body req ->
         return (current_targets @ archived)
       else return current_targets
     end
-    >>= fun trgt_list ->
-    let json =
-      (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
-    in
-    Log.(s "Replying: " % Json.log json @ very_verbose);
-    return (`Json json)
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
         Ketrew_engine.get_target server_state.state id
         >>< function
-        | `Ok t -> return (Ketrew_target.serialize t)
+        | `Ok t -> return (Some t)
         | `Error e -> 
           Log.(s "Error while getting the target " % s id % s ": "
                % s (Ketrew_error.to_string e) @ error);
-          return "Not_found")
-    >>= fun jsons ->
-    let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-    return (`Json_raw json)
+          return None)
+    >>| List.filter_opt
   end
+  >>| List.map ~f:Ketrew_target.serialize
+  >>= fun jsons ->
+  let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
+  return (`Json_raw json)
 
 let target_available_queries_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
