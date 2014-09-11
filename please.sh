@@ -555,7 +555,8 @@ EOBLOB
 # Ketrew test configuration file
 debug-level = 2
 [client]
-  connection = "https://localhost:8443"
+  connection = "https://127.0.0.1:8443"
+  token = "nekot"
 EOBLOB
   echo "Creating $test_authorized_tokens"
   cat << EOBLOB  >> $test_authorized_tokens
@@ -599,10 +600,11 @@ test_environment () {
   local confvar="KETREW_CONFIGURATION=$test_standalone_config_file"
   cat << EOBLOB > $test_shell_env
 export ktest_url=https://localhost:8443
-alias ktapp="$confvar _obuild/ketrew-app/ketrew-app.asm"
-alias kttest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
-alias ktserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
-alias ktclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
+alias kscli="$confvar _obuild/ketrew-app/ketrew-app.asm"
+alias kstest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
+alias kdserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
+alias kdclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
+alias kdtest="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-cli-test/ketrew-cli-test.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
 alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
