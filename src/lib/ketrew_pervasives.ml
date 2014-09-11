@@ -60,6 +60,15 @@ module Log =  struct
   let sexp sexp_of_t t = s (sexp_of_t t |> Sexplib.Sexp.to_string)
   let uri theuri = s (Uri.to_string theuri)
 end
+
+module Json = struct
+  type t = Yojson.Basic.json
+  let to_string t = Yojson.Basic.pretty_to_string ~std:true t
+  let log t = 
+    let str = to_string t in
+    Log.(indent (s str))
+end
+
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
 let invalid_argument_exn ?(where="pervasives") what =
