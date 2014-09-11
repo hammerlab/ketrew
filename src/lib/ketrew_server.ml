@@ -81,10 +81,13 @@ module Server_state = struct
     server_configuration: Ketrew_configuration.server;
     authentication_file: string;
     mutable authentication: Authentication.t;
+    loop_traffic_light: Light.t;
   }
 
   let create ~state ~authentication ~authentication_file server_configuration =
-    {state; authentication; authentication_file; server_configuration}
+    let loop_traffic_light = Light.create () in
+    {state; authentication; authentication_file;
+     server_configuration; loop_traffic_light}
 
 end
 open Server_state
@@ -269,6 +272,7 @@ let add_targets_service  ~server_state ~body req =
       return (`List [`String original_id; `String (Ketrew_target.id freshen)])
     )
   >>= fun ids ->
+  Light.green server_state.loop_traffic_light;
   return (`Json (`List ids))
 
 let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service = 
@@ -292,6 +296,7 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
         end)
     >>| List.concat
     >>= fun happenings ->
+    Light.green server_state.loop_traffic_light;
     let json = Ketrew_gen_base_v0_j.string_of_happening_list happenings in
     return (`Json_raw json)
 
@@ -403,7 +408,16 @@ let start_engine_loop ~server_state =
       | something -> time_step
     in
     Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-    System.sleep seconds
+    Deferred_list.pick_and_cancel [
+      System.sleep seconds;
+      begin
+        Light.try_to_pass server_state.loop_traffic_light
+        >>= fun () ->
+        Log.(s "Waken-up early" @ verbose); 
+        server_state.loop_traffic_light.Light.color <- `Red;
+        return ()
+      end;
+    ]
     >>= fun () ->
     loop seconds 
   in
