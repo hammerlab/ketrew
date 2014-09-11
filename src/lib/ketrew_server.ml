@@ -385,6 +385,30 @@ let start_listening_on_command_pipe ~server_state =
   | None -> 
     return ()
 
+let start_engine_loop ~server_state =
+  let time_step = 1. in
+  let time_factor = 2. in
+  let max_sleep = 120. in
+  let rec loop previous_sleep =
+    Ketrew_engine.fix_point server_state.state
+    >>= fun (`Steps step_count, what_happened) ->
+    List.iter what_happened ~f:(List.iter ~f:(fun hp ->
+        Log.(brakets (f (Time.now ())) % sp % s "Fix-point"
+             % Ketrew_engine.log_what_happened hp @ normal);
+      ));
+    let seconds =
+      match what_happened with
+      | [] | [[]] -> 
+        min (previous_sleep *. time_factor) max_sleep
+      | something -> time_step
+    in
+    Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+    System.sleep seconds
+    >>= fun () ->
+    loop seconds 
+  in
+  Lwt.ignore_result (loop time_step)
+
 
 let start ~configuration  =
   Log.(s "Starting server!" @ very_verbose);
@@ -405,6 +429,7 @@ let start ~configuration  =
       Server_state.create ~authentication ~state:engine
         ~authentication_file configuration
     in
+    start_engine_loop ~server_state;
     start_listening_on_command_pipe ~server_state
     >>= fun () ->
     Deferred_result.wrap_deferred
