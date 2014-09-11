@@ -582,6 +582,24 @@ let step t: (happening list, _) Deferred_result.t =
     return what_happened
   end 
 
+
+let fix_point state =
+  let rec fix_point ~count history =
+    step state
+    >>= fun what_happened ->
+    let count = count + 1 in
+    begin match history with
+    | _ when what_happened = [] ->
+      return (count, what_happened :: history)
+    | previous :: _ when previous = what_happened ->
+      return (count, what_happened :: history)
+    | _ -> fix_point ~count (what_happened :: history)
+    end
+  in
+  fix_point ~count:0 []
+  >>= fun (count, happened) ->
+  return (`Steps count, happened)
+
 let get_status t id =
   (* database t >>= fun db -> *)
   get_target t id >>= fun target ->

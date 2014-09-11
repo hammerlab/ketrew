@@ -387,18 +387,6 @@ let run_state ~client ~max_sleep ~how =
     Log.(s "Cannot get local-engine to run things." @ warning);
     return ()
   | Some state ->
-    let rec fix_point ~count history =
-      Ketrew_engine.step state
-      >>= fun what_happened ->
-      let count = count + 1 in
-      begin match history with
-      | _ when what_happened = [] ->
-        return (count, what_happened :: history)
-      | previous :: _ when previous = what_happened ->
-        return (count, what_happened :: history)
-      | _ -> fix_point ~count (what_happened :: history)
-      end
-    in
     Log.(s "Running " % OCaml.list s how % s " with max-spleep: " % f max_sleep 
          @ warning);
     begin match how with
@@ -407,15 +395,15 @@ let run_state ~client ~max_sleep ~how =
       >>= fun what_happened ->
       log_happening ~what_happened:[what_happened]
     | ["fix"] ->
-      fix_point 0 []
-      >>= fun (step_count, what_happened) ->
+      Ketrew_engine.fix_point state
+      >>= fun (`Steps step_count, what_happened) ->
       log_happening ~what_happened:List.(rev what_happened)
     | ["loop"] ->
       let keep_going = ref true in
       let traffic_light = Light.create () in
       let rec loop previous_sleep happenings =
-        fix_point 0 []
-        >>= fun (step_count, what_happened) ->
+        Ketrew_engine.fix_point state
+        >>= fun (`Steps step_count, what_happened) ->
         let new_happenings = what_happened @ happenings in
         let seconds =
           match what_happened with

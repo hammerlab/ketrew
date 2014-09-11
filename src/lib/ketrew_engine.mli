@@ -143,6 +143,21 @@ val step :
 (** Run one step of the engine; [step] returns a list of “things that
     happened”. *)
 
+val fix_point: t ->
+  ([ `Steps of int] * happening list list,
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Host of _ Ketrew_host.Error.non_zero_execution
+   | `Volume of [> `No_size of Log.t]
+   | `IO of
+        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
+   | `Missing_data of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ]
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Run {!step} many times until nothing happens or nothing “new” happens. *)
+
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
    [> `Database of Ketrew_database.error
