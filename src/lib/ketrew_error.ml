@@ -18,6 +18,37 @@
 
 open Ketrew_pervasives
 
+let log_client_error = 
+  let open Log in
+  function
+  | `Http (action, error) ->
+    let act =
+      match action with
+      | `Call (meth, the_uri) ->
+        s (Cohttp.Code.string_of_method meth) % sp % uri the_uri
+      | `Targets -> s "Getting targets"
+      | `Kill_target id -> s "Killing target" % sp % quote id
+      | `Archive_target id -> s "Archiving target" % sp % quote id
+      | `Target_query (id, query) ->
+        s "Calling " % quote query % s " on " % quote id
+    in
+    let error_log = 
+      match error with
+      | `Exn e -> s "Exn:" % sp % exn e
+      | `Wrong_response (http_resp, body) ->
+        s "Returned:" % sp % 
+        indent (s "Response: "
+                % sexp Cohttp_lwt_unix.Client.Response.sexp_of_t http_resp)
+        % n
+        % indent (s "Body: " % sexp Cohttp_lwt_body.sexp_of_t body)
+      | `Json_parsing (j, `Exn e) ->
+        s "Json parse error: " % exn e
+        % indent (string j)
+      | `Wrong_json j ->
+        s "Wrong Json: " % indent (Json.log j)
+    in
+    s "HTTP Call" % sp % parens (act % s " → " % error_log)
+
 let to_string = function
 | `Wrong_command_line sl ->
   fmt "Wrong command line: %s" 
@@ -26,8 +57,11 @@ let to_string = function
 | `System _ as s -> System.error_to_string s
 | `Configuration (`Parsing e) ->
   fmt "Parsing error in config-file: %S" e
-| `Wrong_configuration (`Found f, `Expected e) ->
-  fmt "Wrong configuration: expecting %S and got %S" e f
+| `Wrong_configuration (`Found f, got) ->
+  fmt "Wrong configuration: %S → %s" f
+    (match got with
+     | `Expected s -> fmt "expected %s" s
+     | `Exn e -> fmt "exception: %S" (Printexc.to_string e))
 | `Database _ as dberr ->
   Ketrew_database.log_error dberr |> Log.to_long_string
 | `Host e ->
@@ -50,8 +84,8 @@ let to_string = function
 | `Stop_server_error e -> fmt "Error stopping the server: %s" e
 | `Wrong_http_request (short, long) ->
   fmt "Wrong HTTP Request: %s → %s" short long
-| `Client (`Get_exn e) ->
-  fmt "HTTP-Client: error while GET-ing: %s" (Printexc.to_string e)
+| `Client (client_error) ->
+  fmt "Client: %s" (log_client_error client_error |> Log.to_long_string) 
 | `Dyn_plugin e ->
   begin match e with
   | `Dynlink_error e ->

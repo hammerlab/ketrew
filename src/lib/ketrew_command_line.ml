@@ -669,13 +669,7 @@ module Explorer = struct
         (make_target_menu ~targets ()))
 
   let pick_a_target ~client (es : exploration_state) =
-    Ketrew_client.current_targets client >>= fun current_targets ->
-    begin match es.show_archived with
-    | true ->
-      Ketrew_client.archived_targets client >>= fun l ->
-          return (current_targets @ l)
-    | false -> return current_targets
-    end
+    Ketrew_client.current_targets ~archived:es.show_archived client
     >>= fun targets ->
     Interaction.(
       menu ~sentence:Log.(s "Pick a target")
