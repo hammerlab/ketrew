@@ -94,13 +94,6 @@ module Cohttp_server_core = Cohttp_lwt.Make_server
     (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
 
 
-module Json = struct
-  type t = Yojson.Basic.json
-  let to_string t = Yojson.Basic.pretty_to_string ~std:true t
-  let log t = 
-    let str = to_string t in
-    Log.(indent (s str))
-end
 
 type answer = [
   | `Unit
@@ -158,11 +151,7 @@ let get_post_body request ~body =
     | `Empty -> wrong_request "empty body" ""
     | `String s -> return s
     | `Stream lwt_stream ->
-      wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-        Lwt.(fun () ->
-            Lwt_stream.to_list lwt_stream
-            >>= fun l ->
-            return (String.concat ~sep:"" l))
+      lwt_stream_to_string lwt_stream
     end
   | other ->
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
