@@ -1024,6 +1024,7 @@ let daemonize_if_applicable config =
     in
     let directory = Sys.getcwd () in
     let umask = None in (* we keep the default *)
+    Log.(s "Going to the background, now!" @ normal);
     Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
     Log.(s "Daemonized!" @ very_verbose);
     ()
@@ -1233,8 +1234,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             Log.(s "Got configuration: " % Configuration.log configuration
                  @ very_verbose);
             daemonize_if_applicable configuration;
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
             match Configuration.mode configuration with
             | `Server srv -> Ketrew_server.start srv
             | other -> fail (`Failure "not a server")
