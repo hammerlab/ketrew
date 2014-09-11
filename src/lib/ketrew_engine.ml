@@ -311,8 +311,11 @@ let _check_and_activate_dependencies ~t ids =
       | `Error (`Database _ as e)
       | `Error (`Missing_data _ as e) ->
         (* Dependency not-found => should get out of the way *)
-        Log.(s "Error while activating dependencies: " %
-             s (Ketrew_error.to_string e) @ error);
+        let errlog =
+          match e with
+          | `Database _ as e -> Ketrew_database.log_error e
+          | `Missing_data id -> Log.(s "Missing target: " % quote id) in
+        Log.(s "Error while activating dependencies: " % errlog @ error);
         return (`Die dep)
       | `Error (`Persistent_state _ as e)
       | `Error (`Target _ as e) -> fail e
@@ -505,20 +508,7 @@ let _update_status t ~target ~bookkeeping =
                 `Long_running_unrecoverable (plugin_name, s))
       end)
 
-type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback]
-  | `Target_died of
-      Ketrew_target.id  *
-      [ `Dependencies_died
-      | `Plugin_not_found of string
-      | `Killed
-      | `Long_running_unrecoverable of string * string
-      | `Process_failure ]
-  | `Target_started of Ketrew_target.id * string
-  | `Target_archived of Ketrew_target.id
-  | `Target_succeeded of
-      Ketrew_target.id *
-      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+type happening = Ketrew_gen_base_v0_t.happening
 
 let log_what_happened =
   let open Log in

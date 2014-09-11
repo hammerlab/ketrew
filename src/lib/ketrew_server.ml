@@ -289,13 +289,11 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
         begin match what_to_do with
         | `Kill -> Ketrew_engine.kill server_state.state id
         | `Archive -> Ketrew_engine.archive_target server_state.state id
-        end
-        >>= fun happenings ->
-        return (List.map happenings (fun l ->
-            `String (Ketrew_engine.log_what_happened l |> Log.to_long_string))))
+        end)
     >>| List.concat
     >>= fun happenings ->
-    return (`Json (`List happenings))
+    let json = Ketrew_gen_base_v0_j.string_of_happening_list happenings in
+    return (`Json_raw json)
 
 (** {2 Dispatcher} *)
 
