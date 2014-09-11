@@ -40,6 +40,7 @@ type server = {
 type client = {
   (* client_engine: engine; *)
   connection: string;
+  token: string;
   client_ui: ui;
 }
 type standalone = {
@@ -93,6 +94,7 @@ let log t =
   | `Client client ->
     item "Mode" (s "Client")
     % item "Connection" (quote client.connection)
+    % item "Auth-token" (quote client.token)
     % item "UI" (ui client.client_ui)
     % item "Misc" common
   | `Server srv ->
@@ -147,8 +149,8 @@ let standalone ?(ui=default_ui) ?engine () =
   let standalone_engine = Option.value engine ~default:default_engine in
   (`Standalone {standalone_engine; standalone_ui = ui}) 
 
-let client ?(ui=default_ui) connection =
-  (`Client {client_ui = ui; connection})
+let client ?(ui=default_ui) ~token connection =
+  (`Client {client_ui = ui; connection; token})
 
 let server
     ?ui ?engine
@@ -235,9 +237,9 @@ let parse_exn str =
     Option.(
       toml_option Toml.get_table "client"
       >>= fun table ->
-      toml_option ~table Toml.get_string "connection"
-      >>= fun connection ->
-      return (client ?ui connection)
+      let connection = toml_mandatory ~table Toml.get_string "connection" in
+      let token = toml_mandatory ~table Toml.get_string "token" in
+      return (client ?ui ~token connection)
     ) in
   let mode =
     match client, server with
@@ -329,3 +331,6 @@ let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let mode t = t.mode
 let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine
+let connection c = c.connection
+let token c = c.token
+

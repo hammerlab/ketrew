@@ -69,7 +69,7 @@ val server:
 type standalone
 val standalone: ?ui:ui -> ?engine:engine -> unit -> [> `Standalone of standalone]
 type client
-val client: ?ui:ui -> string -> [> `Client of client]
+val client: ?ui:ui -> token:string -> string -> [> `Client of client]
 
 type mode = [
   | `Standalone of standalone
@@ -163,3 +163,7 @@ val log_path: server -> string option
 
 val log: t -> Log.t
 (** Get a display-friendly list of configuration items. *)
+
+val connection: client -> string
+val token: client -> string
+
