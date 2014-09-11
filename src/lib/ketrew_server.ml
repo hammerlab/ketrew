@@ -94,9 +94,18 @@ module Cohttp_server_core = Cohttp_lwt.Make_server
     (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
 
 
+module Json = struct
+  type t = Yojson.Basic.json
+  let to_string t = Yojson.Basic.pretty_to_string ~std:true t
+  let log t = 
+    let str = to_string t in
+    Log.(indent (s str))
+end
+
 type answer = [
   | `Unit
-  | `Json of string
+  | `Json of Json.t
+  | `Json_raw of string
 ]
 (** A service can replay one of those cases; or an error. *)
 
@@ -186,10 +195,9 @@ let targets_service: _ service = fun ~server_state ~body req ->
     end
     >>= fun trgt_list ->
     let json =
-      Yojson.Basic.pretty_to_string ~std:true
-        (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
+      (`List (List.map trgt_list ~f:(fun t -> `String (Ketrew_target.id t))))
     in
-    Log.(s "Replying: " % s json @ very_verbose);
+    Log.(s "Replying: " % Json.log json @ very_verbose);
     return (`Json json)
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
@@ -202,7 +210,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
           return "Not_found")
     >>= fun jsons ->
     let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-    return (`Json json)
+    return (`Json_raw json)
   end
 
 let target_available_queries_service ~server_state ~body req =
@@ -217,12 +225,12 @@ let target_available_queries_service ~server_state ~body req =
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
   let json =
-    Ketrew_plugin.additional_queries target
-    |> List.map ~f:(fun (name, descr) ->
-        (`List [`String name; `String (Log.to_long_string descr)]))
-    |> (fun l ->
-        Yojson.Basic.pretty_to_string ~std:true (`List l)) in
-  Log.(s "Replying: " % s json @ very_verbose);
+    `List (
+      Ketrew_plugin.additional_queries target
+      |> List.map ~f:(fun (name, descr) ->
+          (`List [`String name; `String (Log.to_long_string descr)])))
+  in
+  Log.(s "Replying: " % Json.log json @ very_verbose);
   return (`Json json)
 
 let target_call_query_service ~server_state ~body req =
@@ -244,9 +252,8 @@ let target_call_query_service ~server_state ~body req =
     Ketrew_plugin.call_query ~target query_name
     >>< function
     | `Ok string -> 
-      let json = 
-        Yojson.Basic.pretty_to_string ~std:true (`List [`String string]) in
-      Log.(s "Replying: " % s json @ very_verbose);
+      let json = (`List [`String string]) in
+      Log.(s "Replying: " % Json.log json @ very_verbose);
       return (`Json json)
     | `Error error_log ->
       wrong_request "Failed Query" (Log.to_long_string error_log)
@@ -277,7 +284,7 @@ let add_targets_service  ~server_state ~body req =
       return (`List [`String original_id; `String (Ketrew_target.id freshen)])
     )
   >>= fun ids ->
-  return (`Json (`List ids |> Yojson.Basic.to_string))
+  return (`Json (`List ids))
 
 let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service = 
   fun what_to_do ~server_state ~body req ->
@@ -303,7 +310,7 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
             `String (Ketrew_engine.log_what_happened l |> Log.to_long_string))))
     >>| List.concat
     >>= fun happenings ->
-    return (`Json (`List happenings |> Yojson.Basic.to_string))
+    return (`Json (`List happenings))
 
 (** {2 Dispatcher} *)
 
@@ -433,7 +440,10 @@ let start ~configuration  =
             >>= function
             | `Ok `Unit ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
-            | `Ok (`Json body) ->
+            | `Ok (`Json_raw body) ->
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
+            | `Ok (`Json json) ->
+              let body = Json.to_string json in
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "
