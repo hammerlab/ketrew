@@ -84,7 +84,7 @@ let load path =
   wrap_dbm_call (fun () -> 
       let db =
         Dbm.opendbm path [Dbm.Dbm_rdwr; Dbm.Dbm_create] 0o600 in
-      at_exit (fun () -> Dbm.close db);
+      at_exit (fun () -> try Dbm.close db with e -> ());
       db
     )
     ~error_location:(`Load path)
