@@ -436,15 +436,6 @@ do_travis() {
   echo "Mini-test:"
   _obuild/ketrew-test/ketrew-test.asm db-test config-file
 
-
-  echo "Test environment:"
-  ./please.sh test-env
-  . _obuild/test.env
-
-  echo "Do some command line tests, with the server and all"
-  export KETREW_CONFIGURATION=_obuild/test-config-file.toml
-  ktapp="_obuild/ketrew-app/ketrew-app.asm"
-  $ktapp status
 }
 
 headache_config () {
