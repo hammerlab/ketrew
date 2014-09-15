@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 version_string="0.0.1-prealpha"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner atdgen atd \
+findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
+  atd cconv.yojson \
   yojson uri toml dbm cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
@@ -28,8 +29,7 @@ setup() {
   local lib_atd_files=$(find src/atd/ -type f -name '*.atd')
   for atd in $lib_atd_files ; do
     name=`basename $atd`
-    atdgen -t -o _obuild/gen/ketrew_gen_${name%.atd} $atd
-    atdgen -j -j-std -o _obuild/gen/ketrew_gen_${name%.atd} $atd
+    atd2cconv -i $atd -o _obuild/gen/ketrew_gen_${name%.atd}.ml
   done
 
   local ocaml_findlib_packages_list=$(for f in $findlib_packages ; do echo "\"$f\"; " ; done)
@@ -292,12 +292,10 @@ get_dependencies () {
   local opam_version=`opam --version`
   if [[ $opam_version =~ ^1.2 ]] ; then
     opam pin add ocp-build $ocp_build_version
-    opam pin add atdgen 1.3.1
   else
     opam pin ocp-build $ocp_build_version
-    opam pin atdgen 1.3.1
   fi
-  opam install ocp-build type_conv `print_opam_depedencies`
+  opam install atd2cconv ocp-build type_conv `print_opam_depedencies`
 }
 
 #
@@ -349,7 +347,7 @@ build: [
 remove: [
   ["./please.sh" "uninstall" prefix ]
 ]
-depends: [ "ocp-build" {= "$ocp_build_version" } "ocamlfind" $quoted_opam_packages ]
+depends: [ "ocp-build" {= "$ocp_build_version" } "atd2cconv" "ocamlfind" $quoted_opam_packages ]
 
 END_OPAM
 }

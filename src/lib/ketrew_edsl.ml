@@ -72,7 +72,7 @@ let user_target_internal
   ?(dependencies = [])
   ?(if_fails_activate = [])
   ?(name: string option)
-  ?(make: Target.build_process = Target.nop)
+  ?(make: Target.Build_process.t = Target.Build_process.nop)
   ?ready_when
   ?(metadata = Artifact.Value.unit)
   ?product
@@ -171,7 +171,7 @@ module Program = struct
 
   let copy_files ~source:(s_host, src) ~destination:(d_host, dest) 
       ~(f : ?host:Host.t -> t -> 'a) =
-    let open Ketrew_gen_base_v0_t in
+    let open Ketrew_gen_base_v0.Host in
     match s_host.connection, d_host.connection with
     | `Localhost, `Localhost ->
       f ?host:None (exec ("cp" :: src @ [dest])) 

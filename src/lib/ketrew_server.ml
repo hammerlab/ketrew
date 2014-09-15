@@ -297,8 +297,8 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
     >>| List.concat
     >>= fun happenings ->
     Light.green server_state.loop_traffic_light;
-    let json = Ketrew_gen_base_v0_j.string_of_happening_list happenings in
-    return (`Json_raw json)
+    let json = Serialize_happenings.to_json happenings in
+    return (`Json json)
 
 (** {2 Dispatcher} *)
 

@@ -22,7 +22,7 @@ open Ketrew_pervasives
     on a given {!Ketrew_host.t}. *)
 module Volume : sig
 
-    type structure = Ketrew_gen_base_v0_t.volume_structure
+    type structure = Ketrew_gen_base_v0.Volume_structure.t
     (** The structure of a volume defines the hierarchy of files relative to
         a [root] path, one constructs structures with {!file} and {!dir}:
         {[
@@ -48,7 +48,7 @@ module Volume : sig
     val dir : string -> structure list -> structure
     (** Define a “directory” structure. *)
 
-    type t = Ketrew_gen_base_v0_t.volume
+    type t = Ketrew_gen_base_v0.Volume.t
     (** The container of volumes. *)
 
     val create :

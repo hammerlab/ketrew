@@ -139,7 +139,7 @@ class type user_target =
 val target :
   ?active:bool ->
   ?dependencies:user_target list ->
-  ?make:Ketrew_target.build_process ->
+  ?make:Ketrew_target.Build_process.t ->
   ?ready_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?product:user_artifact ->
@@ -150,7 +150,7 @@ val target :
 
 val file_target:
   ?dependencies:user_target list ->
-  ?make:Ketrew_target.build_process ->
+  ?make:Ketrew_target.Build_process.t ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?name:string ->
   ?host:host ->
@@ -165,15 +165,15 @@ val daemonize :
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Ketrew_host.t ->
   Program.t ->
-  Ketrew_target.build_process
+  Ketrew_target.Build_process.t
 (** Create a “daemonize” build process. *)
 
 val direct_execution :
-  ?host:Ketrew_host.t -> Program.t -> Ketrew_target.build_process
+  ?host:Ketrew_host.t -> Program.t -> Ketrew_target.Build_process.t
 (** Create a direct process (not “long-running”). *)
 
 val direct_shell_command :
-  ?host:Ketrew_host.t -> string -> Ketrew_target.build_process
+  ?host:Ketrew_host.t -> string -> Ketrew_target.Build_process.t
 (** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
 
 val lsf :
@@ -182,7 +182,7 @@ val lsf :
   ?name:string ->
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
-  Program.t -> Ketrew_target.build_process
+  Program.t -> Ketrew_target.Build_process.t
 (** Create an “LSF” build process. *)
 
 (** {3 Workflows} *)

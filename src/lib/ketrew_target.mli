@@ -20,7 +20,7 @@ open Ketrew_pervasives
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig
 
-    type t = Ketrew_gen_target_v0_t.command
+    type t = Ketrew_gen_target_v0.Command.t
     (** The type of commands. *)
 
     val shell : ?host:Ketrew_host.t -> string -> t
@@ -54,24 +54,26 @@ module Command : sig
 
   end
 
-type build_process = [
-  | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
-  | `Direct_command of Command.t (** [Command.t] to run. *)
-  | `Long_running of (string * string) 
-  (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
-]
-(** Specification of how to build a target. {ul
-   {li  [`Artifact a]: literal, already-built, artifact, }
-   {li [`Direct_command c]: a [Command.t] to run (should produce a [Volume.t]), }
-   {li [`Get_output c]: a [Command.t] to run and get its [stdout] (should
+module Build_process: sig
+  type t = [
+    | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
+    | `Direct_command of Command.t (** [Command.t] to run. *)
+    | `Long_running of (string * string) 
+    (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
+  ]
+  (** Specification of how to build a target. {ul
+      {li  [`Artifact a]: literal, already-built, artifact, }
+      {li [`Direct_command c]: a [Command.t] to run (should produce a [Volume.t]), }
+      {li [`Get_output c]: a [Command.t] to run and get its [stdout] (should
        produce a value), }
-   {li [`Long_running (plugin_name, initial_run_parameters)]:
-    Use a long-running plugin. }
-    } 
-*)
+      {li [`Long_running (plugin_name, initial_run_parameters)]:
+      Use a long-running plugin. }
+      } 
+  *)
 
-val nop : build_process
-(** A build process that does nothing. *)
+  val nop : t
+  (** A build process that does nothing. *)
+end
 
 type submitted_state = [ `Created of Time.t ]
 type activated_state = [
@@ -143,7 +145,7 @@ module Condition : sig
 end
 
 module Equivalence: sig
-  type t = Ketrew_gen_target_v0_t.equivalence
+  type t = Ketrew_gen_target_v0.Equivalence.t
 
 end
 
@@ -154,7 +156,7 @@ type t = {
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   if_fails_activate : id list;
-  make : build_process;
+  make : Build_process.t;
   condition : Condition.t option;
   equivalence: Equivalence.t;
   history : workflow_state;
@@ -167,7 +169,7 @@ val create :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
-  ?make:build_process -> 
+  ?make:Build_process.t -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit ->
@@ -204,7 +206,7 @@ val active :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
-  ?make:build_process ->
+  ?make:Build_process.t  ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   unit -> t

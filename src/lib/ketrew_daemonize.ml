@@ -16,13 +16,27 @@
 
 open Ketrew_pervasives
 
-module Path = Ketrew_path
-
 module Host = Ketrew_host
+module Path = Ketrew_path
 module Error = Ketrew_error
-module Program = Ketrew_program
 
-include Ketrew_gen_daemonize_v0_t
+
+open Ketrew_gen_daemonize_v0.Run_parameters
+open Ketrew_gen_daemonize_v0.Created
+open Ketrew_gen_daemonize_v0.Running
+
+type run_parameters  =  Ketrew_gen_daemonize_v0.Run_parameters.t
+
+module Serialize_versioned =
+  Json.Make_serialization(Ketrew_gen_versioned.Daemonize_run_parameters)
+
+let serialize t =
+  Serialize_versioned.serialize (`V0 t)
+
+let deserialize_exn s =
+  begin match Serialize_versioned.deserialize_exn s with
+  | `V0 v0 -> v0
+  end
 
 let running =
   function `Running r -> r 
@@ -31,17 +45,11 @@ let created =
   function `Created c -> c
          | _ -> invalid_argument_exn ~where:"daemonize" "created"
 
-let serialize t =
-  Ketrew_gen_versioned_j.string_of_daemonize_run_parameters (`V0 t)
-let deserialize_exn s = 
-  begin match Ketrew_gen_versioned_j.daemonize_run_parameters_of_string s with
-  | `V0 v0 -> v0
-  end
-
 let name = "daemonize"
+
 let create 
   ?(starting_timeout=5.)
-  ?(using=`Nohup_setsid) ?(host=Host.tmp_on_localhost) program =
+  ?(using=`Nohup_setsid) ?(host=Ketrew_host.tmp_on_localhost) program =
   let c = {host; program; using_hack = using; starting_timeout } in
   `Long_running (name, `Created c |> serialize)
 
@@ -58,27 +66,27 @@ let log =
   function
   | `Created c -> [
       "Status", s "Created" % sp % parens (s (hack_to_string c.using_hack));
-      "Host", Host.log c.host;
-      "Program", Program.log c.program;
+      "Host", Ketrew_host.log c.host;
+      "Program", Ketrew_program.log c.program;
       "Starting-timeout", f c.starting_timeout % s " sec."
     ]
   | `Running rp -> [
       "Status", s "Running" % sp 
                 % parens (s (hack_to_string rp.created.using_hack));
-      "Host", Host.log rp.created.host;
+      "Host", Ketrew_host.log rp.created.host;
       "PID", OCaml.option i rp.pid;
-      "Playground", s (Path.to_string rp.playground);
+      "Playground", s (Ketrew_path.to_string rp.playground);
       "Start-time", Time.log rp.start_time;
     ]
 
 let out_file_path ~playground =
-  Path.(concat playground (relative_file_exn "out"))
+  Ketrew_path.(concat playground (relative_file_exn "out"))
 let err_file_path ~playground =
-  Path.(concat playground (relative_file_exn "err"))
+  Ketrew_path.(concat playground (relative_file_exn "err"))
 let script_path ~playground =
-  Path.(concat playground (relative_file_exn "monitored_script"))
+  Ketrew_path.(concat playground (relative_file_exn "monitored_script"))
 let python_hack_path ~playground =
-  Path.(concat playground (relative_file_exn "daemonizator.py"))
+  Ketrew_path.(concat playground (relative_file_exn "daemonizator.py"))
 
 let fail_fatal msg = fail (`Fatal msg)
 
@@ -99,16 +107,16 @@ let query run_parameters item =
     begin match item with
     | "log" -> 
       let log_file = Ketrew_monitored_script.log_file rp.script in
-      Host.grab_file_or_log rp.created.host log_file
+      Ketrew_host.grab_file_or_log rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host out_file
+      Ketrew_host.grab_file_or_log rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host err_file
+      Ketrew_host.grab_file_or_log rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host monitored_script_path
+      Ketrew_host.grab_file_or_log rp.created.host monitored_script_path
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
@@ -148,11 +156,10 @@ if __name__ == '__main__':
             stdout=file('%s', 'w'), 
             stderr=file('%s', 'w'))
 "
-    (Path.to_string pid_file)
-    (Path.to_string monitored_script_path)
-    (Path.to_string out)
-    (Path.to_string err)
-
+    (Ketrew_path.to_string pid_file)
+    (Ketrew_path.to_string monitored_script_path)
+    (Ketrew_path.to_string out)
+    (Ketrew_path.to_string err)
 
 let start rp =
   let created = created rp in

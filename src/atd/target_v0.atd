@@ -14,13 +14,13 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-type time <ocaml from="Ketrew_gen_base_v0"> = abstract
-type unique_id <ocaml from="Ketrew_gen_base_v0"> = abstract
-type host <ocaml from="Ketrew_gen_base_v0"> = abstract
-type program <ocaml from="Ketrew_gen_base_v0"> = abstract
-type artifact <ocaml from="Ketrew_gen_base_v0"> = abstract
-type artifact_value <ocaml from="Ketrew_gen_base_v0"> = abstract
-type volume <ocaml from="Ketrew_gen_base_v0"> = abstract
+type time <ocaml from="Ketrew_gen_base_v0.Time"> = abstract
+type unique_id <ocaml from="Ketrew_gen_base_v0.Unique_id"> = abstract
+type host <ocaml from="Ketrew_gen_base_v0.Host"> = abstract
+type program <ocaml from="Ketrew_gen_base_v0.Program"> = abstract
+type artifact <ocaml from="Ketrew_gen_base_v0.Artifact"> = abstract
+type artifact_value <ocaml from="Ketrew_gen_base_v0.Artifact_value"> = abstract
+type volume <ocaml from="Ketrew_gen_base_v0.Volume"> = abstract
 
 type command = {
   host: host;
@@ -80,7 +80,7 @@ type equivalence = [
 ]
 
 type id = unique_id
-type t = {
+type target = {
   id: id;
   name: string;
   persistance: [ Input_data | Recomputable of float | Result ];

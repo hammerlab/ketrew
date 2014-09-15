@@ -67,7 +67,25 @@ module Json = struct
   let log t = 
     let str = to_string t in
     Log.(indent (s str))
+
+  module Make_serialization
+      (T : sig 
+         type t
+         val source: unit -> t CConv.Source.t
+         val sink: unit -> t CConv.Sink.t
+       end) = struct
+    let to_json (t : T.t) =
+      CConv.into (T.source ()) CConvYojson.sink t
+    let of_json_exn (json : t) =
+      CConv.from CConvYojson.source (T.sink ()) json
+    let serialize t = Yojson.Basic.pretty_to_string ~std:true (to_json t)
+    let deserialize_exn s =
+      Yojson.Basic.from_string s |> of_json_exn
+  end
 end
+
+module Serialize_happenings =
+  Json.Make_serialization(Ketrew_gen_base_v0.Happening_list)
 
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
@@ -76,8 +94,7 @@ let invalid_argument_exn ?(where="pervasives") what =
 
 (** Handle timestamps. *)
 module Time = struct
-  include Ketrew_gen_base_v0_t
-  type t = time
+  include Ketrew_gen_base_v0.Time
 
   let now () : t = Unix.gettimeofday ()
 
@@ -100,9 +117,7 @@ end
 (** Provide pseudo-unique identifiers. *)
 module Unique_id = struct
 
-  include Ketrew_gen_base_v0_t
-  type t = unique_id
-  (** [string] seems to be the best-suited primitive *)
+  include Ketrew_gen_base_v0.Unique_id
 
   (** Create a fresh filename-compliant identifier. *)
   let create () =

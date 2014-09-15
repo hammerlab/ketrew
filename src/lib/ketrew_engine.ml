@@ -29,18 +29,21 @@ module Configuration = Ketrew_configuration
 module Daemonize = Ketrew_daemonize
 
 module Persistent_state = struct
-  type t = Ketrew_gen_base_v0_t.persistent_state = {
+  type t = Ketrew_gen_base_v0.Persistent_state.t = {
     current_targets: Target.id list;
     archived_targets: Target.id list;
     pointers: (Target.id * Target.id) list;
   }
   let create () = {current_targets = []; archived_targets = []; pointers = []}
 
-  let serialize t = Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
+  module Serialize_versioned = 
+    Json.Make_serialization(Ketrew_gen_versioned.Persistent_state)
+
+  let serialize t = Serialize_versioned.serialize (`V0 t)
 
   let deserialize s = 
     try return (
-        match Ketrew_gen_versioned_j.persistent_state_of_string s with
+        match Serialize_versioned.deserialize_exn s with
         | `V0 v0 -> v0
       )
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
@@ -508,7 +511,7 @@ let _update_status t ~target ~bookkeeping =
                 `Long_running_unrecoverable (plugin_name, s))
       end)
 
-type happening = Ketrew_gen_base_v0_t.happening
+type happening = Ketrew_gen_base_v0.Happening.t
 
 let log_what_happened =
   let open Log in

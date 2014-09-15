@@ -124,9 +124,8 @@ module Http_client = struct
     let json = `List [`String id] in
     call_json t ~path ~meta_meth:(`Post_json json) 
     >>= fun json ->
-    let s = Yojson.Basic.to_string json in
     begin try
-      Ketrew_gen_base_v0_j.happening_list_of_string s |> return
+      Serialize_happenings.of_json_exn json |> return
     with e ->
       fail (`Client (`Http (error_loc, `Wrong_json json)))
     end

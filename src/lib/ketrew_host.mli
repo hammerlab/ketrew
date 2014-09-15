@@ -20,7 +20,7 @@ open Ketrew_pervasives
 (** Definitions specific to “SSH” hosts (see {!connection}). *)
 module Ssh : sig
 
-  type t = Ketrew_gen_base_v0_t.ssh_host
+  type t = Ketrew_gen_base_v0.Ssh_host.t
   (** The type of SSH-based hosts. *)
 
   val configure_ssh_batch_option :
@@ -45,7 +45,7 @@ end
 type default_shell
 (** Specification of the default shell of a Host. *)
 
-type t = Ketrew_gen_base_v0_t.host
+type t = Ketrew_gen_base_v0.Host.t
 (** Host container.
 
   A host is the current machine, or an SSH-accessed distant host.
@@ -60,7 +60,7 @@ val default_shell :
   ?options:string list ->
   ?command_option:string ->
   string ->
-  Ketrew_gen_base_v0_t.default_shell
+  Ketrew_gen_base_v0.Default_shell.t
 (** Use
   [default_shell ~binary:"/bin/sh" ~options:["-l"; "--something"; "blah" ]
       ~command_option:"-c" "sh"]

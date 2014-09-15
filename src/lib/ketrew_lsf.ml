@@ -21,13 +21,19 @@ module Program = Ketrew_program
 module Host = Ketrew_host
 module Error = Ketrew_error
 
-include Ketrew_gen_lsf_v0_t
+open Ketrew_gen_lsf_v0.Run_parameters
+open Ketrew_gen_lsf_v0.Running
+open Ketrew_gen_lsf_v0.Created
+
+type run_parameters = Ketrew_gen_lsf_v0.Run_parameters.t
+
+module Serialize_versioned = Json.Make_serialization(Ketrew_gen_versioned.Lsf_run_parameters)
 
 let serialize t =
-  Ketrew_gen_versioned_j.string_of_lsf_run_parameters (`V0 t)
+  Serialize_versioned.serialize (`V0 t)
 
 let deserialize_exn s =
-  begin match Ketrew_gen_versioned_j.lsf_run_parameters_of_string s with
+  begin match Serialize_versioned.deserialize_exn s with
   | `V0 v0 -> v0
   end
 
@@ -119,7 +125,7 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
-let start: run_parameters -> (_, _) t = function
+let start: run_parameters -> (_, _) Deferred_result.t = function
 | `Running _ ->
   fail_fatal "Wrong state: already running"
 | `Created created ->

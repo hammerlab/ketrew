@@ -32,7 +32,7 @@ module Ssh = struct
 
   let () = configure_ssh_batch_option `Openssh
 
-  type t = Ketrew_gen_base_v0_t.ssh_host = {
+  type t = Ketrew_gen_base_v0.Ssh_host.t = {
     address: string;
     port: int option;
     user: string option;
@@ -125,11 +125,11 @@ module Ssh = struct
     @ [dest]
 
 end
-type connection = Ketrew_gen_base_v0_t.connection 
+type connection = Ketrew_gen_base_v0.Connection.t 
                     
-type default_shell = Ketrew_gen_base_v0_t.default_shell
+type default_shell = Ketrew_gen_base_v0.Default_shell.t
 
-type t = Ketrew_gen_base_v0_t.host = {
+type t = Ketrew_gen_base_v0.Host.t = {
   name: string;
   connection: connection;
   playground: Path.t option;
@@ -138,7 +138,8 @@ type t = Ketrew_gen_base_v0_t.host = {
 }
 
 let default_shell ?binary ?(options=[]) ?(command_option="-c") command_name =
-  {Ketrew_gen_base_v0_t. binary; command_name; options; command_option}
+  {Ketrew_gen_base_v0.Default_shell.
+    binary; command_name; options; command_option}
 
 let shell_sh_minus_c = default_shell "sh"
 
@@ -201,7 +202,8 @@ let to_uri t =
     | `Localhost -> None, None, None, None
   in
   let query =
-    let {Ketrew_gen_base_v0_t. binary; command_name; options; command_option} =
+    let {Ketrew_gen_base_v0.Default_shell.
+          binary; command_name; options; command_option} =
       t.default_shell in
     let shell_spec = [command_name] @ options @ [command_option] in
     ["shell", [String.concat ~sep:"," shell_spec]]
@@ -351,7 +353,8 @@ type shell = string -> string list
 let shell_sh ~sh cmd = [sh; "-c"; cmd]
 
 let shell_of_default_shell t cmd = 
-  let open Ketrew_gen_base_v0_t in
+  let open Ketrew_gen_base_v0.Default_shell in
+  let open Ketrew_gen_base_v0.Host in
   t.default_shell.command_name :: 
   t.default_shell.options
   @ [t.default_shell.command_option; cmd]

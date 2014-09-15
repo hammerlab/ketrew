@@ -14,10 +14,10 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-type host <ocaml from="Ketrew_gen_base_v0"> = abstract
-type path <ocaml from="Ketrew_gen_base_v0"> = abstract
-type program <ocaml from="Ketrew_gen_base_v0"> = abstract
-type monitored_script <ocaml from="Ketrew_gen_base_v0"> = abstract
+type host <ocaml from="Ketrew_gen_base_v0.Host"> = abstract
+type path <ocaml from="Ketrew_gen_base_v0.Path"> = abstract
+type program <ocaml from="Ketrew_gen_base_v0.Program"> = abstract
+type monitored_script <ocaml from="Ketrew_gen_base_v0.Monitored_script"> = abstract
 
 
 type created = {
