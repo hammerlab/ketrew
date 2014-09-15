@@ -518,7 +518,7 @@ let test_long_running_nohup () =
               Ketrew.EDSL.(
                 target "some name"
                   ~make:(daemonize ~host Program.(sh "ls > /tmp/some_temp_file"))
-                  ~ready_when:(file ~host "/tmp/some_temp_file_with_error")#exists
+                  ~done_when:(file ~host "/tmp/some_temp_file_with_error")#exists
               )
             in
             t#activate;

@@ -95,7 +95,7 @@ class type user_artifact = object
       a single file or directory. *)
 
   method exists : Ketrew_target.Condition.t
-  (** Get “exists” condition (for the [~ready_when] argument of {!target}. *)
+  (** Get “exists” condition (for the [~done_when] argument of {!target}. *)
 
   method is_bigger_than: int -> Ketrew_target.Condition.t
   (** Get the “is bigger than <size>” condition. *)
@@ -105,7 +105,7 @@ val file: ?host:Ketrew_host.t -> string -> user_artifact
 (** Create a volume containing one file. *)
 
 val unit : user_artifact
-(** The artifact that is “never ready” (i.e. the target associated will always
+(** The artifact that is “never done” (i.e. the target associated will always
     be (re-)run if activated). *)
 
 (** {3 Targets} *)
@@ -140,7 +140,7 @@ val target :
   ?active:bool ->
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
-  ?ready_when:Ketrew_target.Condition.t ->
+  ?done_when:Ketrew_target.Condition.t ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->

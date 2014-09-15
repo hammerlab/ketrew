@@ -109,7 +109,7 @@ let deploy_website branches =
   let clone_repo =
     let readme = file (sprintf "%s/ketrew/README.md" dest_path) in
     target (sprintf "Clone to %s" dest_path)
-      ~ready_when:(readme #exists)
+      ~done_when:(readme #exists)
       ~make:(local_deamonize
                Program.(
                  shf "mkdir -p %s" dest_path
@@ -220,7 +220,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let targz = destination "tar.gz" in
   let make_targz =
-    target ~ready_when:targz#exists "make-tar.gz" ~dependencies:[]
+    target ~done_when:targz#exists "make-tar.gz" ~dependencies:[]
       ~make:(daemonize ~host
                (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
       (* A first target using `daemonize`
@@ -229,7 +229,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let md5 = destination "md5" in
   let md5_targz =
-    target ~ready_when:md5#exists "make-md5-of-tar.gz" ~dependencies:[make_targz]
+    target ~done_when:md5#exists "make-md5-of-tar.gz" ~dependencies:[make_targz]
       ~make:(daemonize ~host
                Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
@@ -239,7 +239,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     | true ->
       let gpg_file = destination "gpg" in
       let make_it =
-        target "make-gpg-of-tar.gz" ~ready_when:gpg_file#exists ~dependencies:[make_targz]
+        target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists ~dependencies:[make_targz]
           ~make:(daemonize ~host
                    Program.(
                      sh ". ~/.backup_passphrase"
