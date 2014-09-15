@@ -292,8 +292,10 @@ get_dependencies () {
   local opam_version=`opam --version`
   if [[ $opam_version =~ ^1.2 ]] ; then
     opam pin add ocp-build $ocp_build_version
+    opam pin add atdgen 1.3.1
   else
     opam pin ocp-build $ocp_build_version
+    opam pin atdgen 1.3.1
   fi
   opam install ocp-build type_conv `print_opam_depedencies`
 }
