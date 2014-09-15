@@ -249,11 +249,15 @@ let get_target t ~id =
     Http_client.get_target c ~id
 
 
-let get_current_graph t =
+let targets_to_clean_up t ~how_much =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_engine.Target_graph.get_current s.engine
+    Ketrew_engine.Target_graph.(
+      get_current s.engine
+      >>= fun graph ->
+      return (targets_to_clean_up graph how_much)
+    )
   | `Http_client c ->
     fail (`Failure "get_current_graph not implemented")
 

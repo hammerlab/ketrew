@@ -243,6 +243,36 @@ module Target_graph = struct
     in
     trans_pred g target
 
+  let targets_to_clean_up graph how_much =
+    let vertices = vertices graph in
+    let to_kill =
+      (* a target is going to be killed if it is "created" and no other target
+         that is activated transitively dependends on it.  *)
+      List.filter_map vertices ~f:(fun trgt ->
+          if Ketrew_target.Is.created trgt
+          then
+            let higher = transitive_predecessors graph trgt in
+            if
+              List.for_all higher 
+                (fun trgt -> not (Ketrew_target.Is.activated trgt))
+            then Some (Ketrew_target.id trgt)
+            else None
+          else
+            None)
+    in
+    let to_archive =
+      (* A target that is just-killed, or finished depending on `how_much` *)
+      List.filter_map vertices ~f:(fun trgt ->
+          match how_much with
+          | `Soft when Ketrew_target.Is.successful trgt ->
+            Some (Ketrew_target.id trgt)
+          | `Hard when Ketrew_target.Is.finished trgt ->
+            Some (Ketrew_target.id trgt)
+          | other -> None)
+    in
+    (`To_kill to_kill, `To_archive to_archive)
+
+
 end 
 
 let add_target t target =

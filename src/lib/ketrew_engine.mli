@@ -236,4 +236,6 @@ module Target_graph: sig
   (** Get all the predecessors of a given target; i.e. all the target that
       dependent (on targets that depend) on that target *)
 
+  val targets_to_clean_up: t -> [`Hard | `Soft] ->
+    [ `To_kill of Ketrew_target.id list ] * [ `To_archive of Ketrew_target.id list ]
 end

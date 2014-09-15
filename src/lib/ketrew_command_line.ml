@@ -534,39 +534,12 @@ let archive ~client ~interactive ids =
 (** Kill and archive targets that are done or useless. *)
 let autoclean ~client ~how_much ~interactive () =
   let module G = Ketrew_engine.Target_graph in
-  Ketrew_client.get_current_graph client
-  >>= fun graph ->
-  Log.(s "Target graph: " % G.log graph @ verbose);
-  let vertices = G.vertices graph in
-  let to_kill =
-    (* a target is going to be killed if it is "created" and no other target
-       that is activated transitively dependends on it.
-    *)
-    List.filter vertices ~f:(fun trgt ->
-        if Ketrew_target.Is.created trgt
-        then
-          let higher = G.transitive_predecessors graph trgt in
-          List.for_all higher (fun trgt -> not (Ketrew_target.Is.activated trgt))
-        else
-          false)
-  in
-  Log.(s "To KILL: " % OCaml.list Ketrew_target.log to_kill @ verbose);
-  let to_archive =
-    (* A target that is just-killed, or finished depending on `how_much` *)
-    List.filter vertices ~f:(fun trgt ->
-        match how_much with
-        | `Soft when Ketrew_target.Is.successful trgt -> true
-        | `Hard when Ketrew_target.Is.finished trgt -> true
-        | other -> false)
-  in
-  Log.(s "To ARCHIVE: " % OCaml.list Ketrew_target.log to_archive @ verbose);
+  Ketrew_client.targets_to_clean_up client ~how_much
+  >>= fun (`To_kill to_kill, `To_archive to_archive) ->
   let proceed () =
-    let kill_ids = List.map to_kill ~f:Ketrew_target.id in
-    kill ~client ~interactive:false kill_ids
+    kill ~client ~interactive:false to_kill
     >>= fun () ->
-    archive ~client ~interactive:false 
-      (kill_ids @ List.map to_archive ~f:Ketrew_target.id)
-  in
+    archive ~client ~interactive:false (to_kill @ to_archive) in 
   begin match interactive, to_kill, to_archive with
   | _, [], [] -> Log.(s "Nothing to do" @ normal); return ()
   | true, _, _ -> 
@@ -576,12 +549,12 @@ let autoclean ~client ~how_much ~interactive () =
       % (match to_kill with
         | [] -> empty
         | more ->
-          s " kill & archive: " % OCaml.list Ketrew_target.log to_kill)
+          s " kill & archive: " % OCaml.list string to_kill)
       % (match to_archive with
         | [] -> empty
         | more -> 
           (if to_kill = [] then empty else s " and ")
-          % s " archive: " % OCaml.list Ketrew_target.log to_archive)
+          % s " archive: " % OCaml.list string to_archive)
       % n % s "Proceed?"
     in
     Interaction.(
@@ -596,9 +569,9 @@ let autoclean ~client ~how_much ~interactive () =
         return ()
     )
   | false, _, _ -> 
-    kill ~client ~interactive:false (List.map to_kill ~f:Ketrew_target.id)
+    kill ~client ~interactive:false to_kill
     >>= fun () ->
-    archive ~client ~interactive:false (List.map to_archive ~f:Ketrew_target.id)
+    archive ~client ~interactive:false to_archive
   end
 
 (** The “Target Explorer™“ *)
