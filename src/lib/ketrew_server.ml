@@ -534,3 +534,33 @@ let stop ~configuration =
     fail (`Stop_server_error (fmt "%S is not a named-pipe (%s)"
                                 file_path (System.file_info_to_string other)))
 
+let status ~configuration =
+  let local_server_uri =
+    match Ketrew_configuration.listen_to configuration with
+    | `Tls (_, _, port) ->
+      Uri.make ~scheme:"https" ~host:"127.0.0.1" ~path:"/hello" () ~port in
+  Log.(s "Trying GET on " % uri local_server_uri @ verbose);
+  begin
+    System.with_timeout 5. ~f:(fun () ->
+        wrap_deferred
+          ~on_exn:(fun e -> `Get_exn e) (fun () ->
+              Cohttp_lwt_unix.Client.call `GET local_server_uri)
+      ) 
+    >>< function
+    | `Ok (response, body) ->
+      Log.(s "Response: " 
+           % sexp Cohttp.Response.sexp_of_t response @ verbose);
+      begin match Cohttp.Response.status response with
+      | `OK -> return `Running
+      | other -> return (`Wrong_response response)
+      end
+    | `Error (`Get_exn
+                (Unix.Unix_error (Unix.ECONNREFUSED, "connect", ""))) ->
+      return (`Not_responding "connection refused")
+    | `Error (`System (`With_timeout _, `Exn e)) ->
+      fail (`Failure (Printexc.to_string e))
+    | `Error (`Timeout _) ->
+      return (`Not_responding "connection timeouted")
+    |  `Error (`Get_exn other_exn) ->
+      fail (`Server_status_error (Printexc.to_string other_exn))
+  end
