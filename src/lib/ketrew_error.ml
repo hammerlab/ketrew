@@ -84,6 +84,7 @@ let to_string = function
   fmt "Did not get the size of the volume: %s" (Log.to_long_string l)
 | `Start_server_error e -> fmt "Error starting the server: %s" e
 | `Stop_server_error e -> fmt "Error stopping the server: %s" e
+| `Server_status_error e -> fmt "Error while getting the server's status: %s" e
 | `Wrong_http_request (short, long) ->
   fmt "Wrong HTTP Request: %s → %s" short long
 | `Client (client_error) ->

@@ -1060,7 +1060,25 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           pure (fun config_path  ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
-              Ketrew_client.as_client ~configuration ~f:(display_status))
+              match Configuration.mode configuration  with
+              | `Client _ | `Standalone _ ->
+                Ketrew_client.as_client ~configuration ~f:(display_status)
+              | `Server s ->
+                Ketrew_server.status ~configuration:s
+                >>= fun stat ->
+                begin match stat with
+                | `Running ->
+                  Log.(s "The server appears to be doing well." @ normal);
+                  return ()
+                | `Wrong_response response ->
+                  Log.(s "There is a server on that port but its response was: " 
+                       % sexp Cohttp.Response.sexp_of_t response @ warning);
+                  return ()
+                | `Not_responding why ->
+                  Log.(s "The server does not seem to be running"
+                       % sp % parens (s why) % s "." @ normal);
+                  return ()
+                end)
           $ config_file_argument
         ) in
   let run_cmd =
