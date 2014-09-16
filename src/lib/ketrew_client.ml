@@ -47,6 +47,9 @@ module Http_client = struct
     let base_uri = Uri.add_query_param' uri ("token", token configuration) in
     return { configuration; base_uri; }
 
+  let client_error ~where ~what = `Client (`Http (where, what))
+  let client_error_exn where exn = `Client (`Http (where, `Exn exn))
+
   let call_json ?(args=[]) t ~meta_meth ~path =
     let uri =
       Uri.with_path t.base_uri path
@@ -59,16 +62,18 @@ module Http_client = struct
       | `Get -> `GET, `Empty
       | `Post_string s -> `POST, `String s
       | `Post_json s -> `POST, `String (Json.to_string s) in
-    let error_loc = `Call (meth, uri) in
+    let where = `Call (meth, uri) in
     wrap_deferred
-      ~on_exn:(fun e -> `Client (`Http (error_loc, `Exn e))) (fun () ->
+      ~on_exn:(fun e -> client_error_exn where e) (fun () ->
+          let uri_ = uri in
+          Log.(s "HTTP call: " % uri uri_ @ very_verbose);
           Cohttp_lwt_unix.Client.call ~body meth uri)
     >>= fun (response, body) ->
     begin match Cohttp_lwt_unix.Client.Response.status response with
     | `OK ->
       begin match body with
       | `Empty ->
-        fail (`Client (`Http (error_loc, `Wrong_response (response, body))))
+        fail (client_error ~where ~what:(`Wrong_response (response, body)))
       | `String s -> return s
       | `Stream s -> lwt_stream_to_string s
       end
@@ -76,10 +81,10 @@ module Http_client = struct
       begin try
         return (Yojson.Basic.from_string body_str)
       with e ->
-        fail (`Client (`Http (error_loc, `Json_parsing (body_str, `Exn e))))
+        fail (`Client (`Http (where, `Json_parsing (body_str, `Exn e))))
       end
     | other ->
-      fail (`Client (`Http (error_loc, `Wrong_response (response, body))))
+      fail (`Client (`Http (where, `Wrong_response (response, body))))
     end
 
   let get_current_targets ~archived t =
@@ -148,6 +153,28 @@ module Http_client = struct
       fail (`Client (`Http (`Target_query (id, query), `Wrong_json other)))
     end
 
+  let call_cleanable_targets ~how_much t =
+    let args = [
+      "howmuch", (match how_much with `Soft -> "soft" | `Hard -> "hard");
+    ] in
+    let error = client_error ~where:(`Cleanable_targets how_much) in
+    call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
+    >>= fun json ->
+    begin match json with
+    | `Assoc ["to-kill", `List kill; "to-archive", `List archive] ->
+      let to_strings strs = 
+        Deferred_list.while_sequential strs ~f:(function
+          | `String s -> return s
+          | other -> fail (error ~what:(`Wrong_json json)))
+      in
+      to_strings kill
+      >>= fun to_kill ->
+      to_strings archive
+      >>= fun to_archive ->
+      return (`To_kill to_kill, `To_archive to_archive)
+    | other -> 
+      fail (error ~what:(`Wrong_json other))
+    end
 end
 
 type t = [
@@ -259,7 +286,7 @@ let targets_to_clean_up t ~how_much =
       return (targets_to_clean_up graph how_much)
     )
   | `Http_client c ->
-    fail (`Failure "get_current_graph not implemented")
+    Http_client.call_cleanable_targets ~how_much c
 
 let call_query t ~target query =
   match t with

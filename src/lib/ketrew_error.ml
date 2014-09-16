@@ -31,6 +31,8 @@ let log_client_error =
       | `Archive_target id -> s "Archiving target" % sp % quote id
       | `Target_query (id, query) ->
         s "Calling " % quote query % s " on " % quote id
+      | `Cleanable_targets _ ->
+        s "Querying cleanable targets"
     in
     let error_log = 
       match error with
