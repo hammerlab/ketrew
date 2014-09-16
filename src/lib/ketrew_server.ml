@@ -300,6 +300,29 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
     let json = Serialize_happenings.to_json happenings in
     return (`Json json)
 
+let list_cleanable_targets ~server_state ~body req =
+  check_that_it_is_a_get req >>= fun () ->
+  mandatory_parameter req ~name:"howmuch"
+  >>= fun how_much_str ->
+  begin match how_much_str with
+  | "soft" -> return `Soft
+  | "hard" -> return `Hard
+  | other ->
+    failwith (fmt "wrong-parameter: %S expecting 'soft' or 'hard'" other)
+  end
+  >>= fun how_much ->
+  Ketrew_engine.Target_graph.(
+    get_current server_state.state
+    >>= fun graph ->
+    let `To_kill to_kill, `To_archive to_archive =
+      targets_to_clean_up graph how_much in
+    let json =
+      `Assoc ["to-kill", `List (List.map to_kill ~f:(fun s -> `String s));
+              "to-archive", `List (List.map to_archive ~f:(fun s -> `String s));]
+    in
+    return (`Json json)
+  )
+
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
@@ -314,6 +337,8 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
     kill_or_archive_targets_service `Kill  ~server_state ~body req
   | "/archive-targets" ->
     kill_or_archive_targets_service `Archive  ~server_state ~body req
+  | "/cleanable-targets" ->
+    list_cleanable_targets ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 
