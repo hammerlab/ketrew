@@ -10,19 +10,23 @@ Let's create a test environment, and source the resulting shell environment:
     ./please.sh test-env
     . _obuild/test.env
 
+Let's start the server:
+
+    kdserver start
+
+You should be able to stop it with
+
+    kdserver stop
+
 Let's add some targets to the database (c.f. `src/test/cli.ml`):
 
-    kttest website
+    kdtest website some_branch
 
-Now we can start the server:
+You can always browse with the client working like in standalone mode:
 
-    ktapp start-server
+    kdclient interact
 
-The sever can be killed anytime with:
-
-    ktkillserver
-
-We use `curl`, here on the `/targets` service:
+Let's see the API itself, we use `curl`, here on the `/targets` service:
 
     curl -k "$ktest_url/targets"
 
@@ -45,24 +49,29 @@ Let's try again:
 
     curl -k "$ktest_url/targets?token=nekot&format=json"
 
-Yay we get some Json \o/ i.e. a list of target-identifiers.
+Yay we get some Json \o/ i.e. a list of target JSON representations:
 
 ```goodresult
-[
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_994326685",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_930807020",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_781944104",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_641907500",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_366831641",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_332180439",
-  "ketrew_2014-08-21-21h49m48s823ms-UTC_290180182"
+[[
+  "V0",
+  {
+    "history": [
+      "Successful",
+      [
+        1410886910.433017,
+        [
+          "Running",
+          [
+            {
+              "run_history": [
+  ...
 ]
 ```
 
-We can use `id` parameters to expand the Json serialization of one or more
+We can use `id` parameters to limit the request to one or more
 targets:
 
-    one_of_them="ketrew_2014-08-21-21h49m48s823ms-UTC_781944104"
+    one_of_them="ketrew_2014-09-16-18h02m29s828ms-UTC_290180182"
     curl -k "$ktest_url/targets?token=nekot&format=json&id=$one_of_them"
 
 or with a pretty-printer:
@@ -133,7 +142,6 @@ Error: Wrong HTTP Request: wrong method → POST
 
 What additional queries can we get on the targets?
 
-    one_of_them="ketrew_2014-09-05-20h06m11s023ms-UTC_290180182"
     curl -k "$ktest_url/target-available-queries?token=nekot&format=json&id=$one_of_them"
 
 
@@ -157,25 +165,3 @@ available for this particular target:
 ]
 ```
 
-
-
-
-    curl -d "[]" -k "$ktest_url/add-targets?token=nekot&format=json"
-    curl -d "[slkdjf]" -k "$ktest_url/add-targets?token=nekot&format=json"
-    echo "[]" | curl -d @- -k "$ktest_url/add-targets?token=nekot&format=json"
-    curl -d @sometarget.json -k "$ktest_url/add-targets?token=nekot&format=json"
-    curl  -k "$ktest_url/targets?token=nekot&format=json"
-    curl -d '["ketrew_2014-09-08-23h19m31s733ms-UTC_781944104"]' -k "$ktest_url/kill-targets?token=nekot&format=json"
-    curl -d '["ketrew_2014-09-08-23h19m31s733ms-UTC_781944104"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
-    curl -d '["lksjdaflkdjs"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
-    curl -d '["ketrew_2014-09-08-23h19m31s732ms-UTC_641907500"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
-    curl -d '["ketrew_2014-08-21-21h49m48s823ms-UTC_781944104"]' -k "$ktest_url/archive-targets?token=nekot&format=json"
-
-<!--
-" Vim stuff:
-
-let $ktest_url="https://localhost:8443"
-nmap <leader>I 0mki:read !<esc><leader>x`k07x
-nmap <leader>E Ilet $<esc>V<leader>xu
-
--->
