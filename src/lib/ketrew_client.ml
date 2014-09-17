@@ -192,8 +192,10 @@ let create configuration =
     Http_client.create c
     >>= fun client ->
     return (`Http_client client)
-  | `Server c ->
-    fail (`Wrong_configuration (`Found "server", `Expected "client/standalone"))
+  | `Server s ->
+    Standalone.create (Ketrew_configuration.standalone_of_server s)
+    >>= fun standalone ->
+    return (`Standalone standalone)
 
 let release  = function
 | `Standalone s -> Standalone.release s
