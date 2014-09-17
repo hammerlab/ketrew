@@ -145,7 +145,7 @@ module Interaction = struct
   let menu_item ?char ?(log=Log.empty) v =
     (char, log, v)
 
-  let menu ?(max_per_page=10) ?(always_there=[]) ~sentence items =
+  let menu ?(max_per_page=15) ?(always_there=[]) ~sentence items =
     (* let item_number = List.length items in *)
     let items_splitted =
       let split_number = max_per_page - (List.length always_there) in
@@ -222,15 +222,21 @@ module Interaction = struct
       end
     )
 
+  (** Sort a list of targets from the most recent to the oldest 
+      (using the unique IDs which is hackish …). *)
+  let sort_target_list =
+    List.sort ~cmp:(fun ta tb -> compare (Target.id tb) (Target.id ta))
+
   let build_sublist_of_targets 
       ~client ~list_name ~all_log ~go_verb ~filter =
     Ketrew_client.current_targets client
+    >>| List.filter ~f:(fun target -> filter target)
+    >>| sort_target_list
     >>= fun all_targets ->
     let to_process = ref [] in
     let all_valid_targets () =
       List.filter all_targets ~f:(fun target ->
-          filter target 
-          && not (List.exists !to_process ~f:(fun id -> id = Target.id target)))
+          not (List.exists !to_process ~f:(fun id -> id = Target.id target)))
     in
     let target_menu () =
       List.map (all_valid_targets ()) ~f:(fun t ->
@@ -267,14 +273,11 @@ module Interaction = struct
     loop ()
 
   let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
-    List.filter_map targets ~f:(fun target ->
-        match filter_target target with
-        | false -> None
-        | true ->
-          Some (
-            menu_item 
-              ~log:Log.(format_target_for_menu target)
-              (`Go (Target.id target))))
+    List.filter targets ~f:filter_target
+    |> sort_target_list
+    |> List.map ~f:(fun target ->
+        menu_item ~log:Log.(format_target_for_menu target)
+          (`Go (Target.id target)))
 
 end
 
