@@ -595,6 +595,7 @@ module Explorer = struct
     Interaction.([
         menu_item ~char:'Q' ~log:Log.(s "Quit explorer") `Quit;
         menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
+        menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
       ])
 
   let filter ~log ~char f =
@@ -829,6 +830,9 @@ module Explorer = struct
       end
       >>= fun add_info ->
       target_status ~client ~viewer ?add_info exploration_state target
+    | `Reload ->
+      Ketrew_client.get_target client (Ketrew_target.id target) >>= fun chosen ->
+      target_status ~client ~viewer exploration_state chosen
     | `Cancel | `Quit as up -> return up
 
   let rec explore ~client exploration_state_stack =
@@ -845,6 +849,7 @@ module Explorer = struct
           >>= function
           | `Cancel -> go_back ~client history (* go back in history *)
           | `Quit -> return ()
+          | `Reload -> explore ~client exploration_state_stack
           | `Set_with_archived b ->
             explore ~client ({one with show_archived = b } :: history)
           | `Filter ->
@@ -859,6 +864,7 @@ module Explorer = struct
           >>= function
           | `Cancel -> go_back ~client history
           | `Quit -> return ()
+          | `Reload -> explore ~client exploration_state_stack
           | `Show_make build_process_details ->
             explore ~client ({ one with build_process_details }  :: history)
           | `Show_condition condition_details ->
@@ -902,11 +908,22 @@ module Explorer = struct
             view_json ~client chosen >>= fun () ->
             explore ~client (one :: history)
           | `Follow_dependencies | `Follow_fallbacks as follow ->
-            let target_ids =
+            let target_ids t =
               match follow with
-              | `Follow_fallbacks -> chosen.Target.if_fails_activate
-              | `Follow_dependencies -> chosen.Target.dependencies in
-            begin pick_a_target_from_list ~client target_ids
+              | `Follow_fallbacks -> t.Target.if_fails_activate
+              | `Follow_dependencies -> t.Target.dependencies in
+            let rec next_target ids =
+              begin pick_a_target_from_list ~client ids
+                >>= function
+                | `Cancel -> return `Cancel
+                | `Quit -> return `Quit
+                | `Reload ->
+                  Ketrew_client.get_target client chosen_id >>= fun chosen ->
+                  next_target (target_ids chosen)
+                | `Go t -> return (`Go t)
+              end
+            in
+            begin next_target (target_ids chosen)
               >>= function
               | `Cancel -> go_back ~client (one :: history)
               | `Quit -> return ()
