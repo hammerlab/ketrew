@@ -167,3 +167,4 @@ val log: t -> Log.t
 val connection: client -> string
 val token: client -> string
 
+val standalone_of_server: server -> standalone

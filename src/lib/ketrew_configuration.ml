@@ -334,3 +334,6 @@ let server_engine s = s.server_engine
 let connection c = c.connection
 let token c = c.token
 
+let standalone_of_server s = 
+  {standalone_ui = s.server_ui;
+   standalone_engine = s.server_engine;}
