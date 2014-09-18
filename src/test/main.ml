@@ -148,10 +148,33 @@ let mini_db_test () =
         set ~key:"k2" "uuu";
         contains ~key:"k" "V";
         contains ~key:"k2" "uuu";
+        unset "k2";
+        is_not_set "k2";
       ])
       >>= function
       | `Done -> return ()
       | `Not_done -> Test.fail "seq 4 not done"; return ()
+    end
+    >>= fun () ->
+    (* Transation that fails: *)
+    begin DB.act db2 DB.(seq [
+        is_not_set "k2";
+        set ~key:"k2" "from seq 6";
+        set ~key:"" "vvv";
+      ])
+      >>< function
+      | `Ok _ -> Test.fail "seq 5 did not fail"; return ()
+      | `Error (`Database _) -> return ()
+    end
+    >>= fun () ->
+    (* Transation that keeps going: *)
+    begin DB.act db2 DB.(seq [
+        is_not_set "k2";
+        set ~key:"k2" "vvv";
+      ])
+      >>= function
+      | `Done -> return ()
+      | `Not_done -> Test.fail "seq 6 not done"; return ()
     end
     >>= fun () ->
     return ()
