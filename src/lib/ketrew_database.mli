@@ -78,10 +78,15 @@ val global_debug_level: int ref
 (** Debug-logging level used in the module (default: 4). *)
 
 (** {3 Testing Help} *)
+
+(** This module should be used only by the tests; with {!Debug.global_debug}
+    one can inject a {i harder} failure (exception thrown)
+    at a precise given point (see {!Debug.t}). *)
 module Debug: sig
 
   type t =  No | After_write of string
          | After_git_add of string 
          | After_git_rm of string 
+
   val global_debug: t ref
 end
