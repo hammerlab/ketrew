@@ -40,7 +40,7 @@ let exec ?(bin="") argl =
         Lwt_list.map_p Lwt_io.read
           [process#stdout; process#stderr; ]
         >>= fun output_2list ->
-        process#status >>= fun status ->
+        process#close >>= fun status ->
         return (status, output_2list))
   >>= fun (ret, output_2list) ->
   let code =
