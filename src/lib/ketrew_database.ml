@@ -62,6 +62,36 @@ type t = {
 }
 let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
 
+module Debug = struct
+
+  type t =  No | After_write of string 
+         | After_git_add of string  | After_git_rm of string 
+  let global_debug = ref No
+
+  exception E
+  let after_write k =
+    match !global_debug with
+    | After_write s when s = k ->
+      Log.(s "Throwing Debug exn: After_write" % sp % s k @ warning);
+      raise E
+    | _ -> ()
+
+  let after_git_add k  =
+    match !global_debug with
+    | After_git_add s when s = k ->
+      Log.(s "Throwing Debug exn: After_git_add" % sp % s k @ warning);
+      raise E
+    | _ -> ()
+
+  let after_git_rm k  =
+    match !global_debug with
+    | After_git_rm s when s = k ->
+      Log.(s "Throwing Debug exn: After_git_rm" % sp % s k @ warning);
+      raise E
+    | _ -> ()
+
+end
+
 let db_process_shell ~loc cmd =
   System.Shell.do_or_fail (String.concat ~sep:" " (List.map cmd ~f:Filename.quote))
   >>< function
@@ -139,9 +169,11 @@ let get_no_mutex t ~key =
   | `Error (`IO (`Read_file_exn (s, e))) ->
     return None
 
+let checkout_master = ["checkout"; "master"; "-f"]
+
 let get t ~key =
   Lwt_mutex.with_lock t.mutex (fun () -> 
-      call_git t ~loc:(`Get key)  ["checkout"; "master"]
+      call_git t ~loc:(`Get key) checkout_master
       >>= fun () ->
       get_no_mutex t ~key)
 
@@ -154,16 +186,19 @@ let act t ~action =
       let path = Filename.concat t.path key in
       IO.write_file path ~content:value
       >>= fun () ->
+      Debug.after_write key;
       call_git ["add"; path]
       >>= fun () ->
+      Debug.after_git_add key;
       let msg = fmt "Set %s" key in
-      call_git ["commit"; "-m"; msg]
+      call_git ["commit"; "--allow-empty"; "-m"; msg]
     | Unset key ->
       let path = Filename.concat t.path key in
-      call_git ["rm"; path]
+      call_git ["rm"; "--ignore-unmatch"; path]
       >>= fun () ->
+      Debug.after_git_rm key;
       let msg = fmt "UnSet %s" key in
-      call_git ["commit"; "-m"; msg]
+      call_git ["commit"; "--allow-empty"; "-m"; msg]
     | Check (key, value_opt) ->
       get_no_mutex t key
       >>= fun content_opt ->
@@ -177,7 +212,8 @@ let act t ~action =
   in
   begin
     Lwt_mutex.with_lock t.mutex (fun () ->
-        call_git ["checkout"; "master"]
+        Log.(s "Starting transaction " % s branch_name @ very_verbose);
+        call_git checkout_master
         >>= fun () ->
         call_git ["checkout"; "-b"; branch_name]
         >>= fun () ->
