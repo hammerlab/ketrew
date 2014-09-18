@@ -63,21 +63,21 @@ type t = {
 let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
 
 let db_process_shell ~loc cmd =
-  Log.(s "Database-command (Shell):"
-       % sp % OCaml.(list string cmd) @ very_verbose);
   System.Shell.do_or_fail (String.concat ~sep:" " (List.map cmd ~f:Filename.quote))
   >>< function
   | `Ok () -> return ()
   | `Error e ->
+    Log.(s "Database-command failure (Shell):"
+         % sp % OCaml.(list string cmd) @ very_verbose);
     fail (`Database (loc, System.error_to_string e))
 
 let db_process_exec ~loc cmd =
-  Log.(s "Database-command (exec):"
-       % sp % OCaml.(list string cmd) @ very_verbose);
   Ketrew_unix_process.succeed cmd
   >>< function
   | `Ok (_, _) -> return ()
   | `Error e ->
+    Log.(s "Database-command failure (exec):"
+         % sp % OCaml.(list string cmd) @ very_verbose);
     fail (`Database (loc, Ketrew_unix_process.error_to_string e))
 
 let call_git ~loc t cmd =
