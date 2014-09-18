@@ -133,15 +133,17 @@ let close t =
   return ()
 
 let get_no_mutex t ~key =
-  call_git t ~loc:(`Get key)  ["checkout"; "master"]
-  >>= fun () ->
   IO.read_file (Filename.concat t.path key)
   >>< function
   | `Ok o -> return (Some o)
   | `Error (`IO (`Read_file_exn (s, e))) ->
     return None
+
 let get t ~key =
-  Lwt_mutex.with_lock t.mutex (fun () -> get_no_mutex t ~key)
+  Lwt_mutex.with_lock t.mutex (fun () -> 
+      call_git t ~loc:(`Get key)  ["checkout"; "master"]
+      >>= fun () ->
+      get_no_mutex t ~key)
 
 let act t ~action =
   let branch_name = Unique_id.create () in
@@ -154,13 +156,13 @@ let act t ~action =
       >>= fun () ->
       call_git ["add"; path]
       >>= fun () ->
-      let msg = fmt "Set %s" path in
+      let msg = fmt "Set %s" key in
       call_git ["commit"; "-m"; msg]
     | Unset key ->
       let path = Filename.concat t.path key in
       call_git ["rm"; path]
       >>= fun () ->
-      let msg = fmt "Set %s" key in
+      let msg = fmt "UnSet %s" key in
       call_git ["commit"; "-m"; msg]
     | Check (key, value_opt) ->
       get_no_mutex t key
@@ -190,9 +192,12 @@ let act t ~action =
   | `Error e ->
     begin match e with
     | `Check_failed (key, v, c) -> 
-      Log.(s "Database transaction failed because check failed:" % sp
+      begin call_git ["branch"; "-a"] >>< fun _ -> return () end
+      >>= fun () ->
+      Log.(s "Database transaction" % sp % quote branch_name  % sp
+           % s "failed because check failed:" % sp
            % s "at" % sp % OCaml.string key % sp % OCaml.(option string c) %sp
-           % s " instead of " % OCaml.(option string c) @ verbose);
+           % s " instead of " % OCaml.(option string v) @ verbose);
       return `Not_done
     | `Database (`Get k, s) -> fail (`Database (`Act action, 
                                                 fmt "getting %S: %s" k s))
