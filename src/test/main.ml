@@ -129,10 +129,29 @@ let mini_db_test () =
       | `Not_done -> Test.fail "seq 2 not done"; return ()
     end
     >>= fun () ->
-    begin DB.act db2 DB.(seq [contains ~key:"k" "v"])
+    (* Transation that fails: *)
+    begin DB.act db2 DB.(seq [
+        set ~key:"k2" "vvv";
+        set ~key:"k3" "vvv";
+        set ~key:"k2" "uuu";
+        contains ~key:"k" "u"])
       >>= function
       | `Not_done -> return ()
       | `Done -> Test.fail "seq 3 done"; return ()
+    end
+    >>= fun () ->
+    (* Transation that succeeds: *)
+    begin DB.act db2 DB.(seq [
+        is_not_set "k2";
+        set ~key:"k2" "vvv";
+        contains ~key:"k2" "vvv";
+        set ~key:"k2" "uuu";
+        contains ~key:"k" "V";
+        contains ~key:"k2" "uuu";
+      ])
+      >>= function
+      | `Done -> return ()
+      | `Not_done -> Test.fail "seq 4 not done"; return ()
     end
     >>= fun () ->
     return ()
