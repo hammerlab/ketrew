@@ -27,8 +27,9 @@ let log_client_error =
       | `Call (meth, the_uri) ->
         s (Cohttp.Code.string_of_method meth) % sp % uri the_uri
       | `Targets -> s "Getting targets"
-      | `Kill_target id -> s "Killing target" % sp % quote id
-      | `Archive_target id -> s "Archiving target" % sp % quote id
+      | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
+      | `Archive_targets ids ->
+        s "Archiving targets" % sp % OCaml.list quote ids
       | `Target_query (id, query) ->
         s "Calling " % quote query % s " on " % quote id
       | `Cleanable_targets _ ->

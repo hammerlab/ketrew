@@ -121,13 +121,13 @@ module Http_client = struct
     end
 
   let kill_or_archive t what =
-    let id, error_loc, path =
+    let ids, error_loc, path =
       match what with
-      | `Kill_target i as e -> i, e, "/kill-targets" 
-      | `Archive_target i as e -> i, e, "/archive-targets"
+      | `Kill_targets i as e -> i, e, "/kill-targets" 
+      | `Archive_targets i as e -> i, e, "/archive-targets"
     in
-    let json = `List [`String id] in
-    call_json t ~path ~meta_meth:(`Post_json json) 
+    let json = `List (List.map ids (fun id -> `String id)) in
+    call_json t ~path ~meta_meth:(`Post_json json)
     >>= fun json ->
     begin try
       Serialize_happenings.of_json_exn json |> return
@@ -135,8 +135,8 @@ module Http_client = struct
       fail (`Client (`Http (error_loc, `Wrong_json json)))
     end
 
-  let kill t ~id = kill_or_archive t (`Kill_target id)
-  let archive t ~id = kill_or_archive t (`Archive_target id)
+  let kill t id_list = kill_or_archive t (`Kill_targets id_list)
+  let archive t id_list = kill_or_archive t (`Archive_targets id_list)
 
   let call_query t ~target query =
     let id = Ketrew_target.id target in
@@ -243,21 +243,25 @@ let current_targets ?(archived=false) = function
 | `Http_client c ->
   Http_client.get_current_targets ~archived c
 
-let kill t ~id =
+let kill t id_list =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_engine.kill s.engine ~id
+    Deferred_list.while_sequential id_list (fun id ->
+        Ketrew_engine.kill s.engine ~id)
+    >>| List.concat
   | `Http_client c ->
-    Http_client.kill c ~id
+    Http_client.kill c id_list
 
-let archive t ~id =
+let archive t id_list =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_engine.archive_target s.engine id
+    Deferred_list.while_sequential id_list (fun id ->
+        Ketrew_engine.archive_target s.engine id)
+    >>| List.concat
   | `Http_client c ->
-    Http_client.archive c ~id
+    Http_client.archive c id_list
 
 let is_archived t ~id =
   match t with

@@ -478,25 +478,15 @@ let kill ~client ~interactive ids =
          | 0 -> s "There is nothing to kill."
          | _ -> s "Killing " % OCaml.list s to_kill)
         @ warning);
-      Deferred_list.while_sequential to_kill (fun id ->
-          Ketrew_client.kill client ~id
-          >>= function
-          | [`Target_died (_, `Killed)] -> 
-            Log.(s "Target " % s id % s " killed" @ normal); 
-            return ()
-          | [`Target_died (_, `Plugin_not_found p)] -> 
-            Log.(s "Target " % s id % s ": plugin not found: " % sf "%S" p
-                 @ error); 
-            return ()
-          | [] ->
-            Log.(s "Target " % s id % s " was already finished" @ warning); 
-            return ()
-          | more ->
-            Log.(s "Target " % s id % s ": too much happened :" %
-                 OCaml.list Ketrew_engine.log_what_happened more @ error); 
-            return ()
-        )
-      >>= fun (_ : unit list) ->
+      Ketrew_client.kill client to_kill
+      >>= fun happenings ->
+      List.iter happenings ~f:(function
+        | `Target_died (id, `Killed) -> 
+          Log.(s "Target " % s id % s " killed" @ normal); 
+        | other ->
+          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
+               @ error); 
+        );
       return ()
     | `Cancel -> 
       Log.(s "Cancelling murder plans." @ normal);
@@ -519,15 +509,15 @@ let archive ~client ~interactive ids =
       let to_archive = additional_ids @ ids in
       if List.length to_archive = 0 then 
         Log.(s "There is nothing to archive." @ warning);
-      Deferred_list.while_sequential to_archive (fun id ->
-          Ketrew_client.archive client ~id)
-      >>| List.concat
-      >>= fun what_happened ->
-      Log.(s "→ " % n
-           % (separate n 
-                (List.map ~f:Ketrew_engine.log_what_happened what_happened) 
-              |> indent)
-           @ warning);
+      Ketrew_client.archive client to_archive
+      >>= fun happenings ->
+      List.iter happenings ~f:(function
+        | `Target_archived id -> 
+          Log.(s "Target " % s id % s " killed" @ normal); 
+        | other ->
+          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
+               @ error); 
+        );
       return ()
     | `Cancel ->
       Log.(s "Cancelling archival" @ normal);
@@ -880,7 +870,7 @@ module Explorer = struct
             end
           | `Kill ->
             Log.(s "Killing target …" @ warning);
-            Ketrew_client.kill client (Target.id chosen)
+            Ketrew_client.kill client [Target.id chosen]
             >>= fun what_happened ->
             Log.(s "→ " % s (Target.name chosen) % n
                  % (separate n 
@@ -889,7 +879,7 @@ module Explorer = struct
                  @ warning);
             explore ~client (one :: history)
           | `Archive ->
-            Ketrew_client.archive client (Target.id chosen)
+            Ketrew_client.archive client [Target.id chosen]
             >>= fun what_happened ->
             Log.(s "Archival of " % s (Target.name chosen) % n
                  % (separate n 
