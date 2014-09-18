@@ -3,7 +3,7 @@
 version_string="0.0.1-prealpha"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
   atd cconv.yojson \
-  yojson uri toml dbm cohttp.lwt lwt ssl conduit dynlink findlib"
+  yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="ISC"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )

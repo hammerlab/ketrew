@@ -40,6 +40,7 @@ let rec log_action =
 
 type error =
   [ `Act of action | `Get of string | `Load of string | `Close ] * string
+
 let log_error = function
 | `Database (what, msg) ->
   Log.(s "Database" % sp
@@ -53,94 +54,151 @@ let log_error = function
 
 (* type stupid_db = Ketrew_gen_base_v0_t.stupid_db *)
 type t = {
-  mutable db: Dbm.t;
+  (* mutable db: Dbm.t; *)
   (* mutable history: (action * stupid_db) list; *)
-  parameters: string;
+  path: string;
+  mutex: Lwt_mutex.t;
+  exec_style: [`Shell | `Exec];
 }
-let create db parameters = {db; parameters} 
+let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
 
-(* let save t = *)
-(*   let content = Ketrew_gen_base_v0_j.string_of_database t in *)
-(*   IO.write_file t.parameters ~content *)
-
-exception In_thread_exception of string
-let failwithf fmt = Printf.ksprintf (fun s -> raise (In_thread_exception s)) fmt
-
-let wrap_dbm_call ~error_location f =
-  Lwt_preemptive.detach (fun () ->
-      try
-        `Ok (f ())
-      with
-      | Dbm.Dbm_error s ->
-        `Error (`Database (error_location, s))
-      | In_thread_exception s ->
-        `Error (`Database (error_location, s))
-    ) ()
+let db_process_shell ~loc cmd =
+  Log.(s "Database-command (Shell):"
+       % sp % OCaml.(list string cmd) @ very_verbose);
+  System.Shell.do_or_fail (String.concat ~sep:" " (List.map cmd ~f:Filename.quote))
   >>< function
-  | `Ok o -> return o
-  | `Error (`Database _ as e) -> fail e
+  | `Ok () -> return ()
+  | `Error e ->
+    fail (`Database (loc, System.error_to_string e))
 
-let load path =
-  wrap_dbm_call (fun () -> 
-      let db =
-        Dbm.opendbm path [Dbm.Dbm_rdwr; Dbm.Dbm_create] 0o600 in
-      at_exit (fun () -> try Dbm.close db with e -> ());
-      db
-    )
-    ~error_location:(`Load path)
-  >>= fun db ->
-  return (create db path)
+let db_process_exec ~loc cmd =
+  Log.(s "Database-command (exec):"
+       % sp % OCaml.(list string cmd) @ very_verbose);
+  Ketrew_unix_process.succeed cmd
+  >>< function
+  | `Ok (_, _) -> return ()
+  | `Error e ->
+    fail (`Database (loc, Ketrew_unix_process.error_to_string e))
+
+let call_git ~loc t cmd =
+  let actualexec = [
+    "git"; "-C"; t.path;
+  ] @ cmd in
+      match t.exec_style with
+      | `Shell -> db_process_shell ~loc actualexec
+      | `Exec -> db_process_exec ~loc actualexec
+
+let load init_path =
+  let path = 
+    if Filename.is_relative init_path
+    then Filename.concat (Sys.getcwd ()) init_path
+    else init_path in
+  let creation_witness =  (Filename.concat path "_ketrew_database_init") in
+  begin
+    System.file_info ~follow_symlink:true creation_witness
+    >>= fun file_info ->
+    begin match file_info with
+    | `Regular_file _ -> 
+      let t = create path in
+      call_git  ~loc:(`Load path)  t ["checkout"; "master"]
+      >>= fun () ->
+      return t
+    | `Absent ->
+      System.ensure_directory_path ~perm:0o700 path
+      >>= fun () ->
+      let t = create path in
+      call_git  ~loc:(`Load path)  t ["init"]
+      >>= fun () ->
+      IO.write_file creation_witness ~content:"OK"
+      >>= fun () ->
+      call_git  ~loc:(`Load path)  t ["add"; creation_witness]
+      >>= fun () ->
+      call_git  ~loc:(`Load path)  t ["commit"; "-m"; "Initialize database"]
+      >>= fun () ->
+      return t
+    | other ->
+      fail (`Database (`Load path, fmt "%S not a file: %s" path 
+                         (System.file_info_to_string other)))
+    end
+  end >>< function
+  | `Ok o -> return o
+  | `Error e ->
+    begin match e with
+    | `Database _ as e -> fail e
+    | `IO _ as e -> fail (`Database (`Load path, IO.error_to_string e))
+    | `System _ as e -> fail (`Database (`Load path, System.error_to_string e))
+    end
 
 let close t =
-  wrap_dbm_call (fun () -> Dbm.close t.db) ~error_location:(`Close)
+  return ()
 
-let dbm_get t key = try Some (Dbm.find t.db key) with Not_found ->  None
-
+let get_no_mutex t ~key =
+  call_git t ~loc:(`Get key)  ["checkout"; "master"]
+  >>= fun () ->
+  IO.read_file (Filename.concat t.path key)
+  >>< function
+  | `Ok o -> return (Some o)
+  | `Error (`IO (`Read_file_exn (s, e))) ->
+    return None
 let get t ~key =
-  wrap_dbm_call (fun () -> dbm_get t key) ~error_location:(`Get key)
-  >>= fun o ->
-  Log.(s "got " % sf "%S" key % s ", " % OCaml.option s o  @ local_verbosity ());
-  return o
-
-(* Sqlite3 does not work on Maxosx, Dbm does not have transactions,
-   so here is a non-ACID transaction implementation. *)
-let act_thread t ~action =
-  let open Result in
-  let go_backwards = ref [] in
-  let rec go act = 
-    Log.(s "DB: " % s "go " % log_action act @ local_verbosity ());
-    match act with
-    | Set (key, value) ->
-      let previous = 
-        match dbm_get t key with
-        | None -> Unset key
-        | Some s -> Set (key, s)
-      in
-      Dbm.replace t.db key value;
-      go_backwards :=  previous :: !go_backwards;
-      Log.(s "success: " % log_action act @ local_verbosity ());
-      true
-    | Unset key ->
-      begin match dbm_get t key with
-      | None -> true (* nothing to do *)
-      | Some s ->
-        Dbm.remove t.db key;
-        go_backwards := Set (key, s) :: !go_backwards;
-        true
-      end
-    | Check (key, value) ->
-      let indb = dbm_get t key in
-      indb = value 
-    | Sequence actions -> List.for_all actions go
-  in
-  if go action 
-  then `Done
-  else (if go (Sequence !go_backwards)
-        then  `Not_done 
-        else
-          failwithf "fatal: transaction failed to go back")
+  Lwt_mutex.with_lock t.mutex (fun () -> get_no_mutex t ~key)
 
 let act t ~action =
-  wrap_dbm_call (fun () -> act_thread t ~action) 
-    ~error_location:(`Act action)
+  let branch_name = Unique_id.create () in
+  let call_git = call_git ~loc:(`Act action) t in
+  let rec go =
+    function
+    | Set (key, value) ->
+      let path = Filename.concat t.path key in
+      IO.write_file path ~content:value
+      >>= fun () ->
+      call_git ["add"; path]
+      >>= fun () ->
+      let msg = fmt "Set %s" path in
+      call_git ["commit"; "-m"; msg]
+    | Unset key ->
+      let path = Filename.concat t.path key in
+      call_git ["rm"; path]
+      >>= fun () ->
+      let msg = fmt "Set %s" key in
+      call_git ["commit"; "-m"; msg]
+    | Check (key, value_opt) ->
+      get_no_mutex t key
+      >>= fun content_opt ->
+      if content_opt = value_opt
+      then return ()
+      else fail (`Check_failed (key, value_opt, content_opt))
+    | Sequence l ->
+      Deferred_list.while_sequential l ~f:go
+      >>= fun (_ : unit list) ->
+      return ()
+  in
+  begin
+    Lwt_mutex.with_lock t.mutex (fun () ->
+        call_git ["checkout"; "master"]
+        >>= fun () ->
+        call_git ["checkout"; "-b"; branch_name]
+        >>= fun () ->
+        go action
+        >>= fun () ->
+        call_git ["checkout"; "master"]
+        >>= fun () ->
+        call_git ["merge"; branch_name]
+      ) end
+  >>< function
+  | `Ok () -> return `Done
+  | `Error e ->
+    begin match e with
+    | `Check_failed (key, v, c) -> 
+      Log.(s "Database transaction failed because check failed:" % sp
+           % s "at" % sp % OCaml.string key % sp % OCaml.(option string c) %sp
+           % s " instead of " % OCaml.(option string c) @ verbose);
+      return `Not_done
+    | `Database (`Get k, s) -> fail (`Database (`Act action, 
+                                                fmt "getting %S: %s" k s))
+    | `Database (`Act _, _) as e -> fail e
+    | `IO _ as e -> fail (`Database (`Act action, IO.error_to_string e))
+    end
+
+      
 
