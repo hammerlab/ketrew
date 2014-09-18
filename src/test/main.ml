@@ -564,48 +564,6 @@ let test_long_running_nohup () =
     Test.fail "test_long_running_nohup ends with error"
 
 
-let test_config_file_parsing () =
-  ()
-(*   let open Ketrew.Configuration in *)
-(*   let () = *)
-(*     let base =  ~database_parameters:"aaabbb" () in *)
-(*     match *)
-(*       parse "# Example config\n\ *)
-(*                   more-useless-key = 42\n\ *)
-(*                   [database] # Section DB\n\ *)
-(*                   path = \"aaabbb\"\n\ *)
-(*             " with *)
-(*     | `Ok parsed when parsed = base -> () *)
-(*     | _ -> Test.fail "test_config_file_parsing 1" *)
-(*   in *)
-(*   let () = *)
-(*     let base = *)
-(*       create *)
-(*         ~persistent_engine_key:"some-key" ~database_parameters:"aaabbb" () in *)
-(*     match *)
-(*       parse "# Example config\n\ *)
-(*              more-useless-key = 42\n\ *)
-(*              [database] # Section DB\n\ *)
-(*              path = \"aaabbb\"\n\ *)
-(*              engine-key = \"some-key\"\n\ *)
-(*              " with *)
-(*     | `Ok parsed when parsed = base -> () *)
-(*     | _ -> Test.fail "test_config_file_parsing 2" *)
-(*   in *)
-(*   let () = *)
-(*     match parse "# some comment\nengine-key= \"no path\"" with *)
-(*     | `Error _ -> () *)
-(*     | `Ok _ -> Test.fail "no database-path in config should fail" *)
-(*   in *)
-(*   let () = *)
-(*     match parse "# some comment\n[database]engine-key= \"no path\"" with *)
-(*     | `Error _ -> () *)
-(*     | `Ok _ -> Test.fail "no database-path in config should fail" *)
-(*   in *)
-(*   () *)
-
-
-
 let () =
   let argl = Sys.argv |> Array.to_list in
   global_with_color := not (List.mem ~set:argl "-no-color");
@@ -614,7 +572,6 @@ let () =
   if List.mem ~set:argl "db-test" || all then mini_db_test ();
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
-  if List.mem ~set:argl "config-file" || all then test_config_file_parsing ();
   if List.mem ~set:argl "ssh-failure" || all then test_ssh_failure_vs_target_failure ();
   begin match !Test.failed_tests with
   | [] ->
