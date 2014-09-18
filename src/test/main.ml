@@ -177,6 +177,43 @@ let mini_db_test () =
       | `Not_done -> Test.fail "seq 6 not done"; return ()
     end
     >>= fun () ->
+    (* Transations that fail harder: *)
+    let test_with_debug_artificial_failure name f =
+      DB.Debug.(global_debug := f "k2");
+      begin
+        Lwt.catch (fun () ->
+            DB.act db2 DB.(seq [
+                set ~key:"k2" "rrr";
+                set ~key:"k2" "uuu";
+                unset "k2";
+              ])
+            >>< function
+            | _ -> Test.fail (fmt "seq %s not exn" name); return ())
+          (fun e -> return ())
+      end
+      >>= fun () ->
+      DB.Debug.(global_debug := No);
+      (* We should be like end of seq 6 *)
+      begin DB.act db2 DB.(seq [
+          contains ~key:"k2" "vvv";
+          set ~key:"k3" "uuu";
+          unset "k3";
+          unset "k3";
+        ])
+        >>= function
+        | `Done -> return ()
+        | `Not_done -> Test.fail (fmt "seq %s+1 not done" name); return ()
+      end
+    in
+    test_with_debug_artificial_failure "After_write"
+      (fun k -> DB.Debug.After_write k)
+    >>= fun () ->
+    test_with_debug_artificial_failure "After_git_add"
+      (fun k -> DB.Debug.After_git_add k)
+    >>= fun () ->
+    test_with_debug_artificial_failure "After_git_rm"
+      (fun k -> DB.Debug.After_git_rm k)
+    >>= fun () ->
     return ()
   end
   |> function
