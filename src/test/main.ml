@@ -156,28 +156,7 @@ let mini_db_test () =
       | `Not_done -> Test.fail "seq 4 not done"; return ()
     end
     >>= fun () ->
-    (* Transation that fails: *)
-    begin DB.act db2 DB.(seq [
-        is_not_set "k2";
-        set ~key:"k2" "from seq 6";
-        set ~key:"" "vvv";
-      ])
-      >>< function
-      | `Ok _ -> Test.fail "seq 5 did not fail"; return ()
-      | `Error (`Database _) -> return ()
-    end
-    >>= fun () ->
-    (* Transation that keeps going: *)
-    begin DB.act db2 DB.(seq [
-        is_not_set "k2";
-        set ~key:"k2" "vvv";
-      ])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 6 not done"; return ()
-    end
-    >>= fun () ->
-    (* Transations that fail harder: *)
+    (* Transations that fail hard: *)
     let test_with_debug_artificial_failure name f =
       DB.Debug.(global_debug := f "k2");
       begin
@@ -195,7 +174,7 @@ let mini_db_test () =
       DB.Debug.(global_debug := No);
       (* We should be like end of seq 6 *)
       begin DB.act db2 DB.(seq [
-          contains ~key:"k2" "vvv";
+          is_not_set "k2";
           set ~collection:"c3" ~key:"k3" "uuu";
           unset ~collection:"c3" "k3";
           unset ~collection:"c3" "k3";
@@ -208,12 +187,41 @@ let mini_db_test () =
     test_with_debug_artificial_failure "After_write"
       (fun k -> DB.Debug.After_write k)
     >>= fun () ->
+
     test_with_debug_artificial_failure "After_git_add"
       (fun k -> DB.Debug.After_git_add k)
     >>= fun () ->
     test_with_debug_artificial_failure "After_git_rm"
       (fun k -> DB.Debug.After_git_rm k)
     >>= fun () ->
+    let check_collection collection result =
+      let check r =
+        let sort = List.sort ~cmp:String.compare in
+        sort r = sort result in
+      DB.get_all db2 ~collection
+      >>= function
+      | r when check r -> return ()
+      | other ->
+        Test.fail (fmt "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
+                     collection (String.concat ~sep:", " result)
+                     (String.concat ~sep:", " other));
+        return ()
+    in
+    check_collection "" [] >>= fun () ->
+    check_collection "aslkdj" [] >>= fun () ->
+    check_collection "c3" [] >>= fun () ->
+    let collection = "c3" in
+    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                        set ~collection ~key:"k2" "v2"])
+    >>= fun _ ->
+    check_collection collection ["v1"; "v2"] >>= fun () ->
+    let collection = "c4" in
+    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                        set ~collection ~key:"k2" "v2"])
+    >>= fun _ ->
+    check_collection collection ["v1"; "v2"] >>= fun () ->
+    (* check_collection "c3" ["sld"] >>= fun () -> *)
+
     return ()
   end
   |> function
