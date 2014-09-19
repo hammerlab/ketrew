@@ -132,7 +132,7 @@ let mini_db_test () =
     (* Transation that fails: *)
     begin DB.act db2 DB.(seq [
         set ~key:"k2" "vvv";
-        set ~key:"k3" "vvv";
+        set ~collection:"c3" ~key:"k3" "vvv";
         set ~key:"k2" "uuu";
         contains ~key:"k" "u"])
       >>= function
@@ -196,9 +196,9 @@ let mini_db_test () =
       (* We should be like end of seq 6 *)
       begin DB.act db2 DB.(seq [
           contains ~key:"k2" "vvv";
-          set ~key:"k3" "uuu";
-          unset "k3";
-          unset "k3";
+          set ~collection:"c3" ~key:"k3" "uuu";
+          unset ~collection:"c3" "k3";
+          unset ~collection:"c3" "k3";
         ])
         >>= function
         | `Done -> return ()
