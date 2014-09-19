@@ -142,12 +142,14 @@ let save_persistent t persistent =
     | `Not_done -> fail (`Database_unavailable key)
   end
 
+let set_target_db_action target =
+  Database.(set ~collection:"targets"
+              ~key:target.Target.id Target.(serialize target))
+
 let add_or_update_target t target =
   database t
   >>= fun db ->
-  begin Database.(act db 
-                    (set ~collection:"targets"
-                       ~key:target.Target.id Target.(serialize target)))
+  begin Database.(act db (set_target_db_action target))
     >>= function
     | `Done -> return ()
     | `Not_done ->
@@ -277,40 +279,56 @@ module Target_graph = struct
 
 end 
 
-let add_target t target =
-  add_or_update_target t target
-  >>= fun () ->
-  get_persistent t
-  >>= fun persistent ->
-  begin
-    current_targets t
-    >>| List.filter 
-      ~f:(fun t ->
-          Target.Is.(created t || activated t || running t)
-          && Target.is_equivalent target t)
-    >>= fun targets ->
-    Log.(s "Target " % Target.log target % s " is "
-         % (match targets with
-           | [] -> s "pretty fresh"
-           | more -> s " equivalent to " % OCaml.list Target.log targets)
-         @ very_verbose);
-    begin match targets with
-    | [] ->
-      let new_persistent = Persistent_state.add persistent target in
-      save_persistent t new_persistent
-    | at_least_one :: _ ->
-      let new_persistent =
-        Persistent_state.add_pointer persistent 
-          ~permanent:at_least_one.Target.id
-          ~newcomer:target.Target.id in
-      save_persistent t new_persistent
-    end
-  end
 
 let add_targets t tlist =
-  Deferred_list.while_sequential tlist ~f:(add_target t)
-  >>= fun _  ->
-  return ()
+  get_persistent t
+  >>= fun persistent ->
+  current_targets t
+  >>= fun current_targets ->
+  let stuff_to_do =
+    List.fold ~init:([], persistent) tlist ~f:(fun (targets, persistent) target ->
+        let equivalences =
+          List.filter current_targets
+            ~f:(fun t ->
+                Target.Is.(created t || activated t || running t)
+                && Target.is_equivalent target t) in
+        Log.(s "Targets " % Target.log target % s " is "
+             % (match targets with
+               | [] -> s "pretty fresh"
+               | more ->
+                 s " equivalent to " % OCaml.list Target.log equivalences)
+             @ very_verbose);
+        match equivalences with
+        | [] -> 
+          (target :: targets, Persistent_state.add persistent target)
+        | at_least_one :: _ -> 
+          (targets,
+           Persistent_state.add_pointer persistent 
+             ~permanent:at_least_one.Target.id
+             ~newcomer:target.Target.id))
+  in
+  let targets_to_add, new_persistent = stuff_to_do in
+  let transaction = 
+    let open Database in
+    let persistent_action =
+      let key = Configuration.persistent_state_key t.configuration in
+      (set ~key (Persistent_state.serialize new_persistent)) in
+    Database.(seq (
+        persistent_action
+        :: List.map targets_to_add ~f:set_target_db_action
+      ))
+  in
+  database t
+  >>= fun db ->
+  Log.(s "Going to perform: " % Database.log_action transaction @ verbose);
+  begin
+    Database.(act db transaction)
+    >>= function
+    | `Done -> return ()
+    | `Not_done ->
+      (* TODO: try again a few times instead of error *)
+      fail (`Database_unavailable "transaction failed")
+  end
 
 let archived_targets t =
   database t >>= fun db ->
@@ -712,8 +730,7 @@ let restart_target ~engine target =
                        | Some (_, new_id) -> new_id
                        | None -> dep) })
   in
-  Deferred_list.while_sequential (this_new_target :: upper_dag) (fun trgt ->
-      add_target engine trgt)
-  >>= fun (_ : unit list) ->
+  add_targets engine (this_new_target :: upper_dag)
+  >>= fun () ->
   return (this_new_target, upper_dag)
     
