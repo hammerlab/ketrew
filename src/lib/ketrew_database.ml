@@ -112,7 +112,7 @@ let db_process_exec ~loc cmd =
 
 let call_git ~loc t cmd =
   let actualexec = [
-    "git"; "-C"; t.path;
+    "git"; "--git-dir"; Filename.concat t.path ".git"; "--work-tree"; t.path;
   ] @ cmd in
       match t.exec_style with
       | `Shell -> db_process_shell ~loc actualexec
