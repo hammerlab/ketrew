@@ -18,24 +18,30 @@
 
 open Ketrew_pervasives
 
-type action
+type key = {key: string ; collection: string option}
+
+type action =
+  | Set of key * string
+  | Unset of key
+  | Sequence of action list
+  | Check of key * string option
 (** An action is a transaction that (attempts) to modify the database. *)
 
-val set : key:string -> string -> action
+val set : ?collection:string -> key:string -> string -> action
 (** Create a “set” action: [set ~key v] will add or set the value [v] for the
-    key [key]. *)
+    key [key], optionally in the collection [collection]. *)
 
 val seq : action list -> action
 (** Put a sequence of actions into a transaction. *)
 
-val contains : key:string -> string -> action
+val contains : ?collection:string -> key:string -> string -> action
 (** An action that checks that the [key] is set in the DB and has the given
     value. *)
 
-val is_not_set : string -> action
+val is_not_set : ?collection:string -> string -> action
 (** An action that checks that the [key] is not set in the DB. *)
 
-val unset: string -> action
+val unset: ?collection:string -> string -> action
 (** An actions that removes a value from the DB. *)
 
 type t
@@ -50,10 +56,15 @@ val close: t ->
   (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
 (** Close the DB. *)
 
-val get : t -> key:string ->
-    (string option, [> `Database of [> `Get of string ] * string ])
+val get : ?collection:string -> t -> key:string ->
+    (string option, [> `Database of [> `Get of key ] * string ])
       Deferred_result.t
 (** Get a value in the DB. *)
+
+val get_all: t -> collection:string ->
+    (string list, [> `Database of [> `Get_all of string ] * string ])
+      Deferred_result.t
+(** Get all the values in a given collection. *)
 
 val act :
   t ->
@@ -63,11 +74,14 @@ val act :
 (** Process a transaction, which can be [`Done] is successful or [`Not_done]
     if one of the checks in the [action] failed. *)
 
+val log_key: key -> Log.t
+(** Get a {!Log.t} document representing the {!action}. *)
+
 val log_action: action -> Log.t
 (** Get a {!Log.t} document representing the {!action}. *)
 
 type error =
-  [ `Act of action | `Get of string | `Load of string | `Close ] * string
+  [ `Act of action | `Get of key | `Get_all of string | `Load of string | `Close ] * string
 (** Merge of the possible errors. *)
 
 val log_error: [< `Database of error ] -> Log.t

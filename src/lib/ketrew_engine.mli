@@ -62,7 +62,7 @@ val add_target :
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
-   [> `Database of [> `Get of string | `Load of string ] * string
+   [> `Database of Ketrew_database.error
    | `Persistent_state of [> `Deserilization of string ]
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
@@ -97,7 +97,7 @@ val archived_targets :
 
 val is_archived: t -> Unique_id.t -> 
   (bool, 
-   [> `Database of [> `Get of string | `Load of string ] * string
+   [> `Database of Ketrew_database.error
    | `Missing_data of Ketrew_target.id
    | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
@@ -217,7 +217,7 @@ module Target_graph: sig
 
   val get_current: engine:engine -> 
     (t,
-     [> `Database of [> `Get of string | `Load of string ] * string
+     [> `Database of Ketrew_database.error
      | `Missing_data of Ketrew_target.id
      | `Persistent_state of [> `Deserilization of string ]
      | `Target of [> `Deserilization of string ] ]) Deferred_result.t

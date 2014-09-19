@@ -24,6 +24,9 @@ module String = struct
   include Sosa.Native_string
 end
 
+let (//) = Filename.concat
+(** A very standard operator. *)
+
 let printf = `No
 (** We disable [printf]. *)
 

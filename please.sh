@@ -383,7 +383,7 @@ travis_install_on_linux () {
 
     echo "yes" | sudo add-apt-repository ppa:$ppa
     sudo apt-get update -qq
-    sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra opam time
+    sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra opam time git
 }
 
 travis_install_on_osx () {
@@ -404,8 +404,13 @@ do_travis() {
   # configure and view settings
   export OPAMYES=1
   ocaml -version
+  echo "ocaml -version"
   opam --version
+  echo "opam --version"
   opam --git-version
+  echo "opam --git-version"
+  git --version
+  echo "git --version"
 
   # install OCaml packages
   opam init
