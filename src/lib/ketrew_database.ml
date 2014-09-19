@@ -60,7 +60,7 @@ type t = {
   mutex: Lwt_mutex.t;
   exec_style: [`Shell | `Exec];
 }
-let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
+let create path = {exec_style = `Shell; mutex = Lwt_mutex.create (); path} 
 
 module Debug = struct
 

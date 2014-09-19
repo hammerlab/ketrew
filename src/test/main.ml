@@ -82,7 +82,7 @@ module Test = struct
     let nothing_happens = `Happens (function [] -> true | _ -> false)
 
     let new_db_file () =
-      let db_file = "/tmp/kdb_test"  in
+      let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
       begin System.Shell.do_or_fail (fmt "rm -rf %s" db_file)
         >>< fun _ -> return ()
       end
