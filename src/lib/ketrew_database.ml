@@ -137,7 +137,12 @@ let load init_path =
       System.ensure_directory_path ~perm:0o700 path
       >>= fun () ->
       let t = create path in
-      call_git  ~loc:(`Load path)  t ["init"]
+      call_git  ~loc:(`Load path)  t ["init"] >>= fun () ->
+      call_git  ~loc:(`Load path) t
+        ["config"; "user.email"; "ketrew@ketrew.org"]
+      >>= fun () ->
+      call_git  ~loc:(`Load path) t
+        ["config"; "user.name"; "Ketrew"]
       >>= fun () ->
       IO.write_file creation_witness ~content:"OK"
       >>= fun () ->
