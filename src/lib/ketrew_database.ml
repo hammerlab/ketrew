@@ -170,7 +170,9 @@ let close t =
 let path_of_key t key =
   let sanitize k  = 
     String.map k ~f:(function
-      | '/' -> '_') in
+      | '/' -> '_'
+      | e -> e
+      ) in
   Filename.concat t.path (sanitize key)
 
 let get_no_mutex t ~key =
