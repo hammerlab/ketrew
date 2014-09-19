@@ -492,17 +492,17 @@ remove_license () {
 
 }
 
-
-test_standalone_config_file=_obuild/test-standalone-config-file.toml
-test_server_config_file=_obuild/test-server-config-file.toml
-test_client_config_file=_obuild/test-client-config-file.toml
-test_authorized_tokens=_obuild/test-authorized-tokens
-test_database_prefix=_obuild/test-database
-test_certificate=_obuild/test-cert.pem
-test_privkey=_obuild/test-key.pem
-test_server_log=_obuild/test-server.log
-test_command_pipe=_obuild/test-command.pipe
-test_shell_env=_obuild/test.env
+test_environment_dir=_test_env
+test_standalone_config_file=$test_environment_dir/standalone-config-file.toml
+test_server_config_file=$test_environment_dir/server-config-file.toml
+test_client_config_file=$test_environment_dir/client-config-file.toml
+test_authorized_tokens=$test_environment_dir/test-authorized-tokens
+test_database_prefix=$test_environment_dir/database
+test_certificate=$test_environment_dir/test-cert.pem
+test_privkey=$test_environment_dir/test-key.pem
+test_server_log=$test_environment_dir/logs-of-server.txt
+test_command_pipe=$test_environment_dir/test-command.pipe
+test_shell_env=$test_environment_dir/env.env
 
 test_additional_findlib_plugin="findlib"
 test_additional_findlib_plugin_code="let f () = Findlib.init ()"
@@ -517,7 +517,7 @@ set_test_additional_findlib_plugin () {
   echo "Using package $test_additional_findlib_plugin add findlin-plugin"
 }
 ssl_cert_key () {
-  mkdir -p _obuild/
+  mkdir -p $test_environment_dir/
   echo "Creating cert-key pair: $test_certificate, $test_privkey"
   openssl req -x509 -newkey rsa:2048 \
     -keyout $test_privkey -out $test_certificate \
@@ -602,6 +602,7 @@ compile_dummy_plugin () {
 test_environment () {
   echo "Creating $test_shell_env"
   local confvar="KETREW_CONFIGURATION=$test_standalone_config_file"
+  mkdir -p $test_environment_dir
   cat << EOBLOB > $test_shell_env
 export ktest_url=https://localhost:8443
 alias kscli="$confvar _obuild/ketrew-app/ketrew-app.asm"
