@@ -145,7 +145,9 @@ let save_persistent t persistent =
 let add_or_update_target t target =
   database t
   >>= fun db ->
-  begin Database.(act db (set target.Target.id Target.(serialize target)))
+  begin Database.(act db 
+                    (set ~collection:"targets"
+                       ~key:target.Target.id Target.(serialize target)))
     >>= function
     | `Done -> return ()
     | `Not_done ->
@@ -158,7 +160,7 @@ let add_or_update_target t target =
     following pointers}.
 *)
 let _get_target_from_db db id =
-  Database.get db id
+  Database.get db ~collection:"targets" ~key:id
   >>= function
   | Some t -> of_result (Target.deserialize t)
   | None -> fail (`Missing_data id)
