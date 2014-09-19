@@ -162,8 +162,14 @@ let load init_path =
 let close t =
   return ()
 
+let path_of_key t key =
+  let sanitize k  = 
+    String.map k ~f:(function
+      | '/' -> '_') in
+  Filename.concat t.path (sanitize key)
+
 let get_no_mutex t ~key =
-  IO.read_file (Filename.concat t.path key)
+  IO.read_file (path_of_key t key)
   >>< function
   | `Ok o -> return (Some o)
   | `Error (`IO (`Read_file_exn (s, e))) ->
@@ -183,7 +189,7 @@ let act t ~action =
   let rec go =
     function
     | Set (key, value) ->
-      let path = Filename.concat t.path key in
+      let path = path_of_key t key in
       IO.write_file path ~content:value
       >>= fun () ->
       Debug.after_write key;
@@ -193,7 +199,7 @@ let act t ~action =
       let msg = fmt "Set %s" key in
       call_git ["commit"; "--allow-empty"; "-m"; msg]
     | Unset key ->
-      let path = Filename.concat t.path key in
+      let path = path_of_key t key in
       call_git ["rm"; "--ignore-unmatch"; path]
       >>= fun () ->
       Debug.after_git_rm key;
