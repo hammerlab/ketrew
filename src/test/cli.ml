@@ -106,6 +106,7 @@ let deploy_website branches =
   let dest_path =
     sprintf "/tmp/deploy_website_%s" (Ketrew_pervasives.Unique_id.create ())
   in
+  let target ?(add_tags=[]) = target ~tags:("website" :: add_tags) in
   let clone_repo =
     let readme = file (sprintf "%s/ketrew/README.md" dest_path) in
     target (sprintf "Clone to %s" dest_path)
@@ -162,6 +163,7 @@ let deploy_website branches =
      But `ancestor` will also be run in case of success. *)
   let ancestor ~dependencies status =
     target (sprintf "Common ancestor: %s" status) ~dependencies
+      ~add_tags:["end-of-workflow"]
       ~make:(local_deamonize
                Program.(
                  shf "echo 'Status: %S'" status
