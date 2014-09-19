@@ -19,34 +19,45 @@ open Ketrew_pervasives
 let global_debug_level = ref 4
 let local_verbosity () = `Debug !global_debug_level
 
+type key = {key: string ; collection: string option}
+
 type action =
-  | Set of string * string
-  | Unset of string
+  | Set of key * string
+  | Unset of key
   | Sequence of action list
-  | Check of string * string option
-let set ~key value = Set (key, value)
+  | Check of key * string option
+let _key ?collection key = {key; collection}
+let set ?collection ~key value = Set (_key ?collection key, value)
 let seq l = Sequence l
-let contains ~key v = Check (key, Some v) 
-let is_not_set key = Check (key, None)
-let unset key = Unset key
+let contains ?collection ~key v = Check (_key ?collection key, Some v) 
+let is_not_set ?collection key = Check (_key ?collection key, None)
+let unset ?collection key = Unset (_key ?collection key)
+
+let log_key {key; collection} = 
+  let open Log in
+  match collection with
+  | Some c -> s c % s "/" % s key
+  | None -> s key
+let key_to_string {key;collection} =
+  Option.value_map collection ~f:(fmt "%s/") ~default:"" ^ key
 
 let rec log_action =
   let open Log in
   function
-  | Set (k, v) -> brakets(s "Set " % s k % sp % s v)
-  | Check (k, vo) -> brakets(s "Check " % s k % sp % OCaml.option s vo)
-  | Unset k -> brakets(s "Uet " % s k)
+  | Set (k, v) -> brakets(s "Set " % log_key k % sp  % s v)
+  | Check (k, vo) -> brakets(s "Check " % log_key k % sp % OCaml.option s vo)
+  | Unset k -> brakets(s "Uet " % log_key k)
   | Sequence l -> OCaml.list log_action l
 
 type error =
-  [ `Act of action | `Get of string | `Load of string | `Close ] * string
+  [ `Act of action | `Get of key | `Load of string | `Close ] * string
 
 let log_error = function
-| `Database (what, msg) ->
+| `Database ((what, msg) : error) ->
   Log.(s "Database" % sp
        % parens (match what with
          | `Load path -> s "Loading " % s path
-         | `Get k -> s "Getting " % s k
+         | `Get k -> s "Getting " % log_key  k
          | `Act a -> s "Processing " % log_action a
          | `Close -> s "Closing")
        % s " → "
@@ -60,7 +71,7 @@ type t = {
   mutex: Lwt_mutex.t;
   exec_style: [`Shell | `Exec];
 }
-let create path = {exec_style = `Shell; mutex = Lwt_mutex.create (); path} 
+let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
 
 module Debug = struct
 
@@ -71,22 +82,22 @@ module Debug = struct
   exception E
   let after_write k =
     match !global_debug with
-    | After_write s when s = k ->
-      Log.(s "Throwing Debug exn: After_write" % sp % s k @ warning);
+    | After_write s when s = k.key ->
+      Log.(s "Throwing Debug exn: After_write" % sp % log_key k @ warning);
       raise E
     | _ -> ()
 
   let after_git_add k  =
     match !global_debug with
-    | After_git_add s when s = k ->
-      Log.(s "Throwing Debug exn: After_git_add" % sp % s k @ warning);
+    | After_git_add s when s = k.key ->
+      Log.(s "Throwing Debug exn: After_git_add" % sp % log_key k @ warning);
       raise E
     | _ -> ()
 
   let after_git_rm k  =
     match !global_debug with
-    | After_git_rm s when s = k ->
-      Log.(s "Throwing Debug exn: After_git_rm" % sp % s k @ warning);
+    | After_git_rm s when s = k.key ->
+      Log.(s "Throwing Debug exn: After_git_rm" % sp % log_key k @ warning);
       raise E
     | _ -> ()
 
@@ -167,24 +178,36 @@ let load init_path =
 let close t =
   return ()
 
-let path_of_key t key =
+let path_of_key t {key ; collection} =
   let sanitize k  = 
     String.map k ~f:(function
       | '/' -> '_'
       | e -> e
       ) in
-  Filename.concat t.path (sanitize key)
+  let dir =
+    match collection with
+    | Some c -> t.path // sanitize c | None -> t.path in
+  System.ensure_directory_path ~perm:0o700 dir
+  >>= fun () ->
+  return (dir // (sanitize key))
 
 let get_no_mutex t ~key =
-  IO.read_file (path_of_key t key)
+  begin
+    path_of_key t key
+    >>= fun path ->
+    IO.read_file path
+  end
   >>< function
   | `Ok o -> return (Some o)
   | `Error (`IO (`Read_file_exn (s, e))) ->
     return None
+  | `Error (`System _ as e) ->
+    fail (`Database (`Get key, System.error_to_string e))
 
 let checkout_master = ["checkout"; "master"; "-f"]
 
-let get t ~key =
+let get ?collection t ~key =
+  let key = _key ?collection key in
   Lwt_mutex.with_lock t.mutex (fun () -> 
       call_git t ~loc:(`Get key) checkout_master
       >>= fun () ->
@@ -196,21 +219,23 @@ let act t ~action =
   let rec go =
     function
     | Set (key, value) ->
-      let path = path_of_key t key in
+      path_of_key t key
+      >>= fun path ->
       IO.write_file path ~content:value
       >>= fun () ->
       Debug.after_write key;
       call_git ["add"; path]
       >>= fun () ->
       Debug.after_git_add key;
-      let msg = fmt "Set %s" key in
+      let msg = fmt "Set %s" (key_to_string key) in
       call_git ["commit"; "--allow-empty"; "-m"; msg]
     | Unset key ->
-      let path = path_of_key t key in
+      path_of_key t key
+      >>= fun path ->
       call_git ["rm"; "--ignore-unmatch"; path]
       >>= fun () ->
       Debug.after_git_rm key;
-      let msg = fmt "UnSet %s" key in
+      let msg = fmt "UnSet %s" (key_to_string key) in
       call_git ["commit"; "--allow-empty"; "-m"; msg]
     | Check (key, value_opt) ->
       get_no_mutex t key
@@ -245,13 +270,14 @@ let act t ~action =
       >>= fun () ->
       Log.(s "Database transaction" % sp % quote branch_name  % sp
            % s "failed because check failed:" % sp
-           % s "at" % sp % OCaml.string key % sp % OCaml.(option string c) %sp
+           % s "at" % sp % log_key key % sp % OCaml.(option string c) %sp
            % s " instead of " % OCaml.(option string v) @ verbose);
       return `Not_done
-    | `Database (`Get k, s) -> fail (`Database (`Act action, 
-                                                fmt "getting %S: %s" k s))
+    | `Database (`Get k, s) ->
+      fail (`Database (`Act action, fmt "getting %S: %s" (key_to_string k) s))
     | `Database (`Act _, _) as e -> fail e
     | `IO _ as e -> fail (`Database (`Act action, IO.error_to_string e))
+    | `System _ as e -> fail (`Database (`Act action, System.error_to_string e))
     end
 
       
