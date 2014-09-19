@@ -61,6 +61,11 @@ val get : ?collection:string -> t -> key:string ->
       Deferred_result.t
 (** Get a value in the DB. *)
 
+val get_all: t -> collection:string ->
+    (string list, [> `Database of [> `Get_all of string ] * string ])
+      Deferred_result.t
+(** Get all the values in a given collection. *)
+
 val act :
   t ->
   action:action ->
@@ -76,7 +81,7 @@ val log_action: action -> Log.t
 (** Get a {!Log.t} document representing the {!action}. *)
 
 type error =
-  [ `Act of action | `Get of key  | `Load of string | `Close ] * string
+  [ `Act of action | `Get of key | `Get_all of string | `Load of string | `Close ] * string
 (** Merge of the possible errors. *)
 
 val log_error: [< `Database of error ] -> Log.t

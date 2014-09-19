@@ -50,7 +50,8 @@ let rec log_action =
   | Sequence l -> OCaml.list log_action l
 
 type error =
-  [ `Act of action | `Get of key | `Load of string | `Close ] * string
+  [ `Act of action | `Get of key | `Get_all of string
+  | `Load of string | `Close ] * string
 
 let log_error = function
 | `Database ((what, msg) : error) ->
@@ -58,6 +59,7 @@ let log_error = function
        % parens (match what with
          | `Load path -> s "Loading " % s path
          | `Get k -> s "Getting " % log_key  k
+         | `Get_all c -> s "Getting collection " % quote c
          | `Act a -> s "Processing " % log_action a
          | `Close -> s "Closing")
        % s " → "
@@ -178,12 +180,16 @@ let load init_path =
 let close t =
   return ()
 
-let path_of_key t {key ; collection} =
-  let sanitize k  = 
-    String.map k ~f:(function
+let sanitize k  = 
+  match k with
+  | "" -> ".empty"
+  | other ->
+    String.map other ~f:(function
       | '/' -> '_'
-      | e -> e
-      ) in
+      | '.' -> '_'
+      | e -> e)
+
+let path_of_key t {key ; collection} =
   let dir =
     match collection with
     | Some c -> t.path // sanitize c | None -> t.path in
@@ -204,14 +210,61 @@ let get_no_mutex t ~key =
   | `Error (`System _ as e) ->
     fail (`Database (`Get key, System.error_to_string e))
 
-let checkout_master = ["checkout"; "master"; "-f"]
+let cleap_up t ~loc =
+  let checkout_master = ["checkout"; "master"; "-f"] in
+  call_git t ~loc checkout_master
+  >>= fun () ->
+  call_git t ~loc ["clean"; "-f"]
 
 let get ?collection t ~key =
   let key = _key ?collection key in
   Lwt_mutex.with_lock t.mutex (fun () -> 
-      call_git t ~loc:(`Get key) checkout_master
+      cleap_up t ~loc:(`Get key)
       >>= fun () ->
       get_no_mutex t ~key)
+
+let get_all t ~collection =
+  Lwt_mutex.with_lock t.mutex (fun () -> 
+      cleap_up t ~loc:(`Get_all collection)
+      >>= fun () ->
+      let path = (t.path // sanitize collection) in
+      System.file_info ~follow_symlink:true path
+      >>= fun file_info ->
+      begin match file_info with
+      | `Directory ->
+        let stream = Lwt_unix.files_of_directory path in
+        let rec build_list acc =
+          wrap_deferred ~on_exn:(fun e -> `Ls e) (fun () ->
+              Lwt_stream.get stream)
+          >>= begin function
+          | None -> return acc
+          | Some p ->
+            System.file_info ~follow_symlink:true (path // p)
+            >>= fun file_info ->
+            begin match file_info with
+            | `Regular_file _ ->
+              IO.read_file (path // p)
+              >>= fun v ->
+              build_list (v :: acc)
+            | _ ->
+              build_list acc
+            end
+          end
+        in
+        build_list []
+      | other -> return []
+      end
+    )
+  >>< let dfail s = fail (`Database (`Get_all collection, s)) in
+    function
+    | `Ok o -> return o
+    | `Error (`Database _ as e) -> fail e
+    | `Error (`IO _ as e) -> dfail (IO.error_to_string e)
+    | `Error (`Ls e) -> 
+      Log.(s "Ls in the collection failed: " % exn e @ verbose);
+      return []
+    | `Error (`System _ as e) ->
+      dfail (System.error_to_string e)
 
 let act t ~action =
   let branch_name = Unique_id.create () in
@@ -251,7 +304,7 @@ let act t ~action =
   begin
     Lwt_mutex.with_lock t.mutex (fun () ->
         Log.(s "Starting transaction " % s branch_name @ very_verbose);
-        call_git checkout_master
+        cleap_up t ~loc:(`Act action)
         >>= fun () ->
         call_git ["checkout"; "-b"; branch_name]
         >>= fun () ->
