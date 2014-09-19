@@ -17,8 +17,19 @@
 open Ketrew_pervasives
 
 module Test = struct
+  exception Tests_failed
+
+  let max_failures = 
+    try Sys.getenv "MAX_FAILURES" |> int_of_string with _ -> 2_000_000
+
   let failed_tests = ref []
-  let fail s = failed_tests := s :: !failed_tests
+  let fail s =
+    failed_tests := s :: !failed_tests;
+    if List.length !failed_tests > max_failures then (
+      Log.(s "Some tests failed: " %n % OCaml.list s (List.rev !failed_tests)
+           @ error);
+      raise Tests_failed 
+    ) else ()
 
   let test_ssh_host =
     let open Ketrew in
