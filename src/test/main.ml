@@ -32,8 +32,8 @@ module Test = struct
 
   let test_targets ?wait_between_steps ~engine ~name targets checks =
     let open Ketrew in
-    Deferred_list.while_sequential targets (Ketrew_engine.add_target engine)
-    >>= fun (_ : unit list) ->
+    Ketrew_engine.add_targets engine targets
+    >>= fun () ->
     Deferred_list.while_sequential checks ~f:(fun check ->
         Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
         >>< fun _ ->
@@ -238,8 +238,8 @@ let test_0 () =
     let configuration = 
       Configuration.engine ~database_parameters:db_file () in
     Ketrew_engine.with_engine ~configuration begin fun ~engine ->
-      Ketrew_engine.add_target engine
-        Target.(create ~name:"First target" ())
+      Ketrew_engine.add_targets engine
+        [Target.(create ~name:"First target" ())]
       >>= fun () ->
       begin Ketrew_engine.current_targets engine
         >>= function

@@ -263,9 +263,9 @@ let add_targets_service  ~server_state ~body req =
          failwith "wrong-format: expecting Json list")
   >>= fun targets ->
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
+  Ketrew_engine.add_targets server_state.state targets
+  >>= fun () ->
   Deferred_list.while_sequential targets ~f:(fun t ->
-      Ketrew_engine.add_target server_state.state t
-      >>= fun () ->
       let original_id = Ketrew_target.id t in
       Ketrew_engine.get_target server_state.state original_id
       >>= fun freshen ->

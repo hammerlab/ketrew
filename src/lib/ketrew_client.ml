@@ -223,7 +223,7 @@ let add_targets t tlist =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Deferred_list.while_sequential tlist ~f:(Ketrew_engine.add_target s.engine)
+    Ketrew_engine.add_targets s.engine tlist
     >>= fun _ ->
     return ()
   | `Http_client c ->

@@ -48,9 +48,9 @@ val unload: t ->
 val configuration: t -> Ketrew_configuration.engine
 (** Retrieve the configuration. *)
 
-val add_target :
+val add_targets :
   t ->
-  Ketrew_target.t ->
+  Ketrew_target.t list ->
   (unit,
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
@@ -58,7 +58,7 @@ val add_target :
    | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
   Deferred_result.t
-(** Add a target to the engine. *)
+(** Add a list of targets to the engine. *)
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,

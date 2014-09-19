@@ -307,6 +307,11 @@ let add_target t target =
     end
   end
 
+let add_targets t tlist =
+  Deferred_list.while_sequential tlist ~f:(add_target t)
+  >>= fun _  ->
+  return ()
+
 let archived_targets t =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
