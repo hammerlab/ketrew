@@ -595,6 +595,28 @@ module Explorer = struct
         menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
       ])
 
+  let open_in_dollar_editor file =
+    let editor =
+      try Sys.getenv "EDITOR"
+      with _ ->
+        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
+        "vi" in
+    let command = fmt "%s %s" editor file in
+    Log.(s "Running " % s command @ verbose);
+    (* We actually want (for now) to bloc the whole process and wait for
+       the editor to end. *)
+    ignore (Sys.command command);
+    return ()
+
+  let view_in_dollar_editor ?(extension="txt") ~client content =
+    let tmp =
+      Filename.(concat temp_dir_name
+                  (fmt "%s.%s" (Unique_id.create ()) extension))
+    in
+    IO.write_file ~content tmp
+    >>= fun () ->
+    open_in_dollar_editor tmp
+
   let filter ~log ~char f =
     (char, log, `Set (f, log))
 
@@ -610,12 +632,49 @@ module Explorer = struct
       ~log:Log.(s "Activated by user (i.e. not as dependency)");
   ]
 
+  let initial_ask_tags_content =
+    "# Enter regular expressions on `tags` of the targets\n\
+     # Lines beginning with '#' are thrown aways\n\
+     # The syntax of the regular expressions is “POSIX”\n\
+    "
+
   let get_filter () =
     Interaction.(
       menu ~sentence:Log.(s "Pick a filter")
         (List.map filters (fun (char, log, tag) ->
-             menu_item ~char ~log tag)))
+             menu_item ~char ~log tag)
+         @ [menu_item ~char:'T'
+              ~log:Log.(s "Enter tag regular-expression(s)") `Ask_tags]
+        )
+    )
     >>= function
+    | `Ask_tags ->
+      let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
+      IO.write_file tmpfile ~content:initial_ask_tags_content
+      >>= fun () ->
+      open_in_dollar_editor tmpfile 
+      >>= fun () ->
+      IO.read_file tmpfile
+      >>= fun content ->
+      let tag_regs =
+        String.split ~on:(`Character '\n') content
+        |> List.filter_map ~f:(fun line ->
+            let stripped = String.strip line in
+            match String.get ~index:0 stripped with
+            | Some '#' -> None
+            | None -> None
+            | Some other ->
+              (try Some (stripped, 
+                         Re_posix.compile_pat stripped)
+              with _ -> None))
+      in
+      return (
+        (fun trgt ->
+           List.for_all tag_regs ~f:(fun (_, reg) ->
+               List.exists trgt.Target.tags ~f:(fun tag ->
+                   Re.execp reg tag))),
+        Log.(s "Tags matching " 
+             % OCaml.list (fun (s, _) -> quote s) tag_regs))
     | `Set f  -> return f
 
   let pick_a_target_from_list ~client target_ids =
@@ -706,25 +765,6 @@ module Explorer = struct
         @ restart_item
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
-
-  let view_in_dollar_editor ?(extension="txt") ~client content =
-    let tmp =
-      Filename.(concat temp_dir_name
-                  (fmt "%s.%s" (Unique_id.create ()) extension))
-    in
-    IO.write_file ~content tmp
-    >>= fun () ->
-    let editor =
-      try Sys.getenv "EDITOR"
-      with _ ->
-        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
-        "vi" in
-    let command = fmt "%s %s" editor tmp in
-    Log.(s "Running " % s command @ verbose);
-    (* We actually want (for now) to bloc the whole process and wait for
-       the editor to end. *)
-    ignore (Sys.command command);
-    return ()
 
   let view_json ~client target =
     let content = Target.serialize target in
