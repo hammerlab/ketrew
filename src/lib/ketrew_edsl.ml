@@ -77,6 +77,7 @@ let user_target_internal
   ?(metadata = Artifact.Value.unit)
   ?product
   ?equivalence
+  ?tags
   ()
   =
   let id = Unique_id.create () in
@@ -99,7 +100,7 @@ let user_target_internal
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
         ~name:self#name ?condition:done_when
-        ?equivalence
+        ?equivalence ?tags
         ~make ()
     method product =
       Option.value_exn product 
@@ -108,17 +109,17 @@ let user_target_internal
   end
 
 let target ?active ?dependencies ?make ?done_when ?metadata ?product
-    ?equivalence ?if_fails_activate name =
+    ?equivalence ?if_fails_activate ?tags name =
   user_target_internal
-    ?equivalence ?if_fails_activate
+    ?equivalence ?if_fails_activate ?tags
     ?active ?dependencies ~name ?make ?metadata ?done_when ?product ()
 
 let file_target 
     ?dependencies ?make ?metadata ?name ?host ?equivalence ?if_fails_activate
-    path =
+    ?tags path =
   let product = file ?host path in
   let name = Option.value name ~default:("Make:" ^ path) in
-  target ~product ?equivalence ?if_fails_activate
+  target ~product ?equivalence ?if_fails_activate ?tags
     ~done_when:product#exists ?dependencies ?make ?metadata name
 
 (*

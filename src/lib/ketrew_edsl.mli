@@ -145,6 +145,7 @@ val target :
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
+  ?tags: string list ->
   string -> user_target
 (** Create a new target. *)
 
@@ -156,6 +157,7 @@ val file_target:
   ?host:host ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
+  ?tags: string list ->
   string ->
   user_target
 (** Create a file {!user_artifact} and the {!user_target} that produces it. *)

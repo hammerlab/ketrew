@@ -160,6 +160,7 @@ type t = {
   condition : Condition.t option;
   equivalence: Equivalence.t;
   history : workflow_state;
+  tags: string list;
 }
 (** The fat record holding targets. *)
 
@@ -172,6 +173,7 @@ val create :
   ?make:Build_process.t -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
+  ?tags: string list ->
   unit ->
   t
 (** Create a target value (not stored in the DB yet). *)
@@ -209,6 +211,7 @@ val active :
   ?make:Build_process.t  ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
+  ?tags: string list ->
   unit -> t
 (** Like {!create} but set as already activated. *)
 
