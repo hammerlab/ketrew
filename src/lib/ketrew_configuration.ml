@@ -124,7 +124,7 @@ let default_configuration_path =
   Sys.getenv "HOME" ^ "/.ketrew/configuration.toml"
 
 let default_database_path = 
-  Sys.getenv "HOME" ^ "/.ketrew/database_dbm"
+  Sys.getenv "HOME" ^ "/.ketrew/database"
 
 let create ?(debug_level=0) ?(plugins=[]) mode =
   {debug_level; plugins; mode;}
