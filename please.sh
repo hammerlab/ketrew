@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-version_string="0.0.1-prealpha"
+version_string="`git describe --tags --always --dirty || echo '0.0.0-alpha'`"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
   atd cconv.yojson \
   yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib"
