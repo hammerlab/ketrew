@@ -27,26 +27,34 @@ If you have `opam` up and running:
     opam remote add smondet git@github.com:smondet/dev-opam-repo
     opam install ketrew
 
+Then you need at runtime `ssh` and `git` in the `$PATH`.
 
-Usage
------
+The EDSL
+--------
 
-### Initialization
+### Overview
 
-To create a configuration file, run:
+The EDSL is an OCaml library where all the functions are used to build a
+workflow data-structure *except* one: `Ketrew.EDSL.run` which is used to submit
+workflows to the engine.
 
-    ketrew init
+A workflow is a Graph of “**targets**”.
 
-This creates `$HOME/.ketrew/configuration.toml` (see `ketrew init --help` to
-choose another path, and see the [documentation](src/doc/The_Configuration_File.md)
-on the configuration file to tweak it).
+The links between targets are “dependencies” (targets that need to be ensured or
+run before a target can start) or “fallback-dependencies” (targets that will be
+activated if the target fails).
 
-### Workflow Scripts
+Any OCaml program can use the EDSL (script, compiled, or even inside the
+toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
-A workflow script is an OCaml file (script, compiled, or even inside the
-toplevel).
+<small><blockquote>Please, also feel free to
+[propose](https://github.com/hammerlab/ketrew/issues)
+better names for things in the API.</blockquote></small>
 
-One can add functions that create and `run` workflows:
+### Small Example
+
+This example is a “single-target” workflow that runs an arbitrary shell command on an
+LSF-based cluster:
 
 ```ocaml
 let run_command_with_lsf cmd =
@@ -64,14 +72,29 @@ let () = (* Extremely basic main of the workflow script *)
   run_command_with_lsf Sys.argv.(1)
 ```
 
-then one should be able to add and activate mini-workflow with:
+If Ketrew is initialized, one should be able to add and activate
+the mini-workflow with:
 
     <script.ml> "<some shell command to run on the cluster>"
 
+See the file [`src/test/cli.ml`](src/test/cli.ml) for more examples
+(*work-in-progress*).
 
-See the file [`src/test/cli.ml`](src/test/cli.ml) for more examples (*work-in-progress*),
-and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+Usage
+-----
 
+### Initialization
+
+To create a configuration file, run:
+
+    ketrew init
+
+This creates `$HOME/.ketrew/configuration.toml` (see `ketrew init --help` to
+choose another path).
+
+By default this configures Ketrew in **Standalone** mode;
+See the [documentation](src/doc/The_Configuration_File.md)
+on the configuration file to tweak it.
 
 ### Standalone Ketrew
 
