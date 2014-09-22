@@ -8,6 +8,7 @@ workflows (interdependent steps/programs using a lot of data, with many
 parameter variations, running on different *hosts* with various schedulers).
 - an engine taking care of orchestrating the run of those workflows, 
 and keeping track everything that succeeds, fails, or gets lost.
+Ketrew can be a standalone application, or use a client-server architecture.
 
 This documentation is available at <http://hammerlab.github.io/ketrew/>,
 the source is at <https://github.com/hammerlab/ketrew/>.
@@ -72,10 +73,11 @@ See the file [`src/test/cli.ml`](src/test/cli.ml) for more examples (*work-in-pr
 and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 
-### Ketrew
+### Standalone Ketrew
 
-Ketrew is driven from the command-line client.  See first:
-`ketrew --help`; then:
+The default for Ketrew is to run in “Standalone” mode.
+From the command-line client, one can both query and run the engine.  See
+first: `ketrew --help`; then:
 
 - To display the current status: `ketrew status`.
 - To run as many steps as possible until a “fix-point” is reached:
@@ -91,8 +93,14 @@ See also `ketrew interact` or `ketrew explore` for fun
 Ketrew can try to be clever about killing an archiving;
 see `ketrew autoclean --help`.
 
-There is an HTTP API (work in progress); with the commands
-`ketrew start-server` and `ketrew stop-server`.
+### Client-Server Mode
+
+In this mode, the Ketrew engine runs a proper server which is
+accessed over an HTTP API.
+
+See the commands `ketrew start-server` and `ketrew stop-server`.
+
+The client works in the same way as in “Standalone” mode.
 
 Where to Go Next
 ----------------
@@ -113,12 +121,12 @@ like [`Ketrew_lsf`](src/lib/ketrew_lsf.mli) or in the tests:
 - You may want to extend Ketrew, or preconfigure it, *without* configuration
 files or dynamically loaded libraries: just
 [create](src/doc/Alternative_CLI_Application.md) your own comand-line app.
-- You may want to try out the [HTTP API](src/doc/The_HTTP_API.md)
-(*work in progress*).
+- You may want to call out directly yo the [HTTP API](src/doc/The_HTTP_API.md)
+(i.e. without the client).
 - If you want to help or simply to understand Ketrew
 see the [development](src/doc/Developer_Documentation.md)
 documentation, and have a look at the modules
-like [`Ketrew_state`](src/lib/ketrew_state.mli).
+like [`Ketrew_engine`](src/lib/ketrew_engine.mli).
 
 License
 -------
