@@ -391,11 +391,8 @@ let run_state ~client ~max_sleep ~how =
   in
   begin match Ketrew_client.get_local_engine client with
   | None ->
-    Log.(s "Cannot get local-engine to run things." @ warning);
-    return ()
+    fail (`Failure "This client is not Standalone, it can not run stuff.")
   | Some state ->
-    Log.(s "Running " % OCaml.list s how % s " with max-spleep: " % f max_sleep
-         @ warning);
     begin match how with
     | ["step"] ->
       Ketrew_engine.step state
