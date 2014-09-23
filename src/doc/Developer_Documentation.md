@@ -96,9 +96,8 @@ in its `/tmp` directory.
 
 ### The `cli` Test
 
-There is also a more interactive test:
-[`src/test/cli.ml` ](../test/cli.ml) which provides
-workflows to be created from the command line.
+The workflow [examples](../test/Workflow_Examples.ml) in the documentation
+are actually interactive tests.
 
 ### Generating a Test Environment
 
@@ -118,5 +117,5 @@ Creating _obuild/test.env
 ```
 
 then sourcing `_obuild/test.env` will give a few aliases to run the tests (like
-`kttest`, `ktapp`, etc. see inside the file).
+`kdtest`, `kdclient`, etc. see inside the file).
 

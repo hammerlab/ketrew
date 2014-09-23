@@ -90,7 +90,7 @@ begin program "ketrew-app"
   comp = ["-thread" ]
 end
 begin program "ketrew-cli-test"
-  files = [ "src/test/cli.ml" ]
+  files = [ "src/test/Workflow_Examples.ml" ]
   requires = [ "ketrew" "threads" ]
   link = [ "-thread" ]
   comp = ["-thread" ]
@@ -155,10 +155,10 @@ END_MD
 
   local index=$outdir/index.html
   cp src/doc/* $outdir/
-  ocaml_to_markdown src/test/cli.ml $outdir/test_cli.md
-  ocaml_to_markdown src/test/dummy_plugin.ml $outdir/test_dummy_plugin.md
-  ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/test_dummy_plugin_user.md
-  ocaml_to_markdown src/test/preconfigured_main.ml $outdir/test_preconfigured_main.md
+  ocaml_to_markdown src/test/Workflow_Examples.ml $outdir/Workflow_Examples.md
+  ocaml_to_markdown src/test/dummy_plugin.ml $outdir/dummy_plugin.md
+  ocaml_to_markdown src/test/dummy_plugin_user.ml $outdir/dummy_plugin_user.md
+  ocaml_to_markdown src/test/preconfigured_main.ml $outdir/preconfigured_main.md
   ketrew_help_to_html init $outdir
   ketrew_help_to_html "--help" $outdir
   ketrew_help_to_html status $outdir
@@ -207,7 +207,7 @@ markdown_transform_links () {
     local input=$1
     local output=$2
     sed 's:([^()]*/\([^/]*\)\.md):(\1.html):g' $input | \
-        sed 's:([^()]*/test/\(.*\)\.ml):(test_\1.html):g' | \
+        sed 's:([^()]*/test/\(.*\)\.ml):(\1.html):g' | \
         sed 's:([^()]*/lib/ketrew_long_running.ml):(api/Ketrew_long_running.html):g' | \
         sed 's:([a-z\.]*/lib/ketrew_\(.*\)\.mli):(api/Ketrew_\1.html):g' | \
         sed 's:`\(ketrew \([a-z\-]*\) *\(--help\)*\)`:[`\1`](ketrew_\2_help.html):g' > $output

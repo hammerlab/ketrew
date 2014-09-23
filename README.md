@@ -14,8 +14,6 @@ This documentation is available at <http://hammerlab.github.io/ketrew/>,
 the source is at <https://github.com/hammerlab/ketrew/>.
 
 This is **Work in Progress**, not ready general for use.
-[![Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
-
 
 Build & Install
 ---------------
@@ -106,24 +104,22 @@ let () =
      server over HTTPS. The server will start running the workflow right away.  *)
 ```
 
-If Ketrew is initialized (see [below](#Initialization)), one should be able to
-add and activate the mini-workflow with:
+If you actually have access to an LSF cluster and want to try this workflow see
+below: [“For The Impatient”](#ForTheImpatient).
 
-    ocaml  my_workflow_script.ml  "<some shell command to run on the cluster>"
-
-See [`src/test/cli.ml`](src/test/cli.ml) for examples of more and more
-complicated workflows (*work-in-progress*).
+You can also explore [examples of more and more complicated
+workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 
 The Engine
 ----------
 
 ### For The Impatient
 
-If you want to run the previous workflow example (or one of the
-[`cli.ml`](src/test/cli.ml) ones):
+If you want to run any of the
+[workflow examples](src/test/Workflow_Examples.ml):
 
     ketrew init
-    ocaml  my_workflow_script.ml  "<some shell command to run on the cluster>"
+    _obuild/ketrew-cli-test/ketrew-cli-test.asm  <arguments>
     ketrew run loop
     # Type 'q' anytime or when it's done
     ketrew explore
@@ -177,8 +173,8 @@ Where to Go Next
 From here:
 
 - To write workflows for Ketrew,
-see [`src/test/cli.ml`](src/test/cli.ml) for examples
-and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+see [`src/test/Workflow_Examples.ml`](src/test/Workflow_Examples.ml) for
+examples and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 - To configure Ketrew use the configuration file
 [documentation](src/doc/The_Configuration_File.md).
 - You may want to “extend” Ketrew with new ways of running “long-running"
