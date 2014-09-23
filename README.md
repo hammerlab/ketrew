@@ -29,6 +29,8 @@ If you have `opam` up and running:
 
 Then you need at runtime `ssh` and `git` in the `$PATH`.
 
+This gets you the `ketrew` executable and the `ketrew` library.
+
 The EDSL
 --------
 
@@ -51,37 +53,81 @@ toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 [propose](https://github.com/hammerlab/ketrew/issues)
 better names for things in the API.</blockquote></small>
 
-### Small Example
+### Example
 
 This example is a “single-target” workflow that runs an arbitrary shell command on an
-LSF-based cluster:
+[LSF-based](http://en.wikipedia.org/wiki/Platform_LSF) cluster:
 
 ```ocaml
+#use "topfind"
+#thread
+#require "ketrew"
 let run_command_with_lsf cmd =
-  let open Ketrew.EDSL in
-  let host = 
-    parse_host "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash" in
-  let queue = "normalpeople" in
-  let program = Program.sh cmd in
-  run (
-    target "run_command_with_lsf"
-      ~make:(lsf ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host program)
-  )
+  let module KEDSL = Ketrew.EDSL in
+  let host =
+    (* `parse_host` takes an URI and creates a “Host” datastructue: a place to
+        run stuff.  *)
+    KEDSL.parse_host
+      "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash"
+    (* This one is an SSH host, named `MyLSFCluster`.
+       The directory `/home/user42/ketrew-playground/` will be used by Ketrew
+       to monitor the jobs. *)
+  in
+  let program =
+    (* A “program” is a datastructure representing “extended shell scripts”. 
+       `Program.sh` creates one out a shell command. *)
+    KEDSL.Program.sh cmd in
+  let lsf_build_process =
+    (* “build process” is a method for making things:
+       `lsf` creates a datastructure that represents a job running a `program`
+       with the LSF scheduling engine, on the host `host`.  *)
+    KEDSL.lsf
+      ~queue:"normal-people" ~wall_limit:"1:30"
+      ~processors:(`Min_max (1,1)) ~host program
+  in
+  (* The function `KEDSL.target` creates a node in the workflow graph.
+     This one is very simple, it has a name and a build-process,
+     and since it doesn't have dependencies or fallbacks, it is a
+     “single-node” workflow: *)
+  KEDSL.target 
+     "run_command_with_lsf"
+     ~make:lsf_build_process
 
-let () = (* Extremely basic main of the workflow script *)
-  run_command_with_lsf Sys.argv.(1)
+let () = 
+  let workflow =
+     (* Create the  workflow with the first argument of the command line: *) 
+     run_command_with_lsf Sys.argv.(1) in
+  (* Then, `run` is the only function that “does” something, it submits the
+     workflow to the engine: *)
+  Ketrew.EDSL.run workflow
+  (* If Ketrew is in Standalone mode, this means writing the workflow in the
+     database (nothing runs yet, you need to run Ketrew's engine yourself).
+     If Ketrew is in Client-Server mode, this means sending the workflow to the
+     server over HTTPS. The server will start running the workflow right away.  *)
 ```
 
-If Ketrew is initialized, one should be able to add and activate
-the mini-workflow with:
+If Ketrew is initialized (see [below](#Initialization)), one should be able to
+add and activate the mini-workflow with:
 
-    <script.ml> "<some shell command to run on the cluster>"
+    ocaml  my_workflow_script.ml  "<some shell command to run on the cluster>"
 
-See the file [`src/test/cli.ml`](src/test/cli.ml) for more examples
-(*work-in-progress*).
+See [`src/test/cli.ml`](src/test/cli.ml) for examples of more and more
+complicated workflows (*work-in-progress*).
 
-Usage
------
+The Engine
+----------
+
+### For The Impatient
+
+If you want to run the previous workflow example (or one of the
+[`cli.ml`](src/test/cli.ml) ones):
+
+    ketrew init
+    ocaml  my_workflow_script.ml  "<some shell command to run on the cluster>"
+    ketrew run loop
+    # Type 'q' anytime or when it's done
+    ketrew explore
+    # And follow the navigation menu to check the status of your workflow
 
 ### Initialization
 
