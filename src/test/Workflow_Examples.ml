@@ -1,34 +1,35 @@
 
 (*M
 
-Command Line Test
+Workflow Examples
 -----------------
 
-This “test” provides a few user defined targets. It gets compiled to a command
-line application that submits targets to Ketrew.
+This “test” provides a few functions that create increasingly complex workflows.
+It gets compiled to a command line application that submits the workflows to
+the Ketrew engine.
+
+
+First, the mandatory license:
+
+    Copyright 2014, Sebastien Mondet <seb@mondet.org>
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+    implied.  See the License for the specific language governing
+    permissions and limitations under the License.
+
+And some preliminary OCaml settings:
 M*)
-
-(**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
-(*                                                                        *)
-(*  Licensed under the Apache License, Version 2.0 (the "License");       *)
-(*  you may not use this file except in compliance with the License.      *)
-(*  You may obtain a copy of the License at                               *)
-(*                                                                        *)
-(*      http://www.apache.org/licenses/LICENSE-2.0                        *)
-(*                                                                        *)
-(*  Unless required by applicable law or agreed to in writing, software   *)
-(*  distributed under the License is distributed on an "AS IS" BASIS,     *)
-(*  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or       *)
-(*  implied.  See the License for the specific language governing         *)
-(*  permissions and limitations under the License.                        *)
-(**************************************************************************)
-
 open Printf
 module List = ListLabels
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
-
-
 (*M
 
 Workflows
@@ -38,8 +39,7 @@ Workflows
 
 This function is a more “parametrized” version of the example in the
 `README.md` file (`host` and `queue` come from the command line).
-
-It calls `run` directly itself.
+It actually calls `run` directly itself.
 
 M*)
 let run_command_with_lsf ~host ~queue cmd =
@@ -66,13 +66,15 @@ let run_command_with_nohup ~host cmd =
     target (sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
-
 (*M
+
+This kind of “daemonized” job should work on any decent Unix system.
+
 
 ### Daemonize With “The Python Hack”
 
 This function is like `run_command_with_nohup` but uses
-the “python daemon hack”.
+the “python daemon hack” instead.
 
 M*)
 let run_command_with_python_hack ~host cmd =
@@ -82,8 +84,12 @@ let run_command_with_python_hack ~host cmd =
     target (sprintf "Pyd: %S" cmd)
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
   )
-
 (*M
+
+The <code>`Python_daemon</code> way of daemonizing was hacked together because
+MacOSX does not support the `nohup` and `setsid` commands any more.
+
+
 
 ### A First Dependency Chain
 
