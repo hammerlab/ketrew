@@ -41,8 +41,8 @@ workflows to the engine.
 A workflow is a Graph of “**targets**”.
 
 The links between targets are “dependencies” (targets that need to be ensured or
-run before a target can start) or “fallback-dependencies” (targets that will be
-activated if the target fails).
+run before a target can start) or “fallbacks” (targets that will be activated
+if the target fails).
 
 Any OCaml program can use the EDSL (script, compiled, or even inside the
 toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
@@ -186,8 +186,8 @@ like [`Ketrew_lsf`](src/lib/ketrew_lsf.mli) or in the tests:
 - You may want to extend Ketrew, or preconfigure it, *without* configuration
 files or dynamically loaded libraries: just
 [create](src/doc/Alternative_CLI_Application.md) your own comand-line app.
-- You may want to call out directly yo the [HTTP API](src/doc/The_HTTP_API.md)
-(i.e. without the client).
+- You may want to call out directly to the [HTTP API](src/doc/The_HTTP_API.md)
+(i.e. without `ketrew` as a client).
 - If you want to help or simply to understand Ketrew
 see the [development](src/doc/Developer_Documentation.md)
 documentation, and have a look at the modules
