@@ -16,8 +16,9 @@
 
 (** Easy interface to the library {b for end users}. *)
 (**
-  This is a more hopefully stable EDSL/API to make workflows and
-  deal with the system.
+
+  This is a more stable EDSL/API for end-users to make workflows and deal with
+  the system.
 
   Many functions may raise exceptions when called on improperly, but this
   should happen while building the workflow, not after it starts running. *)
@@ -29,7 +30,26 @@ type host = Ketrew_host.t
 (** Alias for the host type. *)
 
 val parse_host : string -> host
-(** See {!Ketrew_host.of_uri}. *)
+(** Parse an URI string into a host.
+
+    For example:
+    ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
+
+    - ["ssh:"] means to connect with SSH (if a hostname is defined this is the
+    default and only way).
+    - ["user"] is the user to connect as.
+    - ["SomeHost"] is the hostname, if the “host-connection” part of the URI is
+    not provided, “localhost” will be assumed (and SSH won't be used).
+    - ["42"] is the port.
+    - ["/tmp/pg"] is the “playground”; a directory where the Ketrew-engine will
+    create temporary and monitoring files.
+    - ["shell=bash,-l,--init-file,bouh,-c"] the option [shell] define the
+    shell, and the options, to use on the host.
+    - ["timeout=42.5"] is the execution timeout, an optional float setting the
+    maximal duration Ketrew will wait for SSH commands to return.
+    - ["ssh-option=-K"] are options to pass to the SSH client.
+
+    See also {!Ketrew_host.of_uri}. *)
 
 val host_cmdliner_term :
   ?doc:string -> 
@@ -44,7 +64,7 @@ val host_cmdliner_term :
 
 (** {3 Build Programs} *)
 
-(** Build “things to run”. *)
+(** Build “things to run”, i.e. shell scripts on steroids. *)
 module Program: sig
 
   type t = Ketrew_program.t
@@ -87,7 +107,9 @@ end
 
 (** {3 Artifacts} *)
 
-(** Wrapper for {!Ketrew_artifact.t} and {!Ketrew_artifact.Type.t}. *)
+(** Artifacts are things to be built, or already existing, most often
+    file-tree-locations on a given [host] (see also {!Ketrew_artifact.t}).
+*)
 class type user_artifact = object
 
   method path : string
@@ -110,24 +132,24 @@ val unit : user_artifact
 
 (** {3 Targets} *)
 
-(** Wrapper around {!Ketrew_target.t}. *)
+(** Targets are the nodes in the workflow arborescence (see also
+    {!Ketrew_target.t}). *)
 class type user_target =
   object
-
-    method activate : unit
-    (** Activate the target. *)
 
     method name : string
     (** Get the name of the target *)
 
     method metadata: Ketrew_artifact.Value.t
-    (** The metadata that has been set for the target. *)
+    (** The metadata that has been set for the target ({i work-in-progress}). *)
 
     method product: user_artifact
     (** The user-artifact produced by the target, if known (raises exception if
         unknown). *)
 
     (**/**)
+    method activate : unit
+    (** Activate the target. *)
     method is_active: bool
     method id: Ketrew_pervasives.Unique_id.t
     method render: Ketrew_target.t
@@ -193,7 +215,8 @@ val run:
   ?override_configuration:Ketrew_configuration.t ->
   user_target ->
   unit
-(** Activate [user_target] (the next time Ketrew runs a step, the target will
-    started/run. *)
+(** Submit and activate a [user_target] (the next time Ketrew runs a step, the
+    target will be started/run (all the graph of dependencies and fallbacks is
+    submitted at once). *)
 
 
