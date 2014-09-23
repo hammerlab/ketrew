@@ -48,8 +48,21 @@ module Volume = struct
     let paths = all_paths t in
     Host.do_files_exist t.host paths
 
+  let log_structure structure = 
+    let all_paths = all_structure_paths structure |> List.map ~f:Path.to_string in
+    let open Log in
+    match all_paths with
+    | [] -> s "EMPTY"
+    | one :: [] -> s "Single path: " % quote one
+    | more -> i (List.length more) % sp % s "paths"
+
   let log {host; root; structure} =
-    Log.(s "Vol" % parens (Host.log host % s":" % s (Path.to_string root)))
+    Log.(braces (
+        parens (Host.log host) % sp
+        % parens (s "Root: " % s (Path.to_string root)) % sp
+        % parens (s "Tree: " % log_structure structure)
+      ))
+
   let to_string_hum v =
     Log.to_long_string (log v)
 
