@@ -128,12 +128,16 @@ module Interaction = struct
     let open Lwt_unix in
     Lwt.(tcgetattr stdin
          >>= fun term_init ->
+         let go_back_to_normal () = tcsetattr stdin TCSADRAIN term_init in
          let term_cbreak = { term_init with c_icanon = false; c_echo = false } in
          tcsetattr stdin TCSANOW term_cbreak
          >>= fun () ->
-         catch f (fun exn -> return (`Error (`Failure "with_cbreak")))
+         at_exit (fun () -> Lwt_main.run (go_back_to_normal ()));
+         catch f (fun e -> 
+             Log.(s "with_cbreak exn: " % exn e @ warning);
+             return (`Error (`Failure "with_cbreak")))
          >>= fun res ->
-         tcsetattr stdin TCSADRAIN term_init
+         go_back_to_normal ()
          >>= fun () ->
          return res)
 
