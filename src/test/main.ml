@@ -39,7 +39,7 @@ module Test = struct
     with Not_found -> Host.ssh "localhost"
 
   let wrong_ssh_host =
-    Ketrew.EDSL.parse_host "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
+    Ketrew.EDSL.Host.parse "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
 
   let test_targets ?wait_between_steps ~engine ~name targets checks =
     let open Ketrew in

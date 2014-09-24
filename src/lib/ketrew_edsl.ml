@@ -17,13 +17,42 @@
 open Ketrew_pervasives
 
 
-module Host = Ketrew_host
 module Path = Ketrew_path
 module Target = Ketrew_target
 module Artifact = Ketrew_artifact
 
  
-type host = Ketrew_host.t
+module Host = struct
+  include Ketrew_host
+
+  let ssh
+      ?add_ssh_options
+      ?playground
+      ?port ?user ?name str =
+    let playground = Option.map ~f:Path.absolute_directory_exn playground in
+    ssh ?default_shell:None
+      ?execution_timeout:None
+      ?add_ssh_options
+      ?playground
+      ?port ?user ?name str
+
+  let parse = of_string
+
+  let cmdliner_term 
+      ?(doc="URI of the host (e.g. \
+             ssh://user@example.com:42/tmp/ketrewplayground).") how =
+    let open Cmdliner in
+    Term.(
+      pure (fun s -> parse s)
+      $ begin match how with
+      | `Flag (flags) ->
+        Arg.(value & opt string "/tmp/" & info flags ~doc ~docv:"URI")
+      | `Required p ->
+        Arg.(required & pos p (some string) None & info [] ~doc ~docv:"URI")
+      end
+    )
+
+end
 
 class type user_artifact = object
 
@@ -185,21 +214,16 @@ module Program = struct
 
 end
 
-let parse_host: string -> Host.t = Host.of_string
+module Condition = struct
 
-let host_cmdliner_term 
-    ?(doc="URI of the host (e.g. \
-           ssh://user@example.com:42/tmp/ketrewplayground).") how =
-  let open Cmdliner in
-  Term.(
-    pure (fun s -> parse_host s)
-    $ begin match how with
-    | `Flag (flags) ->
-      Arg.(value & opt string "/tmp/" & info flags ~doc ~docv:"URI")
-    | `Required p ->
-      Arg.(required & pos p (some string) None & info [] ~doc ~docv:"URI")
-    end
-  )
+  type t = Ketrew_target.Condition.t
+
+  let (&&) a b = `And [a; b]
+  let never = `False
+  let program ?(returns=0) ?host p =
+    `Command_returns (Ketrew_target.Command.program ?host p, returns)
+
+end
 
 let daemonize  = Ketrew_daemonize.create
 

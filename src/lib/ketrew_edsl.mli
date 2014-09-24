@@ -26,41 +26,51 @@
 
 (** {3 Hosts} *)
 
-type host = Ketrew_host.t
-(** Alias for the host type. *)
+module Host: sig
 
-val parse_host : string -> host
-(** Parse an URI string into a host.
+  type t = Ketrew_host.t
+  (** Alias for the host type. *)
 
-    For example:
-    ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
+  val parse : string -> t
+  (** Parse an URI string into a host.
 
-    - ["ssh:"] means to connect with SSH (if a hostname is defined this is the
-    default and only way).
-    - ["user"] is the user to connect as.
-    - ["SomeHost"] is the hostname, if the “host-connection” part of the URI is
-    not provided, “localhost” will be assumed (and SSH won't be used).
-    - ["42"] is the port.
-    - ["/tmp/pg"] is the “playground”; a directory where the Ketrew-engine will
-    create temporary and monitoring files.
-    - ["shell=bash,-l,--init-file,bouh,-c"] the option [shell] define the
-    shell, and the options, to use on the host.
-    - ["timeout=42.5"] is the execution timeout, an optional float setting the
-    maximal duration Ketrew will wait for SSH commands to return.
-    - ["ssh-option=-K"] are options to pass to the SSH client.
+      For example:
+      ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
 
-    See also {!Ketrew_host.of_uri}. *)
+      - ["ssh:"] means to connect with SSH (if a hostname is defined this is the
+      default and only way).
+      - ["user"] is the user to connect as.
+      - ["SomeHost"] is the hostname, if the “host-connection” part of the URI is
+      not provided, “localhost” will be assumed (and SSH won't be used).
+      - ["42"] is the port.
+      - ["/tmp/pg"] is the “playground”; a directory where the Ketrew-engine will
+      create temporary and monitoring files.
+      - ["shell=bash,-l,--init-file,bouh,-c"] the option [shell] define the
+      shell, and the options, to use on the host.
+      - ["timeout=42.5"] is the execution timeout, an optional float setting the
+      maximal duration Ketrew will wait for SSH commands to return.
+      - ["ssh-option=-K"] are options to pass to the SSH client.
 
-val host_cmdliner_term :
-  ?doc:string -> 
-  [ `Required of int | `Flag of string list ] ->
-  Ketrew_host.t Cmdliner.Term.t
-(** Cmdliner term which creates a host argument or flag.
-    [`Required n] will be an anonymous argument at position [n]; 
-    [`Flag ["option-name"; "O"]] will create an optional
-    flag ["--option-name"] (aliased to ["-O"]) whose default value is
-    the host ["/tmp/"] (i.e. Localhost with ["/tmp"] as “playground”).
+      See also {!Ketrew_host.of_uri}. *)
+
+  val tmp_on_localhost: t
+
+  val ssh: 
+    ?add_ssh_options:string list ->
+    ?playground:string ->
+    ?port:int -> ?user:string -> ?name:string -> string -> t
+
+  val cmdliner_term :
+    ?doc:string -> 
+    [ `Required of int | `Flag of string list ] ->
+    t Cmdliner.Term.t
+    (** Cmdliner term which creates a host argument or flag.
+        [`Required n] will be an anonymous argument at position [n]; 
+        [`Flag ["option-name"; "O"]] will create an optional
+        flag ["--option-name"] (aliased to ["-O"]) whose default value is
+        the host ["/tmp/"] (i.e. Localhost with ["/tmp"] as “playground”).
     *)
+end
 
 (** {3 Build Programs} *)
 
@@ -102,6 +112,19 @@ module Program: sig
       installed on the source host, and the destination host could not be
       reachable with the same parameters from there).
     *)
+
+end
+
+(** {3 Conditions } *)
+
+
+module Condition: sig
+
+  type t = Ketrew_target.Condition.t
+
+  val (&&): t -> t -> t
+  val never : t
+  val program: ?returns:int -> ?host:Ketrew_host.t -> Program.t -> t
 
 end
 
@@ -176,7 +199,7 @@ val file_target:
   ?make:Ketrew_target.Build_process.t ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?name:string ->
-  ?host:host ->
+  ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
   ?tags: string list ->
@@ -187,21 +210,21 @@ val file_target:
 val daemonize :
   ?starting_timeout:float ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
-  ?host:Ketrew_host.t ->
+  ?host:Host.t ->
   Program.t ->
   Ketrew_target.Build_process.t
 (** Create a “daemonize” build process. *)
 
 val direct_execution :
-  ?host:Ketrew_host.t -> Program.t -> Ketrew_target.Build_process.t
+  ?host:Host.t -> Program.t -> Ketrew_target.Build_process.t
 (** Create a direct process (not “long-running”). *)
 
 val direct_shell_command :
-  ?host:Ketrew_host.t -> string -> Ketrew_target.Build_process.t
+  ?host:Host.t -> string -> Ketrew_target.Build_process.t
 (** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
 
 val lsf :
-  ?host:Ketrew_host.t ->
+  ?host:Host.t ->
   ?queue:string ->
   ?name:string ->
   ?wall_limit:string ->
