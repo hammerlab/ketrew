@@ -306,7 +306,7 @@ let get_status ~client =
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
-let display_status ~client  =
+let rec display_status ~client ~loop  =
   get_status ~client
   >>= fun (`Running rr, `Created cc, `Activated aa) ->
   Log.(s "Current targets: "
@@ -314,7 +314,17 @@ let display_status ~client  =
        % i aa % s " Activated, "
        % i cc % s " Created." %n
        @ normal);
-  return ()
+  begin match loop, rr,  aa with
+  | Some _, 0, 0 -> 
+    Log.(s "Nothing left to do" @ verbose);
+    return ()
+  | Some seconds, _, _ ->
+    (System.sleep seconds >>< fun _ -> return ())
+    >>= fun () ->
+    display_status ~client ~loop
+  | None, _, _ ->
+    return ()
+  end
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
     command in [ketrew interactive]). *)
@@ -960,7 +970,7 @@ let interact ~client =
     >>= function
     | `Quit -> return ()
     | `Status ->
-      display_status ~client
+      display_status ~client ~loop:None
       >>= fun () ->
       main_loop ()
     | `Kill ->
@@ -1074,12 +1084,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
-          pure (fun config_path  ->
+          pure (fun config_path loop  ->
               Configuration.get_configuration ?override_configuration config_path
               >>= fun configuration ->
               match Configuration.mode configuration  with
               | `Client _ | `Standalone _ ->
-                Ketrew_client.as_client ~configuration ~f:(display_status)
+                let loop = if loop then Some 2. else None in
+                Ketrew_client.as_client ~configuration ~f:(display_status ~loop)
               | `Server s ->
                 Ketrew_server.status ~configuration:s
                 >>= fun stat ->
@@ -1097,6 +1108,9 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   return ()
                 end)
           $ config_file_argument
+          $ Arg.(value @@ flag 
+                 @@ info ["L"; "loop"]
+                   ~doc:"(As client) loop until there is nothing left to do.")
         ) in
   let run_cmd =
     let open Term in
