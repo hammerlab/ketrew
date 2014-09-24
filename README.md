@@ -63,9 +63,9 @@ This example is a “single-target” workflow that runs an arbitrary shell comm
 let run_command_with_lsf cmd =
   let module KEDSL = Ketrew.EDSL in
   let host =
-    (* `parse_host` takes an URI and creates a “Host” datastructue: a place to
+    (* `Host.parse` takes an URI and creates a “Host” datastructue: a place to
         run stuff.  *)
-    KEDSL.parse_host
+    KEDSL.Host.parse
       "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash"
     (* This one is an SSH host, named `MyLSFCluster`.
        The directory `/home/user42/ketrew-playground/` will be used by Ketrew
