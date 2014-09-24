@@ -285,85 +285,32 @@ module Interaction = struct
 
 end
 
+let get_status ~client =
+  Ketrew_client.current_targets client
+  >>= fun targets ->
+  return (
+    List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
+      ~f:(fun ((`Running r, `Created c, `Activated a) as prev) t ->
+          let open Target in
+          match t.history with
+          | `Dead _       -> prev
+          | `Successful _ -> prev
+          | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
+          | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
+          | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a))
+  )
+
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let display_status ~client  =
-  begin
-    Log.(s "display_info !" @ verbose);
-    Ketrew_client.current_targets client
-    >>= fun targets ->
-    let `Running rr, `Created cc, `Activated aa =
-      List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
-        ~f:(fun ((`Running r, `Created c, `Activated a) as prev) t ->
-            let open Target in
-            match t.history with
-            | `Dead _       -> prev
-            | `Successful _ -> prev
-            | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
-            | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
-            | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a))
-    in
-    Log.(s "Current targets: "
-           % i rr % s " Running, "
-           % i aa % s " Activated, "
-           % i cc % s " Created." %n
-           @ normal);
-    return ()
-  end
-      (*
-    begin match
-      Configuration.server_configuration (Ketrew_client.configuration client)
-    with
-    | Some server_config ->
-      let local_server_uri =
-        match Configuration.listen_to server_config with
-        | `Tls (_, _, port) ->
-          Uri.make ~scheme:"https" ~host:"127.0.0.1" ~path:"/hello" () ~port in
-      Log.(s "Trying GET on " % uri local_server_uri @ verbose);
-      begin
-        System.with_timeout 5. ~f:(fun () ->
-            wrap_deferred ~on_exn:(fun e -> `Client (`Get_exn e)) (fun () ->
-                Cohttp_lwt_unix.Client.get local_server_uri))
-        >>< function
-        | `Ok (response, body) ->
-          Log.(s "Response: "
-               % sexp Cohttp.Response.sexp_of_t response @ verbose);
-          begin match Cohttp.Response.status response with
-          | `OK ->
-            Log.(s "The Server seems to be doing well on "
-                 % uri local_server_uri @ normal);
-            return ()
-          | other ->
-            Log.(s "There is a server at " % uri local_server_uri
-                 %s " but it did not reply `OK`: "
-                 % sexp Cohttp.Response.sexp_of_t response @ warning);
-            return ()
-          end
-        | `Error (`Client (`Get_exn
-                             (Unix.Unix_error (Unix.ECONNREFUSED,
-                                               "connect", "")))) ->
-          Log.(s "No server seems to be listening at " % uri local_server_uri
-               @ warning);
-          return ()
-        | `Error (`System (`With_timeout t, `Exn except)) ->
-          Log.(s "Could not perform a GET request because Timeout failed! "
-               %s "Exn: " % exn except @ error);
-          return ()
-        | `Error (`Timeout _) ->
-          Log.(s "Could not perform a GET request at " % uri local_server_uri
-               % s " the operation timeouted, some server must be listenting\
-                   on the port but it does not sound like Ketrew"
-               @ error);
-          return ()
-        |  `Error (`Client (`Get_exn other_exn)) ->
-          Log.(s "Could not perform a GET request at " % uri local_server_uri
-               %s " exception: " % exn other_exn @ error);
-          return ()
-      end
-    | None -> Log.(s "No local server configured." @ normal); return ()
-    end
-  end
-*)
+  get_status ~client
+  >>= fun (`Running rr, `Created cc, `Activated aa) ->
+  Log.(s "Current targets: "
+       % i rr % s " Running, "
+       % i aa % s " Activated, "
+       % i cc % s " Created." %n
+       @ normal);
+  return ()
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
     command in [ketrew interactive]). *)
@@ -402,35 +349,52 @@ let run_state ~client ~max_sleep ~how =
       Ketrew_engine.fix_point state
       >>= fun (`Steps step_count, what_happened) ->
       log_happening ~what_happened:List.(rev what_happened)
-    | ["loop"] ->
-      let keep_going = ref true in
-      let traffic_light = Light.create () in
+    | "loop" :: [] ->
+      let block, should_keep_going, stop_it =
+        let keep_going = ref true in
+        let traffic_light = Light.create () in
+        (fun () -> Light.try_to_pass traffic_light),
+        (fun () -> !keep_going),
+        (fun () ->
+           keep_going := false;
+           Light.green traffic_light ) in
       let rec loop previous_sleep happenings =
         Ketrew_engine.fix_point state
         >>= fun (`Steps step_count, what_happened) ->
+        Log.(s "Getting new status" @ verbose);
         let new_happenings = what_happened @ happenings in
-        let seconds =
-          match what_happened with
-          | [] | [[]] ->
-            min (previous_sleep *. 2.) max_sleep
-          | something -> 2.
-        in
-        Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-        log_happening ~what_happened:what_happened
-        >>= fun () ->
-        begin Deferred_list.pick_and_cancel [
-            System.sleep seconds;
-            Light.try_to_pass traffic_light;
-          ] >>< function
-          | `Ok () when !keep_going -> loop seconds new_happenings
-          | `Ok () ->
-            log_happening ~what_happened:(List.rev new_happenings)
-          | `Error e ->
-            Log.(s "System.Sleep Error!!"  @ error);
-            fail (`Failure "System.sleep")
+        get_status ~client
+        >>= fun (`Running rr, `Created cc, `Activated aa) ->
+        begin match rr,  aa with
+        | 0, 0 -> 
+          Log.(s "Nothing left to do" @ verbose);
+          stop_it ();
+          log_happening ~what_happened:(List.rev new_happenings)
+        | _, _ ->
+          let seconds =
+            match what_happened with
+            | [] | [[]] ->
+              min (previous_sleep *. 2.) max_sleep
+            | something -> 2.
+          in
+          Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+          log_happening ~what_happened:what_happened
+          >>= fun () ->
+          begin Deferred_list.pick_and_cancel [
+              System.sleep seconds;
+              block ();
+            ] >>< function
+            | `Ok () when should_keep_going () -> 
+              loop seconds new_happenings
+            | `Ok () ->
+              log_happening ~what_happened:(List.rev new_happenings)
+            | `Error e ->
+              Log.(s "System.Sleep Error!!"  @ error);
+              fail (`Failure "System.sleep")
+          end
         end
       in
-      Deferred_list.for_concurrent ~f:(fun x -> x) [
+      Deferred_list.pick_and_cancel [
         begin loop 2. [] end;
         begin
           let rec kbd_loop () =
@@ -438,22 +402,13 @@ let run_state ~client ~max_sleep ~how =
             Interaction.get_key ()
             >>= function
             | 'q' | 'Q' ->
-              keep_going := false;
-              Light.green traffic_light;
+              stop_it ();
               return ()
             | _ -> kbd_loop ()
           in
           kbd_loop ()
         end;
       ]
-      >>= fun ((_ : unit list), errors) ->
-      begin match errors with
-      | [] -> return ()
-      | some ->
-        Log.(s "Errors: "
-             % OCaml.list (fun e -> s (Error.to_string e)) some @ error);
-        fail (`Failure "run")
-      end
     | sl ->
       Log.(s "Unknown client-running command: " % OCaml.list (sf "%S") sl
            @ error);
