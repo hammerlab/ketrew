@@ -931,24 +931,31 @@ end
 
 (** The function behind [ketrew interact]. *)
 let interact ~client =
+  let can_run_stuff =
+    Ketrew_client.get_local_engine client <> None
+  in
   let rec main_loop () =
     Interaction.(
       menu ~sentence:Log.(s "Main menu")
         ~always_there:[menu_item ~char:'q' ~log:Log.(s "Quit") `Quit]
-        [
-          menu_item ~char:'s' ~log:Log.(s "Display current status(es)") `Status;
-          menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
-          menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
-          menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
-          menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
-          menu_item ~char:'c'
-            ~log:Log.(s "Auto-clean-up: orphans, successes")
-            (`Autoclean `Soft);
-          menu_item ~char:'C'
-            ~log:Log.(s "Auto-clean-up: orphans, successes, and failures")
-            (`Autoclean `Hard);
-          menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
-        ]
+        (
+          [ menu_item ~char:'s' ~log:Log.(s "Display current status(es)") `Status; ]
+          @ (if can_run_stuff then [
+              menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
+              menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
+            ] else [])
+          @ [
+            menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
+            menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
+            menu_item ~char:'c'
+              ~log:Log.(s "Auto-clean-up: orphans, successes")
+              (`Autoclean `Soft);
+            menu_item ~char:'C'
+              ~log:Log.(s "Auto-clean-up: orphans, successes, and failures")
+              (`Autoclean `Hard);
+            menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
+          ]
+        )
     )
     >>= function
     | `Quit -> return ()
