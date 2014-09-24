@@ -96,6 +96,13 @@ begin program "ketrew-cli-test"
   comp = ["-thread" ]
   install = false
 end
+begin program "ketrew-integration-test"
+  files = [ "src/test/integration.ml" ]
+  requires = [ "ketrew" "threads" ]
+  link = [ "-thread" ]
+  comp = ["-thread" ]
+  install = false
+end
 OCP_END
 
 cat << MERLIN_END > .merlin
@@ -560,7 +567,7 @@ EOBLOB
 debug-level = 2
 [engine]
   database-path = "$test_database_prefix-client-server"
-  host-timeout-upper-bound = 5
+  host-timeout-upper-bound = 5.0
 [ui]
   color = true
 [server]
@@ -630,6 +637,7 @@ alias ksintegration="$confvar _obuild/ketrew-integration-test/ketrew-integration
 alias kdserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
 alias kdclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
 alias kdtest="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-cli-test/ketrew-cli-test.asm"
+alias kdintegration="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-integration-test/ketrew-integration-test.asm"
 alias ktkillserver='echo "die" > $test_command_pipe'
 alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
 EOBLOB
@@ -643,7 +651,7 @@ build () {
     echo "Calling setup"
     setup
   fi
-  ocp-build $* ketrew  ketrew-app ketrew-cli-test ketrew-test
+  ocp-build $* ketrew  ketrew-app ketrew-cli-test ketrew-test ketrew-integration-test
   echo "Compiling also dummy-plugins and stuff"
   compile_dummy_plugin
 }
