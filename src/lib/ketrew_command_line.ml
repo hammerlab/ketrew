@@ -120,11 +120,22 @@ end
 (** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
 module Interaction = struct
 
+  let initialized = ref false
+  let init () =
+    if not !initialized then (
+      let open Unix in
+      let term_init = tcgetattr stdin in
+      at_exit (fun () -> tcsetattr stdin TCSADRAIN term_init);
+      initialized := true;
+      ()
+    )
+
   (** [with_cbreak f] calls with the terminal in “get key” mode.
          It comes from
          http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
   *)
   let with_cbreak (f: unit -> (_, _) t) =
+    init ();
     let open Lwt_unix in
     Lwt.(tcgetattr stdin
          >>= fun term_init ->
@@ -132,7 +143,6 @@ module Interaction = struct
          let term_cbreak = { term_init with c_icanon = false; c_echo = false } in
          tcsetattr stdin TCSANOW term_cbreak
          >>= fun () ->
-         at_exit (fun () -> Lwt_main.run (go_back_to_normal ()));
          catch f (fun e -> 
              Log.(s "with_cbreak exn: " % exn e @ warning);
              return (`Error (`Failure "with_cbreak")))
