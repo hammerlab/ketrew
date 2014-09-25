@@ -959,11 +959,15 @@ let interact ~client =
       menu ~sentence:Log.(s "Main menu")
         ~always_there:[menu_item ~char:'q' ~log:Log.(s "Quit") `Quit]
         (
-          [ menu_item ~char:'s' ~log:Log.(s "Display current status(es)") `Status; ]
+          [ menu_item ~char:'s' ~log:Log.(s "Display current status") 
+              (`Status None); ]
           @ (if can_run_stuff then [
               menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
               menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
-            ] else [])
+            ] else [
+               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status") 
+                 (`Status (Some 2.));
+             ])
           @ [
             menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
             menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
@@ -979,8 +983,8 @@ let interact ~client =
     )
     >>= function
     | `Quit -> return ()
-    | `Status ->
-      display_status ~client ~loop:None
+    | `Status loop ->
+      display_status ~client ~loop
       >>= fun () ->
       main_loop ()
     | `Kill ->
