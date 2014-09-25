@@ -83,8 +83,8 @@ type persistent_state = {
   pointers: (unique_id * unique_id) list;
 }
 
-type happening =
-  [ Target_activated of (unique_id * [ Dependency | Fallback])
+type happening = [
+  | Target_activated of (unique_id * [ Dependency | Fallback])
   | Target_died of
       (unique_id  *
        [ Dependencies_died
@@ -96,6 +96,8 @@ type happening =
   | Target_archived of unique_id
   | Target_succeeded of
       (unique_id *
-       [ Artifact_literal | Artifact_ready | Process_success ]) ]
+       [ Artifact_literal | Artifact_ready | Process_success ])
+  | Error of string
+]
 
 type happening_list = happening list

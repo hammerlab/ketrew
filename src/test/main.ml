@@ -55,8 +55,7 @@ module Test = struct
           begin match check happening with
           | true -> return ()
           | false ->
-            fail (fmt "T: %S: wrong happening: %s" name
-                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
+            fail (fmt "T: %S: wrong happening: %s" name (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end
@@ -439,10 +438,17 @@ let test_0 () =
       in
       Test.test_targets ~engine ~name:"target_with_fallbacks"
         [target_with_fallbacks; fallback1; fallback2] [
-        `Happens (function
-          | [`Target_died (_, `Process_failure);
-             `Target_activated (id1, `Fallback);
-             `Target_activated (id2, `Fallback); ]
+        `Happens (function (* any order is valid *)
+          | [
+            `Target_died (_, `Process_failure);
+            `Target_activated (id1, `Fallback);
+            `Target_activated (id2, `Fallback);
+          ]
+          | [
+            `Target_activated (id1, `Fallback);
+            `Target_activated (id2, `Fallback);
+            `Target_died (_, `Process_failure);
+          ]
             when id1 = Target.id fallback1 && id2 = Target.id fallback2 -> true
           | _ -> false);
         `Dont_care;
@@ -469,10 +475,18 @@ let test_0 () =
       in
       Test.test_targets ~engine ~name:"targets_with_same_fallback"
         [target_with_fallback_1; target_with_fallback_2; fallback] [
-        `Happens (function
+        `Happens (function (* any order is valid *)
           | [`Target_died (_, `Process_failure);
              `Target_activated (_, `Fallback);
-             `Target_died (_, `Process_failure); ] -> true
+             `Target_died (_, `Process_failure); ]
+          | [
+            `Target_activated (_, `Fallback);
+            `Target_died (_, `Process_failure);
+            `Target_died (_, `Process_failure);
+          ]
+          | [`Target_died (_, `Process_failure);
+             `Target_died (_, `Process_failure);
+             `Target_activated (_, `Fallback); ] -> true
           | _ -> false);
         `Dont_care;
         `Dont_care;
@@ -658,6 +672,6 @@ let () =
          % OCaml.list (sf "%S") argl % s ")" @ normal);
     exit 0
   | some ->
-    Log.(s "Some tests failed: " %n % OCaml.list s some @ error);
+    Log.(s "Some tests failed: " %n % OCaml.list string some @ error);
     exit 3
   end

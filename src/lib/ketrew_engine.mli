@@ -117,7 +117,9 @@ type happening =
   | `Target_archived of Ketrew_target.id
   | `Target_succeeded of
       Ketrew_target.id *
-      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+      [ `Artifact_literal | `Artifact_ready | `Process_success ]
+  | `Error of string
+  ]
 (** Structured log of what can happen during {!step} or {!kill}. *)
 
 val what_happened_to_string : happening -> string

@@ -414,6 +414,9 @@ let make_target_die ?explanation t ~target ~reason =
   Deferred_list.while_sequential target.Target.if_fails_activate ~f:(fun tid ->
       get_target t tid
       >>= fun trgt ->
+      (* Here two targets with the same fallback could activate the same target
+         concurrently, we don't care, target activation just means
+         “change the state in the DB”. *)
       begin match trgt.Target.history with
       | `Created _ ->
         let newdep = Target.(activate_exn trgt ~by:`Fallback) in
@@ -571,6 +574,7 @@ type happening = Ketrew_gen_base_v0.Happening.t
 let log_what_happened =
   let open Log in
   function
+  | `Error e -> s "Error " % s e
   | `Target_activated (id, by) ->
     s "Target " % s id % s " activated: " %
     (match by with
@@ -603,7 +607,8 @@ let step t: (happening list, _) Deferred_result.t =
   begin
     current_targets t >>= fun targets ->
     database t >>= fun db ->
-    Deferred_list.while_sequential targets ~f:(fun target ->
+    Deferred_list.for_concurrent targets ~f:(fun target ->
+        Log.(s "Engine.step dealing with " % Target.log target @ verbose);
         match target.Target.history with
         | `Created _ -> (* nothing to do *) return []
         | `Activated _ ->
@@ -633,8 +638,12 @@ let step t: (happening list, _) Deferred_result.t =
         | `Running (bookkeeping, _)  ->
           _update_status t ~target ~bookkeeping
         | `Dead _ | `Successful _ -> return [])
-    >>| List.concat
-    >>= fun what_happened ->
+    >>= fun (what_happened, errors) ->
+    let what_happened = 
+      List.map errors ~f:(fun e -> `Error (Ketrew_error.to_string e))
+      @ List.concat  what_happened
+      |> List.dedup
+    in
     Log.(s "Step: " % OCaml.list log_what_happened what_happened 
          @ very_verbose);
     return what_happened
