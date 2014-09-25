@@ -197,9 +197,9 @@ let parse_exn str =
       let persistent_state_key =
         toml_option ~table Toml.get_string "state-key" in
       let turn_unix_ssh_failure_into_target_failure =
-        toml_option Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
+        toml_option ~table Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
       let host_timeout_upper_bound =
-        toml_option Toml.get_float "host-timeout-upper-bound" in
+        toml_option ~table Toml.get_float "host-timeout-upper-bound" in
       return (engine ?database_parameters ?persistent_state_key
                 ?turn_unix_ssh_failure_into_target_failure
                 ?host_timeout_upper_bound ()))
@@ -260,12 +260,18 @@ let apply_globals t =
   let color, host_timeout =
     match t.mode with
     | `Client {client_ui; connection} -> (client_ui.with_color, None)
-  | `Standalone {standalone_ui; standalone_engine} ->
-    (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound)
-  | `Server {server_engine; server_ui; _} ->
-    (server_ui.with_color, server_engine.host_timeout_upper_bound)
+    | `Standalone {standalone_ui; standalone_engine} ->
+      (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound)
+    | `Server {server_engine; server_ui; _} ->
+      (server_ui.with_color, server_engine.host_timeout_upper_bound)
   in
   global_with_color := color;
+  Log.(s "Configuration: setting globals: "
+       % indent (n
+         % s "debug_level: " % i !global_debug_level % n
+         % s "with_color: " % OCaml.bool !global_with_color % n
+         % s "timeout upper bound: " % OCaml.(option float host_timeout)
+       ) @ very_verbose);
   begin match host_timeout with
   | Some ht -> Ketrew_host.default_timeout_upper_bound := ht
   | None -> ()

@@ -550,6 +550,7 @@ debug-level = 2
   compiled = "$PWD/_build/dummy_plugin_stuff/test_dummy_plugin.cmxs"
 [engine]
   database-path = "$test_database_prefix-standalone"
+  host-timeout-upper-bound = 5.0
 [ui]
   color = true
 EOBLOB
@@ -559,6 +560,7 @@ EOBLOB
 debug-level = 2
 [engine]
   database-path = "$test_database_prefix-client-server"
+  host-timeout-upper-bound = 5
 [ui]
   color = true
 [server]
@@ -624,6 +626,7 @@ test_environment () {
 export ktest_url=https://localhost:8443
 alias kscli="$confvar _obuild/ketrew-app/ketrew-app.asm"
 alias kstest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
+alias ksintegration="$confvar _obuild/ketrew-integration-test/ketrew-integration-test.asm"
 alias kdserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
 alias kdclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
 alias kdtest="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-cli-test/ketrew-cli-test.asm"
