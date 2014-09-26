@@ -314,29 +314,6 @@ let install_lsf ~box =
           && exec ["sudo"; "make"; "install"]
         ))
 
-let ssh_for_root_to_root ~box =
-  let open Ketrew.EDSL in
-  let id_rsa = Vagrant_box.file box ~path:"/root/.ssh/id_rsa" in
-  let auth_keys = Vagrant_box.file box ~path:"/root/.ssh/authorized_keys" in
-  let host = Vagrant_box.as_host box in
-  let condition = 
-    Condition.(
-      program ~host Program.(exec ["sudo"; "grep"; "root@"; auth_keys#path])
-    ) in
-  target ~done_when:condition "ssh-for-root"
-    ~make:(
-      Vagrant_box.do_on box Program.(
-          exec ["sudo"; "rm"; "-fr"; Filename.dirname id_rsa#path; auth_keys#path]
-          && exec ["sudo"; "mkdir"; "-p"; Filename.dirname id_rsa#path]
-          && exec ["sudo"; "ssh-keygen"; "-f"; id_rsa#path; "-P"; ""]
-          && shf "sudo sh -c 'cat %s.pub > %s'" id_rsa#path auth_keys#path
-        ))
-(*
-
-  sudo cp config/lsf.conf /usr/etc/
-  /usr/etc/openlava start
-
-*)
 let ensure_lsf_is_running ~box =
   let open Ketrew.EDSL in
   let installed = install_lsf ~box in
