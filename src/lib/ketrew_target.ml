@@ -110,8 +110,9 @@ let create
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
-  { id; name = Option.value name ~default:id; persistance; metadata; tags;
-    dependencies; make; condition; history; equivalence; if_fails_activate }
+  { id; name = Option.value name ~default:id; persistance; metadata; tags; 
+    log = []; dependencies; make; condition; history; equivalence;
+    if_fails_activate }
 
 let is_equivalent t ext =
   match t.equivalence with

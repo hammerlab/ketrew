@@ -92,5 +92,6 @@ type target = {
   equivalence: equivalence;
   (* result_type: artifact_type; *)
   history: workflow_state;
+  log: (time * string) list;
   tags: string list;
 }

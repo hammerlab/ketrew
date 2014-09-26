@@ -114,6 +114,9 @@ module Document = struct
        | `Created _    -> s "Created"
        | `Running (rb, _) ->
          s "Running " % parens (s rb.plugin_name));
+      "Additional Log",
+      OCaml.list (fun (time, msg) ->
+          brakets (Time.log time) % s ": " % s msg) t.log;
     ]
 end
 

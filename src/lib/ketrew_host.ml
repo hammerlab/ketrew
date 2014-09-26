@@ -250,7 +250,7 @@ module Error = struct
     | `Non_zero (cmd, ex) -> Log.(s "Cmd " % sf "%S" cmd % s " returned " % i ex)
     | `System (`Sleep time, `Exn e) ->
       Log.(s "System error: sleep " % f time % s " failed: " % exn e)
-    | `Timeout t -> Log.(s "Called timed-out " % parens (f t % s " sec"))
+    | `Timeout t -> Log.(s "Timed-out " % parens (f t % s " sec"))
     | `Execution exec ->
       Log.(
         s "Process execution failed: "

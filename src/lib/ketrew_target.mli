@@ -160,6 +160,7 @@ type t = {
   condition : Condition.t option;
   equivalence: Equivalence.t;
   history : workflow_state;
+  log: (Time.t * string) list;
   tags: string list;
 }
 (** The fat record holding targets. *)

@@ -292,8 +292,8 @@ let add_targets t tlist =
             ~f:(fun t ->
                 Target.Is.(created t || activated t || running t)
                 && Target.is_equivalent target t) in
-        Log.(s "Targets " % Target.log target % s " is "
-             % (match targets with
+        Log.(Target.log target % s " is "
+             % (match equivalences with
                | [] -> s "pretty fresh"
                | more ->
                  s " equivalent to " % OCaml.list Target.log equivalences)
@@ -442,6 +442,11 @@ let host_error_to_potential_target_failure t ~target ~error =
     let e = Host.Error.log error in
     Log.(s "SSH failed, but not killing " % s (Target.id target)
          % sp % e @ warning);
+    add_or_update_target t Target.({
+        target  with log = (Time.now (), 
+                            fmt "Non fatal error: %s" (Log.to_long_string e)) 
+                           :: target.log })
+    >>= fun () ->
     return []
   | _ ->
     make_target_die t ~target ~reason:`Process_failure
@@ -456,6 +461,11 @@ let long_running_error_to_potential_target_failure t
   | `Fatal str, _ ->
     make_target_die t ~target ~reason:(make_error plugin_name str)
   | `Recoverable str, false ->
+    add_or_update_target t Target.({
+        target  with log = (Time.now (),
+                            fmt "Non fatal long-running error: %s" str)
+                           :: target.log })
+    >>= fun () ->
     Log.(s "Recoverable error: " % s str @ warning);
     return []
 
@@ -613,8 +623,8 @@ let step t: (happening list, _) Deferred_result.t =
         | `Created _ -> (* nothing to do *) return []
         | `Activated _ ->
           begin Target.should_start target
-            >>= function
-            | true ->
+            >>< function
+            | `Ok true ->
               _check_and_activate_dependencies ~t target.Target.dependencies
               >>= fun (what_now, happenings) ->
               begin match what_now with
@@ -628,11 +638,19 @@ let step t: (happening list, _) Deferred_result.t =
                 return (happened @ happenings)
               | `Wait -> return happenings
               end
-            | false ->
+            | `Ok false ->
               add_or_update_target t
                 Target.(make_succeed_exn target (`Value `Unit))
               >>= fun () ->
               return [`Target_succeeded (Target.id target, `Artifact_ready)]
+            | `Error (`Volume (`No_size log)) ->
+              make_target_die t ~target ~reason:(`Process_failure)
+                ~explanation:Log.(to_long_string
+                                    (s "No-size for volume, " % log))
+              >>= fun happened ->
+              return happened
+            | `Error (`Host error) ->
+              host_error_to_potential_target_failure ~target ~error t
           end
         (* start or run *)
         | `Running (bookkeeping, _)  ->
