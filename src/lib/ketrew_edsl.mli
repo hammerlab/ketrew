@@ -123,6 +123,7 @@ module Condition: sig
   type t = Ketrew_target.Condition.t
 
   val (&&): t -> t -> t
+  val chain_and: t list -> t
   val never : t
   val program: ?returns:int -> ?host:Ketrew_host.t -> Program.t -> t
 
