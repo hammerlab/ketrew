@@ -29,7 +29,7 @@ setup() {
   local lib_atd_files=$(find src/atd/ -type f -name '*.atd')
   for atd in $lib_atd_files ; do
     name=`basename $atd`
-    atd2cconv -i $atd -o _obuild/gen/ketrew_gen_${name%.atd}.ml
+    atd2cconv -inline-inherit-variants true -i $atd -o _obuild/gen/ketrew_gen_${name%.atd}.ml
   done
 
   local ocaml_findlib_packages_list=$(for f in $findlib_packages ; do echo "\"$f\"; " ; done)

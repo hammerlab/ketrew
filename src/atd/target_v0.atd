@@ -49,8 +49,8 @@ type death_reason = [
   | Failed of string
 ]
 type activated_or_running = [ (* Must be verbatim [activated_state | running_state] *)
-  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
-  | Running of (run_bookkeeping * activated_state) 
+  | inherit activated_state
+  | inherit running_state
 ]
 type finished_state = [ 
   | Dead of (time * activated_or_running * death_reason)
@@ -58,11 +58,11 @@ type finished_state = [
 ]
 (* [ submitted_state | activated_state | running_state | finished_state] *)
 type workflow_state = [ 
-  | Created of time
-  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
-  | Running of (run_bookkeeping * activated_state) 
-  | Dead of (time * activated_or_running * death_reason)
-  | Successful of (time * activated_or_running * artifact)
+  (* | Created of time *)
+  | inherit submitted_state
+  | inherit activated_state
+  | inherit running_state
+  | inherit finished_state
 ] 
 
 type condition = [
