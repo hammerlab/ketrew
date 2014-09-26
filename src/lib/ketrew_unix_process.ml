@@ -33,10 +33,15 @@ module Exit_code = struct
 end
 
 let exec ?(bin="") argl =
-  wrap_deferred ~on_exn:(fun e -> `Process (`Exec (bin, argl), `Exn e))
+  let command = (bin, Array.of_list argl) in
+  let process = Lwt_process.open_process_full command in
+  wrap_deferred ~on_exn:(fun e ->
+      Log.(s "Tarminating process: " % parens (
+          quote bin % s ", " % OCaml.list quote argl) @ verbose);
+      process#terminate; 
+      Lwt.ignore_result process#close; 
+      `Process (`Exec (bin, argl), `Exn e))
     Lwt.(fun () ->
-        let command = (bin, Array.of_list argl) in
-        let process = Lwt_process.open_process_full command in
         Lwt_list.map_p Lwt_io.read
           [process#stdout; process#stderr; ]
         >>= fun output_2list ->

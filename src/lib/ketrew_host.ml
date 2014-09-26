@@ -227,7 +227,7 @@ module Error = struct
   [> `Unix_exec of string
   | `Execution of
        <host : string; stdout: string option; stderr: string option; message: string>
-  | `System of [> `With_timeout of float ] * [> `Exn of exn ]
+  | `System of [> `Sleep of float ] * [> `Exn of exn ]
   | `Timeout of float
   | `Ssh_failure of
        [> `Wrong_log of string
@@ -248,8 +248,8 @@ module Error = struct
     match e with
     | `Unix_exec failure -> Log.(s "Unix-exec-error: " % s failure)
     | `Non_zero (cmd, ex) -> Log.(s "Cmd " % sf "%S" cmd % s " returned " % i ex)
-    | `System (`With_timeout time, `Exn e) ->
-      Log.(s "System error: with_timeout " % f time % s " failed: " % exn e)
+    | `System (`Sleep time, `Exn e) ->
+      Log.(s "System error: sleep " % f time % s " failed: " % exn e)
     | `Timeout t -> Log.(s "Called timed-out " % parens (f t % s " sec"))
     | `Execution exec ->
       Log.(
@@ -302,7 +302,16 @@ let run_with_timeout ?timeout t ~run =
   let log = Log.(parens (s "timeout: " % OCaml.option f actual_timeout)) in
   match actual_timeout with
   | None -> run ~log ()
-  | Some t -> Pvem_lwt_unix.System.with_timeout t ~f:(run ~log)
+  | Some t -> 
+    Deferred_list.pick_and_cancel [
+      begin
+        System.sleep t
+        >>= fun () ->
+        fail (`Timeout t)
+      end;
+      run ~log ();
+    ]
+    (* Pvem_lwt_unix.System.with_timeout t ~f:(run ~log) *)
 
 let execute ?timeout t argl =
   let final_log = ref Log.empty in
@@ -449,9 +458,9 @@ let get_file ?timeout t ~path =
       | `Error (`IO (`Read_file_exn (path, ex))) ->
         Log.(s "I/O, writing " % s path % s " → " % exn ex @ verbose);
         fail (`Cannot_read_file ("localhost", path))
-      | `Error (`System (`With_timeout time, `Exn e)) ->
+      | `Error (`System (`Sleep time, `Exn e)) ->
         Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd 
-             % s " failed: timeout " % f time % s " error: " % exn e @ verbose);
+             % s " failed: System.sleep " % f time % s " error: " % exn e @ error);
         fail (`Cannot_read_file (ssh.Ssh.address, Path.(to_string path)))
       | `Error (`Process _ as process_error) ->
         let msg = Ketrew_unix_process.error_to_string process_error in

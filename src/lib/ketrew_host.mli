@@ -131,7 +131,7 @@ module Error: sig
     | `Ssh_failure of
         [> `Wrong_log of string
         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string 
-    | `System of [> `With_timeout of float ] * [> `Exn of exn ]
+    | `System of [> `Sleep of float ] * [> `Exn of exn ]
     | `Timeout of float
   ]
 
@@ -143,7 +143,7 @@ module Error: sig
         < host : string; message : string; stderr : string option;
           stdout : string option >
     | `Non_zero of string * int
-    | `System of [ `With_timeout of float ] * [ `Exn of exn ]
+    | `System of [ `Sleep of float ] * [ `Exn of exn ]
     | `Timeout of float
     | `Ssh_failure of
         [> `Wrong_log of string
@@ -162,7 +162,7 @@ module Error: sig
   val log :
     [< `Unix_exec of string
     | `Non_zero of (string * int)
-    | `System of [< `With_timeout of float ] * [< `Exn of exn ]
+    | `System of [< `Sleep of float ] * [< `Exn of exn ]
     | `Timeout of float
     | `Execution of
          < host : string; message : string; stderr : string option;
