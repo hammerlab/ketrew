@@ -77,7 +77,8 @@ end
 
 type submitted_state = [ `Created of Time.t ]
 type activated_state = [
-  | `Activated of Time.t * submitted_state * [ `Dependency | `User | `Fallback ]
+  | `Activated of Time.t * submitted_state * 
+                  [ `Dependency | `User | `Fallback | `Success_trigger ]
 ]
 type run_bookkeeping = {
   plugin_name : string;
@@ -156,6 +157,7 @@ type t = {
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   if_fails_activate : id list;
+  success_triggers : id list;
   make : Build_process.t;
   condition : Condition.t option;
   equivalence: Equivalence.t;
@@ -171,6 +173,7 @@ val create :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
+  ?success_triggers:id list ->
   ?make:Build_process.t -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
@@ -179,7 +182,8 @@ val create :
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val activate_exn : t -> by:[ `Dependency | `User | `Fallback ] -> t
+val activate_exn : t ->
+  by:[ `Dependency | `User | `Fallback | `Success_trigger ] -> t
 (** Get an activated target out of a “submitted” one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
@@ -209,6 +213,7 @@ val active :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
+  ?success_triggers:id list ->
   ?make:Build_process.t  ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->

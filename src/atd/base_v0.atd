@@ -84,7 +84,7 @@ type persistent_state = {
 }
 
 type happening = [
-  | Target_activated of (unique_id * [ Dependency | Fallback])
+  | Target_activated of (unique_id * [ Dependency | Fallback | Success_trigger])
   | Target_died of
       (unique_id  *
        [ Dependencies_died

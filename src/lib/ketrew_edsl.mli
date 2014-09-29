@@ -179,6 +179,7 @@ class type user_target =
     method render: Ketrew_target.t
     method dependencies: user_target list
     method if_fails_activate: user_target list
+    method success_triggers: user_target list
     (**/**)
   end
 
@@ -191,6 +192,7 @@ val target :
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
+  ?success_triggers:user_target list ->
   ?tags: string list ->
   string -> user_target
 (** Create a new target. *)
@@ -203,6 +205,7 @@ val file_target:
   ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
+  ?success_triggers:user_target list ->
   ?tags: string list ->
   string ->
   user_target

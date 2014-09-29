@@ -763,6 +763,7 @@ module Explorer = struct
             (match why with
              | `User -> s "user"
              | `Dependency -> s "dependency"
+             | `Success_trigger -> s "success-trigger"
              | `Fallback -> s "fallback")
         | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
           log_of_status (act :> Target.workflow_state) % n
