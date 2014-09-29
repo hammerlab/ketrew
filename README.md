@@ -40,16 +40,21 @@ workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
 
-The links between targets are “dependencies” (targets that need to be ensured or
-run before a target can start) or “fallbacks” (targets that will be activated
-if the target fails).
+There are 3 kinds of links between targets:
+
+- *dependencies:* targets that need to be ensured or
+run before a target can start,
+- *fallbacks:* targets that will be activated
+if the target fails, and
+- *success-triggers:* targets that will be activated only *after* a target
+succeeds.
 
 Any OCaml program can use the EDSL (script, compiled, or even inside the
 toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 <small><blockquote>Please, also feel free to
 [propose](https://github.com/hammerlab/ketrew/issues)
-better names for things in the API.</blockquote></small>
+better names for values and arguments in the API.</blockquote></small>
 
 ### Example
 
