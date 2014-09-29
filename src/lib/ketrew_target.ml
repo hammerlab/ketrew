@@ -105,14 +105,15 @@ include Ketrew_gen_target_v0.Target
 
 let create
     ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
-    ?(dependencies=[]) ?(if_fails_activate=[]) ?(make=Build_process.nop)
+    ?(dependencies=[]) ?(if_fails_activate=[]) ?(success_triggers=[])
+    ?(make=Build_process.nop)
     ?condition ?(equivalence=`Same_active_condition) ?(tags=[])
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; persistance; metadata; tags; 
     log = []; dependencies; make; condition; history; equivalence;
-    if_fails_activate }
+    if_fails_activate; success_triggers; }
 
 let is_equivalent t ext =
   match t.equivalence with
@@ -176,10 +177,12 @@ let update_running_exn t ~run_parameters =
 
 let active ?id
     ?name ?persistance ?metadata
-    ?dependencies ?if_fails_activate ?make ?condition ?equivalence ?tags
+    ?dependencies ?if_fails_activate ?success_triggers 
+    ?make ?condition ?equivalence ?tags
     () = 
   activate_exn ~by:`User 
-    (create ?id ?if_fails_activate ?name ?persistance ?metadata ?condition ?tags
+    (create ?id ?if_fails_activate ?success_triggers 
+       ?name ?persistance ?metadata ?condition ?tags
        ?equivalence ?dependencies ?make ())
 
 let reactivate 
@@ -288,6 +291,7 @@ module Is = struct
       | `Activated (_, _, `User) -> true
       | `Activated (_, _, `Dependency) -> false
       | `Activated (_, _, `Fallback) -> false
+      | `Activated (_, _, `Success_trigger) -> false
       | `Running (_, prev) -> go_through_history (prev :> Workflow_state.t)
       | `Successful (_, prev, _) -> go_through_history (prev :> Workflow_state.t)
       | `Dead (_, prev, _) -> go_through_history (prev :> Workflow_state.t)

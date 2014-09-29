@@ -37,7 +37,8 @@ type submitted_state = [
   | Created of time
 ]
 type activated_state = [
-  | Activated of (time * submitted_state * [ User | Dependency | Fallback ])
+  | Activated of (time * submitted_state * 
+                  [ User | Dependency | Fallback | Success_trigger ])
 ]
 type run_bookkeeping = 
   { plugin_name: string; run_parameters: string; run_history: string list}
@@ -87,6 +88,7 @@ type target = {
   metadata: artifact_value;
   dependencies: id list;
   if_fails_activate: id list;
+  success_triggers: id list;
   make: build_process;
   condition: condition option;
   equivalence: equivalence;

@@ -101,6 +101,57 @@ module Test = struct
 
 end
 
+module Happenings = struct
+
+  let contains h1 ~f =
+    let yes, no =
+      List.partition h1 ~f in
+    match yes, no with
+    | [], all -> None
+    | one :: more, rest -> Some (one, more @ rest)
+
+  let look ?(and_nothing_more=true) ~like () haps =
+    let rec go prev = 
+      function
+      | [] -> if and_nothing_more then prev = [] else true
+      | f :: more ->
+        begin match contains ~f prev with
+        | None -> false
+        | Some (_, rest) -> go rest more
+        end
+    in
+    go haps like
+
+  let check_option opt v =
+    begin match opt with
+    | None -> true
+    | Some h when h = v -> true
+    | Some _ -> false
+    end
+
+  let success ?how ?what hap =
+    match hap with
+    | `Target_succeeded (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
+
+  let activation ?how ?what hap =
+    match hap with
+    | `Target_activated (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
+
+  let death ?how ?what hap =
+    match hap with
+    | `Target_died (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
+
+end
+
 let mini_db_test () =
   Lwt_main.run begin
     let module DB = Ketrew_database in
@@ -415,9 +466,10 @@ let test_0 () =
           ()
       in
       Test.test_targets ~engine ~name:"target_with_missing_dep" [target_with_missing_dep] [
-        `Happens (function
-          | [`Target_died (_, `Dependencies_died)]  -> true
-          | _ -> false);
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Dependencies_died;
+            ]);
         `Dont_care;
       ]
       >>= fun () ->
@@ -438,19 +490,12 @@ let test_0 () =
       in
       Test.test_targets ~engine ~name:"target_with_fallbacks"
         [target_with_fallbacks; fallback1; fallback2] [
-        `Happens (function (* any order is valid *)
-          | [
-            `Target_died (_, `Process_failure);
-            `Target_activated (id1, `Fallback);
-            `Target_activated (id2, `Fallback);
-          ]
-          | [
-            `Target_activated (id1, `Fallback);
-            `Target_activated (id2, `Fallback);
-            `Target_died (_, `Process_failure);
-          ]
-            when id1 = Target.id fallback1 && id2 = Target.id fallback2 -> true
-          | _ -> false);
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Process_failure;
+              activation ~how:`Fallback ~what:(Target.id fallback1);
+              activation ~how:`Fallback ~what:(Target.id fallback2);
+            ]);
         `Dont_care;
         `Dont_care;
         `Dont_care;
@@ -475,26 +520,42 @@ let test_0 () =
       in
       Test.test_targets ~engine ~name:"targets_with_same_fallback"
         [target_with_fallback_1; target_with_fallback_2; fallback] [
-        `Happens (function (* any order is valid *)
-          | [`Target_died (_, `Process_failure);
-             `Target_activated (_, `Fallback);
-             `Target_died (_, `Process_failure); ]
-          | [
-            `Target_activated (_, `Fallback);
-            `Target_died (_, `Process_failure);
-            `Target_died (_, `Process_failure);
-          ]
-          | [`Target_died (_, `Process_failure);
-             `Target_died (_, `Process_failure);
-             `Target_activated (_, `Fallback); ] -> true
-          | _ -> false);
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Process_failure;
+              death ~how:`Process_failure;
+              activation ~how:`Fallback;
+            ]);
         `Dont_care;
         `Dont_care;
         `Dont_care;
       ]
+      >>= fun () ->
 
-
+      let triggered =
+        Target.create ~name:"Triggered" ()
+          ~make:(`Direct_command Target.Command.(shell "ls /"))
+      in
+      let target_that_triggers =
+        Target.active ~name:"target-with-trigger" ()
+          ~make:(`Direct_command Target.Command.(shell "ls /"))
+          ~success_triggers:[Target.id triggered]
+      in
+      Test.test_targets ~engine ~name:"target-with-trigger"
+        [target_that_triggers; triggered] [
+        `Happens Happenings.(look () ~like:[
+            success ~what:(Target.id target_that_triggers); 
+            activation ~how:`Success_trigger;
+          ]);
+        `Happens Happenings.(look () ~like:[
+            success ~what:(Target.id triggered); 
+          ]);
+        `Dont_care;
+        `Dont_care;
+      ]
     end
+
+
     >>= fun () ->
     return ()
   end |> function

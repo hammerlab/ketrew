@@ -98,6 +98,7 @@ module Document = struct
        | `Input_data -> s "Input-data");
       "Dependencies", OCaml.list s t.dependencies;
       "Fallbacks", OCaml.list s t.if_fails_activate;
+      "On Success trigger", OCaml.list s t.success_triggers;
       "Metadata", Artifact.Value.log t.metadata;
       "Build-process",
       build_process  ?with_details:build_process_details t.make;
@@ -714,20 +715,19 @@ module Explorer = struct
         boolean_item ~value:es.condition_details ~char:'c'
           ~to_false:(Log.(s "Hide condition details"), `Show_condition false)
           ~to_true:(Log.(s "Show condition details"), `Show_condition true) in
+      let menu_item_of_id_list ~char ~log ~result ids =
+        match ids with
+        | [] -> []
+        | some -> [menu_item ~char ~log result] in
       let follow_deps_item =
-        match target.Target.dependencies with
-        | [] -> []
-        | some ->
-          [menu_item ~char:'d'
-             ~log:Log.(s "Follow a dependency") `Follow_dependencies]
-      in
+        menu_item_of_id_list ~char:'d' ~log:Log.(s "Follow a dependency")
+          ~result:`Follow_dependencies target.Target.dependencies in
       let follow_fbacks_item =
-        match target.Target.if_fails_activate with
-        | [] -> []
-        | some ->
-          [menu_item ~char:'f'
-             ~log:Log.(s "Follow a fallback") `Follow_fallbacks]
-      in
+        menu_item_of_id_list ~char:'f' ~log:Log.(s "Follow a fallback")
+          ~result:`Follow_fallbacks target.Target.if_fails_activate in
+      let follow_success_triggers_item =
+        menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success-trigger")
+          ~result:`Follow_success_triggers target.Target.success_triggers in
       let restart_item =
         if Target.Is.finished target
         then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
@@ -739,6 +739,7 @@ module Explorer = struct
         @ condition_details_item
         @ follow_deps_item
         @ follow_fbacks_item
+        @ follow_success_triggers_item
         @ kill_item
         @ archive_item
         @ restart_item
@@ -763,6 +764,7 @@ module Explorer = struct
             (match why with
              | `User -> s "user"
              | `Dependency -> s "dependency"
+             | `Success_trigger -> s "success-trigger"
              | `Fallback -> s "fallback")
         | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
           log_of_status (act :> Target.workflow_state) % n
@@ -923,10 +925,12 @@ module Explorer = struct
           | `View_json ->
             view_json ~client chosen >>= fun () ->
             explore ~client (one :: history)
-          | `Follow_dependencies | `Follow_fallbacks as follow ->
+          | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
+            as follow ->
             let target_ids t =
               match follow with
               | `Follow_fallbacks -> t.Target.if_fails_activate
+              | `Follow_success_triggers -> t.Target.success_triggers
               | `Follow_dependencies -> t.Target.dependencies in
             let rec next_target ids =
               begin pick_a_target_from_list ~client ids

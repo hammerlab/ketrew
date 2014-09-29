@@ -104,22 +104,7 @@ val is_archived: t -> Unique_id.t ->
     Deferred_result.t
 (** Check whether a target is in the “archive”. *)
   
-type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback ]
-  | `Target_died of
-      Ketrew_target.id  *
-      [ `Dependencies_died
-      | `Plugin_not_found of string
-      | `Killed
-      | `Long_running_unrecoverable of string * string
-      | `Process_failure ]
-  | `Target_started of Ketrew_target.id * string
-  | `Target_archived of Ketrew_target.id
-  | `Target_succeeded of
-      Ketrew_target.id *
-      [ `Artifact_literal | `Artifact_ready | `Process_success ]
-  | `Error of string
-  ]
+type happening = Ketrew_gen_base_v0.Happening.t
 (** Structured log of what can happen during {!step} or {!kill}. *)
 
 val what_happened_to_string : happening -> string

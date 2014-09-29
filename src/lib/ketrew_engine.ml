@@ -429,6 +429,24 @@ let make_target_die ?explanation t ~target ~reason =
   >>= fun happens ->
   return (`Target_died (Target.id target, reason) :: happens)
 
+let make_target_succeed t target ~why ~artifact =
+  add_or_update_target t Target.(make_succeed_exn target artifact)
+  >>= fun () ->
+  Deferred_list.while_sequential target.Target.success_triggers ~f:(fun tid ->
+      get_target t tid
+      >>= fun trgt ->
+      begin match trgt.Target.history with
+      | `Created _ ->
+        let newdep = Target.(activate_exn trgt ~by:`Success_trigger) in
+        add_or_update_target t newdep
+        >>= fun () ->
+        return (Some (`Target_activated (tid, `Success_trigger)))
+      | other -> return None
+      end)
+  >>| List.filter_opt
+  >>= fun happens ->
+  return (`Target_succeeded (Target.id target, why) :: happens)
+
 let with_plugin_or_kill_target t ~target ~plugin_name f =
   match Ketrew_plugin.find_plugin plugin_name with
   | Some m -> f m
@@ -482,9 +500,7 @@ let _start_running_target t target =
                (Option.value_map ~default:"None-condition" 
                   ~f:Target.Condition.to_string_hum target.Target.condition))
       | true ->
-        add_or_update_target t Target.(make_succeed_exn target a)
-        >>= fun () ->
-        return [`Target_succeeded (Target.id target, `Artifact_literal)]
+        make_target_succeed t target ~why:`Artifact_literal ~artifact:a
     end
   | `Direct_command cmd ->
     begin Target.Command.run cmd
@@ -500,9 +516,8 @@ let _start_running_target t target =
                     (Option.value_map ~default:"None-condition" 
                        ~f:Condition.to_string_hum target.condition))
           | true ->
-            add_or_update_target t Target.(make_succeed_exn target (`Value `Unit))
-            >>= fun () ->
-            return [`Target_succeeded (Target.id target, `Process_success)]
+            make_target_succeed t target ~artifact:(`Value `Unit)
+              ~why:`Process_success
         end
       | `Error (`Host error) ->
         host_error_to_potential_target_failure ~target ~error t
@@ -560,11 +575,10 @@ let _update_status t ~target ~bookkeeping =
             | true ->
               let run_parameters = Long_running.serialize run_parameters in
               (* result_type must be a Volume: *)
-              add_or_update_target t Target.(
-                  update_running_exn target ~run_parameters
-                  |> fun trgt ->  make_succeed_exn trgt (`Value `Unit))
-                >>= fun () ->
-                return [`Target_succeeded (Target.id target, `Process_success)]
+              make_target_succeed t 
+                (Target.update_running_exn target ~run_parameters)
+                ~artifact:(`Value `Unit)
+                ~why:`Process_success
           end
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
@@ -589,7 +603,8 @@ let log_what_happened =
     s "Target " % s id % s " activated: " %
     (match by with
      | `Dependency -> s "Dependency"
-     | `Fallback -> s "Fallback")
+     | `Fallback -> s "Fallback"
+     | `Success_trigger -> s "Success-trigger")
   | `Target_succeeded (id, how) ->
     s "Target " % s id % s " succeeded: " 
     % (match how with
@@ -639,10 +654,9 @@ let step t: (happening list, _) Deferred_result.t =
               | `Wait -> return happenings
               end
             | `Ok false ->
-              add_or_update_target t
-                Target.(make_succeed_exn target (`Value `Unit))
-              >>= fun () ->
-              return [`Target_succeeded (Target.id target, `Artifact_ready)]
+              make_target_succeed t  target
+                ~artifact:(`Value `Unit)
+                ~why:`Artifact_ready
             | `Error (`Volume (`No_size log)) ->
               make_target_die t ~target ~reason:(`Process_failure)
                 ~explanation:Log.(to_long_string
