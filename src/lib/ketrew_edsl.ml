@@ -159,7 +159,7 @@ let file_target
   Run a workflow:
 
    - make sure the run target is active,
-   - render all the depdendencies/fallbacks,
+   - render all the depdendencies/fallbacks/success-triggers,
 *)
 let user_command_list t =
   t#activate;
@@ -167,6 +167,7 @@ let user_command_list t =
     t#render :: 
     List.concat_map t#dependencies ~f:go_through_deps
     @ List.concat_map t#if_fails_activate ~f:go_through_deps
+    @ List.concat_map t#success_triggers ~f:go_through_deps
   in
   let targets =
     (go_through_deps t)
