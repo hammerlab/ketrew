@@ -75,7 +75,7 @@ module Vagrant_box = struct
 
   let internal_hostname _ = "precise64"
   let internal_username _ = "vagrant"
-  let prepare t =
+  let prepare ?success_triggers t =
     let open Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
@@ -95,7 +95,7 @@ module Vagrant_box = struct
     let make_ssh_config =
       target (* not a `file_target`, because we want this file regenerated 
                 every time. We set the `product` but not the “condition”. *)
-        "vagrant-ssh-config" ~dependencies:[running]
+        "vagrant-ssh-config" ~dependencies:[running] ?success_triggers
         ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
         ~make:(Test_host.do_on Program.(
             in_dir t
@@ -347,12 +347,12 @@ let ensure_lsf_is_running ~box =
         && exec ["sudo"; "/usr/etc/openlava"; "start"]
       ))
 
-let lsf_job ~box =
+let lsf_job ?success_triggers ?if_fails_activate ~box () =
   let open Ketrew.EDSL in
   let output = "/tmp/du-sh-slash" in
   let host = Vagrant_box.as_host box in
   let name = "lsf-1" in
-  file_target ~name output
+  file_target ~name output ?success_triggers ?if_fails_activate
     ~dependencies:[ ensure_lsf_is_running ~box ]
     ~tags:["integration"; "lsf"]
     ~make:(
@@ -364,13 +364,21 @@ let lsf_job ~box =
 
 let test =
   let lsf_host = Vagrant_box.create "LsfTestHost" in
-  object 
+  object  (self)
     method prepare =
       Vagrant_box.prepare lsf_host
     method go =
-      lsf_job ~box:lsf_host
+      lsf_job ~box:lsf_host ()
     method clean_up =
       Vagrant_box.destroy lsf_host
+    method do_all =
+      let clean = Vagrant_box.destroy lsf_host in
+      Vagrant_box.prepare lsf_host
+        ~success_triggers:[
+          lsf_job ~box:lsf_host ()
+            ~success_triggers:[clean]
+            ~if_fails_activate:[clean]
+        ]
     method box_names = ["LSF"]
     method ssh = function
     | "LSF" -> Vagrant_box.ssh lsf_host
@@ -402,6 +410,9 @@ let () =
   let clean_up =
     sub_command_of_target ~name:"clean-up" ~doc:"Destroy the VM(s)"
       (fun () -> test#clean_up) in
+  let do_all =
+    sub_command_of_target ~name:"all" ~doc:"Do the whole test at once"
+      (fun () -> test#do_all) in
   let ssh =
     let doc =
       sprintf "SSH into a VM (%s)"
@@ -422,6 +433,7 @@ let () =
     prepare;
     go;
     clean_up;
+    do_all;
     ssh;
   ] in
   match Term.eval_choice  default_cmd cmds with
