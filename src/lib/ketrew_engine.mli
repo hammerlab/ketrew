@@ -44,6 +44,9 @@ val load:
 val unload: t -> 
   (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
 
+val database: t -> (Ketrew_database.t,
+                    [> `Database of [> `Load of string ] * string ]) Deferred_result.t
+(** Get the database handle managed by the engine. *)
 
 val configuration: t -> Ketrew_configuration.engine
 (** Retrieve the configuration. *)
