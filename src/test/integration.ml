@@ -349,14 +349,14 @@ let ensure_lsf_is_running ~box =
 
 let lsf_job ?success_triggers ?if_fails_activate ~box () =
   let open Ketrew.EDSL in
-  let output = "/tmp/du-sh-slash" in
+  let output = "/tmp/du-sh-dollar-home" in
   let host = Vagrant_box.as_host box in
   let name = "lsf-1" in
-  file_target ~name output ?success_triggers ?if_fails_activate
+  file_target ~host ~name output ?success_triggers ?if_fails_activate
     ~dependencies:[ ensure_lsf_is_running ~box ]
     ~tags:["integration"; "lsf"]
     ~make:(
-      lsf ~host ~name Program.(shf "du -sh / > %s" output
+      lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
                                && exec ["cat"; output])
         ~queue:"normal"
     )
