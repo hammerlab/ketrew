@@ -125,6 +125,7 @@ module Http_client = struct
       match what with
       | `Kill_targets i as e -> i, e, "/kill-targets" 
       | `Archive_targets i as e -> i, e, "/archive-targets"
+      | `Restart_targets i as e -> i, e, "/restart-targets"
     in
     let json = `List (List.map ids (fun id -> `String id)) in
     call_json t ~path ~meta_meth:(`Post_json json)
@@ -137,6 +138,7 @@ module Http_client = struct
 
   let kill t id_list = kill_or_archive t (`Kill_targets id_list)
   let archive t id_list = kill_or_archive t (`Archive_targets id_list)
+  let restart t id_list = kill_or_archive t (`Restart_targets id_list)
 
   let call_query t ~target query =
     let id = Ketrew_target.id target in
@@ -307,13 +309,14 @@ let call_query t ~target query =
     | `Error (`Client e) -> fail (Ketrew_error.log_client_error e)
     end
 
-let restart_target t ~target =
+let restart_target t ids =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Ketrew_engine.restart_target s.engine target
+    Deferred_list.while_sequential ids (Ketrew_engine.restart_target s.engine)
+    >>| List.concat
   | `Http_client c ->
-    fail (`Failure "restart_target not implemented")
+    Http_client.restart c ids
 
 let get_local_engine = function
 | `Standalone s -> (Some s.Standalone.engine)

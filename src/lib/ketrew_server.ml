@@ -275,7 +275,7 @@ let add_targets_service  ~server_state ~body req =
   Light.green server_state.loop_traffic_light;
   return (`Json (`List ids))
 
-let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service = 
+let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service = 
   fun what_to_do ~server_state ~body req ->
     get_post_body req ~body 
     >>= fun body ->
@@ -293,6 +293,7 @@ let kill_or_archive_targets_service: [`Kill | `Archive] -> _ service =
         begin match what_to_do with
         | `Kill -> Ketrew_engine.kill server_state.state id
         | `Archive -> Ketrew_engine.archive_target server_state.state id
+        | `Restart -> Ketrew_engine.restart_target server_state.state id
         end)
     >>| List.concat
     >>= fun happenings ->
@@ -334,9 +335,11 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | "/target-call-query" -> target_call_query_service ~server_state ~body req
   | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
-    kill_or_archive_targets_service `Kill  ~server_state ~body req
+    action_on_ids_service `Kill  ~server_state ~body req
   | "/archive-targets" ->
-    kill_or_archive_targets_service `Archive  ~server_state ~body req
+    action_on_ids_service `Archive  ~server_state ~body req
+  | "/restart-targets" ->
+    action_on_ids_service `Restart  ~server_state ~body req
   | "/cleanable-targets" ->
     list_cleanable_targets ~server_state ~body req
   | other ->

@@ -615,6 +615,8 @@ let log_what_happened =
     s "Target " % s id % s " started " % parens (s plugin_name)
   | `Target_archived id ->
     s "Target " % s id % s " was archived "
+  | `Target_created id ->
+    s "Target " % s id % s " was created "
   | `Target_died (id, how) ->
     s "Target " % s id % s " died: " 
     % (match how with
@@ -734,44 +736,19 @@ let kill t ~id =
     return []
   end
 
-let restart_target ~engine target =
+let restart_target engine target_id =
   current_targets engine
   >>= fun targets ->
-  let id_translation = ref [] in
+  get_target engine target_id
+  >>= fun target ->
   let new_target trgt  =
     let with_name = "Re:" ^ Target.name trgt in
     let re = Target.reactivate ~with_name trgt in
-    id_translation := (Target.id trgt, Target.id re) :: !id_translation;
     re
   in
-  let get_reverse_dependencies trgt =
-    List.filter targets ~f:(fun t ->
-        List.exists t.Target.dependencies ~f:(fun dep -> Target.id trgt = dep))
-  in
-  let rec explore_upper_dag trgt =
-    let reverse_dependencies = get_reverse_dependencies trgt in
-    Log.(s "reverse_dependencies of " % Target.log trgt % s ": "
-         % OCaml.list Target.log reverse_dependencies @ very_verbose);
-    trgt :: reverse_dependencies
-    @ List.concat_map ~f:explore_upper_dag reverse_dependencies
-  in
   let this_new_target = new_target target in
-  let upper_dag =
-    let its_reverse_deps = get_reverse_dependencies target in
-    List.dedup ~compare:(fun ta tb -> Target.(String.compare (id ta) (id tb)))
-      (List.concat_map ~f:explore_upper_dag its_reverse_deps)
-    |> List.map ~f:new_target
-    |> List.map ~f:(fun t ->
-        let open Target in
-        { t with dependencies = 
-                   List.map t.dependencies ~f:(fun dep ->
-                       match
-                         List.find !id_translation (fun (a, _) -> a = dep)
-                       with
-                       | Some (_, new_id) -> new_id
-                       | None -> dep) })
-  in
-  add_targets engine (this_new_target :: upper_dag)
+  add_targets engine [this_new_target]
   >>= fun () ->
-  return (this_new_target, upper_dag)
+  let id = Target.id this_new_target in
+  return ([`Target_created id; `Target_activated (id, `Dependency)]: happening list)
     

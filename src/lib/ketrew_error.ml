@@ -30,6 +30,8 @@ let log_client_error =
       | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
       | `Archive_targets ids ->
         s "Archiving targets" % sp % OCaml.list quote ids
+      | `Restart_targets ids ->
+        s "Restarting targets" % sp % OCaml.list quote ids
       | `Target_query (id, query) ->
         s "Calling " % quote query % s " on " % quote id
       | `Cleanable_targets _ ->

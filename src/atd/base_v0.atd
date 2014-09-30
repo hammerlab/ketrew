@@ -94,6 +94,7 @@ type happening = [
        | Process_failure ])
   | Target_started of (unique_id * string)
   | Target_archived of unique_id
+  | Target_created of unique_id
   | Target_succeeded of
       (unique_id *
        [ Artifact_literal | Artifact_ready | Process_success ])

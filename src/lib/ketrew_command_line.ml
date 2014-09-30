@@ -913,14 +913,13 @@ module Explorer = struct
                  @ warning);
             explore ~client (one :: history)
           | `Restart ->
-            Ketrew_client.restart_target client ~target:chosen
-            >>= fun (this_target, new_upper_dag) ->
-            Log.(s "New Targets:" % n
-                 % indent (Interaction.format_target_for_menu this_target) % n
-                 % s "and its reverse dependencies:" % n
-                 % indent (separate n (List.map new_upper_dag
-                                         ~f:Interaction.format_target_for_menu))
-                 @ normal);
+            Ketrew_client.restart_target client [Ketrew_target.id chosen]
+            >>= fun what_happened ->
+            Log.(s "Restart of " % s (Target.name chosen) % n
+                 % (separate n
+                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
+                    |> indent)
+                 @ warning);
             explore ~client (one :: history)
           | `View_json ->
             view_json ~client chosen >>= fun () ->

@@ -183,8 +183,8 @@ val archive_target: t ->
     Deferred_result.t
 (** Move a target to the “archived” list. *)
 
-val restart_target: engine:t -> Ketrew_target.t -> 
-  (Ketrew_target.t * Ketrew_target.t list, 
+val restart_target: t -> Ketrew_target.id -> 
+  (happening list, 
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
