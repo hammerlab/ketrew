@@ -17,6 +17,12 @@
 
 open Ketrew_pervasives
 
+
+(** To use SSL we need to apply the server Cohhtp functor ourselves. *)
+module Cohttp_server_core = Cohttp_lwt.Make_server
+    (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
+
+
 (** A common error that simply means “invalid argument”. *)
 let wrong_request short long = fail (`Wrong_http_request (short, long))
 
@@ -73,7 +79,7 @@ module Authentication = struct
 
 end
 
-(** THe state maintained by the HTTP server. *)
+(** The state maintained by the HTTP server. *)
 module Server_state = struct
 
   type t = {
@@ -87,16 +93,11 @@ module Server_state = struct
   let create ~state ~authentication ~authentication_file server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; authentication_file;
-     server_configuration; loop_traffic_light}
+     server_configuration; loop_traffic_light;}
+
 
 end
 open Server_state
-
-(** To use SSL we need to apply the server Cohhtp functor ourselves. *)
-module Cohttp_server_core = Cohttp_lwt.Make_server
-    (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
-
-
 
 type answer = [
   | `Unit
@@ -400,6 +401,21 @@ let start_listening_on_command_pipe ~server_state =
               end
               >>= fun () ->
               read_loop ~error_count ()
+            | tag when String.sub tag ~index:0  ~length:3 = Some "tag" ->
+              let length = String.length tag - 3 in
+              Ketrew_engine.Measure.tag server_state.state
+                (String.sub_exn tag ~index:3 ~length);
+              read_loop ~error_count ()
+            | "flush-measurements" ->
+              Ketrew_engine.Measurements.flush server_state.state
+              >>= fun result ->
+              begin match result with
+              | `Ok () -> read_loop ~error_count ()
+              | `Error e ->
+                Log.(s "Could not flush the measurements: " 
+                     % s (Ketrew_error.to_string e) @ error);
+                return ()
+              end
             |  other ->
               Log.(s "Cannot understand command: " % OCaml.string other @ error);
               read_loop ~error_count ())
@@ -484,10 +500,12 @@ let start ~configuration  =
               `Key_file_path keyfile) in
           (* `No_password, `Port port) in *)
           let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
-          let callback conn_id req body =
-            Log.(s "HTTP callback" @ verbose);
-            handle_request ~server_state ~body req 
-            >>= function
+          let callback connection_id request body =
+            Ketrew_engine.Measure.incomming_request
+              server_state.state ~connection_id ~request;
+            handle_request ~server_state ~body request 
+            >>= fun high_level_answer ->
+            begin match high_level_answer with
             | `Ok `Unit ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
             | `Ok (`Json_raw body) ->
@@ -503,6 +521,11 @@ let start ~configuration  =
                 then "Error: " ^ (Ketrew_error.to_string e)
                 else "Undisclosed server error" in
               Cohttp_lwt_unix.Server.respond_string ~status:`Not_found  ~body ()
+            end
+            >>= fun cohttp_answer ->
+            Ketrew_engine.Measure.end_of_request
+              server_state.state ~connection_id ~request;
+            return cohttp_answer
           in
           let conn_closed conn_id () =
             Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 

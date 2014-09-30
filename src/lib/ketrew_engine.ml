@@ -69,16 +69,66 @@ module Persistent_state = struct
 
 end
 
+module Measurement_collection = struct
+  type item = Ketrew_gen_base_v0.Measurement_item.t
+  type t = Ketrew_gen_base_v0.Measurement_collection.t ref
+  let item content = 
+    let open Ketrew_gen_base_v0.Measurement_item in
+    { time = Time.(now ()); content}
+  let create () = ref [item `Creation]
+  let add collection log = 
+    collection := item log :: !collection
+
+  include Json.Make_serialization(Ketrew_gen_base_v0.Measurement_collection)
+
+  let flush collection db =
+    let action =
+      let key = Unique_id.create () in
+      let value = serialize !collection in
+      Ketrew_database.(set ~collection:"measurements" ~key value)
+    in
+    begin Ketrew_database.act db ~action
+      >>= function
+      | `Done ->
+        collection :=  [item `Creation]; 
+        return ()
+      | `Not_done -> fail (`Database_unavailable "measurements")
+    end
+
+  let load_all db =
+    Ketrew_database.get_all db ~collection:"measurements"
+    >>= fun all_strings ->
+    Deferred_list.while_sequential all_strings (fun s ->
+        try return (deserialize_exn s)
+        with e -> fail (`Deserialization (e, s)))
+    >>| List.concat
+    >>= fun collection ->
+    return collection
+
+  let make_http_request connection_id request =
+    let connection_id = Cohttp.Connection.to_string connection_id in
+    let meth = Cohttp.Request.meth request in
+    let uri = Cohttp.Request.uri request |> Uri.to_string in
+    {Ketrew_gen_base_v0.Http_request. connection_id;  meth; uri}
+
+end
+
+
 type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.engine;
+  measurements: Measurement_collection.t;
 }
 let create configuration =
-  return {database_handle = None; configuration;}
+  return {database_handle = None; configuration;
+          measurements = Measurement_collection.create ()}
 
 let release t =
   match t.database_handle with
-  | Some s -> Database.close s
+  | Some s ->
+    Measurement_collection.flush t.measurements s
+    >>= fun () ->
+    Database.close s
   | None -> return ()
 
 let load ~configuration =
@@ -106,6 +156,7 @@ let with_engine ~configuration f =
   end
 
 let configuration t = t.configuration
+
 
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
@@ -752,3 +803,21 @@ let restart_target engine target_id =
   let id = Target.id this_new_target in
   return ([`Target_created id; `Target_activated (id, `Dependency)]: happening list)
     
+module Measure = struct
+  open Measurement_collection
+  let incomming_request t ~connection_id ~request =
+    add t.measurements 
+      (`Incoming_request (make_http_request connection_id request))
+  let end_of_request t ~connection_id ~request =
+    add t.measurements
+      (`End_of_request (make_http_request connection_id request))
+  let tag t s =
+    add t.measurements (`Tag s)
+end
+module Measurements = struct
+
+  let flush t =
+    database t
+    >>= fun db ->
+    Measurement_collection.flush t.measurements db
+end

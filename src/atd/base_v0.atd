@@ -102,3 +102,20 @@ type happening = [
 ]
 
 type happening_list = happening list
+
+type http_request = {
+  connection_id: string;
+  meth: [ DELETE | GET | HEAD | OPTIONS | PATCH | POST | PUT ];
+  uri: string;
+}
+type measurement = [
+  | Creation
+  | Incoming_request of http_request
+  | End_of_request of http_request
+  | Tag of string
+]
+type measurement_item = {
+  time: time;
+  content: measurement;
+}
+type measurement_collection = measurement_item list

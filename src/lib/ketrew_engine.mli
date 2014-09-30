@@ -26,6 +26,7 @@ val with_engine:
   (engine:t ->
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string
+          | `Database_unavailable of Ketrew_target.id
           | `Dyn_plugin of
                [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
           ] as 'merge_error) Deferred_result.t) ->
@@ -42,7 +43,10 @@ val load:
    ]) Deferred_result.t
 
 val unload: t -> 
-  (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
+  (unit, [>
+      | `Database_unavailable of Ketrew_target.id
+      | `Database of [> `Act of Ketrew_database.action | `Close ] * string 
+    ]) Deferred_result.t
 
 val database: t -> (Ketrew_database.t,
                     [> `Database of [> `Load of string ] * string ]) Deferred_result.t
@@ -228,4 +232,28 @@ module Target_graph: sig
 
   val targets_to_clean_up: t -> [`Hard | `Soft] ->
     [ `To_kill of Ketrew_target.id list ] * [ `To_archive of Ketrew_target.id list ]
+end
+
+module Measure: sig
+
+  val incomming_request:
+    t ->
+    connection_id:Cohttp.Connection.t ->
+    request:Cohttp.Request.t ->
+    unit
+  val end_of_request:
+    t ->
+    connection_id:Cohttp.Connection.t ->
+    request:Cohttp.Request.t ->
+    unit
+  val tag: t -> string -> unit
+end
+module Measurements: sig
+
+  val flush: t ->
+    (unit, [>
+        | `Database of Ketrew_database.error
+        | `Database_unavailable of Ketrew_target.id
+      ]) Deferred_result.t
+
 end
