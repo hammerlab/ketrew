@@ -191,6 +191,9 @@ like [`Ketrew_lsf`](src/lib/ketrew_lsf.mli) or in the tests:
 - You may want to extend Ketrew, or preconfigure it, *without* configuration
 files or dynamically loaded libraries: just
 [create](src/doc/Alternative_CLI_Application.md) your own comand-line app.
+- If you are using Ketrew in server mode, you may want to know about the
+[commands](src/doc/Server_Commands.md) that the server can understand as it
+listens on a Unix-pipe.
 - You may want to call out directly to the [HTTP API](src/doc/The_HTTP_API.md)
 (i.e. without `ketrew` as a client).
 - If you want to help or simply to understand Ketrew
