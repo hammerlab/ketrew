@@ -232,134 +232,6 @@ opam_package () {
     echo "git: \"git@github.com:hammerlab/ketrew\"" > $package/url
 
 }
-
-test_environment_dir=_test_env
-test_standalone_config_file=$test_environment_dir/standalone-config-file.toml
-test_server_config_file=$test_environment_dir/server-config-file.toml
-test_client_config_file=$test_environment_dir/client-config-file.toml
-test_authorized_tokens=$test_environment_dir/test-authorized-tokens
-test_database_prefix=$test_environment_dir/database
-test_certificate=$test_environment_dir/test-cert.pem
-test_privkey=$test_environment_dir/test-key.pem
-test_server_log=$test_environment_dir/logs-of-server.txt
-test_command_pipe=$test_environment_dir/test-command.pipe
-test_shell_env=$test_environment_dir/env.env
-
-test_additional_findlib_plugin="findlib"
-test_additional_findlib_plugin_code="let f () = Findlib.init ()"
-set_test_additional_findlib_plugin () {
-  if  ocamlfind query lwt.react > /dev/null  ; then
-    export test_additional_findlib_plugin="lwt.react"
-    export test_additional_findlib_plugin_code="let f () = Lwt_react.E.app"
-  else
-    export test_additional_findlib_plugin="graphics"
-    export test_additional_findlib_plugin_code="let f () = Graphics.create_image 42 42"
-  fi
-  echo "Using package $test_additional_findlib_plugin add findlin-plugin"
-}
-ssl_cert_key () {
-  mkdir -p $test_environment_dir/
-  echo "Creating cert-key pair: $test_certificate, $test_privkey"
-  openssl req -x509 -newkey rsa:2048 \
-    -keyout $test_privkey -out $test_certificate \
-    -days 10 -nodes -subj "/CN=test_ketrew" 2> /dev/null
-}
-test_config_file () {
-  echo "Creating $test_standalone_config_file"
-  cat <<EOBLOB > $test_standalone_config_file
-# Ketrew test configuration file
-debug-level = 2
-[plugins]
-  ocamlfind =["lwt.unix", "$test_additional_findlib_plugin"]
-  compiled = "$PWD/_build/dummy_plugin_stuff/test_dummy_plugin.cmxs"
-[engine]
-  database-path = "$test_database_prefix-standalone"
-  host-timeout-upper-bound = 5.0
-[ui]
-  color = true
-EOBLOB
-  echo "Creating $test_server_config_file"
-  cat <<EOBLOB > $test_server_config_file
-# Ketrew test configuration file
-debug-level = 2
-[engine]
-  database-path = "$test_database_prefix-client-server"
-  host-timeout-upper-bound = 5.0
-[ui]
-  color = true
-[server]
-  certificate = "$test_certificate"
-  private-key = "$test_privkey"
-  port = 8443
-  authorized-tokens-path = "$test_authorized_tokens"
-  return-error-messages = true
-  log-path = "$test_server_log"
-  daemonize = true
-  command-pipe-path = "$test_command_pipe"
-EOBLOB
-  echo "Creating $test_client_config_file"
-  cat <<EOBLOB > $test_client_config_file
-# Ketrew test configuration file
-debug-level = 2
-[client]
-  connection = "https://127.0.0.1:8443"
-  token = "nekot"
-EOBLOB
-  echo "Creating $test_authorized_tokens"
-  cat << EOBLOB  >> $test_authorized_tokens
-test1 dsafkdjshh4383497hfvfnfdsfli some comments
-test2 dsaifdksafhkd8437189437tfodslcjdsacfaeo some more comments for test2
-easy_auth nekot easy authentication
-# commented line
-weird-line-that-makes-a-warning
-EOBLOB
-}
-
-compile_dummy_plugin () {
-  echo "Compiling the Dummy-plugin and its user"
-  local ocamlfind_package_options=`for p in $findlib_packages ; do echo -n "-package $p " ; done`
-  local additional_package="-package $test_additional_findlib_plugin"
-  local compile="ocamlfind opt -thread $ocamlfind_package_options $additional_package  -I _obuild/ketrew/ "
-  #set -e
-  local compile_dir=_build/dummy_plugin_stuff/
-  mkdir -p $compile_dir
-  cp src/test/dummy_plugin.ml $compile_dir
-  echo "(* Code that really depends on $test_additional_findlib_plugin *)" >> \
-    $compile_dir/dummy_plugin.ml
-  echo $test_additional_findlib_plugin_code >> $compile_dir/dummy_plugin.ml
-  cp src/test/dummy_plugin_user.ml $compile_dir
-  if [ _obuild/ketrew/ketrew.cmxa  -nt $compile_dir/test_dummy_plugin.cmxs ]; then
-    echo " $compile_dir/test_dummy_plugin.cmxs -ot _obuild/ketrew/ketrew.cmxa ]"
-    $compile -shared $compile_dir/dummy_plugin.ml \
-      -o  $compile_dir/test_dummy_plugin.cmxs
-    $compile -linkpkg _obuild/ketrew/ketrew.cmxa \
-      -I $compile_dir $compile_dir/dummy_plugin.cmx \
-      $compile_dir/dummy_plugin_user.ml \
-      -o $compile_dir/test_dummy_plugin_user.asm
-    # just for the sake of it we compile the `preconfigured_main.ml` example:  
-    cp src/test/preconfigured_main.ml $compile_dir
-    $compile -linkpkg ketrew.cmxa $compile_dir/preconfigured_main.ml -o $compile_dir/preconfigured.asm
-  fi
-}
-
-test_environment () {
-  echo "Creating $test_shell_env"
-  local confvar="KETREW_CONFIGURATION=$test_standalone_config_file"
-  mkdir -p $test_environment_dir
-  cat << EOBLOB > $test_shell_env
-export ktest_url=https://localhost:8443
-alias kscli="$confvar _obuild/ketrew-app/ketrew-app.asm"
-alias kstest="$confvar _obuild/ketrew-cli-test/ketrew-cli-test.asm"
-alias ksintegration="$confvar _obuild/ketrew-integration-test/ketrew-integration-test.asm"
-alias kdserver="KETREW_CONFIGURATION=$test_server_config_file  _obuild/ketrew-app/ketrew-app.asm"
-alias kdclient="KETREW_CONFIGURATION=$test_client_config_file  _obuild/ketrew-app/ketrew-app.asm"
-alias kdtest="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-cli-test/ketrew-cli-test.asm"
-alias kdintegration="KETREW_CONFIGURATION=$test_client_config_file _obuild/ketrew-integration-test/ketrew-integration-test.asm"
-alias ktkillserver='echo "die" > $test_command_pipe'
-alias ktplugin_user="$confvar _obuild/dummy_plugin_stuff/test_dummy_plugin_user.asm"
-EOBLOB
-}
-
 build () {
   set -e
   if [ -f build.ocp ]; then
@@ -381,7 +253,7 @@ usage:
         sig,get-dependencies,
         local-opam,opam,meta-file,
         put-license,remove-license,
-        test-env, test-ssl-ck,test-config-file,test-shell-env
+        test-env,
         help}"
 EOBLOB
 }
@@ -410,11 +282,8 @@ while [ "$1" != "" ]; do
     "remove-license" )
       . tools/headache_licenses.env
       remove_license ;;
-    "test-ssl-ck" ) ssl_cert_key ;;
-    "test-config-file" ) test_config_file ;;
-    "test-shell-env" )
-      test_environment ;;
     "test-env" )
+      . tools/test_environment.env
       ssl_cert_key
       test_config_file
       test_environment ;;
