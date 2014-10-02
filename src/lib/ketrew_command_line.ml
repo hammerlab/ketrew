@@ -1063,12 +1063,13 @@ let make_command_alias cmd ?(options="") name =
     `P (Printf.sprintf "See $(b,$(mname) %s --help) for details."
           orig);
   ] in
-  (term, Term.info name ~docs:"COMMAND ALIASES" ~doc ~man)
+  (term, Term.info name ~docs:"SOME COMMAND ALIASES" ~doc ~man)
 
 (** The configuration of the command line, using the [Cmdliner] library. *)
 let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let open Cmdliner in
   let version = Ketrew_metadata.version in
+  let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
     let default =
@@ -1079,7 +1080,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let doc = "Use $(docv) as configuration file (can be overriden also \
                with `$KETREW_CONFIGURATION`)." in
     Arg.(value & opt string default
-         & info ["C"; "configuration-file"] ~docv ~doc)
+         & info ["C"; "configuration-file"] 
+           ~docs:common_options_section ~docv ~doc)
   in
   let init_cmd =
     sub_command
@@ -1151,8 +1153,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       )
       ~info:(
         let man = [
-          `S "The HOW argument";
-          `P "The following “run” methods are available:";
+          `S "THE HOW ARGUMENT";
+          `P "The following $(i,“run”) methods are available:";
           `I ("`step`", "run one single step"); `Noblank;
           `I ("`fix`", "run  steps until nothing new happens"); `Noblank;
           `I ("`loop`", "loop `fix` until pressing 'q' (there is a \
@@ -1309,7 +1311,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   in
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
-    let man = [] in
+    let man = [
+      `S "AUTHORS";
+      `P "Sebastien Mondet <seb@mondet.org>"; `Noblank;
+      `S "BUGS";
+      `P "Browse and report new issues at"; `Noblank;
+      `P "<https://github.com/hammerlab/ketrew>.";
+    ] in
     sub_command
       ~term:Term.(ret (pure (`Help (`Plain, None))))
       ~info:(Term.info "ketrew" ~version ~doc ~man) in
