@@ -232,46 +232,6 @@ opam_package () {
     echo "git: \"git@github.com:hammerlab/ketrew\"" > $package/url
 
 }
-headache_config () {
-  local config_file=$1
-  cat << EOC > $config_file
-# OCaml
-| ".*\\.ml[il]?" -> frame open:"(*" line:"*" close:"*)"
-| ".*\\.atd" -> frame open:"(*" line:"*" close:"*)"
-EOC
-}
-export headache_files="src/lib/*.ml src/lib/*.mli src/atd/*.atd src/test/*.ml"
-put_license () {
-
-  local blob=/tmp/ketrew_license_blob
-  local year=2014 
-  local author="${seb[0]} <${seb[1]}>"
-  local config=/tmp/ketrew_headache_config
-  headache_config $config
-  cat << EOBLOB > $blob
-Copyright $year, $author
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied.  See the License for the specific language governing
-permissions and limitations under the License.
-EOBLOB
-  headache -c $config  -h $blob $headache_files
-
-}
-remove_license () {
-  local config=/tmp/ketrew_headache_config
-  headache_config $config
-  headache -c $config -r $headache_files 
-
-}
 
 test_environment_dir=_test_env
 test_standalone_config_file=$test_environment_dir/standalone-config-file.toml
@@ -444,8 +404,12 @@ while [ "$1" != "" ]; do
     "uninstall" ) uninstall $2 ; shift;;
     "local-opam" ) opam_file "./opam" ;;
     "opam" ) opam_package $2; shift ;;
-    "put-license" ) put_license ;;
-    "remove-license" ) remove_license ;;
+    "put-license" )
+      . tools/headache_licenses.env
+      put_license ;;
+    "remove-license" )
+      . tools/headache_licenses.env
+      remove_license ;;
     "test-ssl-ck" ) ssl_cert_key ;;
     "test-config-file" ) test_config_file ;;
     "test-shell-env" )
