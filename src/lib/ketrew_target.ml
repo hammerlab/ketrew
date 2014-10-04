@@ -85,13 +85,13 @@ end
 let nop : build_process = `Artifact (`Value `Unit)
 
 let create
-    ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
+    ?id ?name ?(persistence=`Input_data) ?(metadata=Artifact.Value.unit)
     ?(dependencies=[]) ?(if_fails_activate=[]) ?(make=nop)
     ?condition ?(equivalence=`Same_active_condition)
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
-  { id; name = Option.value name ~default:id; persistance; metadata;
+  { id; name = Option.value name ~default:id; persistence; metadata;
     dependencies; make; condition; history; equivalence; if_fails_activate }
 
 let is_equivalent t ext =
@@ -153,11 +153,11 @@ let update_running_exn t ~run_parameters =
 
 
 let active ?id
-    ?name ?persistance ?metadata
+    ?name ?persistence ?metadata
     ?dependencies ?if_fails_activate ?make ?condition ?equivalence
     () = 
   activate_exn ~by:`User 
-    (create ?id ?if_fails_activate ?name ?persistance ?metadata ?condition
+    (create ?id ?if_fails_activate ?name ?persistence ?metadata ?condition
        ?equivalence ?dependencies ?make ())
 
 let reactivate 
