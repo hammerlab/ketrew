@@ -150,7 +150,7 @@ end
 type t = {
   id : id;
   name : string;
-  persistance : [ `Input_data | `Recomputable of float | `Result ];
+  persistence : [ `Input_data | `Recomputable of float | `Result ];
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   if_fails_activate : id list;
@@ -163,7 +163,7 @@ type t = {
 
 val create :
   ?id:id -> ?name:string ->
-  ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
+  ?persistence:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
@@ -200,7 +200,7 @@ val update_running_exn : t -> run_parameters:string -> t
 
 val active :
   ?id:id -> ?name:string ->
-  ?persistance:[ `Input_data | `Recomputable of float | `Result ] ->
+  ?persistence:[ `Input_data | `Recomputable of float | `Result ] ->
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->

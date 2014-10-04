@@ -108,7 +108,7 @@ or with a pretty-printer:
          "dependencies" : [
             "ketrew_2014-08-21-21h49m48s823ms-UTC_332180439"
          ],
-         "persistance" : "Input_data",
+         "persistence" : "Input_data",
          "name" : "Commit",
          "if_fails_activate" : [
             "ketrew_2014-08-21-21h49m48s823ms-UTC_641907500"
