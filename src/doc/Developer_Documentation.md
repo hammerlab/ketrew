@@ -62,9 +62,7 @@ If you use Opam ≥ *1.2.0~beta4*, you don't need a custom opam-repository:
 
 ### Build The Documentation
 
-The documentation depends on [omd](https://github.com/ocaml/omd),
-[higlo](http://zoggy.github.io/higlo/),
-and Graphviz's `dot`:
+The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 
     please.sh doc
 
