@@ -20,13 +20,15 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
 - `yojson`: JSON parsing/printing
-- `atdgen/atd`: definition of serialization formats (used with `Yojson`).
+- `atd2cconv`: definition of serialization formats (used with `Yojson`).
 - `toml`: config-file parsing
-- `dbm`: unix key-value database
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
 
 and uses the `ocp-build` build system.
+
+At runtime, Ketrew will use a reasonably recent `git` command, and an `ssh`
+client (tested only with OpenSSH; but SSH calls are quite configurable).
 
 The `please.sh` script can call `opam` itself:
 
