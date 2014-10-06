@@ -149,15 +149,16 @@ The default for Ketrew is to run in “Standalone” mode.
 From the command-line client, one can both query and run the engine.  See
 first: `ketrew --help`; then:
 
-- To display the current status: `ketrew status`.
+- To display the current status: `ketrew status --help`.
 - To run as many steps as possible until a “fix-point” is reached:
 `ketrew run fix` (see `ketrew run-engine --help`).
 - To kill running jobs use `ketrew kill` + the target Identifier,<br/>
 or do an interactive murder: `ketrew kill --interactive`
+(see `ketrew kill --help`).
 - Once targets are dead, one can “archive” them, i.e. put them in a
 less-visible list: `ketrew archive --help`.
 
-See also `ketrew interact` or `ketrew explore` for fun
+See also `ketrew interact --help` or `ketrew explore --help` for fun
 *one-key-based* navigation.
 
 Ketrew can try to be clever about killing an archiving;
@@ -168,7 +169,8 @@ see `ketrew autoclean --help`.
 In this mode, the Ketrew engine runs a proper server which is
 accessed over an HTTP API.
 
-See the commands `ketrew start-server` and `ketrew stop-server`.
+See the commands `ketrew start-server --help`
+and `ketrew stop-server --help`.
 
 The client works in the same way as in “Standalone” mode.
 
