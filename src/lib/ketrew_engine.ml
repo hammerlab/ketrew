@@ -118,10 +118,16 @@ type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.engine;
   measurements: Measurement_collection.t;
+  mutable persistent: Persistent_state.t option;
+  targets: (string, Target.t) Hashtbl.t;
 }
 let create configuration =
-  return {database_handle = None; configuration;
-          measurements = Measurement_collection.create ()}
+  return {
+    database_handle = None; configuration;
+    measurements = Measurement_collection.create ();
+    persistent = None;
+    targets = Hashtbl.create 42;
+  }
 
 let release t =
   match t.database_handle with
@@ -173,15 +179,22 @@ let database t =
     return db
 
 let get_persistent t =
-  database t >>= fun db ->
-  let key = Configuration.persistent_state_key t.configuration in
-  begin Database.get db ~key >>= function
-    | Some persistent_serialized ->
-      Persistent_state.deserialize persistent_serialized
-    | None ->
-      let e = Persistent_state.create () in
-      return e
-  end
+  match t.persistent with
+  | Some p -> return p
+  | None ->
+    database t >>= fun db ->
+    let key = Configuration.persistent_state_key t.configuration in
+    begin Database.get db ~key >>= function
+      | Some persistent_serialized ->
+        Persistent_state.deserialize persistent_serialized
+      | None ->
+        let e = Persistent_state.create () in
+        return e
+    end
+    >>= fun p ->
+    t.persistent <- Some p;
+    return p
+
 
 let save_persistent t persistent =
   database t >>= fun db ->
@@ -189,7 +202,9 @@ let save_persistent t persistent =
   let action = Database.(set ~key (Persistent_state.serialize persistent)) in
   begin Database.act db ~action
     >>= function
-    | `Done -> return ()
+    | `Done -> 
+      t.persistent <- Some persistent;
+      return ()
     | `Not_done -> fail (`Database_unavailable key)
   end
 
@@ -202,7 +217,9 @@ let add_or_update_target t target =
   >>= fun db ->
   begin Database.(act db (set_target_db_action target))
     >>= function
-    | `Done -> return ()
+    | `Done -> 
+      Hashtbl.replace t.targets (Target.id target) target; 
+      return ()
     | `Not_done ->
       (* TODO: try again a few times instead of error *)
       fail (`Database_unavailable target.Target.id)
@@ -212,18 +229,29 @@ let add_or_update_target t target =
 (** This internal function gets a target value from the database {b without
     following pointers}.
 *)
-let _get_target_from_db db id =
-  Database.get db ~collection:"targets" ~key:id
-  >>= function
-  | Some t -> of_result (Target.deserialize t)
-  | None -> fail (`Missing_data id)
+let _get_target_no_pointers t id =
+  database t >>= fun db ->
+  begin try 
+    let found = Hashtbl.find t.targets id in
+    return found
+  with _ -> (
+      Database.get db ~collection:"targets" ~key:id
+      >>= function
+      | Some s -> 
+        of_result (Target.deserialize s)
+        >>= fun target ->
+        Hashtbl.replace t.targets (Target.id target) target; 
+        return target
+      | None -> fail (`Missing_data id)
+    )
+  end
 
 let get_target t id =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let actual_id = Persistent_state.follow_pointers persistent id in
-  _get_target_from_db db actual_id (** After following pointers we can say we
-                                       get the target from the DB. *)
+  _get_target_no_pointers t actual_id (** After following pointers we can say we
+                                          get the target from the DB. *)
 
 let current_targets t =
   database t >>= fun db ->
@@ -231,7 +259,7 @@ let current_targets t =
   let target_ids = Persistent_state.current_targets persistent in
   (** The [current_targets] are the ones we care about; not pointers which
       would create a lot useless duplicates. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
@@ -375,7 +403,11 @@ let add_targets t tlist =
   begin
     Database.(act db transaction)
     >>= function
-    | `Done -> return ()
+    | `Done ->
+      t.persistent <- Some new_persistent;
+      List.iter targets_to_add ~f:(fun trgt ->
+          Hashtbl.replace t.targets (Target.id trgt) trgt);
+      return ()
     | `Not_done ->
       (* TODO: try again a few times instead of error *)
       fail (`Database_unavailable "transaction failed")
@@ -387,7 +419,7 @@ let archived_targets t =
   let target_ids = Persistent_state.archived_targets persistent in
   (** Here also we don't want duplicates, [Persistent_state.archived_targets]
       are “real” targets. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
