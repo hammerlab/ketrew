@@ -388,7 +388,14 @@ let start_listening_on_command_pipe ~server_state =
               Log.(s "Server killed by “die” command " 
                    % parens (OCaml.string file_path)
                    @ normal);
-              exit 0
+              begin Ketrew_engine.unload server_state.state
+                >>= function
+                | `Ok () -> exit 0
+                | `Error e ->
+                  Log.(s "Could not unload engine:"  % sp
+                       % s (Ketrew_error.to_string e) @ error);
+                  exit 10
+              end
             | reload_auth when reload_auth = reload_authorized_tokens ->
               begin reload_authentication_file ~server_state
                 >>= function
