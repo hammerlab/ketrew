@@ -129,7 +129,7 @@ let create configuration =
     targets = Hashtbl.create 42;
   }
 
-let release t =
+let unload t =
   match t.database_handle with
   | Some s ->
     Measurement_collection.flush t.measurements s
@@ -140,24 +140,21 @@ let release t =
 let load ~configuration =
   create configuration
 
-let unload engine =
-  release engine
-
 let with_engine ~configuration f =
   create configuration
   >>= fun engine ->
   begin try f ~engine with
   | e -> 
-    release engine
+    unload engine
     >>= fun () ->
     fail (`Failure (fmt "with_state: client function threw exception: %s" 
                       (Printexc.to_string e)))
   end
   >>< begin function
   | `Ok () ->
-    release engine
+    unload engine
   | `Error e ->
-    release engine >>< fun _ ->
+    unload engine >>< fun _ ->
     fail e
   end
 
