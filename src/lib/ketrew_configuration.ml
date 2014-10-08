@@ -287,37 +287,14 @@ let get_configuration ?(and_apply=true) ?override_configuration path =
     of_result (parse content)
   end
   >>= fun conf ->
-  if and_apply then apply_globals conf;
+  begin if and_apply then (
+    apply_globals conf;
+    Ketrew_plugin.load_plugins conf.plugins
+  ) else
+    return ()
+  end
+  >>= fun () ->
   return conf
-
-let get_configuration_non_deferred_exn
-    ?(and_apply=true) ?override_configuration path =
-  let conf =
-    begin match override_configuration with
-    | Some c -> c
-    | None ->
-      begin
-        let i = open_in path in
-        let content =
-          let buf = Buffer.create 1023 in
-          let rec get_all () =
-            begin try
-              let line = input_line i in
-              Buffer.add_string buf (line ^ "\n");
-              get_all ()
-            with e -> ()
-            end;
-          in
-          get_all ();
-          Buffer.contents buf in
-        close_in i;
-        let conf = parse_exn content in
-        conf
-      end
-    end
-  in
-  if and_apply then apply_globals conf;
-  conf
 
 let plugins t = t.plugins
 
@@ -343,3 +320,34 @@ let token c = c.token
 let standalone_of_server s = 
   {standalone_ui = s.server_ui;
    standalone_engine = s.server_engine;}
+
+let get_configuration_for_daemon_exn
+    ?override_configuration path =
+  let conf =
+    begin match override_configuration with
+    | Some c -> c
+    | None ->
+      begin
+        let i = open_in path in
+        let content =
+          let buf = Buffer.create 1023 in
+          let rec get_all () =
+            begin try
+              let line = input_line i in
+              Buffer.add_string buf (line ^ "\n");
+              get_all ()
+            with e -> ()
+            end;
+          in
+          get_all ();
+          Buffer.contents buf in
+        close_in i;
+        let conf = parse_exn content in
+        conf
+      end
+    end
+  in
+  match server_configuration conf with
+  | Some server_config when daemon server_config ->
+    `Daemonize_with (log_path server_config)
+  | _ -> `Do_not_daemonize

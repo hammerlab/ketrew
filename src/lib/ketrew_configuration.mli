@@ -113,7 +113,7 @@ val parse :
   (t, [> `Configuration of [> `Parsing of string ] ]) Result.t
 (** Parse the contents of a configuration file. *)
 
-val apply_globals: t -> unit
+(* val apply_globals: t -> unit *)
 (** Apply options that have global impact. *)
 
 val get_configuration :
@@ -122,15 +122,22 @@ val get_configuration :
   string ->
   (t,
    [> `Configuration of [> `Parsing of string ]
+   | `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of string
    | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
 (** The call [get_configuration file] reads and parses the file [f], unless
     [override_configuration] is provided.
-    if [and_apply] is [true] (the default), then {!apply_globals} is called.
+    if [and_apply] is [true] (the default), then global settings are applied
+    and plugins are loaded.
 *)
 
-val get_configuration_non_deferred_exn :
-  ?and_apply:bool -> ?override_configuration:t -> string -> t
-(** Do like {!get_configuration} but in a dirty Lwt-less way. *)
+val get_configuration_for_daemon_exn :
+  ?override_configuration:t -> string ->
+  [ `Daemonize_with of string option | `Do_not_daemonize ]
+(** Do like {!get_configuration} but in a dirty Lwt-less way and
+    return only partial information: whether to daemonize or not (the [string
+    option] is the potential log-file path). *)
 
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)

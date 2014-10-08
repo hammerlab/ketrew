@@ -1017,27 +1017,26 @@ let interact ~client =
   main_loop ()
 
 let daemonize_if_applicable config =
-  let module Conf = Ketrew_configuration in
-  match Conf.server_configuration config with
-  | Some server_config when Conf.daemon server_config ->
+  match config with
+  | `Daemonize_with log_path_opt ->
     let syslog = false in
     let stdin = `Dev_null in
     let (stdout, stderr) =
-      begin match Conf.log_path server_config with
+      begin match log_path_opt with
       | None -> (`Dev_null,`Dev_null)
       | Some file_name ->
         global_with_color := false;
         Log.(s "Creating logger" @ very_verbose);
         let logger =
           Lwt_log.channel  ()
-          ~template:"[$(date):$(milliseconds)] $(message)"
-          ~close_mode:`Keep
-          ~channel:(Lwt_io.of_unix_fd
-                      ~mode:Lwt_io.output
-                      (UnixLabels.(
-                          openfile
-                            ~perm:0o600 file_name
-                            ~mode:[O_APPEND; O_CREAT; O_WRONLY])))
+            ~template:"[$(date):$(milliseconds)] $(message)"
+            ~close_mode:`Keep
+            ~channel:(Lwt_io.of_unix_fd
+                        ~mode:Lwt_io.output
+                        (UnixLabels.(
+                            openfile
+                              ~perm:0o600 file_name
+                              ~mode:[O_APPEND; O_CREAT; O_WRONLY])))
           in
           (`Log logger, `Log logger)
       end
@@ -1048,7 +1047,7 @@ let daemonize_if_applicable config =
     Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
     Log.(s "Daemonized!" @ very_verbose);
     ()
-  | None | Some _ -> ()
+  | `Do_not_daemonize -> ()
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
@@ -1272,12 +1271,12 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun config_path ->
             (* We need a Lwt-less processing until the potential
                daemonization: *)
-            let configuration =
-              Configuration.get_configuration_non_deferred_exn
+            let configuration_extract =
+              Configuration.get_configuration_for_daemon_exn
                 ?override_configuration config_path in
-            Log.(s "Got configuration: " % Configuration.log configuration
-                 @ very_verbose);
-            daemonize_if_applicable configuration;
+            daemonize_if_applicable configuration_extract;
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
             match Configuration.mode configuration with
             | `Server srv -> Ketrew_server.start srv
             | other -> fail (`Failure "not a server")
