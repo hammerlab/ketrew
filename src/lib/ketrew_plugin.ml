@@ -17,7 +17,6 @@
 open Ketrew_pervasives
 
 
-module Configuration = Ketrew_configuration
 open Ketrew_long_running
 module Daemonize = Ketrew_daemonize
 

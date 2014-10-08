@@ -39,3 +39,10 @@ val call_query:  target:Ketrew_target.t -> string ->
 (** Call a query on a target. *)
 
 val find_plugin: string -> (module Ketrew_long_running.LONG_RUNNING) option
+
+val load_plugins :
+  [ `Compiled of string | `OCamlfind of string ] list ->
+  (unit,
+   [> `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of string ]) Deferred_result.t
