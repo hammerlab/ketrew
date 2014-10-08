@@ -65,15 +65,51 @@ let log_error = function
        % s " → "
        % s msg)
 
-(* type stupid_db = Ketrew_gen_base_v0_t.stupid_db *)
+module Cache = struct
+
+  type collection = {
+    hashtbl: (string, string option) Hashtbl.t;
+  }
+  module String_map = Map.Make(String)
+  type t = {
+    mutable map: collection String_map.t;
+  }
+  let create () = { map = String_map.empty; }
+  let add_or_replace t ?(collection="") ~key v =
+    try
+      let {hashtbl} = String_map.find collection t.map in
+      Hashtbl.replace hashtbl key v
+    with
+    | _ ->
+      let hashtbl = Hashtbl.create 42 in
+      Hashtbl.replace hashtbl key v;
+      t.map <- String_map.add collection {hashtbl} t.map;
+      ()
+
+  let get t ?(collection="") ~key = 
+    try
+      let {hashtbl} = String_map.find collection t.map in
+      `Set (Hashtbl.find hashtbl key)
+    with _ -> `Unset
+
+  let remove t ?(collection="") ~key =
+    try
+      let {hashtbl} = String_map.find collection t.map in
+      Hashtbl.remove hashtbl key
+    with _ -> ()
+
+end
+
+
 type t = {
-  (* mutable db: Dbm.t; *)
-  (* mutable history: (action * stupid_db) list; *)
   path: string;
   mutex: Lwt_mutex.t;
   exec_style: [`Shell | `Exec];
+  cache: Cache.t;
 }
-let create path = {exec_style = `Exec; mutex = Lwt_mutex.create (); path} 
+let create path =
+  {exec_style = `Exec; mutex = Lwt_mutex.create (); 
+   path; cache = Cache.create ()} 
 
 module Debug = struct
 
@@ -217,11 +253,18 @@ let cleap_up t ~loc =
   call_git t ~loc ["clean"; "-f"]
 
 let get ?collection t ~key =
-  let key = _key ?collection key in
+  let metakey = _key ?collection key in
   Lwt_mutex.with_lock t.mutex (fun () -> 
-      cleap_up t ~loc:(`Get key)
-      >>= fun () ->
-      get_no_mutex t ~key)
+      match Cache.get t.cache ?collection ~key with
+      | `Set v -> return v
+      | `Unset ->
+        cleap_up t ~loc:(`Get metakey)
+        >>= fun () ->
+        get_no_mutex t ~key:metakey
+        >>= fun v ->
+        Cache.add_or_replace t.cache ?collection ~key v;
+        return v
+    )
 
 let get_all t ~collection =
   Lwt_mutex.with_lock t.mutex (fun () -> 
@@ -301,6 +344,17 @@ let act t ~action =
       >>= fun (_ : unit list) ->
       return ()
   in
+  let rec go_cache =
+    function
+    | Set (key, value) ->
+      Cache.add_or_replace t.cache
+        ?collection:key.collection ~key:key.key (Some value)
+    | Unset key ->
+      Cache.add_or_replace t.cache
+        ?collection:key.collection ~key:key.key None
+    | Check (key, value_opt) -> ()
+    | Sequence l -> List.iter l ~f:go_cache
+  in
   begin
     Lwt_mutex.with_lock t.mutex (fun () ->
         Log.(s "Starting transaction " % s branch_name @ very_verbose);
@@ -313,6 +367,10 @@ let act t ~action =
         call_git ["checkout"; "master"]
         >>= fun () ->
         call_git ["merge"; branch_name]
+        >>= fun () ->
+        go_cache action;
+        (* update cache *)
+        return ()
       ) end
   >>< function
   | `Ok () -> return `Done
