@@ -89,7 +89,13 @@ module Server_state = struct
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
   }
+(*M
+The `loop_traffic_light` is “red” for the server  by default but some services
+can set it to `Green to wake-up it earlier and do things.
 
+For example, after adding targets, the server will be woken-up to start running
+the targets and not wait for the next “loop timeout.”
+M*)
   let create ~state ~authentication ~authentication_file server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; authentication_file;
