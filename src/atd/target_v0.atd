@@ -84,7 +84,7 @@ type id = unique_id
 type target = {
   id: id;
   name: string;
-  persistance: [ Input_data | Recomputable of float | Result ];
+  persistence: [ Input_data | Recomputable of float | Result ];
   metadata: artifact_value;
   dependencies: id list;
   if_fails_activate: id list;

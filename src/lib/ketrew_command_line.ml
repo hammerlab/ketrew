@@ -91,8 +91,8 @@ module Document = struct
     s "Target " % s t.name % n
     % itemize [
       "ID", s t.id;
-      "Persistance",
-      (match t.persistance with
+      "Persistence",
+      (match t.persistence with
        | `Recomputable bility -> s "Recomputable " % f bility
        | `Result -> s "Result"
        | `Input_data -> s "Input-data");

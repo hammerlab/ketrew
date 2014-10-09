@@ -40,7 +40,7 @@ Then you may setup and build everything:
 
     ./please.sh build
 
-(for incremental compilation while developping please use: `ocp-build <target>`
+(for incremental compilation while developing please use: `ocp-build <target>`
 directly)
 
 ### Install

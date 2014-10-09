@@ -104,14 +104,14 @@ type workflow_state = Ketrew_gen_target_v0.Workflow_state.t
 include Ketrew_gen_target_v0.Target
 
 let create
-    ?id ?name ?(persistance=`Input_data) ?(metadata=Artifact.Value.unit)
+    ?id ?name ?(persistence=`Input_data) ?(metadata=Artifact.Value.unit)
     ?(dependencies=[]) ?(if_fails_activate=[]) ?(success_triggers=[])
     ?(make=Build_process.nop)
     ?condition ?(equivalence=`Same_active_condition) ?(tags=[])
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
-  { id; name = Option.value name ~default:id; persistance; metadata; tags; 
+  { id; name = Option.value name ~default:id; persistence; metadata; tags; 
     log = []; dependencies; make; condition; history; equivalence;
     if_fails_activate; success_triggers; }
 
@@ -176,13 +176,13 @@ let update_running_exn t ~run_parameters =
 
 
 let active ?id
-    ?name ?persistance ?metadata
+    ?name ?persistence ?metadata
     ?dependencies ?if_fails_activate ?success_triggers 
     ?make ?condition ?equivalence ?tags
     () = 
   activate_exn ~by:`User 
     (create ?id ?if_fails_activate ?success_triggers 
-       ?name ?persistance ?metadata ?condition ?tags
+       ?name ?persistence ?metadata ?condition ?tags
        ?equivalence ?dependencies ?make ())
 
 let reactivate 
