@@ -497,7 +497,7 @@ let archive ~client ~interactive ids =
       >>= fun happenings ->
       List.iter happenings ~f:(function
         | `Target_archived id ->
-          Log.(s "Target " % s id % s " killed" @ normal);
+          Log.(s "Target " % s id % s " archived" @ normal);
         | other ->
           Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
                @ error);
