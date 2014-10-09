@@ -87,18 +87,24 @@ module Http_client = struct
       fail (`Client (`Http (where, `Wrong_response (response, body))))
     end
 
+  let filter_down_message json ~f ~loc =
+    begin try
+      let message = (Ketrew_protocol.Down_message.of_json_exn json) in
+      begin match f message with
+      | Some x -> return x
+      | None ->
+        fail (`Client (`Http (loc, `Unexpected_message message)))
+      end
+    with _ -> fail (`Client (`Http (loc, `Wrong_json json)))
+    end
+
+
   let get_current_targets ~archived t =
     call_json t ~path:"/targets" ~meta_meth:`Get 
       ~args:(if archived then ["archived", "true"] else [])
-    >>= fun json ->
-    begin match json with
-    | `List jsons ->
-      Deferred_list.while_sequential jsons (fun json ->
-          let s = Yojson.Basic.to_string json in
-          of_result (Ketrew_target.deserialize s))
-    | other -> 
-      fail (`Client (`Http (`Targets, `Wrong_json other)))
-    end
+    >>= filter_down_message
+      ~loc:`Targets
+      ~f:(function `List_of_targets tl -> Some tl | _ -> None)
 
   let add_targets t ~targets =
     let body_string =
@@ -111,14 +117,9 @@ module Http_client = struct
 
   let get_target t ~id =
     call_json t ~path:"/targets" ~meta_meth:`Get ~args:["id", id]
-    >>= fun json ->
-    begin match json with
-    | `List [json] ->
-      let s = Yojson.Basic.to_string json in
-      of_result (Ketrew_target.deserialize s)
-    | other -> 
-      fail (`Client (`Http (`Targets, `Wrong_json other)))
-    end
+    >>= filter_down_message
+      ~loc:`Targets
+      ~f:(function `List_of_targets [t] -> Some t | _ -> None)
 
   let kill_or_archive t what =
     let ids, error_loc, path =
@@ -129,12 +130,9 @@ module Http_client = struct
     in
     let json = `List (List.map ids (fun id -> `String id)) in
     call_json t ~path ~meta_meth:(`Post_json json)
-    >>= fun json ->
-    begin try
-      Serialize_happenings.of_json_exn json |> return
-    with e ->
-      fail (`Client (`Http (error_loc, `Wrong_json json)))
-    end
+    >>= filter_down_message
+      ~loc:error_loc
+      ~f:(function `Happens sl -> Some sl | _ -> None)
 
   let kill t id_list = kill_or_archive t (`Kill_targets id_list)
   let archive t id_list = kill_or_archive t (`Archive_targets id_list)
@@ -148,35 +146,20 @@ module Http_client = struct
     ] in
     call_json t ~path:"/target-call-query" ~meta_meth:`Get ~args
     >>= fun json ->
-    begin match json with
-    | `List [`String s] ->
-      return s
-    | other -> 
-      fail (`Client (`Http (`Target_query (id, query), `Wrong_json other)))
-    end
+    filter_down_message json ~loc:(`Target_query (id, query))
+      ~f:(function `Query_result s -> Some s | _ -> None)
 
   let call_cleanable_targets ~how_much t =
     let args = [
       "howmuch", (match how_much with `Soft -> "soft" | `Hard -> "hard");
     ] in
-    let error = client_error ~where:(`Cleanable_targets how_much) in
+    let loc = (`Cleanable_targets how_much) in
     call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
     >>= fun json ->
-    begin match json with
-    | `Assoc ["to-kill", `List kill; "to-archive", `List archive] ->
-      let to_strings strs = 
-        Deferred_list.while_sequential strs ~f:(function
-          | `String s -> return s
-          | other -> fail (error ~what:(`Wrong_json json)))
-      in
-      to_strings kill
-      >>= fun to_kill ->
-      to_strings archive
-      >>= fun to_archive ->
-      return (`To_kill to_kill, `To_archive to_archive)
-    | other -> 
-      fail (error ~what:(`Wrong_json other))
-    end
+    filter_down_message json ~loc
+      ~f:(function `Clean_up s -> Some s | _ -> None)
+    >>= fun {Ketrew_gen_protocol_v0.Clean_up_todo_list. to_kill; to_archive} ->
+    return (`To_kill to_kill, `To_archive to_archive)
 end
 
 type t = [

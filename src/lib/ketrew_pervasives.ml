@@ -100,11 +100,6 @@ module Json = struct
 
 end
 
-module Serialize_happenings =
-  Json.Make_versioned_serialization
-    (Ketrew_gen_base_v0.Happening_list)
-    (Ketrew_gen_versioned.Happening_list)
-
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
 let invalid_argument_exn ?(where="pervasives") what =

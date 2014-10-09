@@ -14,34 +14,25 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-type persistent_state_v0 
-  <ocaml from="Ketrew_gen_base_v0.Persistent_state"> = abstract
+open Ketrew_pervasives
 
-type target_v0 
-  <ocaml from="Ketrew_gen_target_v0.Target" > = abstract
+module Down_message : sig
+  type t = Ketrew_gen_protocol_v0.Down_message.t
 
-type daemonize_run_parameters_v0 
-  <ocaml from="Ketrew_gen_daemonize_v0.Run_parameters" > = abstract
+  val to_json : Ketrew_gen_protocol_v0.Down_message.t -> CConvYojson.t
+  val of_json_exn :
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Down_message.t
 
-type lsf_run_parameters_v0 
-  <ocaml from="Ketrew_gen_lsf_v0.Run_parameters" > = abstract
+  val serialize : Ketrew_gen_protocol_v0.Down_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Down_message.t
 
-type persistent_state = [ V0 of persistent_state_v0 ]
-type target = [ V0 of target_v0 ]
+  val added_target :
+    original_id:string ->
+    fresh_id:string -> Ketrew_gen_protocol_v0.Added_target.t
 
-type daemonize_run_parameters = [ V0 of daemonize_run_parameters_v0 ] 
-type lsf_run_parameters = [ V0 of lsf_run_parameters_v0 ] 
+  val clean_up :
+    to_kill:string list ->
+    to_archive:string list -> Ketrew_gen_protocol_v0.Clean_up_todo_list.t
 
-type measurement_collection_v0
-     <ocaml from="Ketrew_gen_base_v0.Measurement_collection" > = abstract
-
-type measurement_collection = [ V0 of measurement_collection_v0 ]
-
-type happening_list_v0
-     <ocaml from="Ketrew_gen_base_v0.Happening_list" > = abstract
-
-type happening_list = [ V0 of happening_list_v0 ]
-
-type down_message_v0 
-     <ocaml from="Ketrew_gen_protocol_v0.Down_message" > = abstract
-type down_message = [ V0 of down_message_v0 ]
+  val log : t -> Ketrew_pervasives.Log.t
+end

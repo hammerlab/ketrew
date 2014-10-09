@@ -107,7 +107,7 @@ open Server_state
 
 type answer = [
   | `Unit
-  | `Json of Json.t
+  | `Message of [ `Json ] * Ketrew_protocol.Down_message.t
 ]
 (** A service can replay one of those cases; or an error. *)
 
@@ -177,7 +177,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
     Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
     |> Option.value ~default:[] in
   format_parameter req
-  >>= fun `Json ->
+  >>= fun response_format ->
   begin match target_ids  with
   | [] ->
     Ketrew_engine.current_targets server_state.state
@@ -202,9 +202,8 @@ let targets_service: _ service = fun ~server_state ~body req ->
           return None)
     >>| List.filter_opt
   end
-  >>| List.map ~f:Ketrew_target.to_json
-  >>= fun jsons ->
-  return (`Json (`List jsons))
+  >>= fun targets ->
+  return (`Message (response_format, `List_of_targets targets))
 
 let target_available_queries_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -214,17 +213,15 @@ let target_available_queries_service ~server_state ~body req =
   mandatory_parameter req ~name:"id"
   >>= fun target_id ->
   format_parameter req
-  >>= fun `Json ->
+  >>= fun response_format ->
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
-  let json =
-    `List (
+  let msg =
+    `List_of_query_descriptions (
       Ketrew_plugin.additional_queries target
-      |> List.map ~f:(fun (name, descr) ->
-          (`List [`String name; `String (Log.to_long_string descr)])))
-  in
-  Log.(s "Replying: " % Json.log json @ very_verbose);
-  return (`Json json)
+      |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)
+    ) in
+  return (`Message (response_format, msg))
 
 let target_call_query_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -234,7 +231,7 @@ let target_call_query_service ~server_state ~body req =
   mandatory_parameter req ~name:"id"
   >>= fun target_id ->
   format_parameter req
-  >>= fun `Json ->
+  >>= fun response_format ->
   mandatory_parameter req ~name:"query"
   >>= fun query_name ->
   Ketrew_engine.get_target server_state.state target_id
@@ -245,9 +242,7 @@ let target_call_query_service ~server_state ~body req =
     Ketrew_plugin.call_query ~target query_name
     >>< function
     | `Ok string -> 
-      let json = (`List [`String string]) in
-      Log.(s "Replying: " % Json.log json @ very_verbose);
-      return (`Json json)
+      return (`Message (response_format, `Query_result string))
     | `Error error_log ->
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
@@ -274,11 +269,12 @@ let add_targets_service  ~server_state ~body req =
       let original_id = Ketrew_target.id t in
       Ketrew_engine.get_target server_state.state original_id
       >>= fun freshen ->
-      return (`List [`String original_id; `String (Ketrew_target.id freshen)])
+      return (Ketrew_protocol.Down_message.added_target
+                ~original_id ~fresh_id:(Ketrew_target.id freshen))
     )
-  >>= fun ids ->
+  >>= fun added_targets ->
   Light.green server_state.loop_traffic_light;
-  return (`Json (`List ids))
+  return (`Message (`Json, `Targets_added added_targets))
 
 let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service = 
   fun what_to_do ~server_state ~body req ->
@@ -303,8 +299,7 @@ let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service =
     >>| List.concat
     >>= fun happenings ->
     Light.green server_state.loop_traffic_light;
-    let json = Serialize_happenings.to_json happenings in
-    return (`Json json)
+    return (`Message (`Json, `Happens happenings))
 
 let list_cleanable_targets ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -322,11 +317,8 @@ let list_cleanable_targets ~server_state ~body req =
     >>= fun graph ->
     let `To_kill to_kill, `To_archive to_archive =
       targets_to_clean_up graph how_much in
-    let json =
-      `Assoc ["to-kill", `List (List.map to_kill ~f:(fun s -> `String s));
-              "to-archive", `List (List.map to_archive ~f:(fun s -> `String s));]
-    in
-    return (`Json json)
+    let msg = Ketrew_protocol.Down_message.clean_up ~to_archive ~to_kill in
+    return (`Message (`Json, `Clean_up msg))
   )
 
 (** {2 Dispatcher} *)
@@ -519,8 +511,8 @@ let start ~configuration  =
             begin match high_level_answer with
             | `Ok `Unit ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
-            | `Ok (`Json json) ->
-              let body = Json.to_string json in
+            | `Ok (`Message (`Json, msg)) ->
+              let body = Ketrew_protocol.Down_message.serialize msg in
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "

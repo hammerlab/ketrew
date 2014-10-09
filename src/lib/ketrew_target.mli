@@ -80,7 +80,7 @@ type activated_state = [
   | `Activated of Time.t * submitted_state * 
                   [ `Dependency | `User | `Fallback | `Success_trigger ]
 ]
-type run_bookkeeping = {
+type run_bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t = {
   plugin_name : string;
   run_parameters : string;
   run_history : string list;
@@ -150,7 +150,7 @@ module Equivalence: sig
 
 end
 
-type t = {
+type t = Ketrew_gen_target_v0.Target.t = {
   id : id;
   name : string;
   persistence : [ `Input_data | `Recomputable of float | `Result ];
