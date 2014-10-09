@@ -260,74 +260,156 @@ let archive_target t target_id =
 
 module Target_graph = struct
   type engine = t
+  type arrow = Target.t * Target.t
+  type edge = [
+    | `Dependency of arrow
+    | `Fallback of arrow
+    | `Success_triggers of arrow
+  ]
+  module Target_set = struct
+    include Set.Make(struct
+        type t = Target.t
+        let compare t1 t2 = String.compare t1.Target.id t2.Target.id
+      end)
+    let mem set v = mem v set
+    let add set v = add v set
+    let remove set v = remove v set
+    let find t v = try Some (find v t) with _ -> None
+    let exists t ~f = exists f t
+    let fold t ~f ~init = 
+      fold (fun elt a -> f a elt) t init
+
+  end
   type t = {
-    vertices: Target.t list;
-    edges: (Target.t * Target.t) list;
+    vertices: Target_set.t;
+    edges: edge list;
   }
 
   let get_current ~engine =
-    current_targets engine >>= fun vertices ->
+    current_targets engine >>= fun targets ->
     get_persistent engine >>= fun persistent ->
     let archived_but_there = ref [] in
-    Deferred_list.while_sequential vertices ~f:(fun trgt ->
-        Deferred_list.while_sequential trgt.Target.dependencies (fun id ->
-            let actual_id = Persistent_state.follow_pointers persistent id in
-            match List.find vertices ~f:(fun t -> Target.id t = actual_id) with
-            | Some t -> return (trgt, t)
-            | None -> 
-              get_target engine actual_id
-              >>= fun t ->
-              archived_but_there := t :: !archived_but_there;
-              return (trgt, t)
-          ))
+    let build_edges ~from_list ~edgify =
+      Deferred_list.while_sequential from_list (fun id ->
+          let actual_id = Persistent_state.follow_pointers persistent id in
+          match List.find targets ~f:(fun t -> Target.id t = actual_id) with
+          | Some t -> return (edgify t)
+          | None -> 
+            get_target engine actual_id
+            >>= fun t ->
+            archived_but_there := t :: !archived_but_there;
+            return (edgify t)
+        )
+    in
+    Deferred_list.while_sequential targets ~f:(fun trgt ->
+        build_edges ~from_list:trgt.Target.dependencies
+          ~edgify:(fun dep -> `Dependency (trgt, dep))
+        >>= fun dep_edges ->
+        build_edges ~from_list:trgt.Target.if_fails_activate
+          ~edgify:(fun dep -> `Fallback (trgt, dep))
+        >>= fun fb_edges ->
+        build_edges ~from_list:trgt.Target.success_triggers
+          ~edgify:(fun dep -> `Success_triggers (trgt, dep))
+        >>= fun st_edges ->
+        return (dep_edges @ fb_edges @ st_edges))
     >>| List.concat
     >>= fun edges ->
-    return {vertices = vertices @ !archived_but_there; edges}
+    let vertices = 
+      List.fold ~init:Target_set.empty (targets @ !archived_but_there) 
+        ~f:Target_set.add in
+    return {vertices; edges}
+
+  let log_arrow verb (t1, t2) =
+    let open Log in
+    Target.log t1 % sp % s verb % sp % Target.log t2
+
+  let log_edge = function
+  | `Dependency a -> log_arrow "depends on" a
+  | `Fallback a -> log_arrow "fallsback with" a
+  | `Success_triggers a -> log_arrow "triggers" a
 
   let log g =
     Log.(
-      OCaml.list (fun (t1, t2) ->
-          s "* " % Target.log t1 % s " → " % Target.log t2) g.edges
+      separate n (List.map g.edges ~f:(fun e -> s "* " % log_edge e))
     )
 
   let vertices g = g.vertices
 
-  let transitive_predecessors g ~target = 
-    let pred g t =
-      List.filter_map g.edges ~f:(fun (t1, t2) ->
-          if Target.id t2 = Target.id t then Some t1 else None) in
-    let rec trans_pred g t =
-      let preds = pred g t in
-      List.dedup (preds @ List.concat_map preds (fun v -> trans_pred g v))
+  let transitive_sub_graph g ~target = 
+    let connections t ~available =
+      List.filter_map g.edges ~f:(function
+        | `Dependency (t1, t2)
+        | `Fallback (t1, t2)
+        | `Success_triggers (t1, t2) ->
+          if Target.id t1 = Target.id t && Target_set.mem available t2
+          then Some t2
+          else if Target.id t2 = Target.id t && Target_set.mem available t1 
+          then Some t1
+          else None
+        ) in
+    let rec trans_connections t available acc =
+      match connections t available with
+      | [] ->  acc
+      | conns -> 
+        let new_available = 
+          List.fold conns ~init:available ~f:Target_set.remove in
+        List.map conns (fun conn ->
+            Target_set.add 
+              (trans_connections conn new_available acc)
+              conn
+          )
+        |> List.reduce ~f:Target_set.union
+        |> Option.value ~default:Target_set.empty
     in
-    trans_pred g target
+    trans_connections target (Target_set.remove g.vertices target) 
+      Target_set.empty
 
   let targets_to_clean_up graph how_much =
     let vertices = vertices graph in
+    Log.(s "Graph: " % log graph @ normal);
     let to_kill =
-      (* a target is going to be killed if it is "created" and no other target
-         that is activated transitively dependends on it.  *)
-      List.filter_map vertices ~f:(fun trgt ->
-          if Ketrew_target.Is.created trgt
+      (* a target should be killed if it is "created" and:
+
+         - no other target that is activated transitively dependends on it
+         - no other target that is activated or running can
+         trigger it because it is a fallback or success-trigger,
+         or a dependency of one of these, and so on transitively …
+
+         It's so complicated that for now we take a simpler but
+         conservative approach:
+
+         - grab the whole transitive sub-graph, 
+         - check that no-one is activated or running in there.
+
+         This is not “exact” (some “unreachable” targets may remain).
+      *)
+      Target_set.fold vertices ~init:[] ~f:(fun pred target ->
+          if Ketrew_target.Is.created target
           then
-            let higher = transitive_predecessors graph trgt in
-            if
-              List.for_all higher 
-                (fun trgt -> not (Ketrew_target.Is.activated trgt))
-            then Some (Ketrew_target.id trgt)
-            else None
+            let sub_graph = transitive_sub_graph graph ~target in
+            Log.(s "Subgraph of " % Target.log target % n
+                 % (Target_set.fold ~init:[] sub_graph ~f:(fun l e -> e :: l)
+                    |> OCaml.list Target.log)
+                 @ very_verbose);
+            if Target_set.for_all 
+                (fun trgt ->
+                   not (Ketrew_target.Is.activated trgt)
+                   && not (Ketrew_target.Is.running trgt))
+                sub_graph
+            then (Ketrew_target.id target :: pred)
+            else pred
           else
-            None)
+            pred)
     in
     let to_archive =
       (* A target that is just-killed, or finished depending on `how_much` *)
-      List.filter_map vertices ~f:(fun trgt ->
+      Target_set.fold vertices ~init:[] ~f:(fun pred trgt ->
           match how_much with
           | `Soft when Ketrew_target.Is.successful trgt ->
-            Some (Ketrew_target.id trgt)
+            (Ketrew_target.id trgt :: pred)
           | `Hard when Ketrew_target.Is.finished trgt ->
-            Some (Ketrew_target.id trgt)
-          | other -> None)
+            (Ketrew_target.id trgt :: pred)
+          | other -> pred)
     in
     (`To_kill to_kill, `To_archive to_archive)
 

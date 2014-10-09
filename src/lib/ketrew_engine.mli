@@ -221,15 +221,6 @@ module Target_graph: sig
   val log: t -> Log.t
   (** Get a displayable {!Log.t} for the graph. *)
 
-  val vertices: t -> Ketrew_target.t list
-  (** Get all the vertices of the graph ({!current_targets} + the transitive
-      closure). *)
-
-  val transitive_predecessors: t -> target:Ketrew_target.t ->
-    Ketrew_target.t list
-  (** Get all the predecessors of a given target; i.e. all the target that
-      dependent (on targets that depend) on that target *)
-
   val targets_to_clean_up: t -> [`Hard | `Soft] ->
     [ `To_kill of Ketrew_target.id list ] * [ `To_archive of Ketrew_target.id list ]
 end
