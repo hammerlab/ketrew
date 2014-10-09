@@ -239,6 +239,9 @@ val id : t -> Unique_id.t
 val name : t -> string
 (** Get a target's user-defined name. *)
 
+val to_json: t -> Json.t
+(** Serialize a target to [Json.t] intermediate representation. *)
+
 val serialize : t -> string
 (** Serialize a target (for the database). *)
 
