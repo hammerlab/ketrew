@@ -32,3 +32,13 @@ type target = [ V0 of target_v0 ]
 type daemonize_run_parameters = [ V0 of daemonize_run_parameters_v0 ] 
 type lsf_run_parameters = [ V0 of lsf_run_parameters_v0 ] 
 
+type measurement_collection_v0
+     <ocaml from="Ketrew_gen_base_v0.Measurement_collection" > = abstract
+
+type measurement_collection = [ V0 of measurement_collection_v0 ]
+
+type happening_list_v0
+     <ocaml from="Ketrew_gen_base_v0.Happening_list" > = abstract
+
+type happening_list = [ V0 of happening_list_v0 ]
+

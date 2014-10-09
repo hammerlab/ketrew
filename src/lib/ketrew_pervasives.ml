@@ -71,24 +71,39 @@ module Json = struct
     let str = to_string t in
     Log.(indent (s str))
 
-  module Make_serialization
-      (T : sig 
+  module Make_versioned_serialization
+      (T : sig
          type t
+       end) 
+      (T_VERSIONED : sig
+         type t = [`V0 of T.t]
          val source: unit -> t CConv.Source.t
          val sink: unit -> t CConv.Sink.t
-       end) = struct
+       end) 
+  = struct
+
     let to_json (t : T.t) =
-      CConv.into (T.source ()) CConvYojson.sink t
+      let versioned = `V0 t in
+      CConv.into (T_VERSIONED.source ()) CConvYojson.sink versioned
+
     let of_json_exn (json : t) =
-      CConv.from CConvYojson.source (T.sink ()) json
-    let serialize t = Yojson.Basic.pretty_to_string ~std:true (to_json t)
+      match CConv.from CConvYojson.source (T_VERSIONED.sink ()) json with
+      | `V0 t -> t
+
+    let serialize t =
+      Yojson.Basic.pretty_to_string ~std:true (to_json t)
+
     let deserialize_exn s =
       Yojson.Basic.from_string s |> of_json_exn
+
   end
+
 end
 
 module Serialize_happenings =
-  Json.Make_serialization(Ketrew_gen_base_v0.Happening_list)
+  Json.Make_versioned_serialization
+    (Ketrew_gen_base_v0.Happening_list)
+    (Ketrew_gen_versioned.Happening_list)
 
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)

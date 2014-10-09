@@ -197,18 +197,14 @@ let reactivate
 let id t : Unique_id.t = t.id
 let name t = t.name
 
-module Serialize_target =
-  Json.Make_serialization(Ketrew_gen_versioned.Target)
-
-let serialize t =
-  Serialize_target.serialize (`V0 t)
+include
+  Json.Make_versioned_serialization
+    (Ketrew_gen_target_v0.Target)
+    (Ketrew_gen_versioned.Target)
 
 let deserialize s : (t, _) Result.t =
   let open Result in
-  try return (
-      match Serialize_target.deserialize_exn s with
-      | `V0 v0 -> v0
-    )
+  try return (deserialize_exn s)
   with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))

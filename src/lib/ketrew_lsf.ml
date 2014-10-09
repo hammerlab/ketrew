@@ -27,15 +27,9 @@ open Ketrew_gen_lsf_v0.Created
 
 type run_parameters = Ketrew_gen_lsf_v0.Run_parameters.t
 
-module Serialize_versioned = Json.Make_serialization(Ketrew_gen_versioned.Lsf_run_parameters)
-
-let serialize t =
-  Serialize_versioned.serialize (`V0 t)
-
-let deserialize_exn s =
-  begin match Serialize_versioned.deserialize_exn s with
-  | `V0 v0 -> v0
-  end
+include Json.Make_versioned_serialization
+    (Ketrew_gen_lsf_v0.Run_parameters)
+    (Ketrew_gen_versioned.Lsf_run_parameters)
 
 let name = "LSF"
 let create

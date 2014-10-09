@@ -36,16 +36,13 @@ module Persistent_state = struct
   }
   let create () = {current_targets = []; archived_targets = []; pointers = []}
 
-  module Serialize_versioned = 
-    Json.Make_serialization(Ketrew_gen_versioned.Persistent_state)
-
-  let serialize t = Serialize_versioned.serialize (`V0 t)
+  include
+    Json.Make_versioned_serialization
+      (Ketrew_gen_base_v0.Persistent_state)
+      (Ketrew_gen_versioned.Persistent_state)
 
   let deserialize s = 
-    try return (
-        match Serialize_versioned.deserialize_exn s with
-        | `V0 v0 -> v0
-      )
+    try return (deserialize_exn s)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
   let add t target = { t with current_targets = Target.id target :: t.current_targets }
@@ -79,7 +76,11 @@ module Measurement_collection = struct
   let add collection log = 
     collection := item log :: !collection
 
-  include Json.Make_serialization(Ketrew_gen_base_v0.Measurement_collection)
+  include Json.Make_versioned_serialization
+      (struct 
+        type t = Ketrew_gen_base_v0.Measurement_collection.t
+      end)
+      (Ketrew_gen_versioned.Measurement_collection)
 
   let flush collection db =
     let action =
