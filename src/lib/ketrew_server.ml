@@ -108,7 +108,6 @@ open Server_state
 type answer = [
   | `Unit
   | `Json of Json.t
-  | `Json_raw of string
 ]
 (** A service can replay one of those cases; or an error. *)
 
@@ -203,10 +202,9 @@ let targets_service: _ service = fun ~server_state ~body req ->
           return None)
     >>| List.filter_opt
   end
-  >>| List.map ~f:Ketrew_target.serialize
+  >>| List.map ~f:Ketrew_target.to_json
   >>= fun jsons ->
-  let json = fmt "[%s]" (String.concat ~sep:",\n" jsons) in
-  return (`Json_raw json)
+  return (`Json (`List jsons))
 
 let target_available_queries_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -521,8 +519,6 @@ let start ~configuration  =
             begin match high_level_answer with
             | `Ok `Unit ->
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
-            | `Ok (`Json_raw body) ->
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
             | `Ok (`Json json) ->
               let body = Json.to_string json in
               Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
