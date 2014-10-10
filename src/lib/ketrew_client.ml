@@ -60,8 +60,9 @@ module Http_client = struct
     let meth, body =
       match meta_meth with
       | `Get -> `GET, `Empty
-      | `Post_string s -> `POST, `String s
-      | `Post_json s -> `POST, `String (Json.to_string s) in
+      | `Post_message m ->
+        `POST, `String (Ketrew_protocol.Post_message.serialize m)
+    in
     let where = `Call (meth, uri) in
     wrap_deferred
       ~on_exn:(fun e -> client_error_exn where e) (fun () ->
@@ -107,10 +108,8 @@ module Http_client = struct
       ~f:(function `List_of_targets tl -> Some tl | _ -> None)
 
   let add_targets t ~targets =
-    let body_string =
-      Ketrew_protocol.Post_message.serialize
-        (`List_of_targets targets) in
-    call_json t ~path:"/add-targets" ~meta_meth:(`Post_string body_string) 
+    let msg = (`List_of_targets targets) in
+    call_json t ~path:"/add-targets" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
 
@@ -127,9 +126,8 @@ module Http_client = struct
       | `Archive_targets i as e -> i, e, "/archive-targets"
       | `Restart_targets i as e -> i, e, "/restart-targets"
     in
-    let json =
-      Ketrew_protocol.Post_message.to_json (`List_of_target_ids ids) in
-    call_json t ~path ~meta_meth:(`Post_json json)
+    let msg = (`List_of_target_ids ids) in
+    call_json t ~path ~meta_meth:(`Post_message msg)
     >>= filter_down_message
       ~loc:error_loc
       ~f:(function `Happens sl -> Some sl | _ -> None)
