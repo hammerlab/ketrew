@@ -52,3 +52,19 @@ module Down_message = struct
          % s "to-kill: " % OCaml.list string todo.to_kill 
          % s "to-archive: " % OCaml.list string todo.to_archive) 
 end
+
+module Post_message = struct
+  type t = Ketrew_gen_protocol_v0.Post_message.t
+  include Json.Make_versioned_serialization
+      (Ketrew_gen_protocol_v0.Post_message)
+      (Ketrew_gen_versioned.Post_message)
+
+  let log : t -> Log.t = function
+  | `List_of_targets ts -> 
+    Log.(s "List_of_targets: " % OCaml.list Ketrew_target.log ts)
+  | `List_of_target_ids ts ->
+    Log.(s "List_of_target_ids: " % OCaml.list string ts)
+
+  let to_string_hum t = log t |> Log.to_long_string
+end
+

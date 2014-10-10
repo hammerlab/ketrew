@@ -36,3 +36,8 @@ type down_message = [
   | Happens of happening_list_v0
   | Clean_up of clean_up_todo_list
 ]
+
+type post_message = [
+  | List_of_targets of target_v0 list
+  | List_of_target_ids of string list
+]

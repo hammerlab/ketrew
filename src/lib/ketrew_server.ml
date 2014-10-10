@@ -247,20 +247,24 @@ let target_call_query_service ~server_state ~body req =
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
 
+let message_of_body ~body ~select =
+  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    (fun () -> Ketrew_protocol.Post_message.deserialize_exn body)
+  >>= fun message ->
+  begin match select message with
+  | Some t -> return t
+  | None ->
+    fail (`Failure 
+            (fmt "wrong post-message: %s"
+               (Ketrew_protocol.Post_message.to_string_hum message)))
+  end
+
 let add_targets_service  ~server_state ~body req =
   get_post_body req ~body 
   >>= fun body ->
-  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () ->
-       let parsed = Yojson.Basic.from_string body in
-       match parsed with
-       | `List json_targets ->
-         List.map json_targets ~f:(fun jt ->
-             match Ketrew_target.deserialize (Yojson.Basic.to_string jt)  with
-             | `Ok o -> o
-             | `Error e -> failwith (Ketrew_error.to_string e)) 
-       | other -> 
-         failwith "wrong-format: expecting Json list")
+  message_of_body ~body ~select:(function
+    | `List_of_targets t -> Some t
+    | _ -> None)
   >>= fun targets ->
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
   Ketrew_engine.add_targets server_state.state targets
@@ -280,15 +284,9 @@ let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service =
   fun what_to_do ~server_state ~body req ->
     get_post_body req ~body 
     >>= fun body ->
-    wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-      (fun () ->
-         let parsed = Yojson.Basic.from_string body in
-         match parsed with
-         | `List json_target_ids ->
-           List.map json_target_ids (function
-             | `String id -> id
-             | other -> failwith "wrong-format: expecting list of strings")
-         | other ->  failwith "wrong-format: expecting list of strings")
+    message_of_body ~body ~select:(function
+      | `List_of_target_ids t -> Some t
+      | _ -> None)
     >>= fun target_ids ->
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with

@@ -45,3 +45,7 @@ type happening_list = [ V0 of happening_list_v0 ]
 type down_message_v0 
      <ocaml from="Ketrew_gen_protocol_v0.Down_message" > = abstract
 type down_message = [ V0 of down_message_v0 ]
+
+type post_message_v0 
+     <ocaml from="Ketrew_gen_protocol_v0.Post_message" > = abstract
+type post_message = [ V0 of post_message_v0 ]

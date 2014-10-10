@@ -108,9 +108,8 @@ module Http_client = struct
 
   let add_targets t ~targets =
     let body_string =
-      List.map targets ~f:Ketrew_target.serialize
-      |> String.concat ~sep:", "
-      |> fmt "[%s]" in
+      Ketrew_protocol.Post_message.serialize
+        (`List_of_targets targets) in
     call_json t ~path:"/add-targets" ~meta_meth:(`Post_string body_string) 
     >>= fun (_: Json.t) ->
     return ()
@@ -128,7 +127,8 @@ module Http_client = struct
       | `Archive_targets i as e -> i, e, "/archive-targets"
       | `Restart_targets i as e -> i, e, "/restart-targets"
     in
-    let json = `List (List.map ids (fun id -> `String id)) in
+    let json =
+      Ketrew_protocol.Post_message.to_json (`List_of_target_ids ids) in
     call_json t ~path ~meta_meth:(`Post_json json)
     >>= filter_down_message
       ~loc:error_loc
