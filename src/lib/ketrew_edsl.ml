@@ -17,13 +17,42 @@
 open Ketrew_pervasives
 
 
-module Host = Ketrew_host
 module Path = Ketrew_path
 module Target = Ketrew_target
 module Artifact = Ketrew_artifact
 
  
-type host = Ketrew_host.t
+module Host = struct
+  include Ketrew_host
+
+  let ssh
+      ?add_ssh_options
+      ?playground
+      ?port ?user ?name str =
+    let playground = Option.map ~f:Path.absolute_directory_exn playground in
+    ssh ?default_shell:None
+      ?execution_timeout:None
+      ?add_ssh_options
+      ?playground
+      ?port ?user ?name str
+
+  let parse = of_string
+
+  let cmdliner_term 
+      ?(doc="URI of the host (e.g. \
+             ssh://user@example.com:42/tmp/ketrewplayground).") how =
+    let open Cmdliner in
+    Term.(
+      pure (fun s -> parse s)
+      $ begin match how with
+      | `Flag (flags) ->
+        Arg.(value & opt string "/tmp/" & info flags ~doc ~docv:"URI")
+      | `Required p ->
+        Arg.(required & pos p (some string) None & info [] ~doc ~docv:"URI")
+      end
+    )
+
+end
 
 class type user_artifact = object
 
@@ -62,6 +91,7 @@ class type user_target =
     method render: Ketrew_target.t
     method dependencies: user_target list
     method if_fails_activate: user_target list
+    method success_triggers: user_target list
     method metadata: Ketrew_artifact.Value.t
     method product: user_artifact
   end
@@ -71,12 +101,14 @@ let user_target_internal
   ?(active = false)
   ?(dependencies = [])
   ?(if_fails_activate = [])
+  ?(success_triggers = [])
   ?(name: string option)
-  ?(make: Target.build_process = Target.nop)
-  ?ready_when
+  ?(make: Target.Build_process.t = Target.Build_process.nop)
+  ?done_when
   ?(metadata = Artifact.Value.unit)
   ?product
   ?equivalence
+  ?tags
   ()
   =
   let id = Unique_id.create () in
@@ -89,6 +121,7 @@ let user_target_internal
     method id = id
     method dependencies = dependencies
     method if_fails_activate = if_fails_activate
+    method success_triggers = success_triggers
     method activate = active <- true
     method is_active = active
     method metadata = metadata
@@ -98,8 +131,9 @@ let user_target_internal
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
-        ~name:self#name ?condition:ready_when
-        ?equivalence
+        ~success_triggers:(List.map success_triggers ~f:(fun t -> t#id))
+        ~name:self#name ?condition:done_when
+        ?equivalence ?tags
         ~make ()
     method product =
       Option.value_exn product 
@@ -107,25 +141,25 @@ let user_target_internal
         
   end
 
-let target ?active ?dependencies ?make ?ready_when ?metadata ?product
-    ?equivalence ?if_fails_activate name =
+let target ?active ?dependencies ?make ?done_when ?metadata ?product
+    ?equivalence ?if_fails_activate ?success_triggers ?tags name =
   user_target_internal
-    ?equivalence ?if_fails_activate
-    ?active ?dependencies ~name ?make ?metadata ?ready_when ?product ()
+    ?equivalence ?if_fails_activate ?tags ?success_triggers
+    ?active ?dependencies ~name ?make ?metadata ?done_when ?product ()
 
 let file_target 
     ?dependencies ?make ?metadata ?name ?host ?equivalence ?if_fails_activate
-    path =
+    ?success_triggers ?tags path =
   let product = file ?host path in
   let name = Option.value name ~default:("Make:" ^ path) in
-  target ~product ?equivalence ?if_fails_activate
-    ~ready_when:product#exists ?dependencies ?make ?metadata name
+  target ~product ?equivalence ?if_fails_activate ?tags ?success_triggers
+    ~done_when:product#exists ?dependencies ?make ?metadata name
 
 (*
   Run a workflow:
 
    - make sure the run target is active,
-   - render all the depdendencies/fallbacks,
+   - render all the depdendencies/fallbacks/success-triggers,
 *)
 let user_command_list t =
   t#activate;
@@ -133,18 +167,18 @@ let user_command_list t =
     t#render :: 
     List.concat_map t#dependencies ~f:go_through_deps
     @ List.concat_map t#if_fails_activate ~f:go_through_deps
+    @ List.concat_map t#success_triggers ~f:go_through_deps
   in
   let targets =
     (go_through_deps t)
     |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id)
   in
   match targets with
-  | first :: more -> [`Make (first, more)]
+  | first :: more -> (first, more)
   | [] -> assert false (* there is at least the argument one *)
 
-
 let run ?override_configuration t =
-  let todo_list = user_command_list t in
+  let active, dependencies = user_command_list t in
   let config_path = 
     (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
        (try Sys.getenv "KETREW_CONFIG" with _ ->
@@ -153,8 +187,8 @@ let run ?override_configuration t =
     Ketrew_configuration.(
       get_configuration ?override_configuration config_path)
     >>= fun configuration ->
-    Ketrew_state.with_state ~configuration (fun ~state ->
-        Ketrew_user_command.run_list ~state todo_list)
+    Ketrew_client.as_client ~configuration ~f:(fun ~client ->
+        Ketrew_client.add_targets client (active :: dependencies))
   ) with
   | `Ok () -> ()
   | `Error e ->
@@ -172,7 +206,7 @@ module Program = struct
 
   let copy_files ~source:(s_host, src) ~destination:(d_host, dest) 
       ~(f : ?host:Host.t -> t -> 'a) =
-    let open Ketrew_gen_base_v0_t in
+    let open Ketrew_gen_base_v0.Host in
     match s_host.connection, d_host.connection with
     | `Localhost, `Localhost ->
       f ?host:None (exec ("cp" :: src @ [dest])) 
@@ -185,21 +219,17 @@ module Program = struct
 
 end
 
-let parse_host: string -> Host.t = Host.of_string
+module Condition = struct
 
-let host_cmdliner_term 
-    ?(doc="URI of the host (e.g. \
-           ssh://user@example.com:42/tmp/ketrewplayground).") how =
-  let open Cmdliner in
-  Term.(
-    pure (fun s -> parse_host s)
-    $ begin match how with
-    | `Flag (flags) ->
-      Arg.(value & opt string "/tmp/" & info flags ~doc ~docv:"URI")
-    | `Required p ->
-      Arg.(required & pos p (some string) None & info [] ~doc ~docv:"URI")
-    end
-  )
+  type t = Ketrew_target.Condition.t
+
+  let (&&) a b = `And [a; b]
+  let chain_and l = `And l
+  let never = `False
+  let program ?(returns=0) ?host p =
+    `Command_returns (Ketrew_target.Command.program ?host p, returns)
+
+end
 
 let daemonize  = Ketrew_daemonize.create
 

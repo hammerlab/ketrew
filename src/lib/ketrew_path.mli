@@ -16,7 +16,7 @@
 
 (** File-path handling *)
 
-type t = Ketrew_gen_base_v0_t.path
+type t = Ketrew_gen_base_v0.Path.t
 (** General type of file-paths.  *)
 
 val file : string -> t

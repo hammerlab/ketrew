@@ -20,7 +20,7 @@ open Ketrew_pervasives
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig
 
-    type t = Ketrew_gen_target_v0_t.command
+    type t = Ketrew_gen_target_v0.Command.t
     (** The type of commands. *)
 
     val shell : ?host:Ketrew_host.t -> string -> t
@@ -54,30 +54,33 @@ module Command : sig
 
   end
 
-type build_process = [
-  | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
-  | `Direct_command of Command.t (** [Command.t] to run. *)
-  | `Long_running of (string * string) 
-  (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
-]
-(** Specification of how to build a target. {ul
-   {li  [`Artifact a]: literal, already-built, artifact, }
-   {li [`Direct_command c]: a [Command.t] to run (should produce a [Volume.t]), }
-   {li [`Get_output c]: a [Command.t] to run and get its [stdout] (should
+module Build_process: sig
+  type t = [
+    | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
+    | `Direct_command of Command.t (** [Command.t] to run. *)
+    | `Long_running of (string * string) 
+    (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
+  ]
+  (** Specification of how to build a target. {ul
+      {li  [`Artifact a]: literal, already-built, artifact, }
+      {li [`Direct_command c]: a [Command.t] to run (should produce a [Volume.t]), }
+      {li [`Get_output c]: a [Command.t] to run and get its [stdout] (should
        produce a value), }
-   {li [`Long_running (plugin_name, initial_run_parameters)]:
-    Use a long-running plugin. }
-    } 
-*)
+      {li [`Long_running (plugin_name, initial_run_parameters)]:
+      Use a long-running plugin. }
+      } 
+  *)
 
-val nop : build_process
-(** A build process that does nothing. *)
+  val nop : t
+  (** A build process that does nothing. *)
+end
 
 type submitted_state = [ `Created of Time.t ]
 type activated_state = [
-  | `Activated of Time.t * submitted_state * [ `Dependency | `User | `Fallback ]
+  | `Activated of Time.t * submitted_state * 
+                  [ `Dependency | `User | `Fallback | `Success_trigger ]
 ]
-type run_bookkeeping = {
+type run_bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t = {
   plugin_name : string;
   run_parameters : string;
   run_history : string list;
@@ -143,21 +146,24 @@ module Condition : sig
 end
 
 module Equivalence: sig
-  type t = Ketrew_gen_target_v0_t.equivalence
+  type t = Ketrew_gen_target_v0.Equivalence.t
 
 end
 
-type t = {
+type t = Ketrew_gen_target_v0.Target.t = {
   id : id;
   name : string;
   persistence : [ `Input_data | `Recomputable of float | `Result ];
   metadata : Ketrew_artifact.Value.t;
   dependencies : id list;
   if_fails_activate : id list;
-  make : build_process;
+  success_triggers : id list;
+  make : Build_process.t;
   condition : Condition.t option;
   equivalence: Equivalence.t;
   history : workflow_state;
+  log: (Time.t * string) list;
+  tags: string list;
 }
 (** The fat record holding targets. *)
 
@@ -167,14 +173,17 @@ val create :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
-  ?make:build_process -> 
+  ?success_triggers:id list ->
+  ?make:Build_process.t -> 
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
+  ?tags: string list ->
   unit ->
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val activate_exn : t -> by:[ `Dependency | `User | `Fallback ] -> t
+val activate_exn : t ->
+  by:[ `Dependency | `User | `Fallback | `Success_trigger ] -> t
 (** Get an activated target out of a “submitted” one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
@@ -204,9 +213,11 @@ val active :
   ?metadata:Ketrew_artifact.Value.t ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
-  ?make:build_process ->
+  ?success_triggers:id list ->
+  ?make:Build_process.t  ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
+  ?tags: string list ->
   unit -> t
 (** Like {!create} but set as already activated. *)
 
@@ -227,6 +238,9 @@ val id : t -> Unique_id.t
 
 val name : t -> string
 (** Get a target's user-defined name. *)
+
+val to_json: t -> Json.t
+(** Serialize a target to [Json.t] intermediate representation. *)
 
 val serialize : t -> string
 (** Serialize a target (for the database). *)

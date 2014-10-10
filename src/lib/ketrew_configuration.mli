@@ -19,7 +19,6 @@
 
 open Ketrew_pervasives
 
-type server
 type t
 (** The contents of the configuration. *)
 
@@ -30,15 +29,28 @@ type plugin = [ `Compiled of string | `OCamlfind of string ]
     - [`OCamlfind package]: name of a Findlib package.
 
 *)
+type ui
+val ui: ?with_color:bool -> unit -> ui
 
-val create_server: 
+type engine
+val engine: 
+  ?database_parameters:string ->
+  ?persistent_state_key:string -> 
+  ?turn_unix_ssh_failure_into_target_failure: bool ->
+  ?host_timeout_upper_bound: float ->
+  unit -> engine
+
+type server
+val server: 
+  ?ui:ui ->
+  ?engine:engine ->
   ?authorized_tokens_path: string ->
   ?return_error_messages: bool ->
   ?command_pipe: string ->
   ?daemon: bool ->
   ?log_path: string ->
   [ `Tls of string * string * int ] ->
-  server
+  [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
     {!create} function).
 
@@ -54,15 +66,18 @@ val create_server:
     server to listen on [port].
 *)
 
-val create :
-  ?debug_level:int ->
-  ?with_color:bool ->
-  ?turn_unix_ssh_failure_into_target_failure: bool ->
-  ?persistent_state_key:string -> 
-  ?host_timeout_upper_bound: float ->
-  ?plugins: plugin list ->
-  ?server:server ->
-  database_parameters:string -> unit -> t
+type standalone
+val standalone: ?ui:ui -> ?engine:engine -> unit -> [> `Standalone of standalone]
+type client
+val client: ?ui:ui -> token:string -> string -> [> `Client of client]
+
+type mode = [
+  | `Standalone of standalone
+  | `Server of server
+  | `Client of client
+]
+
+val create : ?debug_level:int -> ?plugins: plugin list -> mode  -> t
 (** Create a configuration, [persistent_state_key] is the “key” of the
     state storage in the database, [database_parameters] are used to call
     {!Ketrew_database.load}.
@@ -84,13 +99,13 @@ val default_database_path: string
 (** Default path to the database (used when generating custom configuration
     files). *)
 
-val database_parameters: t -> string
+val database_parameters: engine -> string
 (** Get the database parameters. *)
 
-val persistent_state_key: t -> string
+val persistent_state_key: engine -> string
 (** Get the “key” of the state values in the database. *)
 
-val is_unix_ssh_failure_fatal: t -> bool
+val is_unix_ssh_failure_fatal: engine -> bool
 (** Should we kill targets on ssh/unix errors. *)
 
 val parse :
@@ -98,7 +113,7 @@ val parse :
   (t, [> `Configuration of [> `Parsing of string ] ]) Result.t
 (** Parse the contents of a configuration file. *)
 
-val apply_globals: t -> unit
+(* val apply_globals: t -> unit *)
 (** Apply options that have global impact. *)
 
 val get_configuration :
@@ -107,14 +122,30 @@ val get_configuration :
   string ->
   (t,
    [> `Configuration of [> `Parsing of string ]
+   | `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of string
    | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
 (** The call [get_configuration file] reads and parses the file [f], unless
     [override_configuration] is provided.
-    if [and_apply] is [true] (the default), then {!apply_globals} is called.
+    if [and_apply] is [true] (the default), then global settings are applied
+    and plugins are loaded.
 *)
+
+val get_configuration_for_daemon_exn :
+  ?override_configuration:t -> string ->
+  [ `Daemonize_with of string option | `Do_not_daemonize ]
+(** Do like {!get_configuration} but in a dirty Lwt-less way and
+    return only partial information: whether to daemonize or not (the [string
+    option] is the potential log-file path). *)
 
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
+
+val mode: t -> mode
+
+val standalone_engine: standalone -> engine
+val server_engine: server -> engine
 
 val server_configuration: t -> server option
 (** Get the potentiel server configuration. *)
@@ -137,5 +168,10 @@ val daemon: server -> bool
 val log_path: server -> string option
 (** Get the path to the server's log file. *)
 
-val log: t -> Log.t list
+val log: t -> Log.t
 (** Get a display-friendly list of configuration items. *)
+
+val connection: client -> string
+val token: client -> string
+
+val standalone_of_server: server -> standalone

@@ -22,26 +22,20 @@ module Host = Ketrew_host
 
 module Volume = struct
 
-  open Ketrew_gen_base_v0_t
-  type structure = volume_structure =
-    | File of string
-    | Directory of (string * structure list)
-
-  type t = volume = {
+  type structure = Ketrew_gen_base_v0.Volume_structure.t
+  type t = Ketrew_gen_base_v0.Volume.t = {
     host: Host.t;
     root: Path.t;
     structure: structure;
   }
   let create ~host ~root structure = {host; root; structure}
-  let file s = File s
-  let dir name contents = Directory (name, contents)
+  let file s = `File s
+  let dir name contents = `Directory (name, contents)
 
-  let rec all_structure_paths : 
-    type any. structure -> Path.t list =
-    fun s ->
+  let rec all_structure_paths = fun s ->
     match s with
-    | File s -> [Path.relative_file_exn s ]
-    | Directory (name, children) ->
+    | `File s -> [Path.relative_file_exn s ]
+    | `Directory (name, children) ->
       let children_paths = 
         List.concat_map ~f:all_structure_paths children in
       let this_one = Path.relative_directory_exn name in
@@ -54,8 +48,21 @@ module Volume = struct
     let paths = all_paths t in
     Host.do_files_exist t.host paths
 
+  let log_structure structure = 
+    let all_paths = all_structure_paths structure |> List.map ~f:Path.to_string in
+    let open Log in
+    match all_paths with
+    | [] -> s "EMPTY"
+    | one :: [] -> s "Single path: " % quote one
+    | more -> i (List.length more) % sp % s "paths"
+
   let log {host; root; structure} =
-    Log.(s "Vol" % parens (Host.log host % s":" % s (Path.to_string root)))
+    Log.(braces (
+        parens (Host.log host) % sp
+        % parens (s "Root: " % s (Path.to_string root)) % sp
+        % parens (s "Tree: " % log_structure structure)
+      ))
+
   let to_string_hum v =
     Log.to_long_string (log v)
 
@@ -87,7 +94,7 @@ end
 
 module Value = struct
 
-  type t = Ketrew_gen_base_v0_t.artifact_value
+  type t = Ketrew_gen_base_v0.Artifact_value.t
 
   let log = 
     let log_variant name v =
@@ -102,7 +109,7 @@ end
 
 
 
-type t = Ketrew_gen_base_v0_t.artifact
+type t = Ketrew_gen_base_v0.Artifact.t
 
 let log = function
 | `Volume v -> Volume.log v

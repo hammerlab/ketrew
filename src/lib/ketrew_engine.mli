@@ -14,38 +14,50 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** The “application” state; the Engine. *)
+(** The engine of the actual Workflow Engine. *)
 
 open Ketrew_pervasives
 
 type t
-(** The contents of the application state. *)
+(** The contents of the application engine. *)
 
-val default_plugins :
-  (string * (module Ketrew_long_running.LONG_RUNNING)) list
-(** The “long-running” plugins loaded by default. *)
-
-val register_long_running_plugin :
-  name:string -> (module Ketrew_long_running.LONG_RUNNING) -> unit
-(** Function to be called from dynamically loaded plugins. *)
-
-val with_state: 
-  configuration:Ketrew_configuration.t ->
-  (state:t ->
+val with_engine: 
+  configuration:Ketrew_configuration.engine ->
+  (engine:t ->
    (unit, [> `Database of Ketrew_database.error 
           | `Failure of string
+          | `Database_unavailable of Ketrew_target.id
           | `Dyn_plugin of
                [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
           ] as 'merge_error) Deferred_result.t) ->
   (unit, 'merge_error) Deferred_result.t
-(** Create a {!State.t}, run the function passed as argument, and properly dispose of it. *)
+(** Create a {!engine.t}, run the function passed as argument, and properly dispose of it. *)
 
-val configuration: t -> Ketrew_configuration.t
+val load: 
+  configuration:Ketrew_configuration.engine ->
+  (t,
+   [> `Database of Ketrew_database.error 
+   | `Failure of string
+   | `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   ]) Deferred_result.t
+
+val unload: t -> 
+  (unit, [>
+      | `Database_unavailable of Ketrew_target.id
+      | `Database of [> `Act of Ketrew_database.action | `Close ] * string 
+    ]) Deferred_result.t
+
+val database: t -> (Ketrew_database.t,
+                    [> `Database of [> `Load of string ] * string ]) Deferred_result.t
+(** Get the database handle managed by the engine. *)
+
+val configuration: t -> Ketrew_configuration.engine
 (** Retrieve the configuration. *)
 
-val add_target :
+val add_targets :
   t ->
-  Ketrew_target.t ->
+  Ketrew_target.t list ->
   (unit,
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
@@ -53,22 +65,11 @@ val add_target :
    | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
   Deferred_result.t
-(** Add a target to the state. *)
-
-val archive_target: t ->
-  Ketrew_target.id ->
-  (unit,
-   [> `Database of Ketrew_database.error
-   | `Database_unavailable of Ketrew_target.id
-   | `Missing_data of Ketrew_target.id
-   | `Target of [> `Deserilization of string ]
-   | `Persistent_state of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Move a target to the “archived” list. *)
+(** Add a list of targets to the engine. *)
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
-   [> `Database of [> `Get of string | `Load of string ] * string
+   [> `Database of Ketrew_database.error
    | `Persistent_state of [> `Deserilization of string ]
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
@@ -103,26 +104,14 @@ val archived_targets :
 
 val is_archived: t -> Unique_id.t -> 
   (bool, 
-   [> `Database of [> `Get of string | `Load of string ] * string
+   [> `Database of Ketrew_database.error
    | `Missing_data of Ketrew_target.id
    | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Check whether a target is in the “archive”. *)
   
-type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback ]
-  | `Target_died of
-      Ketrew_target.id  *
-      [ `Dependencies_died
-      | `Plugin_not_found of string
-      | `Killed
-      | `Long_running_unrecoverable of string * string
-      | `Process_failure ]
-  | `Target_started of Ketrew_target.id * string
-  | `Target_succeeded of
-      Ketrew_target.id *
-      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+type happening = Ketrew_gen_base_v0.Happening.t
 (** Structured log of what can happen during {!step} or {!kill}. *)
 
 val what_happened_to_string : happening -> string
@@ -147,6 +136,21 @@ val step :
     Deferred_result.t
 (** Run one step of the engine; [step] returns a list of “things that
     happened”. *)
+
+val fix_point: t ->
+  ([ `Steps of int] * happening list list,
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Host of _ Ketrew_host.Error.non_zero_execution
+   | `Volume of [> `No_size of Log.t]
+   | `IO of
+        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
+   | `Missing_data of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ]
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Run {!step} many times until nothing happens or nothing “new” happens. *)
 
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
@@ -175,20 +179,19 @@ val kill:  t -> id:Ketrew_target.id ->
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Kill a target *)
 
-val long_running_log: state:t -> string -> string -> (string * Log.t) list
-(** [long_running_log ~state plugin_name serialized_run_params]
-    calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)
+val archive_target: t ->
+  Ketrew_target.id ->
+  (happening list,
+   [> `Database of Ketrew_database.error
+   | `Database_unavailable of Ketrew_target.id
+   | `Missing_data of Ketrew_target.id
+   | `Target of [> `Deserilization of string ]
+   | `Persistent_state of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** Move a target to the “archived” list. *)
 
-val additional_queries: state:t -> Ketrew_target.t -> (string * Log.t) list
-(** Get the potential additional queries ([(key, description)] pairs) that can
-    be called on the target. *)
-
-val call_query: state:t -> target:Ketrew_target.t -> string ->
-  (string, Log.t) Deferred_result.t
-(** Call a query on a target. *)
-
-val restart_target: state:t -> Ketrew_target.t -> 
-  (Ketrew_target.t * Ketrew_target.t list, 
+val restart_target: t -> Ketrew_target.id -> 
+  (happening list, 
    [> `Database of Ketrew_database.error
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
@@ -200,15 +203,15 @@ val restart_target: state:t -> Ketrew_target.t ->
 (** A module to manipulate the graph of dependencies. *)
 module Target_graph: sig
 
-  type state = t
-  (** An alias for {!t}, the state. *)
+  type engine = t
+  (** An alias for {!t}, the engine. *)
 
   type t
   (** The actual representation of the Graph. *)
 
-  val get_current: state:state -> 
+  val get_current: engine:engine -> 
     (t,
-     [> `Database of [> `Get of string | `Load of string ] * string
+     [> `Database of Ketrew_database.error
      | `Missing_data of Ketrew_target.id
      | `Persistent_state of [> `Deserilization of string ]
      | `Target of [> `Deserilization of string ] ]) Deferred_result.t
@@ -218,13 +221,30 @@ module Target_graph: sig
   val log: t -> Log.t
   (** Get a displayable {!Log.t} for the graph. *)
 
-  val vertices: t -> Ketrew_target.t list
-  (** Get all the vertices of the graph ({!current_targets} + the transitive
-      closure). *)
+  val targets_to_clean_up: t -> [`Hard | `Soft] ->
+    [ `To_kill of Ketrew_target.id list ] * [ `To_archive of Ketrew_target.id list ]
+end
 
-  val transitive_predecessors: t -> target:Ketrew_target.t ->
-    Ketrew_target.t list
-  (** Get all the predecessors of a given target; i.e. all the target that
-      dependent (on targets that depend) on that target *)
+module Measure: sig
+
+  val incomming_request:
+    t ->
+    connection_id:Cohttp.Connection.t ->
+    request:Cohttp.Request.t ->
+    unit
+  val end_of_request:
+    t ->
+    connection_id:Cohttp.Connection.t ->
+    request:Cohttp.Request.t ->
+    unit
+  val tag: t -> string -> unit
+end
+module Measurements: sig
+
+  val flush: t ->
+    (unit, [>
+        | `Database of Ketrew_database.error
+        | `Database_unavailable of Ketrew_target.id
+      ]) Deferred_result.t
 
 end

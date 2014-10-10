@@ -32,7 +32,7 @@ module Daemonize = Ketrew_daemonize
 
 module Configuration = Ketrew_configuration
 
-module State = Ketrew_state
+module Engine = Ketrew_engine
 
 module Command_line = Ketrew_command_line
 

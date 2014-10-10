@@ -24,6 +24,9 @@ module String = struct
   include Sosa.Native_string
 end
 
+let (//) = Filename.concat
+(** A very standard operator. *)
+
 let printf = `No
 (** We disable [printf]. *)
 
@@ -39,6 +42,8 @@ let global_debug_level = ref 2
 let global_with_color = ref true
 (** Global reference. *)
 
+let global_log_print_string = ref (Printf.printf "%s%!")
+
 (** Application of the functor [Docout.Make_logger] to write to [stderr]
     without buffering. *)
 module Log =  struct
@@ -48,7 +53,8 @@ module Log =  struct
     let with_color () = !global_with_color
     let line_width = 72
     let indent = 4
-    let print_string = Printf.eprintf "%s%!"
+    let print_string s =
+      !global_log_print_string s 
     let do_nothing () = ()
     let name = "ketrew"
   end)
@@ -60,6 +66,43 @@ module Log =  struct
   let sexp sexp_of_t t = s (sexp_of_t t |> Sexplib.Sexp.to_string)
   let uri theuri = s (Uri.to_string theuri)
 end
+
+module Json = struct
+  type t = Yojson.Basic.json
+  let to_string t = Yojson.Basic.pretty_to_string ~std:true t
+  let log t = 
+    let str = to_string t in
+    Log.(indent (s str))
+
+  module Make_versioned_serialization
+      (T : sig
+         type t
+       end) 
+      (T_VERSIONED : sig
+         type t = [`V0 of T.t]
+         val source: unit -> t CConv.Source.t
+         val sink: unit -> t CConv.Sink.t
+       end) 
+  = struct
+
+    let to_json (t : T.t) =
+      let versioned = `V0 t in
+      CConv.into (T_VERSIONED.source ()) CConvYojson.sink versioned
+
+    let of_json_exn (json : t) =
+      match CConv.from CConvYojson.source (T_VERSIONED.sink ()) json with
+      | `V0 t -> t
+
+    let serialize t =
+      Yojson.Basic.pretty_to_string ~std:true (to_json t)
+
+    let deserialize_exn s =
+      Yojson.Basic.from_string s |> of_json_exn
+
+  end
+
+end
+
 (** Function that have a documented, easy to check contract, can raise
     [Invalid_argument _] (their name should end in [_exn]). *)
 let invalid_argument_exn ?(where="pervasives") what =
@@ -67,8 +110,7 @@ let invalid_argument_exn ?(where="pervasives") what =
 
 (** Handle timestamps. *)
 module Time = struct
-  include Ketrew_gen_base_v0_t
-  type t = time
+  include Ketrew_gen_base_v0.Time
 
   let now () : t = Unix.gettimeofday ()
 
@@ -91,9 +133,7 @@ end
 (** Provide pseudo-unique identifiers. *)
 module Unique_id = struct
 
-  include Ketrew_gen_base_v0_t
-  type t = unique_id
-  (** [string] seems to be the best-suited primitive *)
+  include Ketrew_gen_base_v0.Unique_id
 
   (** Create a fresh filename-compliant identifier. *)
   let create () =
@@ -105,3 +145,13 @@ let wrap_preemptively ~on_exn f =
   wrap_deferred (fun () -> 
       Lwt_preemptive.detach f ())
     ~on_exn
+
+let lwt_stream_to_string lwt_stream =
+  let buf = Buffer.create 42 in
+  wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    Lwt.(fun () ->
+        Lwt_stream.iter_s 
+          (fun s -> Buffer.add_string buf s; return ()) lwt_stream)
+  >>= fun () ->
+  return (Buffer.contents buf)
+

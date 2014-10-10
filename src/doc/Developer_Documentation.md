@@ -20,13 +20,15 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
 - `yojson`: JSON parsing/printing
-- `atdgen/atd`: definition of serialization formats (used with `Yojson`).
+- `atd2cconv`: definition of serialization formats (used with `Yojson`).
 - `toml`: config-file parsing
-- `dbm`: unix key-value database
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
 
 and uses the `ocp-build` build system.
+
+At runtime, Ketrew will use a reasonably recent `git` command, and an `ssh`
+client (tested only with OpenSSH; but SSH calls are quite configurable).
 
 The `please.sh` script can call `opam` itself:
 
@@ -60,9 +62,7 @@ If you use Opam ≥ *1.2.0~beta4*, you don't need a custom opam-repository:
 
 ### Build The Documentation
 
-The documentation depends on [omd](https://github.com/ocaml/omd),
-[higlo](http://zoggy.github.io/higlo/),
-and Graphviz's `dot`:
+The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 
     please.sh doc
 
@@ -96,9 +96,8 @@ in its `/tmp` directory.
 
 ### The `cli` Test
 
-There is also a more interactive test:
-[`src/test/cli.ml` ](../test/cli.ml) which provides
-workflows to be created from the command line.
+The workflow [examples](../test/Workflow_Examples.ml) in the documentation
+are actually interactive tests.
 
 ### Generating a Test Environment
 
@@ -118,5 +117,5 @@ Creating _obuild/test.env
 ```
 
 then sourcing `_obuild/test.env` will give a few aliases to run the tests (like
-`kttest`, `ktapp`, etc. see inside the file).
+`kdtest`, `kdclient`, etc. see inside the file).
 

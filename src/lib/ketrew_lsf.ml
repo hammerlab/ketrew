@@ -21,15 +21,15 @@ module Program = Ketrew_program
 module Host = Ketrew_host
 module Error = Ketrew_error
 
-include Ketrew_gen_lsf_v0_t
+open Ketrew_gen_lsf_v0.Run_parameters
+open Ketrew_gen_lsf_v0.Running
+open Ketrew_gen_lsf_v0.Created
 
-let serialize t =
-  Ketrew_gen_versioned_j.string_of_lsf_run_parameters (`V0 t)
+type run_parameters = Ketrew_gen_lsf_v0.Run_parameters.t
 
-let deserialize_exn s =
-  begin match Ketrew_gen_versioned_j.lsf_run_parameters_of_string s with
-  | `V0 v0 -> v0
-  end
+include Json.Make_versioned_serialization
+    (Ketrew_gen_lsf_v0.Run_parameters)
+    (Ketrew_gen_versioned.Lsf_run_parameters)
 
 let name = "LSF"
 let create
@@ -40,7 +40,7 @@ let create
                  `Created {host; program; queue; name; wall_limit; processors}
                  |> serialize)
 
-let log = 
+let log =
   let open Log in
   function
   | `Created c -> [
@@ -64,7 +64,7 @@ let script_path ~playground =
   Path.(concat playground (relative_file_exn "monitored_script"))
 
 let parse_bsub_output s =
-  (* Output looks like 
+  (* Output looks like
           Job <1386656> is submitted to queue <queuename>.
   According to
      http://www.vub.ac.be/BFUCC/LSF/bsub.1.html
@@ -96,7 +96,7 @@ let query run_parameters item =
   | `Created _ -> fail Log.(s "not running")
   | `Running rp ->
     begin match item with
-    | "log" -> 
+    | "log" ->
       let log_file = Ketrew_monitored_script.log_file rp.script in
       Host.grab_file_or_log rp.created.host log_file
     | "stdout" ->
@@ -119,13 +119,13 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
-let start: run_parameters -> (_, _) t = function
+let start: run_parameters -> (_, _) Deferred_result.t = function
 | `Running _ ->
   fail_fatal "Wrong state: already running"
 | `Created created ->
   begin match Host.get_fresh_playground created.host with
   | None ->
-    fail_fatal (fmt  "Host %s: Missing playground" 
+    fail_fatal (fmt  "Host %s: Missing playground"
                   (Host.to_string_hum created.host))
   | Some playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
@@ -175,24 +175,30 @@ let start: run_parameters -> (_, _) t = function
       | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
       | `Execution -> fail_fatal (Error.to_string e)
       end
-    | `IO _ | `System _ as e -> 
+    | `IO _ | `System _ as e ->
       fail_fatal (Error.to_string e)
     end
   end
 
 let get_lsf_job_status host lsf_id =
-  let cmd = fmt "bjobs -o 'jobid stat delimiter=\"@\"' -noheader %d" lsf_id in
+  let cmd = fmt "bjobs -l %d" lsf_id in
   Host.get_shell_command_output host cmd
   >>= fun (stdout, stderr) ->
   Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
        % s "Err: " % s stderr @ verbose);
   let status =
-    match String.split stdout ~on:(`Character '@') with
-    | [jobid; status_string] ->
-      Log.(if Int.of_string jobid <> Some lsf_id  then
-             s "Job ID different from the one expected: "
-             % sf "%S" jobid % s " ≠ " % i lsf_id @ warning);
-      begin match String.strip status_string with
+    let sanitized =
+      String.split ~on:(`Character '\n') stdout
+      |> List.map ~f:(String.strip ~on:`Left)
+      |> String.concat ~sep:"" in
+    let re = Re_posix.compile_pat "Status <([A-Z]+)>" in
+    let subs = Re.(exec re sanitized |> get_all) in
+    try Some (Array.get subs 1) with _ -> None
+  in
+  let ketrew_status =
+    match status with
+    | Some s ->
+      begin match s with 
       | "PEND" | "UNKWN" | "RUN" -> `Running
       | "DONE" -> `Done
       | "USUSP" | "PSUSP" | "SSUSP" | "EXIT" | "ZOMBI" -> `Failed
@@ -201,12 +207,11 @@ let get_lsf_job_status host lsf_id =
              @ error);
         `Failed
       end
-    | other ->
-      Log.(s "LSF: cannot parse status: " % OCaml.list (sf "%S") other
-           @ error);
+    | None ->
+      Log.(s "LSF: cannot parse status: " % quote stdout @ error);
       `Failed
   in
-  return status
+  return ketrew_status
 
 let update = function
 | `Created _ -> fail_fatal "not running"
@@ -252,7 +257,7 @@ let update = function
     | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
   end
-  
+
 let kill run_parameters =
   begin
     match run_parameters with

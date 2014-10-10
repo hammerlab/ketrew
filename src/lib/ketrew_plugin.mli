@@ -14,29 +14,35 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** Commands that can be fed to the engine by end-users. *)
 
 open Ketrew_pervasives
 
-type t = [
-  | `Fail of Ketrew_pervasives.Log.t
-  | `Make of Ketrew_target.t * Ketrew_target.t list
-]
-(** A user-todo-item, is either asking Ketrew to fail with a message, or
-   to start a workflow. *)
 
-val log : t -> Ketrew_pervasives.Log.t
-(** Convert a command into a [Log.t] document. *)
+val default_plugins :
+  (string * (module Ketrew_long_running.LONG_RUNNING)) list
+(** The “long-running” plugins loaded by default. *)
 
-val run_list :
-  state:Ketrew_state.t ->
-  t list ->
+val register_long_running_plugin :
+  name:string -> (module Ketrew_long_running.LONG_RUNNING) -> unit
+(** Function to be called from dynamically loaded plugins. *)
+
+val long_running_log: string -> string -> (string * Log.t) list
+(** [long_running_log ~state plugin_name serialized_run_params]
+    calls {!Ketrew_long_running.LONG_RUNNING.log} with the right plugin. *)
+
+val additional_queries: Ketrew_target.t -> (string * Log.t) list
+(** Get the potential additional queries ([(key, description)] pairs) that can
+    be called on the target. *)
+
+val call_query:  target:Ketrew_target.t -> string ->
+  (string, Log.t) Deferred_result.t
+(** Call a query on a target. *)
+
+val find_plugin: string -> (module Ketrew_long_running.LONG_RUNNING) option
+
+val load_plugins :
+  [ `Compiled of string | `OCamlfind of string ] list ->
   (unit,
-   [> `Database of Ketrew_database.error
-   | `Database_unavailable of Ketrew_target.id
-   | `Failure of string
-   | `Missing_data of Ketrew_target.id
-   | `Target of [> `Deserilization of string ]
-   | `Persistent_state of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Run a todo-list with the given [state] instance. *)
+   [> `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of string ]) Deferred_result.t

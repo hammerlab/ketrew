@@ -83,3 +83,43 @@ type persistent_state = {
   pointers: (unique_id * unique_id) list;
 }
 
+type happening = [
+  | Target_activated of (unique_id * [ Dependency | Fallback | Success_trigger])
+  | Target_died of
+      (unique_id  *
+       [ Dependencies_died
+       | Plugin_not_found of string
+       | Killed
+       | Long_running_unrecoverable of (string * string)
+       | Process_failure ])
+  | Target_started of (unique_id * string)
+  | Target_archived of unique_id
+  | Target_created of unique_id
+  | Target_succeeded of
+      (unique_id *
+       [ Artifact_literal | Artifact_ready | Process_success ])
+  | Error of string
+]
+
+type happening_list = happening list
+
+type http_request = {
+  connection_id: string;
+  meth: [ DELETE | GET | HEAD | OPTIONS | PATCH | POST | PUT ];
+  uri: string;
+}
+type measurement = [
+  | Creation
+  | Incoming_request of http_request
+  | End_of_request of http_request
+  | Tag of string
+]
+type measurement_item = {
+  time: time;
+  content: measurement;
+}
+type measurement_collection = measurement_item list
+
+
+
+

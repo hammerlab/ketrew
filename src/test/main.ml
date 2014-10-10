@@ -17,8 +17,19 @@
 open Ketrew_pervasives
 
 module Test = struct
+  exception Tests_failed
+
+  let max_failures = 
+    try Sys.getenv "MAX_FAILURES" |> int_of_string with _ -> 2_000_000
+
   let failed_tests = ref []
-  let fail s = failed_tests := s :: !failed_tests
+  let fail s =
+    failed_tests := s :: !failed_tests;
+    if List.length !failed_tests > max_failures then (
+      Log.(s "Some tests failed: " %n % OCaml.list s (List.rev !failed_tests)
+           @ error);
+      raise Tests_failed 
+    ) else ()
 
   let test_ssh_host =
     let open Ketrew in
@@ -28,52 +39,51 @@ module Test = struct
     with Not_found -> Host.ssh "localhost"
 
   let wrong_ssh_host =
-    Ketrew.EDSL.parse_host "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
+    Ketrew.EDSL.Host.parse "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
 
-  let test_targets ?wait_between_steps ~state ~name targets checks =
+  let test_targets ?wait_between_steps ~engine ~name targets checks =
     let open Ketrew in
-    Deferred_list.while_sequential targets (State.add_target state)
-    >>= fun (_ : unit list) ->
+    Ketrew_engine.add_targets engine targets
+    >>= fun () ->
     Deferred_list.while_sequential checks ~f:(fun check ->
         Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
         >>< fun _ ->
         match check with
-        | `Dont_care -> State.step state >>= fun _ -> return ()
+        | `Dont_care -> Ketrew_engine.step engine >>= fun _ -> return ()
         | `Happens check ->
-          State.step state >>= fun happening ->
+          Ketrew_engine.step engine >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
-            fail (fmt "T: %S: wrong happening: %s" name
-                    (List.map ~f:State.what_happened_to_string happening
+            fail (fmt "T: %S: wrong happening: %s" name (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end
         | `Status (id, check) ->
-          State.step state >>= fun _ ->
-          begin State.get_status state id
+          Ketrew_engine.step engine >>= fun _ ->
+          begin Ketrew_engine.get_status engine id
             >>= function
             | s when check s -> return ()
             | other -> fail (fmt "T: %S: wrong status" name); return ()
           end
         | `Kill_and (id, check) ->
-          State.kill state id
+          Ketrew_engine.kill engine id
           >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
             fail (fmt "T: %S: wrong kill happening: %s" name
-                    (List.map ~f:State.what_happened_to_string happening
+                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end)
     >>= fun (_: unit list) ->
     return ()
 
-    let test_target_one_step ?condition ~state ~make name check =
+    let test_target_one_step ?condition ~engine ~make name check =
       let open Ketrew in
       let target = Target.active ~name ?condition  ~make () in
-      test_targets ~name ~state [target] [check ~id:(Target.id target)]
+      test_targets ~name ~engine [target] [check ~id:(Target.id target)]
     let target_succeeds ~id =
       `Status (id, function `Successful _ -> true | _ -> false)
     let target_fails ~id =
@@ -82,13 +92,63 @@ module Test = struct
     let nothing_happens = `Happens (function [] -> true | _ -> false)
 
     let new_db_file () =
-      let db_file = "/tmp/ketrew_db_test"  in
-      begin System.Shell.do_or_fail (fmt "rm -f %s*" db_file)
-        (* DBM uses `db_file` as a prefix for implementation-dependent files *)
+      let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
+      begin System.Shell.do_or_fail (fmt "rm -rf %s" db_file)
         >>< fun _ -> return ()
       end
       >>= fun () ->
       return db_file
+
+end
+
+module Happenings = struct
+
+  let contains h1 ~f =
+    let yes, no =
+      List.partition h1 ~f in
+    match yes, no with
+    | [], all -> None
+    | one :: more, rest -> Some (one, more @ rest)
+
+  let look ?(and_nothing_more=true) ~like () haps =
+    let rec go prev = 
+      function
+      | [] -> if and_nothing_more then prev = [] else true
+      | f :: more ->
+        begin match contains ~f prev with
+        | None -> false
+        | Some (_, rest) -> go rest more
+        end
+    in
+    go haps like
+
+  let check_option opt v =
+    begin match opt with
+    | None -> true
+    | Some h when h = v -> true
+    | Some _ -> false
+    end
+
+  let success ?how ?what hap =
+    match hap with
+    | `Target_succeeded (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
+
+  let activation ?how ?what hap =
+    match hap with
+    | `Target_activated (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
+
+  let death ?how ?what hap =
+    match hap with
+    | `Target_died (trgt, meth) ->
+      check_option how meth
+      && check_option what trgt 
+    | _ -> false
 
 end
 
@@ -130,12 +190,99 @@ let mini_db_test () =
       | `Not_done -> Test.fail "seq 2 not done"; return ()
     end
     >>= fun () ->
-    begin DB.act db2 DB.(seq [contains ~key:"k" "v"])
+    (* Transation that fails: *)
+    begin DB.act db2 DB.(seq [
+        set ~key:"k2" "vvv";
+        set ~collection:"c3" ~key:"k3" "vvv";
+        set ~key:"k2" "uuu";
+        contains ~key:"k" "u"])
       >>= function
       | `Not_done -> return ()
       | `Done -> Test.fail "seq 3 done"; return ()
     end
     >>= fun () ->
+    (* Transation that succeeds: *)
+    begin DB.act db2 DB.(seq [
+        is_not_set "k2";
+        set ~key:"k2" "vvv";
+        contains ~key:"k2" "vvv";
+        set ~key:"k2" "uuu";
+        contains ~key:"k" "V";
+        contains ~key:"k2" "uuu";
+        unset "k2";
+        is_not_set "k2";
+      ])
+      >>= function
+      | `Done -> return ()
+      | `Not_done -> Test.fail "seq 4 not done"; return ()
+    end
+    >>= fun () ->
+    (* Transations that fail hard: *)
+    let test_with_debug_artificial_failure name f =
+      DB.Debug.(global_debug := f "k2");
+      begin
+        Lwt.catch (fun () ->
+            DB.act db2 DB.(seq [
+                set ~key:"k2" "rrr";
+                set ~key:"k2" "uuu";
+                unset "k2";
+              ])
+            >>< function
+            | _ -> Test.fail (fmt "seq %s not exn" name); return ())
+          (fun e -> return ())
+      end
+      >>= fun () ->
+      DB.Debug.(global_debug := No);
+      (* We should be like end of seq 6 *)
+      begin DB.act db2 DB.(seq [
+          is_not_set "k2";
+          set ~collection:"c3" ~key:"k3" "uuu";
+          unset ~collection:"c3" "k3";
+          unset ~collection:"c3" "k3";
+        ])
+        >>= function
+        | `Done -> return ()
+        | `Not_done -> Test.fail (fmt "seq %s+1 not done" name); return ()
+      end
+    in
+    test_with_debug_artificial_failure "After_write"
+      (fun k -> DB.Debug.After_write k)
+    >>= fun () ->
+
+    test_with_debug_artificial_failure "After_git_add"
+      (fun k -> DB.Debug.After_git_add k)
+    >>= fun () ->
+    test_with_debug_artificial_failure "After_git_rm"
+      (fun k -> DB.Debug.After_git_rm k)
+    >>= fun () ->
+    let check_collection collection result =
+      let check r =
+        let sort = List.sort ~cmp:String.compare in
+        sort r = sort result in
+      DB.get_all db2 ~collection
+      >>= function
+      | r when check r -> return ()
+      | other ->
+        Test.fail (fmt "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
+                     collection (String.concat ~sep:", " result)
+                     (String.concat ~sep:", " other));
+        return ()
+    in
+    check_collection "" [] >>= fun () ->
+    check_collection "aslkdj" [] >>= fun () ->
+    check_collection "c3" [] >>= fun () ->
+    let collection = "c3" in
+    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                        set ~collection ~key:"k2" "v2"])
+    >>= fun _ ->
+    check_collection collection ["v1"; "v2"] >>= fun () ->
+    let collection = "c4" in
+    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                        set ~collection ~key:"k2" "v2"])
+    >>= fun _ ->
+    check_collection collection ["v1"; "v2"] >>= fun () ->
+    (* check_collection "c3" ["sld"] >>= fun () -> *)
+
     return ()
   end
   |> function
@@ -149,12 +296,13 @@ let test_0 () =
   Lwt_main.run begin
     Test.new_db_file ()
     >>= fun db_file ->
-    let configuration = Configuration.create db_file () in
-    State.with_state ~configuration begin fun ~state ->
-      State.add_target state
-        Target.(create ~name:"First target" ())
+    let configuration = 
+      Configuration.engine ~database_parameters:db_file () in
+    Ketrew_engine.with_engine ~configuration begin fun ~engine ->
+      Ketrew_engine.add_targets engine
+        [Target.(create ~name:"First target" ())]
       >>= fun () ->
-      begin State.current_targets state
+      begin Ketrew_engine.current_targets engine
         >>= function
         | [one] when one.Target.name = "First target" -> return ()
         | other ->
@@ -163,21 +311,21 @@ let test_0 () =
       >>= fun () ->
 
 
-      Test.test_target_one_step ~state "ls /" Test.target_succeeds
+      Test.test_target_one_step ~engine "ls /" Test.target_succeeds
         ~make:(`Direct_command Target.Command.(shell "ls /"))
       >>= fun () ->
 
-      Test.test_target_one_step ~state "ls /crazypath" Test.target_fails
+      Test.test_target_one_step ~engine "ls /crazypath" Test.target_fails
         ~make:(`Direct_command Target.Command.(shell "ls /crazypath"))
       >>= fun () ->
 
       let host = Test.test_ssh_host in
-      Test.test_target_one_step ~state "ls / over ssh" Test.target_succeeds
+      Test.test_target_one_step ~engine "ls / over ssh" Test.target_succeeds
         ~make:(`Direct_command Target.Command.(shell ~host "ls /"))
       >>= fun () ->
 
       let root = Path.absolute_directory_exn "/tmp" in
-      Test.test_target_one_step ~state "ls / > <file> over ssh" Test.target_succeeds
+      Test.test_target_one_step ~engine "ls / > <file> over ssh" Test.target_succeeds
         ~make:(`Direct_command
                  Target.Command.(shell ~host "ls / > /tmp/ketrew_test"))
         ~condition:(`Volume_exists
@@ -198,12 +346,12 @@ let test_0 () =
                            (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
                                                 dir "somedir" [file "psaux"]]))
       in
-      Test.test_target_one_step ~state "2 files, 2 dirs over ssh" Test.target_succeeds
+      Test.test_target_one_step ~engine "2 files, 2 dirs over ssh" Test.target_succeeds
         ~make:(`Direct_command cmd) ~condition:(`Volume_exists vol)
       >>= fun () ->
 
       (* doing it again should succeed for a good reason *)
-      Test.test_target_one_step ~state "2 files, 2 dirs over ssh, AGAIN"
+      Test.test_target_one_step ~engine "2 files, 2 dirs over ssh, AGAIN"
         ~make:(`Direct_command cmd) ~condition:(`Volume_exists vol)
         (Test.check_one_step (fun ~id -> function
            | [`Target_succeeded (i, `Artifact_ready)] when i = id -> true
@@ -216,7 +364,7 @@ let test_0 () =
                            (dir "ketrew_test2" [file "ls"; dir "somedir_empty" [];
                                                 dir "somedir_typo" [file "psaux"]]))
       in
-      Test.test_target_one_step ~state "2 files, 2 dirs over ssh + file typo" Test.target_fails
+      Test.test_target_one_step ~engine "2 files, 2 dirs over ssh + file typo" Test.target_fails
         ~make:(`Direct_command cmd) ~condition:(`Volume_exists vol)
       >>= fun () ->
 
@@ -226,7 +374,7 @@ let test_0 () =
                            (dir "ketrew_test2" [file "ls"; dir "somedir_empty_2" [];
                                                 dir "somedir" [file "psaux"]]))
       in
-      Test.test_target_one_step ~state "2 files, 2 dirs over ssh + dir typo" Test.target_fails
+      Test.test_target_one_step ~engine "2 files, 2 dirs over ssh + dir typo" Test.target_fails
         ~make:(`Direct_command cmd) ~condition:(`Volume_exists vol)
       >>= fun () ->
 
@@ -266,7 +414,7 @@ let test_0 () =
             id1 (expected_status succeed1)
             id2 (expected_status succeed2)
         in
-        Test.test_targets ~state ~name [target1; target2] (check ~id1 ~id2)
+        Test.test_targets ~engine ~name [target1; target2] (check ~id1 ~id2)
       in
       two_targets (true, true) (fun ~id1 ~id2 ->
           [
@@ -317,10 +465,11 @@ let test_0 () =
           ~make:(`Direct_command Target.Command.(shell "ls"))
           ()
       in
-      Test.test_targets ~state ~name:"target_with_missing_dep" [target_with_missing_dep] [
-        `Happens (function
-          | [`Target_died (_, `Dependencies_died)]  -> true
-          | _ -> false);
+      Test.test_targets ~engine ~name:"target_with_missing_dep" [target_with_missing_dep] [
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Dependencies_died;
+            ]);
         `Dont_care;
       ]
       >>= fun () ->
@@ -339,14 +488,14 @@ let test_0 () =
           ~make:(`Direct_command Target.Command.(shell "ls /somelong_STUPID-path"))
           ()
       in
-      Test.test_targets ~state ~name:"target_with_fallbacks"
+      Test.test_targets ~engine ~name:"target_with_fallbacks"
         [target_with_fallbacks; fallback1; fallback2] [
-        `Happens (function
-          | [`Target_died (_, `Process_failure);
-             `Target_activated (id1, `Fallback);
-             `Target_activated (id2, `Fallback); ]
-            when id1 = Target.id fallback1 && id2 = Target.id fallback2 -> true
-          | _ -> false);
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Process_failure;
+              activation ~how:`Fallback ~what:(Target.id fallback1);
+              activation ~how:`Fallback ~what:(Target.id fallback2);
+            ]);
         `Dont_care;
         `Dont_care;
         `Dont_care;
@@ -369,20 +518,44 @@ let test_0 () =
           ~make:(`Direct_command Target.Command.(shell "ls /somelong_STUPID-path"))
           ()
       in
-      Test.test_targets ~state ~name:"targets_with_same_fallback"
+      Test.test_targets ~engine ~name:"targets_with_same_fallback"
         [target_with_fallback_1; target_with_fallback_2; fallback] [
-        `Happens (function
-          | [`Target_died (_, `Process_failure);
-             `Target_activated (_, `Fallback);
-             `Target_died (_, `Process_failure); ] -> true
-          | _ -> false);
+        `Happens Happenings.(
+            look () ~like:[
+              death ~how:`Process_failure;
+              death ~how:`Process_failure;
+              activation ~how:`Fallback;
+            ]);
         `Dont_care;
         `Dont_care;
         `Dont_care;
       ]
+      >>= fun () ->
 
-
+      let triggered =
+        Target.create ~name:"Triggered" ()
+          ~make:(`Direct_command Target.Command.(shell "ls /"))
+      in
+      let target_that_triggers =
+        Target.active ~name:"target-with-trigger" ()
+          ~make:(`Direct_command Target.Command.(shell "ls /"))
+          ~success_triggers:[Target.id triggered]
+      in
+      Test.test_targets ~engine ~name:"target-with-trigger"
+        [target_that_triggers; triggered] [
+        `Happens Happenings.(look () ~like:[
+            success ~what:(Target.id target_that_triggers); 
+            activation ~how:`Success_trigger;
+          ]);
+        `Happens Happenings.(look () ~like:[
+            success ~what:(Target.id triggered); 
+          ]);
+        `Dont_care;
+        `Dont_care;
+      ]
     end
+
+
     >>= fun () ->
     return ()
   end |> function
@@ -398,16 +571,16 @@ let test_ssh_failure_vs_target_failure () =
       Test.new_db_file ()
       >>= fun database_parameters ->
       let configuration =
-        Configuration.create
+        Configuration.engine
           ~turn_unix_ssh_failure_into_target_failure ~database_parameters () in
-      State.with_state ~configuration (fun ~state ->
+      Ketrew_engine.with_engine ~configuration (fun ~engine ->
           let target_with_wrong_host =
             let host = Test.wrong_ssh_host in
             Target.active ~name:"target_with_missing_dep"
               ~make:(`Direct_command Target.Command.(shell ~host "ls")) ()
           in
           Test.test_targets
-            ~state ~name:"target_with_wrong_host" [target_with_wrong_host]
+            ~engine ~name:"target_with_wrong_host" [target_with_wrong_host]
             expect)
     in
     (* `false` is the default:
@@ -448,10 +621,10 @@ let test_long_running_nohup () =
   Lwt_main.run begin
     Test.new_db_file ()
     >>= fun db_file ->
-    let configuration = Configuration.create db_file () in
-    State.with_state ~configuration (fun ~state ->
+    let configuration = Configuration.engine ~database_parameters:db_file () in
+    Ketrew_engine.with_engine ~configuration (fun ~engine ->
 
-        Test.test_targets  ~state ~name:("one bad plugin")
+        Test.test_targets  ~engine ~name:("one bad plugin")
           [Target.active ~name:"one"
              ~make:(`Long_running ("bad_plugin", "useless string")) ()
           ]
@@ -467,7 +640,7 @@ let test_long_running_nohup () =
         Deferred_list.while_sequential [Test.test_ssh_host] ~f:(fun host ->
             let name n = fmt "%s on %s" n Host.(to_string_hum host) in
             let new_name = Unique_id.create () in
-            Test.test_targets  ~state ~name:(name "good ls")
+            Test.test_targets  ~engine ~name:(name "good ls")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ()
                  ~make:(Daemonize.create ~host
@@ -488,7 +661,7 @@ let test_long_running_nohup () =
 
             (* Test the `kill` function: *)
             let id = Unique_id.create () in
-            Test.test_targets  ~state ~name:(name "sleep 42")
+            Test.test_targets  ~engine ~name:(name "sleep 42")
               ~wait_between_steps:1.
               [Target.active ~name:"one" ~id
                  ~make:(Daemonize.create ~host
@@ -517,11 +690,11 @@ let test_long_running_nohup () =
               Ketrew.EDSL.(
                 target "some name"
                   ~make:(daemonize ~host Program.(sh "ls > /tmp/some_temp_file"))
-                  ~ready_when:(file ~host "/tmp/some_temp_file_with_error")#exists
+                  ~done_when:(file ~host "/tmp/some_temp_file_with_error")#exists
               )
             in
             t#activate;
-            Test.test_targets ~state ~name:(name "wrong 'returns'")
+            Test.test_targets ~engine ~name:(name "wrong 'returns'")
               ~wait_between_steps:0.3 [t#render] [
               `Happens (function
                 | [`Target_started (_, _)] -> true
@@ -545,47 +718,6 @@ let test_long_running_nohup () =
     Test.fail "test_long_running_nohup ends with error"
 
 
-let test_config_file_parsing () =
-  let open Ketrew.Configuration in
-  let () =
-    let base = create ~database_parameters:"aaabbb" () in
-    match
-      parse "# Example config\n\
-                  more-useless-key = 42\n\
-                  [database] # Section DB\n\
-                  path = \"aaabbb\"\n\
-            " with
-    | `Ok parsed when parsed = base -> ()
-    | _ -> Test.fail "test_config_file_parsing 1"
-  in
-  let () =
-    let base =
-      create
-        ~persistent_state_key:"some-key" ~database_parameters:"aaabbb" () in
-    match
-      parse "# Example config\n\
-             more-useless-key = 42\n\
-             [database] # Section DB\n\
-             path = \"aaabbb\"\n\
-             state-key = \"some-key\"\n\
-             " with
-    | `Ok parsed when parsed = base -> ()
-    | _ -> Test.fail "test_config_file_parsing 2"
-  in
-  let () =
-    match parse "# some comment\nstate-key= \"no path\"" with
-    | `Error _ -> ()
-    | `Ok _ -> Test.fail "no database-path in config should fail"
-  in
-  let () =
-    match parse "# some comment\n[database]state-key= \"no path\"" with
-    | `Error _ -> ()
-    | `Ok _ -> Test.fail "no database-path in config should fail"
-  in
-  ()
-
-
-
 let () =
   let argl = Sys.argv |> Array.to_list in
   global_with_color := not (List.mem ~set:argl "-no-color");
@@ -594,7 +726,6 @@ let () =
   if List.mem ~set:argl "db-test" || all then mini_db_test ();
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
-  if List.mem ~set:argl "config-file" || all then test_config_file_parsing ();
   if List.mem ~set:argl "ssh-failure" || all then test_ssh_failure_vs_target_failure ();
   begin match !Test.failed_tests with
   | [] ->
@@ -602,6 +733,6 @@ let () =
          % OCaml.list (sf "%S") argl % s ")" @ normal);
     exit 0
   | some ->
-    Log.(s "Some tests failed: " %n % OCaml.list s some @ error);
+    Log.(s "Some tests failed: " %n % OCaml.list string some @ error);
     exit 3
   end

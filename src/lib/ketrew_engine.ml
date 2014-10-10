@@ -29,20 +29,20 @@ module Configuration = Ketrew_configuration
 module Daemonize = Ketrew_daemonize
 
 module Persistent_state = struct
-  type t = Ketrew_gen_base_v0_t.persistent_state = {
+  type t = Ketrew_gen_base_v0.Persistent_state.t = {
     current_targets: Target.id list;
     archived_targets: Target.id list;
     pointers: (Target.id * Target.id) list;
   }
   let create () = {current_targets = []; archived_targets = []; pointers = []}
 
-  let serialize t = Ketrew_gen_versioned_j.string_of_persistent_state (`V0 t)
+  include
+    Json.Make_versioned_serialization
+      (Ketrew_gen_base_v0.Persistent_state)
+      (Ketrew_gen_versioned.Persistent_state)
 
   let deserialize s = 
-    try return (
-        match Ketrew_gen_versioned_j.persistent_state_of_string s with
-        | `V0 v0 -> v0
-      )
+    try return (deserialize_exn s)
     with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
 
   let add t target = { t with current_targets = Target.id target :: t.current_targets }
@@ -66,98 +66,97 @@ module Persistent_state = struct
 
 end
 
+module Measurement_collection = struct
+  type item = Ketrew_gen_base_v0.Measurement_item.t
+  type t = Ketrew_gen_base_v0.Measurement_collection.t ref
+  let item content = 
+    let open Ketrew_gen_base_v0.Measurement_item in
+    { time = Time.(now ()); content}
+  let create () = ref [item `Creation]
+  let add collection log = 
+    collection := item log :: !collection
+
+  include Json.Make_versioned_serialization
+      (struct 
+        type t = Ketrew_gen_base_v0.Measurement_collection.t
+      end)
+      (Ketrew_gen_versioned.Measurement_collection)
+
+  let flush collection db =
+    let action =
+      let key = Unique_id.create () in
+      let value = serialize !collection in
+      Ketrew_database.(set ~collection:"measurements" ~key value)
+    in
+    begin Ketrew_database.act db ~action
+      >>= function
+      | `Done ->
+        collection :=  [item `Creation]; 
+        return ()
+      | `Not_done -> fail (`Database_unavailable "measurements")
+    end
+
+  let load_all db =
+    Ketrew_database.get_all db ~collection:"measurements"
+    >>= fun all_strings ->
+    Deferred_list.while_sequential all_strings (fun s ->
+        try return (deserialize_exn s)
+        with e -> fail (`Deserialization (e, s)))
+    >>| List.concat
+    >>= fun collection ->
+    return collection
+
+  let make_http_request connection_id request =
+    let connection_id = Cohttp.Connection.to_string connection_id in
+    let meth = Cohttp.Request.meth request in
+    let uri = Cohttp.Request.uri request |> Uri.to_string in
+    {Ketrew_gen_base_v0.Http_request. connection_id;  meth; uri}
+
+end
+
+
 type t = {
   mutable database_handle: Database.t option;
-  configuration: Configuration.t;
-  long_running_plugins: (string * (module LONG_RUNNING)) list;
+  configuration: Configuration.engine;
+  measurements: Measurement_collection.t;
 }
-let default_plugins = [
-  Daemonize.name, (module Daemonize: LONG_RUNNING);
-  Ketrew_lsf.name, (module Ketrew_lsf: LONG_RUNNING);
-]
-let create ?(plugins=default_plugins) configuration =
-  return {database_handle = None; configuration;
-          long_running_plugins = plugins}
+let create configuration =
+  return {
+    database_handle = None; configuration;
+    measurements = Measurement_collection.create ();
+  }
 
-let release t =
+let unload t =
   match t.database_handle with
-  | Some s -> Database.close s
+  | Some s ->
+    Measurement_collection.flush t.measurements s
+    >>= fun () ->
+    Database.close s
   | None -> return ()
 
-let global_list_of_plugins: (string * (module LONG_RUNNING)) list ref =
-  ref default_plugins
+let load ~configuration =
+  create configuration
 
-let register_long_running_plugin ~name m =
-  global_list_of_plugins := (name, m) :: !global_list_of_plugins
-
-let dynlink path =
-  wrap_preemptively (fun () ->
-      let adapted = Dynlink.adapt_filename path in
-      Log.(s "Loading: " % quote adapted @ verbose);
-      Dynlink.loadfile adapted
-    )
-    ~on_exn:(function
-      | Dynlink.Error e -> `Dyn_plugin (`Dynlink_error e)
-      | other ->
-        `Failure (fmt "Unknown dynlink-error: %s" (Printexc.to_string other))
-      )
-
-let ketrew_deep_ancestors () =
-  Lazy.force (
-    lazy (
-      Findlib.package_deep_ancestors ["native"] Ketrew_metadata.findlib_packages
-    ))
-
-let with_state ~configuration f =
-  let plugins_to_load = Configuration.plugins configuration in
-  wrap_preemptively Findlib.init ~on_exn:(fun e -> `Dyn_plugin (`Findlib e))
-  >>= fun () ->
-  Deferred_list.while_sequential plugins_to_load ~f:(function
-    | `Compiled path -> dynlink path
-    | `OCamlfind package ->
-      let predicates = ["native"; "plugin"; "mt"] in
-      let deps = Findlib.package_deep_ancestors predicates [package] in
-      let to_load =
-        List.concat_map deps ~f:(fun dep ->
-            if List.mem dep ~set:(ketrew_deep_ancestors ())
-            then []
-            else (
-              let base = Findlib.package_directory dep in
-              let archives =
-                try
-                  Findlib.package_property predicates dep "archive"
-                  |> String.split ~on:(`Character ' ')
-                  |> List.filter ~f:((<>) "")
-                  |> List.map ~f:(Findlib.resolve_path ~base)
-                with _ ->  []
-              in
-              archives
-            ))
-      in
-      Log.(s "Going to load: " % OCaml.list quote to_load @ verbose);
-      Deferred_list.while_sequential to_load ~f:dynlink
-      >>= fun (_ : unit list) ->
-      return ()
-    )
-  >>= fun (_ : unit list) ->
-  create ~plugins:!global_list_of_plugins configuration
-  >>= fun state ->
-  begin try f ~state with
+let with_engine ~configuration f =
+  create configuration
+  >>= fun engine ->
+  begin try f ~engine with
   | e -> 
-    release state
+    unload engine
     >>= fun () ->
     fail (`Failure (fmt "with_state: client function threw exception: %s" 
                       (Printexc.to_string e)))
   end
   >>< begin function
   | `Ok () ->
-    release state
+    unload engine
   | `Error e ->
-    release state >>< fun _ ->
+    unload engine >>< fun _ ->
     fail e
   end
 
 let configuration t = t.configuration
+
 
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
@@ -184,22 +183,29 @@ let get_persistent t =
       return e
   end
 
+
 let save_persistent t persistent =
   database t >>= fun db ->
   let key = Configuration.persistent_state_key t.configuration in
   let action = Database.(set ~key (Persistent_state.serialize persistent)) in
   begin Database.act db ~action
     >>= function
-    | `Done -> return ()
+    | `Done -> 
+      return ()
     | `Not_done -> fail (`Database_unavailable key)
   end
+
+let set_target_db_action target =
+  Database.(set ~collection:"targets"
+              ~key:target.Target.id Target.(serialize target))
 
 let add_or_update_target t target =
   database t
   >>= fun db ->
-  begin Database.(act db (set target.Target.id Target.(serialize target)))
+  begin Database.(act db (set_target_db_action target))
     >>= function
-    | `Done -> return ()
+    | `Done -> 
+      return ()
     | `Not_done ->
       (* TODO: try again a few times instead of error *)
       fail (`Database_unavailable target.Target.id)
@@ -209,24 +215,20 @@ let add_or_update_target t target =
 (** This internal function gets a target value from the database {b without
     following pointers}.
 *)
-let _get_target_from_db db id =
-  Database.get db id
+let _get_target_no_pointers t id =
+  database t >>= fun db ->
+  Database.get db ~collection:"targets" ~key:id
   >>= function
-  | Some t -> of_result (Target.deserialize t)
+  | Some s -> 
+    of_result (Target.deserialize s)
   | None -> fail (`Missing_data id)
 
 let get_target t id =
   database t >>= fun db ->
   get_persistent t >>= fun persistent ->
   let actual_id = Persistent_state.follow_pointers persistent id in
-  _get_target_from_db db actual_id (** After following pointers we can say we
-                                       get the target from the DB. *)
-
-let archive_target t target_id =
-  get_persistent t
-  >>= fun persistent ->
-  let new_persistent = Persistent_state.archive persistent target_id in
-  save_persistent t new_persistent
+  _get_target_no_pointers t actual_id (** After following pointers we can say we
+                                          get the target from the DB. *)
 
 let current_targets t =
   database t >>= fun db ->
@@ -234,87 +236,236 @@ let current_targets t =
   let target_ids = Persistent_state.current_targets persistent in
   (** The [current_targets] are the ones we care about; not pointers which
       would create a lot useless duplicates. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
   | some :: more -> fail some (* TODO do not forget other errors *)
   end
 
+let archive_target t target_id =
+  get_target t target_id (* Assert this targets "exists" *)
+  >>= fun actual_target ->
+  get_persistent t
+  >>= fun persistent ->
+  let target_ids = Persistent_state.current_targets persistent in
+  begin match List.exists target_ids ~f:((=) (Target.id actual_target)) with
+  | true ->
+    let new_persistent = Persistent_state.archive persistent target_id in
+    save_persistent t new_persistent
+    >>= fun () ->
+    return [`Target_archived target_id]
+  | false -> return [] (* already archived no-op *)
+  end
+
+
 module Target_graph = struct
-  type state = t
+  type engine = t
+  type arrow = Target.t * Target.t
+  type edge = [
+    | `Dependency of arrow
+    | `Fallback of arrow
+    | `Success_triggers of arrow
+  ]
+  module Target_set = struct
+    include Set.Make(struct
+        type t = Target.t
+        let compare t1 t2 = String.compare t1.Target.id t2.Target.id
+      end)
+    let mem set v = mem v set
+    let add set v = add v set
+    let remove set v = remove v set
+    let find t v = try Some (find v t) with _ -> None
+    let exists t ~f = exists f t
+    let fold t ~f ~init = 
+      fold (fun elt a -> f a elt) t init
+
+  end
   type t = {
-    vertices: Target.t list;
-    edges: (Target.t * Target.t) list;
+    vertices: Target_set.t;
+    edges: edge list;
   }
 
-  let get_current ~state =
-    current_targets state >>= fun vertices ->
-    get_persistent state >>= fun persistent ->
+  let get_current ~engine =
+    current_targets engine >>= fun targets ->
+    get_persistent engine >>= fun persistent ->
     let archived_but_there = ref [] in
-    Deferred_list.while_sequential vertices ~f:(fun trgt ->
-        Deferred_list.while_sequential trgt.Target.dependencies (fun id ->
-            let actual_id = Persistent_state.follow_pointers persistent id in
-            match List.find vertices ~f:(fun t -> Target.id t = actual_id) with
-            | Some t -> return (trgt, t)
-            | None -> 
-              get_target state actual_id
-              >>= fun t ->
-              archived_but_there := t :: !archived_but_there;
-              return (trgt, t)
-          ))
+    let build_edges ~from_list ~edgify =
+      Deferred_list.while_sequential from_list (fun id ->
+          let actual_id = Persistent_state.follow_pointers persistent id in
+          match List.find targets ~f:(fun t -> Target.id t = actual_id) with
+          | Some t -> return (edgify t)
+          | None -> 
+            get_target engine actual_id
+            >>= fun t ->
+            archived_but_there := t :: !archived_but_there;
+            return (edgify t)
+        )
+    in
+    Deferred_list.while_sequential targets ~f:(fun trgt ->
+        build_edges ~from_list:trgt.Target.dependencies
+          ~edgify:(fun dep -> `Dependency (trgt, dep))
+        >>= fun dep_edges ->
+        build_edges ~from_list:trgt.Target.if_fails_activate
+          ~edgify:(fun dep -> `Fallback (trgt, dep))
+        >>= fun fb_edges ->
+        build_edges ~from_list:trgt.Target.success_triggers
+          ~edgify:(fun dep -> `Success_triggers (trgt, dep))
+        >>= fun st_edges ->
+        return (dep_edges @ fb_edges @ st_edges))
     >>| List.concat
     >>= fun edges ->
-    return {vertices = vertices @ !archived_but_there; edges}
+    let vertices = 
+      List.fold ~init:Target_set.empty (targets @ !archived_but_there) 
+        ~f:Target_set.add in
+    return {vertices; edges}
+
+  let log_arrow verb (t1, t2) =
+    let open Log in
+    Target.log t1 % sp % s verb % sp % Target.log t2
+
+  let log_edge = function
+  | `Dependency a -> log_arrow "depends on" a
+  | `Fallback a -> log_arrow "fallsback with" a
+  | `Success_triggers a -> log_arrow "triggers" a
 
   let log g =
     Log.(
-      OCaml.list (fun (t1, t2) ->
-          s "* " % Target.log t1 % s " → " % Target.log t2) g.edges
+      separate n (List.map g.edges ~f:(fun e -> s "* " % log_edge e))
     )
 
   let vertices g = g.vertices
 
-  let transitive_predecessors g ~target = 
-    let pred g t =
-      List.filter_map g.edges ~f:(fun (t1, t2) ->
-          if Target.id t2 = Target.id t then Some t1 else None) in
-    let rec trans_pred g t =
-      let preds = pred g t in
-      List.dedup (preds @ List.concat_map preds (fun v -> trans_pred g v))
+  let transitive_sub_graph g ~target = 
+    let connections t ~available =
+      List.filter_map g.edges ~f:(function
+        | `Dependency (t1, t2)
+        | `Fallback (t1, t2)
+        | `Success_triggers (t1, t2) ->
+          if Target.id t1 = Target.id t && Target_set.mem available t2
+          then Some t2
+          else if Target.id t2 = Target.id t && Target_set.mem available t1 
+          then Some t1
+          else None
+        ) in
+    let rec trans_connections t available acc =
+      match connections t available with
+      | [] ->  acc
+      | conns -> 
+        let new_available = 
+          List.fold conns ~init:available ~f:Target_set.remove in
+        List.map conns (fun conn ->
+            Target_set.add 
+              (trans_connections conn new_available acc)
+              conn
+          )
+        |> List.reduce ~f:Target_set.union
+        |> Option.value ~default:Target_set.empty
     in
-    trans_pred g target
+    trans_connections target (Target_set.remove g.vertices target) 
+      Target_set.empty
+
+  let targets_to_clean_up graph how_much =
+    let vertices = vertices graph in
+    Log.(s "Graph: " % log graph @ normal);
+    let to_kill =
+      (* a target should be killed if it is "created" and:
+
+         - no other target that is activated transitively dependends on it
+         - no other target that is activated or running can
+         trigger it because it is a fallback or success-trigger,
+         or a dependency of one of these, and so on transitively …
+
+         It's so complicated that for now we take a simpler but
+         conservative approach:
+
+         - grab the whole transitive sub-graph, 
+         - check that no-one is activated or running in there.
+
+         This is not “exact” (some “unreachable” targets may remain).
+      *)
+      Target_set.fold vertices ~init:[] ~f:(fun pred target ->
+          if Ketrew_target.Is.created target
+          then
+            let sub_graph = transitive_sub_graph graph ~target in
+            Log.(s "Subgraph of " % Target.log target % n
+                 % (Target_set.fold ~init:[] sub_graph ~f:(fun l e -> e :: l)
+                    |> OCaml.list Target.log)
+                 @ very_verbose);
+            if Target_set.for_all 
+                (fun trgt ->
+                   not (Ketrew_target.Is.activated trgt)
+                   && not (Ketrew_target.Is.running trgt))
+                sub_graph
+            then (Ketrew_target.id target :: pred)
+            else pred
+          else
+            pred)
+    in
+    let to_archive =
+      (* A target that is just-killed, or finished depending on `how_much` *)
+      Target_set.fold vertices ~init:[] ~f:(fun pred trgt ->
+          match how_much with
+          | `Soft when Ketrew_target.Is.successful trgt ->
+            (Ketrew_target.id trgt :: pred)
+          | `Hard when Ketrew_target.Is.finished trgt ->
+            (Ketrew_target.id trgt :: pred)
+          | other -> pred)
+    in
+    (`To_kill to_kill, `To_archive to_archive)
+
 
 end 
 
-let add_target t target =
-  add_or_update_target t target
-  >>= fun () ->
+
+let add_targets t tlist =
   get_persistent t
   >>= fun persistent ->
+  current_targets t
+  >>= fun current_targets ->
+  let stuff_to_do =
+    List.fold ~init:([], persistent) tlist ~f:(fun (targets, persistent) target ->
+        let equivalences =
+          List.filter current_targets
+            ~f:(fun t ->
+                Target.Is.(created t || activated t || running t)
+                && Target.is_equivalent target t) in
+        Log.(Target.log target % s " is "
+             % (match equivalences with
+               | [] -> s "pretty fresh"
+               | more ->
+                 s " equivalent to " % OCaml.list Target.log equivalences)
+             @ very_verbose);
+        match equivalences with
+        | [] -> 
+          (target :: targets, Persistent_state.add persistent target)
+        | at_least_one :: _ -> 
+          (targets,
+           Persistent_state.add_pointer persistent 
+             ~permanent:at_least_one.Target.id
+             ~newcomer:target.Target.id))
+  in
+  let targets_to_add, new_persistent = stuff_to_do in
+  let transaction = 
+    let open Database in
+    let persistent_action =
+      let key = Configuration.persistent_state_key t.configuration in
+      (set ~key (Persistent_state.serialize new_persistent)) in
+    Database.(seq (
+        persistent_action
+        :: List.map targets_to_add ~f:set_target_db_action
+      ))
+  in
+  database t
+  >>= fun db ->
+  Log.(s "Going to perform: " % Database.log_action transaction @ verbose);
   begin
-    current_targets t
-    >>| List.filter 
-      ~f:(fun t ->
-          Target.Is.(created t || activated t || running t)
-          && Target.is_equivalent target t)
-    >>= fun targets ->
-    Log.(s "Target " % Target.log target % s " is "
-         % (match targets with
-           | [] -> s "pretty fresh"
-           | more -> s " equivalent to " % OCaml.list Target.log targets)
-         @ very_verbose);
-    begin match targets with
-    | [] ->
-      let new_persistent = Persistent_state.add persistent target in
-      save_persistent t new_persistent
-    | at_least_one :: _ ->
-      let new_persistent =
-        Persistent_state.add_pointer persistent 
-          ~permanent:at_least_one.Target.id
-          ~newcomer:target.Target.id in
-      save_persistent t new_persistent
-    end
+    Database.(act db transaction)
+    >>= function
+    | `Done -> return ()
+    | `Not_done ->
+      (* TODO: try again a few times instead of error *)
+      fail (`Database_unavailable "transaction failed")
   end
 
 let archived_targets t =
@@ -323,7 +474,7 @@ let archived_targets t =
   let target_ids = Persistent_state.archived_targets persistent in
   (** Here also we don't want duplicates, [Persistent_state.archived_targets]
       are “real” targets. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_from_db db)
+  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
   >>= fun (targets, errors) ->
   begin match errors with
   | [] -> return targets
@@ -356,8 +507,11 @@ let _check_and_activate_dependencies ~t ids =
       | `Error (`Database _ as e)
       | `Error (`Missing_data _ as e) ->
         (* Dependency not-found => should get out of the way *)
-        Log.(s "Error while activating dependencies: " %
-             s (Ketrew_error.to_string e) @ error);
+        let errlog =
+          match e with
+          | `Database _ as e -> Ketrew_database.log_error e
+          | `Missing_data id -> Log.(s "Missing target: " % quote id) in
+        Log.(s "Error while activating dependencies: " % errlog @ error);
         return (`Die dep)
       | `Error (`Persistent_state _ as e)
       | `Error (`Target _ as e) -> fail e
@@ -398,6 +552,9 @@ let make_target_die ?explanation t ~target ~reason =
   Deferred_list.while_sequential target.Target.if_fails_activate ~f:(fun tid ->
       get_target t tid
       >>= fun trgt ->
+      (* Here two targets with the same fallback could activate the same target
+         concurrently, we don't care, target activation just means
+         “change the state in the DB”. *)
       begin match trgt.Target.history with
       | `Created _ ->
         let newdep = Target.(activate_exn trgt ~by:`Fallback) in
@@ -410,15 +567,29 @@ let make_target_die ?explanation t ~target ~reason =
   >>= fun happens ->
   return (`Target_died (Target.id target, reason) :: happens)
 
+let make_target_succeed t target ~why ~artifact =
+  add_or_update_target t Target.(make_succeed_exn target artifact)
+  >>= fun () ->
+  Deferred_list.while_sequential target.Target.success_triggers ~f:(fun tid ->
+      get_target t tid
+      >>= fun trgt ->
+      begin match trgt.Target.history with
+      | `Created _ ->
+        let newdep = Target.(activate_exn trgt ~by:`Success_trigger) in
+        add_or_update_target t newdep
+        >>= fun () ->
+        return (Some (`Target_activated (tid, `Success_trigger)))
+      | other -> return None
+      end)
+  >>| List.filter_opt
+  >>= fun happens ->
+  return (`Target_succeeded (Target.id target, why) :: happens)
+
 let with_plugin_or_kill_target t ~target ~plugin_name f =
-  begin match 
-    List.find t.long_running_plugins (fun (n, _) -> n = plugin_name)
-  with
-  | Some (_, m) ->
-    f m
+  match Ketrew_plugin.find_plugin plugin_name with
+  | Some m -> f m
   | None -> 
     make_target_die t ~target ~reason:(`Plugin_not_found plugin_name)
-  end
 
 let host_error_to_potential_target_failure t ~target ~error =
   let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
@@ -427,6 +598,11 @@ let host_error_to_potential_target_failure t ~target ~error =
     let e = Host.Error.log error in
     Log.(s "SSH failed, but not killing " % s (Target.id target)
          % sp % e @ warning);
+    add_or_update_target t Target.({
+        target  with log = (Time.now (), 
+                            fmt "Non fatal error: %s" (Log.to_long_string e)) 
+                           :: target.log })
+    >>= fun () ->
     return []
   | _ ->
     make_target_die t ~target ~reason:`Process_failure
@@ -441,6 +617,11 @@ let long_running_error_to_potential_target_failure t
   | `Fatal str, _ ->
     make_target_die t ~target ~reason:(make_error plugin_name str)
   | `Recoverable str, false ->
+    add_or_update_target t Target.({
+        target  with log = (Time.now (),
+                            fmt "Non fatal long-running error: %s" str)
+                           :: target.log })
+    >>= fun () ->
     Log.(s "Recoverable error: " % s str @ warning);
     return []
 
@@ -457,9 +638,7 @@ let _start_running_target t target =
                (Option.value_map ~default:"None-condition" 
                   ~f:Target.Condition.to_string_hum target.Target.condition))
       | true ->
-        add_or_update_target t Target.(make_succeed_exn target a)
-        >>= fun () ->
-        return [`Target_succeeded (Target.id target, `Artifact_literal)]
+        make_target_succeed t target ~why:`Artifact_literal ~artifact:a
     end
   | `Direct_command cmd ->
     begin Target.Command.run cmd
@@ -475,9 +654,8 @@ let _start_running_target t target =
                     (Option.value_map ~default:"None-condition" 
                        ~f:Condition.to_string_hum target.condition))
           | true ->
-            add_or_update_target t Target.(make_succeed_exn target (`Value `Unit))
-            >>= fun () ->
-            return [`Target_succeeded (Target.id target, `Process_success)]
+            make_target_succeed t target ~artifact:(`Value `Unit)
+              ~why:`Process_success
         end
       | `Error (`Host error) ->
         host_error_to_potential_target_failure ~target ~error t
@@ -535,11 +713,10 @@ let _update_status t ~target ~bookkeeping =
             | true ->
               let run_parameters = Long_running.serialize run_parameters in
               (* result_type must be a Volume: *)
-              add_or_update_target t Target.(
-                  update_running_exn target ~run_parameters
-                  |> fun trgt ->  make_succeed_exn trgt (`Value `Unit))
-                >>= fun () ->
-                return [`Target_succeeded (Target.id target, `Process_success)]
+              make_target_succeed t 
+                (Target.update_running_exn target ~run_parameters)
+                ~artifact:(`Value `Unit)
+                ~why:`Process_success
           end
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
@@ -554,28 +731,18 @@ let _update_status t ~target ~bookkeeping =
                 `Long_running_unrecoverable (plugin_name, s))
       end)
 
-type happening =
-  [ `Target_activated of Ketrew_target.id * [ `Dependency | `Fallback]
-  | `Target_died of
-      Ketrew_target.id  *
-      [ `Dependencies_died
-      | `Plugin_not_found of string
-      | `Killed
-      | `Long_running_unrecoverable of string * string
-      | `Process_failure ]
-  | `Target_started of Ketrew_target.id * string
-  | `Target_succeeded of
-      Ketrew_target.id *
-      [ `Artifact_literal | `Artifact_ready | `Process_success ] ]
+type happening = Ketrew_gen_base_v0.Happening.t
 
 let log_what_happened =
   let open Log in
   function
+  | `Error e -> s "Error " % s e
   | `Target_activated (id, by) ->
     s "Target " % s id % s " activated: " %
     (match by with
      | `Dependency -> s "Dependency"
-     | `Fallback -> s "Fallback")
+     | `Fallback -> s "Fallback"
+     | `Success_trigger -> s "Success-trigger")
   | `Target_succeeded (id, how) ->
     s "Target " % s id % s " succeeded: " 
     % (match how with
@@ -584,6 +751,10 @@ let log_what_happened =
       | `Process_success -> s "Process success")
   | `Target_started (id, plugin_name) ->
     s "Target " % s id % s " started " % parens (s plugin_name)
+  | `Target_archived id ->
+    s "Target " % s id % s " was archived "
+  | `Target_created id ->
+    s "Target " % s id % s " was created "
   | `Target_died (id, how) ->
     s "Target " % s id % s " died: " 
     % (match how with
@@ -601,13 +772,14 @@ let step t: (happening list, _) Deferred_result.t =
   begin
     current_targets t >>= fun targets ->
     database t >>= fun db ->
-    Deferred_list.while_sequential targets ~f:(fun target ->
+    Deferred_list.for_concurrent targets ~f:(fun target ->
+        (* Log.(s "Engine.step dealing with " % Target.log target @ verbose); *)
         match target.Target.history with
         | `Created _ -> (* nothing to do *) return []
         | `Activated _ ->
           begin Target.should_start target
-            >>= function
-            | true ->
+            >>< function
+            | `Ok true ->
               _check_and_activate_dependencies ~t target.Target.dependencies
               >>= fun (what_now, happenings) ->
               begin match what_now with
@@ -621,22 +793,51 @@ let step t: (happening list, _) Deferred_result.t =
                 return (happened @ happenings)
               | `Wait -> return happenings
               end
-            | false ->
-              add_or_update_target t
-                Target.(make_succeed_exn target (`Value `Unit))
-              >>= fun () ->
-              return [`Target_succeeded (Target.id target, `Artifact_ready)]
+            | `Ok false ->
+              make_target_succeed t  target
+                ~artifact:(`Value `Unit)
+                ~why:`Artifact_ready
+            | `Error (`Volume (`No_size log)) ->
+              make_target_die t ~target ~reason:(`Process_failure)
+                ~explanation:Log.(to_long_string
+                                    (s "No-size for volume, " % log))
+              >>= fun happened ->
+              return happened
+            | `Error (`Host error) ->
+              host_error_to_potential_target_failure ~target ~error t
           end
         (* start or run *)
         | `Running (bookkeeping, _)  ->
           _update_status t ~target ~bookkeeping
         | `Dead _ | `Successful _ -> return [])
-    >>| List.concat
-    >>= fun what_happened ->
+    >>= fun (what_happened, errors) ->
+    let what_happened = 
+      List.map errors ~f:(fun e -> `Error (Ketrew_error.to_string e))
+      @ List.concat  what_happened
+      |> List.dedup
+    in
     Log.(s "Step: " % OCaml.list log_what_happened what_happened 
          @ very_verbose);
     return what_happened
   end 
+
+
+let fix_point state =
+  let rec fix_point ~count history =
+    step state
+    >>= fun what_happened ->
+    let count = count + 1 in
+    begin match history with
+    | _ when what_happened = [] ->
+      return (count, what_happened :: history)
+    | previous :: _ when previous = what_happened ->
+      return (count, what_happened :: history)
+    | _ -> fix_point ~count (what_happened :: history)
+    end
+  in
+  fix_point ~count:0 []
+  >>= fun (count, happened) ->
+  return (`Steps count, happened)
 
 let get_status t id =
   (* database t >>= fun db -> *)
@@ -673,116 +874,37 @@ let kill t ~id =
     return []
   end
 
-let find_plugin ~state plugin_name =
-  List.find state.long_running_plugins (fun (n, _) -> n = plugin_name)
-  |> Option.map ~f:(fun (_, m) -> m)
-
-let long_running_log ~state plugin_name content =
-  begin match find_plugin ~state plugin_name with
-  | Some m ->
-    let module Long_running = (val m : LONG_RUNNING) in
-    begin try
-      let c = Long_running.deserialize_exn content in
-      Long_running.log c
-    with e -> 
-      let log = Log.(s "Serialization exception: " % exn e) in
-      Log.(log @ error);
-      ["Error", log]
-    end
-  | None -> 
-    let log = Log.(s "Plugin not found: " % sf "%S" plugin_name) in
-    Log.(log @ error);
-    ["Error", log]
-  end
-
-let additional_queries ~state target =
-  match target.Target.make with
-  | `Long_running (plugin, _) ->
-    begin match Target.latest_run_parameters target with
-    | Some rp ->
-      begin match find_plugin ~state plugin with
-      | Some m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        begin try
-          let c = Long_running.deserialize_exn rp in
-          Long_running.additional_queries c
-        with e -> 
-          let log = Log.(s "Serialization exception: " % exn e) in
-          Log.(log @ error);
-          []
-        end
-      | None ->
-        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
-        Log.(log @ error);
-        []
-      end
-    | None ->
-      Log.(s "Target has no run-parameters: " % Target.log target @ error);
-      []
-    end
-  | other -> []
-
-let call_query ~state ~target query =
-  match target.Target.make with
-  | `Long_running (plugin, _) ->
-    begin match Target.latest_run_parameters target with
-    | Some rp ->
-      begin match find_plugin ~state plugin with
-      | Some m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        begin try
-          let c = Long_running.deserialize_exn rp in
-          Long_running.query c query
-        with e ->
-          fail Log.(s "Run-parameters deserialization" % exn e)
-        end
-      | None ->
-        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
-        fail log
-      end
-    | None -> fail Log.(s "Target has no run-parameters: " % Target.log target)
-    end
-  | other -> fail Log.(s "Target has no queries: " % Target.log target)
-
-let restart_target ~state target =
-  current_targets state
+let restart_target engine target_id =
+  current_targets engine
   >>= fun targets ->
-  let id_translation = ref [] in
+  get_target engine target_id
+  >>= fun target ->
   let new_target trgt  =
     let with_name = "Re:" ^ Target.name trgt in
     let re = Target.reactivate ~with_name trgt in
-    id_translation := (Target.id trgt, Target.id re) :: !id_translation;
     re
   in
-  let get_reverse_dependencies trgt =
-    List.filter targets ~f:(fun t ->
-        List.exists t.Target.dependencies ~f:(fun dep -> Target.id trgt = dep))
-  in
-  let rec explore_upper_dag trgt =
-    let reverse_dependencies = get_reverse_dependencies trgt in
-    Log.(s "reverse_dependencies of " % Target.log trgt % s ": "
-         % OCaml.list Target.log reverse_dependencies @ very_verbose);
-    trgt :: reverse_dependencies
-    @ List.concat_map ~f:explore_upper_dag reverse_dependencies
-  in
   let this_new_target = new_target target in
-  let upper_dag =
-    let its_reverse_deps = get_reverse_dependencies target in
-    List.dedup ~compare:(fun ta tb -> Target.(String.compare (id ta) (id tb)))
-      (List.concat_map ~f:explore_upper_dag its_reverse_deps)
-    |> List.map ~f:new_target
-    |> List.map ~f:(fun t ->
-        let open Target in
-        { t with dependencies = 
-                   List.map t.dependencies ~f:(fun dep ->
-                       match
-                         List.find !id_translation (fun (a, _) -> a = dep)
-                       with
-                       | Some (_, new_id) -> new_id
-                       | None -> dep) })
-  in
-  Deferred_list.while_sequential (this_new_target :: upper_dag) (fun trgt ->
-      add_target state trgt)
-  >>= fun (_ : unit list) ->
-  return (this_new_target, upper_dag)
+  add_targets engine [this_new_target]
+  >>= fun () ->
+  let id = Target.id this_new_target in
+  return ([`Target_created id; `Target_activated (id, `Dependency)]: happening list)
     
+module Measure = struct
+  open Measurement_collection
+  let incomming_request t ~connection_id ~request =
+    add t.measurements 
+      (`Incoming_request (make_http_request connection_id request))
+  let end_of_request t ~connection_id ~request =
+    add t.measurements
+      (`End_of_request (make_http_request connection_id request))
+  let tag t s =
+    add t.measurements (`Tag s)
+end
+module Measurements = struct
+
+  let flush t =
+    database t
+    >>= fun db ->
+    Measurement_collection.flush t.measurements db
+end

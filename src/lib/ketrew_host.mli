@@ -20,7 +20,7 @@ open Ketrew_pervasives
 (** Definitions specific to “SSH” hosts (see {!connection}). *)
 module Ssh : sig
 
-  type t = Ketrew_gen_base_v0_t.ssh_host
+  type t = Ketrew_gen_base_v0.Ssh_host.t
   (** The type of SSH-based hosts. *)
 
   val configure_ssh_batch_option :
@@ -45,7 +45,7 @@ end
 type default_shell
 (** Specification of the default shell of a Host. *)
 
-type t = Ketrew_gen_base_v0_t.host
+type t = Ketrew_gen_base_v0.Host.t
 (** Host container.
 
   A host is the current machine, or an SSH-accessed distant host.
@@ -60,7 +60,7 @@ val default_shell :
   ?options:string list ->
   ?command_option:string ->
   string ->
-  Ketrew_gen_base_v0_t.default_shell
+  Ketrew_gen_base_v0.Default_shell.t
 (** Use
   [default_shell ~binary:"/bin/sh" ~options:["-l"; "--something"; "blah" ]
       ~command_option:"-c" "sh"]
@@ -131,7 +131,7 @@ module Error: sig
     | `Ssh_failure of
         [> `Wrong_log of string
         | `Wrong_status of Ketrew_unix_process.Exit_code.t ] * string 
-    | `System of [> `With_timeout of float ] * [> `Exn of exn ]
+    | `System of [> `Sleep of float ] * [> `Exn of exn ]
     | `Timeout of float
   ]
 
@@ -143,7 +143,7 @@ module Error: sig
         < host : string; message : string; stderr : string option;
           stdout : string option >
     | `Non_zero of string * int
-    | `System of [ `With_timeout of float ] * [ `Exn of exn ]
+    | `System of [ `Sleep of float ] * [ `Exn of exn ]
     | `Timeout of float
     | `Ssh_failure of
         [> `Wrong_log of string
@@ -162,7 +162,7 @@ module Error: sig
   val log :
     [< `Unix_exec of string
     | `Non_zero of (string * int)
-    | `System of [< `With_timeout of float ] * [< `Exn of exn ]
+    | `System of [< `Sleep of float ] * [< `Exn of exn ]
     | `Timeout of float
     | `Execution of
          < host : string; message : string; stderr : string option;

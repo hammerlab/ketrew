@@ -23,9 +23,11 @@ module Artifact = Ketrew_artifact
 
 module Program = Ketrew_program
 
+type id = Unique_id.t
+
 module Command = struct
 
-  type t = Ketrew_gen_target_v0_t.command = {
+  type t = Ketrew_gen_target_v0.Command.t = {
     host: Host.t;
     action: Program.t;
   }
@@ -56,10 +58,8 @@ module Command = struct
 
 end
 
-include Ketrew_gen_target_v0_t
-
 module Condition = struct
-  type t = condition
+  type t = Ketrew_gen_target_v0.Condition.t
   let rec log =
     Log.(function
       | `True -> s "True"
@@ -79,20 +79,41 @@ module Condition = struct
 end
 
 module Equivalence = struct
-  type t = Ketrew_gen_target_v0_t.equivalence
+  type t = Ketrew_gen_target_v0.Equivalence.t
 end
 
-let nop : build_process = `Artifact (`Value `Unit)
+module Build_process = struct
+  include Ketrew_gen_target_v0.Build_process
+
+  let nop : t = `Artifact (`Value `Unit)
+end
+
+
+type submitted_state = Ketrew_gen_target_v0.Submitted_state.t
+type activated_state = Ketrew_gen_target_v0.Activated_state.t
+type run_bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t = {
+  plugin_name : string;
+  run_parameters : string;
+  run_history : string list;
+}
+type running_state = Ketrew_gen_target_v0.Running_state.t
+type death_reason = Ketrew_gen_target_v0.Death_reason.t
+type finished_state = Ketrew_gen_target_v0.Finished_state.t
+type workflow_state = Ketrew_gen_target_v0.Workflow_state.t
+
+include Ketrew_gen_target_v0.Target
 
 let create
     ?id ?name ?(persistence=`Input_data) ?(metadata=Artifact.Value.unit)
-    ?(dependencies=[]) ?(if_fails_activate=[]) ?(make=nop)
-    ?condition ?(equivalence=`Same_active_condition)
+    ?(dependencies=[]) ?(if_fails_activate=[]) ?(success_triggers=[])
+    ?(make=Build_process.nop)
+    ?condition ?(equivalence=`Same_active_condition) ?(tags=[])
     () = 
   let history = `Created Time.(now ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
-  { id; name = Option.value name ~default:id; persistence; metadata;
-    dependencies; make; condition; history; equivalence; if_fails_activate }
+  { id; name = Option.value name ~default:id; persistence; metadata; tags; 
+    log = []; dependencies; make; condition; history; equivalence;
+    if_fails_activate; success_triggers; }
 
 let is_equivalent t ext =
   match t.equivalence with
@@ -135,7 +156,8 @@ let set_running_exn t ~plugin_name ~run_parameters =
   | `Activated _ as state -> 
     { t with
       history =
-        `Running ({plugin_name; run_parameters; run_history = []}, state)}
+        `Running ({Ketrew_gen_target_v0.Run_bookkeeping. 
+                    plugin_name; run_parameters; run_history = []}, state)}
   | _ -> invalid_argument_exn ~where:"Target" (fmt "set_running_exn")
 
 let update_running_exn t ~run_parameters =
@@ -143,21 +165,24 @@ let update_running_exn t ~run_parameters =
   | `Running (bookkeeping, activation)  ->
     { t with
       history =
-        `Running ({bookkeeping with 
-                   run_parameters;
-                   run_history = 
-                     bookkeeping.run_parameters :: bookkeeping.run_history},
-                  activation)}
+        `Running Ketrew_gen_target_v0.Run_bookkeeping.(
+            {bookkeeping with 
+             run_parameters;
+             run_history = 
+               bookkeeping.run_parameters :: bookkeeping.run_history},
+            activation)}
   | _ -> invalid_argument_exn ~where:"Target" (fmt "update_running_exn")
 
 
 
 let active ?id
     ?name ?persistence ?metadata
-    ?dependencies ?if_fails_activate ?make ?condition ?equivalence
+    ?dependencies ?if_fails_activate ?success_triggers 
+    ?make ?condition ?equivalence ?tags
     () = 
   activate_exn ~by:`User 
-    (create ?id ?if_fails_activate ?name ?persistence ?metadata ?condition
+    (create ?id ?if_fails_activate ?success_triggers 
+       ?name ?persistence ?metadata ?condition ?tags
        ?equivalence ?dependencies ?make ())
 
 let reactivate 
@@ -172,15 +197,14 @@ let reactivate
 let id t : Unique_id.t = t.id
 let name t = t.name
 
-let serialize t =
-  Ketrew_gen_versioned_j.string_of_target (`V0 t)
+include
+  Json.Make_versioned_serialization
+    (Ketrew_gen_target_v0.Target)
+    (Ketrew_gen_versioned.Target)
 
 let deserialize s : (t, _) Result.t =
   let open Result in
-  try return (
-      match Ketrew_gen_versioned_j.target_of_string s with
-      | `V0 v0 -> v0
-    )
+  try return (deserialize_exn s)
   with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
 
 let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
@@ -256,15 +280,17 @@ module Is = struct
     | _ -> false
 
   let activated_by_user t =
-    let rec go_through_history (history: workflow_state) =
+    let open Ketrew_gen_target_v0 in
+    let rec go_through_history (history: Workflow_state.t) =
       match history with
       | `Created _ -> false
       | `Activated (_, _, `User) -> true
       | `Activated (_, _, `Dependency) -> false
       | `Activated (_, _, `Fallback) -> false
-      | `Running (_, prev) -> go_through_history (prev :> workflow_state)
-      | `Successful (_, prev, _) -> go_through_history (prev :> workflow_state)
-      | `Dead (_, prev, _) -> go_through_history (prev :> workflow_state)
+      | `Activated (_, _, `Success_trigger) -> false
+      | `Running (_, prev) -> go_through_history (prev :> Workflow_state.t)
+      | `Successful (_, prev, _) -> go_through_history (prev :> Workflow_state.t)
+      | `Dead (_, prev, _) -> go_through_history (prev :> Workflow_state.t)
     in
     go_through_history t.history
 
@@ -272,6 +298,7 @@ end
 
 
 let latest_run_parameters target =
+  let open Ketrew_gen_target_v0.Run_bookkeeping in
   match target.history with
   | `Running (rb, _) -> Some (rb.run_parameters)
   | `Dead (_, `Running (rb, _), _)

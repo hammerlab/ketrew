@@ -16,32 +16,37 @@
 
 open Ketrew_pervasives
 
-type t = [
-  | `Fail of Log.t
-  | `Make of Ketrew_target.t * Ketrew_target.t list
-]
+module Down_message : sig
+  type t = Ketrew_gen_protocol_v0.Down_message.t
 
-let log = function
-| `Fail l -> Log.(s "Fail with: " % brakets l)
-| `Make (act, deps) -> 
-  Log.(s "Make target :" % Ketrew_target.log act
-       % (match deps with
-         | [] -> empty
-         | more ->
-           parens (s "with " % separate (s ", ") 
-                     (List.map ~f:Ketrew_target.log more))))
+  val to_json : Ketrew_gen_protocol_v0.Down_message.t -> CConvYojson.t
+  val of_json_exn :
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Down_message.t
 
-let run_list ~state todo_list =
-  Deferred_list.while_sequential todo_list (function
-    | `Make (active, dependencies) ->
-      begin 
-        Deferred_list.while_sequential (active :: dependencies) (fun t ->
-            Ketrew_state.add_target state t)
-        >>= fun (_ : unit list) ->
-        return ()
-      end
-    | `Fail l ->
-      Log.(s "Fail: " % l @ error);
-      fail (`Failure (Log.to_long_string l)))
-  >>= fun (_ : unit list) ->
-  return ()
+  val serialize : Ketrew_gen_protocol_v0.Down_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Down_message.t
+
+  val added_target :
+    original_id:string ->
+    fresh_id:string -> Ketrew_gen_protocol_v0.Added_target.t
+
+  val clean_up :
+    to_kill:string list ->
+    to_archive:string list -> Ketrew_gen_protocol_v0.Clean_up_todo_list.t
+
+  val log : t -> Ketrew_pervasives.Log.t
+end
+
+module Post_message : sig
+  type t = Ketrew_gen_protocol_v0.Post_message.t
+
+  val to_json : Ketrew_gen_protocol_v0.Post_message.t -> CConvYojson.t
+  val of_json_exn :
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Post_message.t
+
+  val serialize : Ketrew_gen_protocol_v0.Post_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Post_message.t
+
+  val log : t -> Ketrew_pervasives.Log.t
+  val to_string_hum : t -> string
+end

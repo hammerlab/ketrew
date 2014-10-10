@@ -18,7 +18,7 @@
 
 open Ketrew_pervasives
 
-type t = Ketrew_gen_base_v0_t.program
+type t = Ketrew_gen_base_v0.Program.t
 (** A program. *)
 
 val to_shell_commands: t -> string list
