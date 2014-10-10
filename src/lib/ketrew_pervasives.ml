@@ -42,6 +42,8 @@ let global_debug_level = ref 2
 let global_with_color = ref true
 (** Global reference. *)
 
+let global_log_print_string = ref (Printf.printf "%s%!")
+
 (** Application of the functor [Docout.Make_logger] to write to [stderr]
     without buffering. *)
 module Log =  struct
@@ -51,7 +53,8 @@ module Log =  struct
     let with_color () = !global_with_color
     let line_width = 72
     let indent = 4
-    let print_string = Printf.eprintf "%s%!"
+    let print_string s =
+      !global_log_print_string s 
     let do_nothing () = ()
     let name = "ketrew"
   end)

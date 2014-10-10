@@ -312,6 +312,7 @@ let list_cleanable_targets ~server_state ~body req =
     failwith (fmt "wrong-parameter: %S expecting 'soft' or 'hard'" other)
   end
   >>= fun how_much ->
+  Log.(s "list_cleanable_targets: getting graph" @ verbose);
   Ketrew_engine.Target_graph.(
     get_current server_state.state
     >>= fun graph ->
@@ -324,6 +325,8 @@ let list_cleanable_targets ~server_state ~body req =
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
+  Log.(s "Request-in: " % sexp Cohttp_server_core.Request.sexp_of_t req
+       @ verbose);
   match Uri.path (Cohttp_server_core.Request.uri req) with
   | "/hello" -> return `Unit
   | "/targets" -> targets_service ~server_state ~body req

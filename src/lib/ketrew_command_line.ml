@@ -1021,29 +1021,28 @@ let daemonize_if_applicable config =
   | `Daemonize_with log_path_opt ->
     let syslog = false in
     let stdin = `Dev_null in
-    let (stdout, stderr) =
-      begin match log_path_opt with
-      | None -> (`Dev_null,`Dev_null)
-      | Some file_name ->
-        global_with_color := false;
-        Log.(s "Creating logger" @ very_verbose);
-        let logger =
-          Lwt_log.channel  ()
-            ~template:"[$(date):$(milliseconds)] $(message)"
-            ~close_mode:`Keep
-            ~channel:(Lwt_io.of_unix_fd
-                        ~mode:Lwt_io.output
-                        (UnixLabels.(
-                            openfile
-                              ~perm:0o600 file_name
-                              ~mode:[O_APPEND; O_CREAT; O_WRONLY])))
-          in
-          (`Log logger, `Log logger)
-      end
-    in
+    let (stdout, stderr) = (`Dev_null, `Dev_null) in
     let directory = Sys.getcwd () in
     let umask = None in (* we keep the default *)
     Log.(s "Going to the background, now!" @ normal);
+    begin match log_path_opt with
+    | None -> ()
+    | Some file_name ->
+      let unix_fd =
+        UnixLabels.(
+          openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY])
+      in
+      let channel = 
+        Lwt_io.of_unix_fd unix_fd ~buffer_size:1024 ~mode:Lwt_io.output in
+      Lwt_main.at_exit (fun () -> Lwt_io.close channel);
+      global_with_color := false;
+      global_log_print_string := Lwt.(fun s ->
+          async (fun () ->
+              Lwt_io.fprint channel s
+              >>= fun () ->
+              Lwt_io.flush channel)
+        );
+    end;
     Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
     Log.(s "Daemonized!" @ very_verbose);
     ()
