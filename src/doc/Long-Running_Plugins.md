@@ -38,7 +38,7 @@ Alternative
 
 Dynamic linking can be annoying: some libraries do not install `.cmxs` files,
 some architectures do not support native dynlink, … Hopefully there is an
-alternative, one can link plugins statically with `src/app/mail.ml` (or another
+alternative, one can link plugins statically with `src/app/main.ml` (or another
 version of that), see the
 [documentation](./Alternative_CLI_Application.md).
 
