@@ -173,6 +173,7 @@ let load init_path =
     then Filename.concat (Sys.getcwd ()) init_path
     else init_path in
   let creation_witness =  (Filename.concat path "_ketrew_database_init") in
+  let creation_witness_relative =  (Filename.basename creation_witness) in
   begin
     System.file_info ~follow_symlink:true creation_witness
     >>= fun file_info ->
@@ -195,7 +196,7 @@ let load init_path =
       >>= fun () ->
       IO.write_file creation_witness ~content:"OK"
       >>= fun () ->
-      call_git  ~loc:(`Load path)  t ["add"; creation_witness]
+      call_git  ~loc:(`Load path)  t ["add"; creation_witness_relative]
       >>= fun () ->
       call_git  ~loc:(`Load path)  t ["commit"; "-m"; "Initialize database"]
       >>= fun () ->
@@ -226,18 +227,26 @@ let sanitize k  =
       | e -> e)
 
 let path_of_key t {key ; collection} =
-  let dir =
-    match collection with
-    | Some c -> t.path // sanitize c | None -> t.path in
-  System.ensure_directory_path ~perm:0o700 dir
-  >>= fun () ->
-  return (dir // (sanitize key))
+  begin match collection with
+  | Some c ->
+    let coldir = sanitize c in
+    let dir = t.path // coldir in
+    System.ensure_directory_path ~perm:0o700 dir
+    >>= fun () ->
+    return (coldir // (sanitize key))
+  | None -> return (sanitize key)
+  end
+  >>= fun relative ->
+  return (object
+    method relative = relative
+    method absolute = t.path // relative
+  end)
 
 let get_no_mutex t ~key =
   begin
     path_of_key t key
     >>= fun path ->
-    IO.read_file path
+    IO.read_file path#absolute
   end
   >>< function
   | `Ok o -> return (Some o)
@@ -317,10 +326,10 @@ let act t ~action =
     | Set (key, value) ->
       path_of_key t key
       >>= fun path ->
-      IO.write_file path ~content:value
+      IO.write_file path#absolute ~content:value
       >>= fun () ->
       Debug.after_write key;
-      call_git ["add"; path]
+      call_git ["add"; path#relative]
       >>= fun () ->
       Debug.after_git_add key;
       let msg = fmt "Set %s" (key_to_string key) in
@@ -328,7 +337,7 @@ let act t ~action =
     | Unset key ->
       path_of_key t key
       >>= fun path ->
-      call_git ["rm"; "--ignore-unmatch"; path]
+      call_git ["rm"; "--ignore-unmatch"; path#relative]
       >>= fun () ->
       Debug.after_git_rm key;
       let msg = fmt "UnSet %s" (key_to_string key) in
