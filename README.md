@@ -29,8 +29,8 @@ Then you need at runtime `ssh` and `git` in the `$PATH`.
 
 This gets you the `ketrew` executable and the `ketrew` library.
 
-The EDSL
---------
+The EDSL: Defining Workflows
+----------------------------
 
 ### Overview
 
@@ -52,14 +52,11 @@ succeeds.
 Any OCaml program can use the EDSL (script, compiled, or even inside the
 toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
-<small><blockquote>Please, also feel free to
-[propose](https://github.com/hammerlab/ketrew/issues)
-better names for values and arguments in the API.</blockquote></small>
 
 ### Example
 
-This example is a “single-target” workflow that runs an arbitrary shell command on an
-[LSF-based](http://en.wikipedia.org/wiki/Platform_LSF) cluster:
+This example is a “single-target” workflow that runs an arbitrary shell command
+on an [LSF-based](http://en.wikipedia.org/wiki/Platform_LSF) cluster:
 
 ```ocaml
 #use "topfind"
@@ -69,7 +66,7 @@ let run_command_with_lsf cmd =
   let module KEDSL = Ketrew.EDSL in
   let host =
     (* `Host.parse` takes an URI and creates a “Host” datastructue: a place to
-        run stuff.  *)
+       run stuff.  *)
     KEDSL.Host.parse
       "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash"
     (* This one is an SSH host, named `MyLSFCluster`.
@@ -112,27 +109,41 @@ let () =
 If you actually have access to an LSF cluster and want to try this workflow see
 below: [“For The Impatient”](#ForTheImpatient).
 
-You can also explore [examples of more and more complicated
-workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
+To learn more about the EDSL, you can also explore [examples of more and more
+complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 
-The Engine
-----------
+The Engine: Running Stuff
+-------------------------
 
 ### For The Impatient
 
-If you want to run any of the
-[workflow examples](src/test/Workflow_Examples.ml):
+Let's say the example above is in a file `my_first_workflow.ml`:
+
+The first time you use Ketrew, you need to call `init`:
 
     ketrew init
-    _obuild/ketrew-cli-test/ketrew-cli-test.asm  <arguments>
+
+Then you can *submit* your workflow:
+
+    ocaml my_first_workflow.ml 'du -sh $HOME'
+
+When the function `Ketrew.EDSL.run` is called, the workflow will be *submitted*
+but not yet running. To run the *engine* do:
+
     ketrew run loop
-    # Type 'q' anytime or when it's done
-    ketrew explore
-    # And follow the navigation menu to check the status of your workflow
+
+The engine will run until you type `q` or until there is nothing left to do.
+
+Anytime, you can go a check the status and do many things with your
+workflows, for example with:
+
+    ketrew interact
+
+which is an interactive text-based interface.
 
 ### Initialization
 
-To create a configuration file, run:
+Let's go back to the beginning; to create a configuration file, run:
 
     ketrew init
 
