@@ -236,6 +236,18 @@ val lsf :
   Program.t -> Ketrew_target.Build_process.t
 (** Create an “LSF” build process. *)
 
+val pbs :
+  ?host:Ketrew_host.t ->
+  ?queue:string ->
+  ?name:string ->
+  ?wall_limit:[ `Hours of float ] ->
+  ?processors:int ->
+  ?email_user:[ `Always of string | `Never ] ->
+  ?shell:string ->
+  Ketrew_gen_pbs_v0.Program.t ->
+  [> `Long_running of string * string ]
+(** Create a “PSB” build process. *)
+
 (** {3 Workflows} *)
 
 val run:
