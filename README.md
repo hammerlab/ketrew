@@ -10,9 +10,6 @@ parameter variations, running on different *hosts* with various schedulers).
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
-This documentation is available at <http://hammerlab.github.io/ketrew/>,
-the source is at <https://github.com/hammerlab/ketrew/>.
-
 This is **Work in Progress**, not ready general for use.
 
 Build & Install
