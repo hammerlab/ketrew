@@ -1,5 +1,6 @@
 _obuild/
 _build/
+_apidoc/
 _test_env/
 _kdb_test/
 _prebuild/
