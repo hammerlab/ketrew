@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_long_running_utilities
 
 module Host = Ketrew_host
 module Path = Ketrew_path
@@ -74,16 +75,9 @@ let log =
       "Start-time", Time.log rp.start_time;
     ]
 
-let out_file_path ~playground =
-  Ketrew_path.(concat playground (relative_file_exn "out"))
-let err_file_path ~playground =
-  Ketrew_path.(concat playground (relative_file_exn "err"))
-let script_path ~playground =
-  Ketrew_path.(concat playground (relative_file_exn "monitored_script"))
 let python_hack_path ~playground =
   Ketrew_path.(concat playground (relative_file_exn "daemonizator.py"))
 
-let fail_fatal msg = fail (`Fatal msg)
 
 let additional_queries = function
 | `Created _ -> []
@@ -216,85 +210,62 @@ let start rp =
     end
   end
 
-let _pid_and_log run_parameters =
-  let run = running run_parameters in
-  let log_file = Ketrew_monitored_script.log_file run.script in
-  let pid_file = Ketrew_monitored_script.pid_file run.script in
-  begin Host.get_file run.created.host ~path:log_file
-    >>< function
-    | `Ok c -> return (Some c)
-    | `Error (`Cannot_read_file _) -> return None
-    | `Error (`Timeout _ as e) -> fail e
-  end
-  >>= fun log_content ->
-  let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
-  begin Host.get_file run.created.host ~path:pid_file
-    >>< function
-    | `Ok c -> return (Int.of_string (String.strip ~on:`Both c))
-    | `Error (`Cannot_read_file _) -> return None
-    | `Error (`Timeout _ as e) -> fail e
-  end
-  >>= fun pid ->
-  Log.(s "daemonize.update: got " % indent (OCaml.option s log_content)
-       % s " log values and the Pid: " % OCaml.option i pid
-       % sp % brakets (s "pid file: " % s (Path.to_string pid_file))
-       @ very_verbose);
-  return (`Pid pid, `Log log)
-
-let _update run_parameters =
-  _pid_and_log run_parameters
-  >>= fun (`Pid pid, `Log log) ->
-  let run = running run_parameters in
-  let elapsed = Time.(now ()) -. run.start_time in
-  begin match pid with
-  | None when  elapsed > run.created.starting_timeout ->
-    (* no pid after timeout => fail! *)
-    return (`Failed (run_parameters,
-                     fmt "starting timeouted: %.2f > %.2f"
-                       elapsed run.created.starting_timeout))
-  | None ->
-    (* we consider it didn't start yet *)
-    return (`Still_running run_parameters)
-  | Some p ->
-    let cmd = fmt "ps -g %d" p in
-    Host.get_shell_command_return_value run.created.host cmd
-    >>= fun ps_return ->
-    begin match ps_return with
-    | 0 -> (* most likely still running *)
-      (* TOOD save pid + find other way of checking *)
-      return (`Still_running run_parameters)
-    | n -> (* not running, for “sure” *)
-      begin match Option.bind log List.last with
-      | None -> (* no log at all *)
-        return (`Failed (run_parameters, "no log file"))
-      | Some (`Success  date) ->
-        return (`Succeeded run_parameters)
-      | Some other ->
-        return (`Failed (run_parameters, "failure in log"))
-      end
-    end
-  end
-
 let update run_parameters =
-  _update run_parameters
-  >>< function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
+  begin match run_parameters with
+  | `Created _ -> fail_fatal "not running"
+  | `Running run as run_parameters ->
+    get_log_of_monitored_script ~host:run.created.host ~script:run.script
+    >>= fun log_opt ->
+    begin match Option.bind log_opt  List.last with
+    | Some (`Success date) ->
+      return (`Succeeded run_parameters)
+    | Some (`Failure (date, label, ret)) ->
+      return (`Failed (run_parameters, fmt "%s returned %s" label ret))
+    | None | Some _->
+      get_pid_of_monitored_script ~host:run.created.host ~script:run.script 
+      >>= fun pid ->
+      let elapsed = Time.(now ()) -. run.start_time in
+      begin match pid with
+      | None when  elapsed > run.created.starting_timeout ->
+        (* no pid after timeout => fail! *)
+        return (`Failed (run_parameters,
+                         fmt "starting timeouted: %.2f > %.2f"
+                           elapsed run.created.starting_timeout))
+      | None ->
+        (* we consider it didn't start yet *)
+        return (`Still_running run_parameters)
+      | Some p ->
+        let cmd = fmt "ps -g %d" p in
+        Host.get_shell_command_return_value run.created.host cmd
+        >>= fun ps_return ->
+        begin match ps_return with
+        | 0 -> (* most likely still running *)
+          (* TOOD save pid + find other way of checking *)
+          return (`Still_running run_parameters)
+        | n -> (* not running, for “sure” *)
+          (* we fetch the log file again, because the process could have
+             finished between the last fetch and the call to `ps`. *)
+          get_log_of_monitored_script ~host:run.created.host ~script:run.script
+          >>= fun log_opt ->
+          begin match Option.bind log_opt List.last with
+          | None -> (* no log at all *)
+            return (`Failed (run_parameters, "no log file"))
+          | Some (`Success  date) ->
+            return (`Succeeded run_parameters)
+          | Some other ->
+            return (`Failed (run_parameters, "failure in log"))
+          end
+        end
       end
-    | `Timeout _ -> fail (`Recoverable "timeout")
-    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
+  end >>< classify_and_transform_errors
 
 let kill run_parameters =
-  begin
-    _pid_and_log run_parameters
-    >>= fun (`Pid pid, `Log log) ->
-    let run = running run_parameters in
+  begin match run_parameters with
+  | `Created _ -> fail_fatal "not running"
+  | `Running run as run_parameters ->
+    get_pid_of_monitored_script ~host:run.created.host ~script:run.script 
+    >>= fun pid ->
     begin match pid with
     | None ->
       (* either it didn't start yet, or it already crashed …
@@ -309,19 +280,5 @@ let kill run_parameters =
       return (`Killed run_parameters)
     end
   end
-  >>< begin function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Fatal _ as e -> fail e
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
-      end
-    | `Timeout _ -> fail (`Recoverable "timeout")
-    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
-    end
-  end
-
+  >>< classify_and_transform_errors
 
