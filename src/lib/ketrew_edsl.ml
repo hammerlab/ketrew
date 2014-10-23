@@ -240,3 +240,4 @@ let direct_shell_command ?host cmd =
 
 
 let lsf = Ketrew_lsf.create
+let pbs = Ketrew_pbs.create

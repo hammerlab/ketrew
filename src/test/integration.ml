@@ -46,16 +46,29 @@ end
 
 module Vagrant_box = struct
 
+  (* 
+  About Torque:
+  https://github.com/audy/vagrant-torque
+  https://redditjs.com/r/bioinformatics/comments/29xz66/vagranttorque_run_a_single_machine_torque_cluster/
+The VM still has a misconfiguration: the machine cannot
+  *)
+  type initialization = [
+    | `Precise64
+    | `Audy_torque
+  ]
+
   type t = {
     dir: string;
     ssh_config: string;
     hostname: string;
+    initialization: initialization;
   }
 
-  let create hostname =
-    let dir =
-      Sys.getenv "HOME"  // "tmp/vagrant" // hostname in
-    {dir; ssh_config = dir // "ssh_config"; hostname}
+  let tmp_dir = Sys.getenv "HOME"  // "tmp/vagrant"
+
+  let create initialization hostname =
+    let dir = tmp_dir // hostname in
+    {dir; ssh_config = dir // "ssh_config"; hostname; initialization;}
 
   let in_dir t =
     let open Ketrew.EDSL in
@@ -73,21 +86,44 @@ module Vagrant_box = struct
     let host = as_host t in
     daemonize ~using:`Nohup_setsid ~host program
 
-  let internal_hostname _ = "precise64"
+  let internal_hostname t =
+    match t.initialization with
+    | `Precise64 -> "precise64"
+    | `Audy_torque -> "master"
+
   let internal_username _ = "vagrant"
+
+  let namify t sub =
+    sprintf "%s: %s" t.hostname sub
+
   let prepare ?success_triggers t =
     let open Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
-      file_target ~name:"init-vagrant" (t.dir // "Vagrantfile")
+      file_target ~name:(namify t "init-vagrant")
+        (t.dir // "Vagrantfile")
         ~host
         ~make:(Test_host.do_on Program.(
-            in_dir t
-            && exec ["vagrant"; "init"; "hashicorp/precise64"]
+            chain (
+              match t.initialization with
+              | `Precise64 -> [
+                  in_dir t;
+                  exec ["vagrant"; "init"; "hashicorp/precise64"];
+                ]
+              | `Audy_torque ->
+                [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
+                      mkdir -p %s && cd %s && \
+                      git clone git@github.com:audy/vagrant-torque && \
+                      mv vagrant-torque %s ; fi"
+                   (Filename.quote t.dir)
+                   (Filename.quote tmp_dir) (Filename.quote tmp_dir)
+                   (Filename.quote t.dir);
+                ]
+            )
           ))
     in
     let running =
-      target "vagrant-up"
+      target (namify t "vagrant-up")
         ~dependencies:[init]
         ~make:(Test_host.do_on Program.(
             in_dir t && exec ["vagrant"; "up"]))
@@ -95,7 +131,8 @@ module Vagrant_box = struct
     let make_ssh_config =
       target (* not a `file_target`, because we want this file regenerated 
                 every time. We set the `product` but not the “condition”. *)
-        "vagrant-ssh-config" ~dependencies:[running] ?success_triggers
+        (namify t "vagrant-ssh-config")
+        ~dependencies:[running] ?success_triggers
         ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
         ~make:(Test_host.do_on Program.(
             in_dir t
@@ -106,13 +143,13 @@ module Vagrant_box = struct
   let destroy t =
     let open Ketrew.EDSL in
     let kill =
-      target "kill-vagrant"
+      target (namify t "kill-vagrant")
         ~make:(Test_host.do_on Program.(
             in_dir t && exec ["vagrant"; "destroy"; "-f"]
           ))
     in
     let rm_temp =
-      target "rm-temp"
+      target (namify t "rm-temp")
         ~dependencies:[kill]
         ~make:(Test_host.do_on Program.(exec ["rm"; "-fr"; t.dir]))
     in
@@ -131,6 +168,10 @@ module Vagrant_box = struct
     let open Ketrew.EDSL in
     let host = as_host t in
     daemonize ~using:`Nohup_setsid ~host program
+
+  let sudo cmd =
+    let open Ketrew.EDSL in
+    Program.( shf "sudo su -c %s" (Filename.quote cmd))
 
   let with_installed t ~packages =
     let open Ketrew.EDSL in
@@ -295,6 +336,7 @@ https://groups.google.com/forum/#!topic/openlava-users/ezYDlyeb1wk
 127.0.1.1 %s
 " hostname hostname);
 ]
+
 let install_lsf ~box =
   let packages = ["build-essential"; "libncurses-dev"; "tk8.4-dev"] in
   let open Ketrew.EDSL in
@@ -361,27 +403,125 @@ let lsf_job ?success_triggers ?if_fails_activate ~box () =
         ~queue:"normal"
     )
 
+(* Old stuff:
+let setup_pbs ~box () =
+  let packages =
+    ["torque-server"; "torque-scheduler"; "torque-client"; "torque-mom"] in
+  let open Ketrew.EDSL in
+  let setup = [
+    sprintf "echo '%s' > /var/spool/torque/server_name"
+      (Vagrant_box.internal_hostname box);
+    "sed -i 's/127.0.1.1/127.0.0.1/' /etc/hosts";
+  ] in
+  target "install-pbs"
+    (* ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"qsub") *)
+    ~tags:["intergration"]
+    ~dependencies:[Vagrant_box.with_installed ~packages box]
+    ~make:(
+      Vagrant_box.do_on box ~program:Program.(
+          List.map setup Vagrant_box.sudo |> chain
+        ))
+*)
+let finish_pbs_setup ~box () =
+  let open Ketrew.EDSL in
+  let host = Vagrant_box.as_host box in
+  let witness = file ~host "/home/vagrant/.ssh/done" in
+  let ssh_config =
+    "Host master\n\
+    \  StrictHostKeyChecking no\n\
+    \  UserKnownHostsFile=/dev/null\n\
+    " in
+  let setup = [
+    "ssh-keygen -t dsa -P '' -f ~/.ssh/id_dsa";
+    "cat .ssh/id_dsa.pub >> .ssh/authorized_keys";
+    sprintf "echo %s >> .ssh/config" (Filename.quote ssh_config);
+    sprintf "echo Done > %s" witness#path;
+  ] in
+  target "install-pbs"
+    (* ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"qsub") *)
+    ~done_when:(witness#exists)
+    ~tags:["intergration"]
+    ~make:(Vagrant_box.do_on box
+             ~program:Program.( chain (List.map ~f:sh setup)))
+
+let pbs_job ?success_triggers ?if_fails_activate ~box kind =
+  let open Ketrew.EDSL in
+  let setup = finish_pbs_setup ~box () in
+  match kind with
+  | `Always_runs ->
+    let host = Vagrant_box.as_host box in
+    let name = "pbs-2" in
+    target name ?success_triggers ?if_fails_activate
+      ~dependencies:[setup]
+      ~tags:["integration"; "pbs"]
+      ~make:( pbs ~host ~name Program.( 
+          shf "echo \"PBS-2 Starts:\n%s\""
+            (List.map ~f:(fun s -> sprintf "%s: $%s\n" s s)
+               ["PBS_O_HOST"; "PBS_SERVER"]
+            |> String.concat "")
+          && sh "echo PBS-2 Starts >&2"
+          && sh "sleep 10"
+          && sh "echo PBS-2 Ends"
+        ))
+  | `File_target ->
+    let output = "/tmp/du-sh-slash" in
+    let host = Vagrant_box.as_host box in
+    let name = "pbs-1" in
+    file_target ~host ~name output ?success_triggers ?if_fails_activate
+      ~dependencies:[setup]
+      ~tags:["integration"; "pbs"]
+      ~make:(
+        pbs ~host ~name Program.(
+            sh "sleep 42"
+            && shf "du -sh / > %s" output
+            && exec ["cat"; output])
+        (* ~queue:"normal" *)
+      )
 
 let test =
-  let lsf_host = Vagrant_box.create "LsfTestHost" in
+  let lsf_host = Vagrant_box.create `Precise64 "LsfTestHost" in
+  let pbs_host = Vagrant_box.create `Audy_torque "PbsTestHost" in
   object  (self)
     method prepare =
-      Vagrant_box.prepare lsf_host
-    method go =
-      lsf_job ~box:lsf_host ()
-    method clean_up =
-      Vagrant_box.destroy lsf_host
-    method do_all =
-      let clean = Vagrant_box.destroy lsf_host in
-      Vagrant_box.prepare lsf_host
-        ~success_triggers:[
-          lsf_job ~box:lsf_host ()
-            ~success_triggers:[clean]
-            ~if_fails_activate:[clean]
+      Ketrew.EDSL.target "Prepare VMs"
+        ~dependencies:[
+          Vagrant_box.prepare lsf_host;
+          Vagrant_box.prepare pbs_host;
         ]
-    method box_names = ["LSF"]
+    method go =
+      Ketrew.EDSL.target "Run Tests"
+        ~dependencies:[
+          lsf_job ~box:lsf_host ();
+          pbs_job ~box:pbs_host `Always_runs;
+          pbs_job ~box:pbs_host `File_target;
+        ]
+    method go_and clean =
+      Ketrew.EDSL.target "Run Tests"
+        ~dependencies:[
+          lsf_job ~box:lsf_host ();
+          pbs_job ~box:pbs_host `Always_runs;
+          pbs_job ~box:pbs_host `File_target;
+        ]
+        ~success_triggers:[clean]
+        ~if_fails_activate:[clean]
+    method clean_up =
+      Ketrew.EDSL.target "Destroy VMs"
+        ~dependencies:[
+          Vagrant_box.destroy lsf_host;
+          Vagrant_box.destroy pbs_host;
+        ]
+    method do_all =
+      let clean = self#clean_up in
+      let prepare = self#prepare in
+      Ketrew.EDSL.target "All Intergration Tests MiddleTarget (prep → * < {go,clean})"
+        ~dependencies:[prepare]
+        ~success_triggers:[self#go_and clean]
+        ~if_fails_activate:[clean]
+
+    method box_names = ["LSF"; "PBS"]
     method ssh = function
     | "LSF" -> Vagrant_box.ssh lsf_host
+    | "PBS" -> Vagrant_box.ssh pbs_host
     | other -> failwithf "Unkown “Box”: %S" other
   end
 

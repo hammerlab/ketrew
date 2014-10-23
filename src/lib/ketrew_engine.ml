@@ -426,7 +426,7 @@ let add_targets t tlist =
   let stuff_to_do =
     List.fold ~init:([], persistent) tlist ~f:(fun (targets, persistent) target ->
         let equivalences =
-          List.filter current_targets
+          List.filter (current_targets @ targets)
             ~f:(fun t ->
                 Target.Is.(created t || activated t || running t)
                 && Target.is_equivalent target t) in

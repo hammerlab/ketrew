@@ -23,6 +23,7 @@ module Daemonize = Ketrew_daemonize
 let default_plugins = [
   Daemonize.name, (module Daemonize: LONG_RUNNING);
   Ketrew_lsf.name, (module Ketrew_lsf: LONG_RUNNING);
+  Ketrew_pbs.name, (module Ketrew_pbs: LONG_RUNNING);
 ]
 let global_list_of_plugins: (string * (module LONG_RUNNING)) list ref =
   ref default_plugins
