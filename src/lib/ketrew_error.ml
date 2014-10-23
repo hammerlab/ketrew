@@ -18,34 +18,37 @@
 
 open Ketrew_pervasives
 
-let log_client_error = 
+let log_client_error error_value = 
   let open Log in
-  function
+  let log_action =
+    function
+    | `Call (meth, the_uri) ->
+      s (Cohttp.Code.string_of_method meth) % sp % uri the_uri
+    | `Targets -> s "Getting targets"
+    | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
+    | `Archive_targets ids ->
+      s "Archiving targets" % sp % OCaml.list quote ids
+    | `Restart_targets ids ->
+      s "Restarting targets" % sp % OCaml.list quote ids
+    | `Target_query (id, query) ->
+      s "Calling " % quote query % s " on " % quote id
+    | `Cleanable_targets _ ->
+      s "Querying cleanable targets"
+  in
+  match error_value with
+  | `Server_error_response (action, error_string) ->
+    s "Server replied: " % s error_string
   | `Http (action, error) ->
-    let act =
-      match action with
-      | `Call (meth, the_uri) ->
-        s (Cohttp.Code.string_of_method meth) % sp % uri the_uri
-      | `Targets -> s "Getting targets"
-      | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
-      | `Archive_targets ids ->
-        s "Archiving targets" % sp % OCaml.list quote ids
-      | `Restart_targets ids ->
-        s "Restarting targets" % sp % OCaml.list quote ids
-      | `Target_query (id, query) ->
-        s "Calling " % quote query % s " on " % quote id
-      | `Cleanable_targets _ ->
-        s "Querying cleanable targets"
-    in
+    let act = log_action action in
     let error_log = 
       match error with
       | `Exn e -> s "Exn:" % sp % exn e
       | `Wrong_response (http_resp, body) ->
-        s "Returned:" % sp % 
+        s "Returned:" % n % 
         indent (s "Response: "
                 % sexp Cohttp_lwt_unix.Client.Response.sexp_of_t http_resp)
         % n
-        % indent (s "Body: " % sexp Cohttp_lwt_body.sexp_of_t body)
+        % indent (s "Body: " % quote body)
       | `Json_parsing (j, `Exn e) ->
         s "Json parse error: " % exn e
         % indent (string j)
