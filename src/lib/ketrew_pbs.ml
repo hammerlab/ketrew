@@ -120,6 +120,7 @@ let additional_queries = function
     "stderr", Log.(s "PBS error file");
     "log", Log.(s "Monitored-script `log` file");
     "script", Log.(s "Monitored-script used");
+    "qstat", Log.(s "Call `qstat -f1 <ID>`");
   ]
 
 let query run_parameters item =
@@ -139,6 +140,14 @@ let query run_parameters item =
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
       Host.grab_file_or_log rp.created.host monitored_script_path
+    | "qstat" ->
+      begin Host.get_shell_command_output rp.created.host
+          (fmt "qstat -f1 %s" rp.pbs_job_id)
+        >>< function
+        | `Ok (o, _) -> return o
+        | `Error e ->
+          fail Log.(s "Command `qstat -f1 <ID>` failed: " % s (Error.to_string e))
+      end
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
