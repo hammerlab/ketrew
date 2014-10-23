@@ -80,6 +80,7 @@ let additional_queries = function
     "stdout", Log.(s "LSF output file");
     "stderr", Log.(s "LSF error file");
     "log", Log.(s "Monitored-script `log` file");
+    "bjobs", Log.(s "Call `bjobs -l`");
     "bpeek", Log.(s "Call `bpeek`");
     "script", Log.(s "Monitored-script used");
   ]
@@ -101,6 +102,14 @@ let query run_parameters item =
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
       Host.grab_file_or_log rp.created.host monitored_script_path
+    | "bjobs" ->
+      begin Host.get_shell_command_output rp.created.host
+          (fmt "bjobs -l %d" rp.lsf_id)
+        >>< function
+        | `Ok (o, _) -> return o
+        | `Error e ->
+          fail Log.(s "Command `bjobs -l <ID>` failed: " % s (Error.to_string e))
+      end
     | "bpeek" ->
       begin Host.get_shell_command_output rp.created.host
           (fmt "bpeek %d" rp.lsf_id)
