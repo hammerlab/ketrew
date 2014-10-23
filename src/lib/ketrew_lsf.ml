@@ -16,6 +16,8 @@
 
 open Ketrew_pervasives
 
+open Ketrew_long_running_utilities
+
 module Path = Ketrew_path
 module Program = Ketrew_program
 module Host = Ketrew_host
@@ -56,13 +58,6 @@ let log =
       "Playground", s (Path.to_string rp.playground);
   ]
 
-let out_file_path ~playground =
-  Path.(concat playground (relative_file_exn "out"))
-let err_file_path ~playground =
-  Path.(concat playground (relative_file_exn "err"))
-let script_path ~playground =
-  Path.(concat playground (relative_file_exn "monitored_script"))
-
 let parse_bsub_output s =
   (* Output looks like
           Job <1386656> is submitted to queue <queuename>.
@@ -77,8 +72,6 @@ let parse_bsub_output s =
   | _ :: jobid :: _ ->
     Int.of_string jobid
   | _ -> None
-
-let fail_fatal msg = fail (`Fatal msg)
 
 let additional_queries = function
 | `Created _ -> []
@@ -123,11 +116,9 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
 | `Running _ ->
   fail_fatal "Wrong state: already running"
 | `Created created ->
-  begin match Host.get_fresh_playground created.host with
-  | None ->
-    fail_fatal (fmt  "Host %s: Missing playground"
-                  (Host.to_string_hum created.host))
-  | Some playground ->
+  begin
+    fresh_playground_or_fail created.host
+    >>= fun playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
     Host.ensure_directory created.host playground
@@ -165,20 +156,7 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
       fail_fatal (fmt "bsub did not give a JOB ID: %S %S" stdout stderr)
     end
   end
-  >>< begin function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Fatal _ as e -> fail e
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
-      end
-    | `IO _ | `System _ as e ->
-      fail_fatal (Error.to_string e)
-    end
-  end
+  >>< classify_and_transform_errors
 
 let get_lsf_job_status host lsf_id =
   let cmd = fmt "bjobs -l %d" lsf_id in
@@ -217,46 +195,38 @@ let update = function
 | `Created _ -> fail_fatal "not running"
 | `Running run as run_parameters ->
   begin
-    let log_file = Ketrew_monitored_script.log_file run.script in
-    begin Host.get_file run.created.host ~path:log_file
-      >>< function
-      | `Ok c -> return (Some c)
-      | `Error (`Cannot_read_file _) -> return None
-      | `Error (`Timeout _ as e) -> fail e
-    end
-    >>= fun log_content ->
-    let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
-    get_lsf_job_status run.created.host run.lsf_id
-    >>= fun status ->
-    begin match Option.bind log List.last with
-    | None when status = `Failed || status = `Done ->
-      (* yes, Done without log ⇒ failed *)
-      return (`Failed (run_parameters, fmt "LSF status"))
-    | None -> (* when status = `Running -*)
-      return (`Still_running run_parameters)
+    get_log_of_monitored_script ~host:run.created.host ~script:run.script
+    >>= fun log_opt ->
+    begin match Option.bind log_opt  List.last with
+    | Some (`Success date) ->
+      return (`Succeeded run_parameters)
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
-    | Some (`Success  date) ->
-      return (`Succeeded run_parameters)
-    | Some other when status = `Running ->
-      return (`Still_running run_parameters)
-    | Some other ->
-      return (`Failed (run_parameters, fmt "LSF status"))
-    end
-  end
-  >>< begin function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
+    | None | Some _->
+      get_lsf_job_status run.created.host run.lsf_id
+      >>= fun status ->
+      begin match status with
+      | `Failed ->
+        return (`Failed (run_parameters, fmt "LSF status"))
+      | `Running ->
+        return (`Still_running run_parameters)
+      | `Done ->
+        (* To be sure we need to get again the log file, because there could
+           have been a race condition. *) 
+        get_log_of_monitored_script ~host:run.created.host ~script:run.script
+        >>= fun log_opt ->
+        begin match Option.bind log_opt List.last with
+        | None -> (* no log at all *)
+          return (`Failed (run_parameters, "no log file"))
+        | Some (`Success  date) ->
+          return (`Succeeded run_parameters)
+        | Some other ->
+          return (`Failed (run_parameters, "failure in log"))
+        end
       end
-    | `Timeout _ -> fail (`Recoverable "timeout")
-    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
     end
   end
+  >>< classify_and_transform_errors
 
 let kill run_parameters =
   begin
@@ -270,16 +240,4 @@ let kill run_parameters =
         return (`Killed run_parameters)
       end
   end
-  >>< begin function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Fatal _ as e -> fail e
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
-      end
-    | `IO _ | `System _ as e -> fail_fatal (Error.to_string e)
-    end
-  end
+  >>< classify_and_transform_errors

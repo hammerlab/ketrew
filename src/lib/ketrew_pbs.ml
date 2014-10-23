@@ -21,6 +21,8 @@ module Program = Ketrew_program
 module Host = Ketrew_host
 module Error = Ketrew_error
 
+open Ketrew_long_running_utilities
+
 open Ketrew_gen_pbs_v0.Run_parameters
 open Ketrew_gen_pbs_v0.Running
 open Ketrew_gen_pbs_v0.Created
@@ -59,43 +61,13 @@ let log =
       "Playground", s (Path.to_string rp.playground);
   ]
 
-let fail_fatal msg =
-  fail (`Fatal msg)
-let out_file_path ~playground =
-  Path.(concat playground (relative_file_exn "out"))
-let err_file_path ~playground =
-  Path.(concat playground (relative_file_exn "err"))
-let script_path ~playground =
-  Path.(concat playground (relative_file_exn "monitored_script"))
-
-
-let classify_and_transform_errors :
-  ('a, _) Result.t ->
-  ('a, [`Fatal of string | `Recoverable of string ]) Deferred_result.t =
-  function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Fatal _ as e -> fail e
-    | `Host he as e ->
-      begin match Host.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
-      end
-    | `Timeout _ -> fail (`Recoverable "timeout")
-    | `IO _ | `System _ as e ->
-      fail_fatal (Error.to_string e)
-    end
-
 let start: run_parameters -> (_, _) Deferred_result.t = function
 | `Running _ ->
   fail_fatal "Wrong state: already running"
 | `Created created ->
-  begin match Host.get_fresh_playground created.host with
-  | None ->
-    fail_fatal (fmt  "Host %s: Missing playground"
-                  (Host.to_string_hum created.host))
-  | Some playground ->
+  begin
+    fresh_playground_or_fail created.host
+    >>= fun playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
     Host.ensure_directory created.host playground
@@ -174,16 +146,9 @@ let update = function
 | `Created _ -> fail_fatal "not running"
 | `Running run as run_parameters ->
   begin
-    let log_file = Ketrew_monitored_script.log_file run.script in
-    begin Host.get_file run.created.host ~path:log_file
-      >>< function
-      | `Ok c -> return (Some c)
-      | `Error (`Cannot_read_file _) -> return None
-      | `Error (`Timeout _ as e) -> fail e
-    end
-    >>= fun log_content ->
-    let log = Option.map ~f:Ketrew_monitored_script.parse_log log_content in
-    begin match Option.bind log List.last with
+    get_log_of_monitored_script ~host:run.created.host ~script:run.script
+    >>= fun log_opt ->
+    begin match Option.bind log_opt  List.last with
     | Some (`Success date) ->
       return (`Succeeded run_parameters)
     | Some (`Failure (date, label, ret)) ->
