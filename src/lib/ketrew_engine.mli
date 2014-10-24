@@ -229,12 +229,12 @@ module Measure: sig
 
   val incomming_request:
     t ->
-    connection_id:Cohttp.Connection.t ->
+    connection_id:string ->
     request:Cohttp.Request.t ->
     unit
   val end_of_request:
     t ->
-    connection_id:Cohttp.Connection.t ->
+    connection_id:string ->
     request:Cohttp.Request.t ->
     unit
   val tag: t -> string -> unit

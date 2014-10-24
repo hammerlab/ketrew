@@ -508,7 +508,8 @@ let start ~configuration  =
               `Key_file_path keyfile) in
           (* `No_password, `Port port) in *)
           let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
-          let callback connection_id request body =
+          let callback _ request body =
+            let connection_id = Unique_id.create () in
             Ketrew_engine.Measure.incomming_request
               server_state.state ~connection_id ~request;
             handle_request ~server_state ~body request 

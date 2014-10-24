@@ -107,7 +107,6 @@ module Measurement_collection = struct
     return collection
 
   let make_http_request connection_id request =
-    let connection_id = Cohttp.Connection.to_string connection_id in
     let meth = Cohttp.Request.meth request in
     let uri = Cohttp.Request.uri request |> Uri.to_string in
     {Ketrew_gen_base_v0.Http_request. connection_id;  meth; uri}
