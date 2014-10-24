@@ -970,18 +970,20 @@ let inspect ~client ~in_dollar_editor how =
   in
   let is s ~prefix_of =
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
-  let http_request
-      {Ketrew_gen_base_v0.Http_request. connection_id; meth; uri} =
-    Log.quote uri in
-  let with_date ~date l =
-    let open Log in
-    s (Time.to_filename date) % s ":" % n % indent (l) in
   let display document =
     match in_dollar_editor with
     | true -> 
-      Interaction.view_in_dollar_editor (Log.to_long_string document)
+      let str =
+        List.map document ~f:(fun row -> String.concat row ~sep:"\t" ^ "\n")
+        |> String.concat ~sep:""
+      in
+      Interaction.view_in_dollar_editor str
     | false ->
-      Log.(s "Measurements:" % n % document @ normal);
+      Log.(s "Measurements:" % n % 
+           separate n
+             (List.map document ~f:(fun str ->
+                  separate (s "\t") (List.map ~f:s str)))
+           @ normal);
       return ()
   in
   begin match how with
@@ -990,19 +992,18 @@ let inspect ~client ~in_dollar_editor how =
     get_all ()
     >>= fun measurements ->
     let document =
-      let open Log in
-      List.fold ~init:empty measurements ~f:(fun prev item ->
-          let date = item.Ketrew_gen_base_v0.Measurement_item.time in
-          let content_log =
-            match item.Ketrew_gen_base_v0.Measurement_item.content with
-            | `Creation -> with_date ~date (s "Creation")
+      List.map measurements ~f:(fun item ->
+          let date =
+            Time.to_filename item.Ketrew_gen_base_v0.Measurement_item.time in
+          match item.Ketrew_gen_base_v0.Measurement_item.content with
+          | `Creation -> [date; "Creation"]
             | `Incoming_request hr ->
-              with_date ~date (s "Incomming HTTP request: " % http_request hr)
+              [date; "Incomming HTTP request";
+               hr.Ketrew_gen_base_v0.Http_request.uri]
             | `End_of_request hr ->
-              with_date ~date (s "End HTTP request: " % http_request hr)
-            | `Tag t -> with_date ~date (s "######" % s t)
-          in
-          prev % content_log % n)
+              [date; "End of HTTP request";
+               hr.Ketrew_gen_base_v0.Http_request.uri]
+            | `Tag t -> [date; "Tag"; t])
     in
     display document
   | [ht; dur] when is ht ~prefix_of:"http-request"
@@ -1019,9 +1020,7 @@ let inspect ~client ~in_dollar_editor how =
             r := (hr, date, None) :: !r
           | `End_of_request  hr ->
             r := List.map !r ~f:(function
-              | (h, i, None) when h = hr ->
-                Log.(s "hr: " % http_request h @ verbose);
-                (h, i, Some date)
+              | (h, i, None) when h = hr -> (h, i, Some date)
               | other -> other)
         );
       List.filter_map !r ~f:(function
@@ -1030,10 +1029,9 @@ let inspect ~client ~in_dollar_editor how =
       |> List.sort ~cmp:(fun (_, _, a) (_, _, b) -> Float.compare b a)
     in
     let document =
-      let open Log in
-      List.fold ~init:empty all_reqs ~f:(fun prev (hr, date, duration) ->
-          prev
-          % with_date ~date (f duration % nbsp % s "s → " % http_request hr) % n)
+      List.map all_reqs ~f:(fun (hr, date, duration) ->
+          [Time.to_filename date; hr.Ketrew_gen_base_v0.Http_request.uri;
+           Float.to_string duration ])
     in
     display document
   | other ->
