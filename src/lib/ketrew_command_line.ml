@@ -160,6 +160,27 @@ module Interaction = struct
         wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
           ~on_exn:(fun e -> (`Failure "get_key")))
 
+  let open_in_dollar_editor file =
+    let editor =
+      try Sys.getenv "EDITOR"
+      with _ ->
+        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
+        "vi" in
+    let command = fmt "%s %s" editor file in
+    Log.(s "Running " % s command @ verbose);
+    (* We actually want (for now) to bloc the whole process and wait for
+       the editor to end. *)
+    ignore (Sys.command command);
+    return ()
+
+  let view_in_dollar_editor ?(extension="txt") content =
+    let tmp =
+      Filename.(concat temp_dir_name
+                  (fmt "%s.%s" (Unique_id.create ()) extension))
+    in
+    IO.write_file ~content tmp
+    >>= fun () ->
+    open_in_dollar_editor tmp
   let interaction_chars =
     List.init 10 (fun i -> Char.chr (48 + i))
     @ List.init 26 (fun i -> Char.chr (97 + i))
@@ -575,27 +596,6 @@ module Explorer = struct
         menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
       ])
 
-  let open_in_dollar_editor file =
-    let editor =
-      try Sys.getenv "EDITOR"
-      with _ ->
-        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
-        "vi" in
-    let command = fmt "%s %s" editor file in
-    Log.(s "Running " % s command @ verbose);
-    (* We actually want (for now) to bloc the whole process and wait for
-       the editor to end. *)
-    ignore (Sys.command command);
-    return ()
-
-  let view_in_dollar_editor ?(extension="txt") ~client content =
-    let tmp =
-      Filename.(concat temp_dir_name
-                  (fmt "%s.%s" (Unique_id.create ()) extension))
-    in
-    IO.write_file ~content tmp
-    >>= fun () ->
-    open_in_dollar_editor tmp
 
   let filter ~log ~char f =
     (char, log, `Set (f, log))
@@ -632,7 +632,7 @@ module Explorer = struct
       let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
       IO.write_file tmpfile ~content:initial_ask_tags_content
       >>= fun () ->
-      open_in_dollar_editor tmpfile 
+      Interaction.open_in_dollar_editor tmpfile 
       >>= fun () ->
       IO.read_file tmpfile
       >>= fun content ->
@@ -748,7 +748,7 @@ module Explorer = struct
 
   let view_json ~client target =
     let content = Target.serialize target in
-    view_in_dollar_editor ~extension:"json" ~client content
+    Interaction.view_in_dollar_editor ~extension:"json" content
 
   let rec target_status
       ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
@@ -839,7 +839,7 @@ module Explorer = struct
             return (Some Log.(log % s ":" % n
                               % verbatim ("\n" ^ formatted ^ "\n") % n))
           | `Dollar_editor ->
-            view_in_dollar_editor ~client qlog
+            Interaction.view_in_dollar_editor qlog
             >>= fun () ->
             return None
           end
@@ -954,6 +954,56 @@ module Explorer = struct
       end
     end
 end
+
+let inspect ~client ~in_dollar_editor how =
+  let get_all () =
+    match Ketrew_client.get_local_engine client with
+    | None ->
+      Log.(s "HTTP Client cannot inspect for now." @ error); 
+      fail (`Not_implemented "inspect")
+    | Some engine ->
+      Ketrew_engine.Measurements.get_all engine
+  in
+  let is s ~prefix_of =
+    String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
+  begin match how with
+  | [all; mea] when is all ~prefix_of:"all"
+                 && is mea ~prefix_of:"measurements" ->
+    get_all ()
+    >>= fun measurements ->
+    let document =
+      let open Log in
+      List.fold ~init:empty measurements ~f:(fun prev item ->
+          let time = item.Ketrew_gen_base_v0.Measurement_item.time in
+          let with_time l =
+             s (Time.to_filename time) % s ":" % n % indent (l) in
+          let http_request
+              {Ketrew_gen_base_v0.Http_request. connection_id; meth; uri} =
+            quote uri in
+          let content_log =
+            match item.Ketrew_gen_base_v0.Measurement_item.content with
+            | `Creation -> with_time (s "Creation")
+            | `Incoming_request hr ->
+              with_time (s "Incomming HTTP request: " % http_request hr)
+            | `End_of_request hr ->
+              with_time (s "End HTTP request: " % http_request hr)
+            | `Tag t -> with_time (s "######" % s t)
+          in
+          prev % content_log % n)
+    in
+    begin match in_dollar_editor with
+    | true -> 
+      Interaction.view_in_dollar_editor (Log.to_long_string document)
+    | false ->
+      Log.(s "Measurements:" % n % document @ normal);
+      return ()
+    end
+  | other ->
+    Log.(s "Don't know what to do with " % OCaml.list quote other @ error);
+    fail (`Failure "command line")
+  end
+(* Ketrew_engine.Measurements.flush *)
+
 
 (** The function behind [ketrew interact]. *)
 let interact ~client =
@@ -1132,6 +1182,31 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
+  let inspect_cmd =
+    sub_command
+      ~term:Term.(
+        pure (fun config_path in_dollar_editor how ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            Ketrew_client.as_client ~configuration
+              ~f:(inspect ~in_dollar_editor how))
+        $ config_file_argument
+        $ Arg.(value @@ flag 
+               @@ info ["e"; "view-in-editor"]
+                 ~doc:"Open stuff in $EDITOR.")
+        $ Arg.(non_empty @@ pos_all string [] @@
+               info [] ~docv:"HOW"
+                 ~doc:"How to do the inspection")
+      )
+      ~info:(
+        let man = [
+          `S "THE HOW ARGUMENT";
+          `P "The following $(b,HOW) arguments are possible:";
+          `I ("`all measurements`", "display all the known measurements"); `Noblank;
+        ] in
+        Term.info "inspect" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Run steps of the engine."  ~man)
+  in
   let run_cmd =
     let open Term in
     sub_command
@@ -1329,6 +1404,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
       init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+      inspect_cmd;
       interact_cmd;
       explore_cmd;
       autoclean_command;
