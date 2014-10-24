@@ -963,9 +963,27 @@ let inspect ~client ~in_dollar_editor how =
       fail (`Not_implemented "inspect")
     | Some engine ->
       Ketrew_engine.Measurements.get_all engine
+      >>| List.sort ~cmp:(fun ma mb ->
+          Float.compare
+            ma.Ketrew_gen_base_v0.Measurement_item.time
+            mb.Ketrew_gen_base_v0.Measurement_item.time)
   in
   let is s ~prefix_of =
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
+  let http_request
+      {Ketrew_gen_base_v0.Http_request. connection_id; meth; uri} =
+    Log.quote uri in
+  let with_date ~date l =
+    let open Log in
+    s (Time.to_filename date) % s ":" % n % indent (l) in
+  let display document =
+    match in_dollar_editor with
+    | true -> 
+      Interaction.view_in_dollar_editor (Log.to_long_string document)
+    | false ->
+      Log.(s "Measurements:" % n % document @ normal);
+      return ()
+  in
   begin match how with
   | [all; mea] when is all ~prefix_of:"all"
                  && is mea ~prefix_of:"measurements" ->
@@ -974,30 +992,50 @@ let inspect ~client ~in_dollar_editor how =
     let document =
       let open Log in
       List.fold ~init:empty measurements ~f:(fun prev item ->
-          let time = item.Ketrew_gen_base_v0.Measurement_item.time in
-          let with_time l =
-             s (Time.to_filename time) % s ":" % n % indent (l) in
-          let http_request
-              {Ketrew_gen_base_v0.Http_request. connection_id; meth; uri} =
-            quote uri in
+          let date = item.Ketrew_gen_base_v0.Measurement_item.time in
           let content_log =
             match item.Ketrew_gen_base_v0.Measurement_item.content with
-            | `Creation -> with_time (s "Creation")
+            | `Creation -> with_date ~date (s "Creation")
             | `Incoming_request hr ->
-              with_time (s "Incomming HTTP request: " % http_request hr)
+              with_date ~date (s "Incomming HTTP request: " % http_request hr)
             | `End_of_request hr ->
-              with_time (s "End HTTP request: " % http_request hr)
-            | `Tag t -> with_time (s "######" % s t)
+              with_date ~date (s "End HTTP request: " % http_request hr)
+            | `Tag t -> with_date ~date (s "######" % s t)
           in
           prev % content_log % n)
     in
-    begin match in_dollar_editor with
-    | true -> 
-      Interaction.view_in_dollar_editor (Log.to_long_string document)
-    | false ->
-      Log.(s "Measurements:" % n % document @ normal);
-      return ()
-    end
+    display document
+  | [ht; dur] when is ht ~prefix_of:"http-request"
+                && is dur ~prefix_of:"durations" ->
+    get_all ()
+    >>= fun measurements ->
+    let all_reqs =
+      let r = ref [] in
+      List.iter measurements ~f:(fun item ->
+          let date = item.Ketrew_gen_base_v0.Measurement_item.time in
+          match item.Ketrew_gen_base_v0.Measurement_item.content with
+          | `Tag _ | `Creation -> ()
+          | `Incoming_request hr ->
+            r := (hr, date, None) :: !r
+          | `End_of_request  hr ->
+            r := List.map !r ~f:(function
+              | (h, i, None) when h = hr ->
+                Log.(s "hr: " % http_request h @ verbose);
+                (h, i, Some date)
+              | other -> other)
+        );
+      List.filter_map !r ~f:(function
+        | (hr, t, Some t2) -> Some (hr, t, (t2 -. t))
+        | _ -> None)
+      |> List.sort ~cmp:(fun (_, _, a) (_, _, b) -> Float.compare b a)
+    in
+    let document =
+      let open Log in
+      List.fold ~init:empty all_reqs ~f:(fun prev (hr, date, duration) ->
+          prev
+          % with_date ~date (f duration % nbsp % s "s → " % http_request hr) % n)
+    in
+    display document
   | other ->
     Log.(s "Don't know what to do with " % OCaml.list quote other @ error);
     fail (`Failure "command line")
