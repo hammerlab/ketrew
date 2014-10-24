@@ -907,4 +907,9 @@ module Measurements = struct
     database t
     >>= fun db ->
     Measurement_collection.flush t.measurements db
+
+  let get_all t =
+    database t
+    >>= fun db ->
+    Measurement_collection.load_all db
 end
