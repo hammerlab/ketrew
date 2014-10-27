@@ -111,6 +111,9 @@ module Measurement_collection = struct
     let uri = Cohttp.Request.uri request |> Uri.to_string in
     {Ketrew_gen_base_v0.Http_request. connection_id;  meth; uri}
 
+  let make_reponse_log response body_length =
+    {Ketrew_gen_base_v0.Response_log. response; body_length}
+
 end
 
 
@@ -894,9 +897,10 @@ module Measure = struct
   let incomming_request t ~connection_id ~request =
     add t.measurements 
       (`Incoming_request (make_http_request connection_id request))
-  let end_of_request t ~connection_id ~request =
+  let end_of_request t ~connection_id ~request ~response_log ~body_length =
     add t.measurements
-      (`End_of_request (make_http_request connection_id request))
+      (`End_of_request (make_http_request connection_id request,
+                        make_reponse_log response_log body_length))
   let tag t s =
     add t.measurements (`Tag s)
 end

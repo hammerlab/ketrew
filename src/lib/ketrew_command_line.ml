@@ -1000,9 +1000,11 @@ let inspect ~client ~in_dollar_editor how =
             | `Incoming_request hr ->
               [date; "Incomming HTTP request";
                hr.Ketrew_gen_base_v0.Http_request.uri]
-            | `End_of_request hr ->
+            | `End_of_request (hr, rl) ->
               [date; "End of HTTP request";
-               hr.Ketrew_gen_base_v0.Http_request.uri]
+               hr.Ketrew_gen_base_v0.Http_request.uri;
+               Int.to_string rl.Ketrew_gen_base_v0.Response_log.body_length;
+               rl.Ketrew_gen_base_v0.Response_log.response; ]
             | `Tag t -> [date; "Tag"; t])
     in
     display document
@@ -1018,7 +1020,7 @@ let inspect ~client ~in_dollar_editor how =
           | `Tag _ | `Creation -> ()
           | `Incoming_request hr ->
             r := (hr, date, None) :: !r
-          | `End_of_request  hr ->
+          | `End_of_request  (hr, _) ->
             r := List.map !r ~f:(function
               | (h, i, None) when h = hr -> (h, i, Some date)
               | other -> other)

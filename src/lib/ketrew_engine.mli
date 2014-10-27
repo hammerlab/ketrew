@@ -236,6 +236,8 @@ module Measure: sig
     t ->
     connection_id:string ->
     request:Cohttp.Request.t ->
+    response_log: string ->
+    body_length: int ->
     unit
   val tag: t -> string -> unit
 end

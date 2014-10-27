@@ -529,9 +529,18 @@ let start ~configuration  =
                 else "Undisclosed server error" in
               Cohttp_lwt_unix.Server.respond_string ~status:`Not_found  ~body ()
             end
-            >>= fun cohttp_answer ->
-            Ketrew_engine.Measure.end_of_request
-              server_state.state ~connection_id ~request;
+            >>= fun ((response, body) as cohttp_answer) ->
+            let response_log =
+              Cohttp.Response.sexp_of_t response
+              |> Sexplib.Sexp.to_string_hum ~indent:2 in
+            let body_length =
+              match body with
+              | `Stream s -> -1
+              | `String s -> String.length s
+              | `Empty -> 0
+            in
+            Ketrew_engine.Measure.end_of_request server_state.state
+              ~connection_id ~request ~response_log ~body_length;
             return cohttp_answer
           in
           let conn_closed conn_id () =

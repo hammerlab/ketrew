@@ -108,10 +108,14 @@ type http_request = {
   meth: [ DELETE | GET | HEAD | OPTIONS | PATCH | POST | PUT ];
   uri: string;
 }
+type response_log = {
+  response: string;
+  body_length: int;
+}
 type measurement = [
   | Creation
   | Incoming_request of http_request
-  | End_of_request of http_request
+  | End_of_request of (http_request * response_log)
   | Tag of string
 ]
 type measurement_item = {
