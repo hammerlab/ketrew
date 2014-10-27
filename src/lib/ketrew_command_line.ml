@@ -1009,7 +1009,7 @@ let inspect ~client ~in_dollar_editor how =
     in
     display document
   | [ht; dur] when is ht ~prefix_of:"http-request"
-                && is dur ~prefix_of:"durations" ->
+                && is dur ~prefix_of:"benchmark" ->
     get_all ()
     >>= fun measurements ->
     let all_reqs =
@@ -1020,27 +1020,28 @@ let inspect ~client ~in_dollar_editor how =
           | `Tag _ | `Creation -> ()
           | `Incoming_request hr ->
             r := (hr, date, None) :: !r
-          | `End_of_request  (hr, _) ->
+          | `End_of_request (hr, rl) ->
             r := List.map !r ~f:(function
-              | (h, i, None) when h = hr -> (h, i, Some date)
+              | (h, i, None) when h = hr -> (h, i, Some (date, rl))
               | other -> other)
         );
       List.filter_map !r ~f:(function
-        | (hr, t, Some t2) -> Some (hr, t, (t2 -. t))
+        | (hr, t, Some (t2, rl)) -> Some (hr, t, (t2 -. t), rl)
         | _ -> None)
-      |> List.sort ~cmp:(fun (_, _, a) (_, _, b) -> Float.compare b a)
+      |> List.sort ~cmp:(fun (_, _, a, _) (_, _, b, _) -> Float.compare b a)
     in
     let document =
-      List.map all_reqs ~f:(fun (hr, date, duration) ->
+      List.map all_reqs ~f:(fun (hr, date, duration, response_log) ->
           [Time.to_filename date; hr.Ketrew_gen_base_v0.Http_request.uri;
-           Float.to_string duration ])
+           Float.to_string duration;
+           Int.to_string
+             response_log.Ketrew_gen_base_v0.Response_log.body_length; ])
     in
     display document
   | other ->
     Log.(s "Don't know what to do with " % OCaml.list quote other @ error);
     fail (`Failure "command line")
   end
-(* Ketrew_engine.Measurements.flush *)
 
 
 (** The function behind [ketrew interact]. *)
@@ -1240,7 +1241,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         let man = [
           `S "THE HOW ARGUMENT";
           `P "The following $(b,HOW) arguments are possible:";
-          `I ("`all measurements`", "display all the known measurements"); `Noblank;
+          `I ("`all measurements`", "display all the known measurements");
+          `Noblank;
+          `I ("`http-request benchmark`",
+              "display durations and response-sizes of HTTP");
+          `P "Note that one can use unambiguous prefixes, e.g.:";
+          `P "    ketrew insp h b -e";
+          `P "to open all HTTP benchmarks in `$EDITOR`";
         ] in
         Term.info "inspect" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run steps of the engine."  ~man)
