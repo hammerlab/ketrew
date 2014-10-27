@@ -955,7 +955,8 @@ module Explorer = struct
     end
 end
 
-let inspect ~client ~in_dollar_editor ~format how =
+let inspect ~client ~in_dollar_editor ~format ?since how =
+  let module Mtem = Ketrew_gen_base_v0.Measurement_item in
   let get_all () =
     match Ketrew_client.get_local_engine client with
     | None ->
@@ -963,10 +964,15 @@ let inspect ~client ~in_dollar_editor ~format how =
       fail (`Not_implemented "inspect")
     | Some engine ->
       Ketrew_engine.Measurements.get_all engine
-      >>| List.sort ~cmp:(fun ma mb ->
-          Float.compare
-            ma.Ketrew_gen_base_v0.Measurement_item.time
-            mb.Ketrew_gen_base_v0.Measurement_item.time)
+      >>= fun all ->
+      List.sort
+        ~cmp:(fun ma mb -> Float.compare ma.Mtem.time mb.Mtem.time)
+        (match since with
+         | None -> all
+         | Some stime ->
+           List.filter ~f:(fun m -> Time.to_filename m.Mtem.time >= stime) all)
+      |> return
+          
   in
   let is s ~prefix_of =
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
@@ -1236,13 +1242,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let inspect_cmd =
     sub_command
       ~term:Term.(
-        pure (fun config_path in_dollar_editor csv how ->
+        pure (fun config_path in_dollar_editor csv since how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
             let in_dollar_editor = in_dollar_editor || csv in
             let format = if csv then `Csv else `Tsv in
             Ketrew_client.as_client ~configuration
-              ~f:(inspect ~in_dollar_editor ~format how))
+              ~f:(inspect ~in_dollar_editor ~format ?since how))
         $ config_file_argument
         $ Arg.(value @@ flag 
                @@ info ["e"; "view-in-editor"]
@@ -1250,6 +1256,12 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         $ Arg.(value @@ flag 
                @@ info ["csv"]
                  ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
+        $ Arg.(value & opt (some string) None
+               & info ["S"; "since"] ~docv:"TIME-STRING"
+                 ~doc:(fmt
+                         "Get measurements that are younger than $(docv); \
+                          the date-format is (any prefix of) `%s`"
+                         Time.(now () |> to_filename)))
         $ Arg.(non_empty @@ pos_all string [] @@
                info [] ~docv:"HOW"
                  ~doc:"How to do the inspection")
