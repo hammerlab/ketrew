@@ -955,7 +955,7 @@ module Explorer = struct
     end
 end
 
-let inspect ~client ~in_dollar_editor how =
+let inspect ~client ~in_dollar_editor ~format how =
   let get_all () =
     match Ketrew_client.get_local_engine client with
     | None ->
@@ -974,8 +974,20 @@ let inspect ~client ~in_dollar_editor how =
     match in_dollar_editor with
     | true -> 
       let str =
-        List.map document ~f:(fun row -> String.concat row ~sep:"\t" ^ "\n")
-        |> String.concat ~sep:""
+        match format with
+        | `Tsv ->
+          List.map document ~f:(fun row ->
+              (List.map row ~f:(String.map ~f:(function '\t' -> ' ' | c -> c))
+               |> String.concat ~sep:"\t") ^ "\n")
+          |> String.concat ~sep:""
+        | `Csv ->
+          List.map document ~f:(fun row ->
+              (List.map row ~f:(fun cell ->
+                   match String.index_of_character cell ',' with
+                   | Some _ -> fmt "%s" cell
+                   | None -> cell)
+               |> String.concat ~sep:",") ^ "\n")
+          |> String.concat ~sep:""
       in
       Interaction.view_in_dollar_editor str
     | false ->
@@ -1224,15 +1236,20 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let inspect_cmd =
     sub_command
       ~term:Term.(
-        pure (fun config_path in_dollar_editor how ->
+        pure (fun config_path in_dollar_editor csv how ->
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
+            let in_dollar_editor = in_dollar_editor || csv in
+            let format = if csv then `Csv else `Tsv in
             Ketrew_client.as_client ~configuration
-              ~f:(inspect ~in_dollar_editor how))
+              ~f:(inspect ~in_dollar_editor ~format how))
         $ config_file_argument
         $ Arg.(value @@ flag 
                @@ info ["e"; "view-in-editor"]
-                 ~doc:"Open stuff in $EDITOR.")
+                 ~doc:"Open stuff in $EDITOR (by default in TSV).")
+        $ Arg.(value @@ flag 
+               @@ info ["csv"]
+                 ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
         $ Arg.(non_empty @@ pos_all string [] @@
                info [] ~docv:"HOW"
                  ~doc:"How to do the inspection")
