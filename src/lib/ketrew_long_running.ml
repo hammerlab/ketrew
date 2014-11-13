@@ -22,7 +22,11 @@ type error = [
   | `Fatal of string
   | `Recoverable of string
 ]
-(** The “imposed” error types for “long-running” plugins. *)
+(** The “imposed” error types for “long-running” plugins.
+    A [`Fatal _] error will make the target die with the error,
+    whereas when an error is [`Recoverable _] Ketrew will keep trying again
+    (for example, a networking error which may not happen later).
+*)
 
 (** The module type [LONG_RUNNING] defines the interface for plugins. *)
 module type LONG_RUNNING = sig
