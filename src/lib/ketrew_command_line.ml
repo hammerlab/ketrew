@@ -426,7 +426,7 @@ let run_state ~client ~max_sleep ~how =
         begin loop 2. [] end;
         begin
           let rec kbd_loop () =
-            Log.(s "Press the 'q' key to stop loopping." @ normal);
+            Log.(s "Press the 'q' key to stop looping." @ normal);
             Interaction.get_key ()
             >>= function
             | 'q' | 'Q' ->
