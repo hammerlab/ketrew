@@ -172,8 +172,9 @@ The Explorer™ will show the failed targets:
 A function that creates a workflow that builds the website for given list of
 Git-branches.
 
-It used to be simple but got pretty complex with time, because it
-is really used to build Ketrew's [website](http://hammerlab.github.io/ketrew/):
+It used to be simple but got pretty complex with time as it
+was really used to build Ketrew's
+[website](http://seb.mondet.org/software/ketrew/):
 
 - take a list of branch names (`[]` meaning “default branch”)
 - clone the repository in a temporary locations
