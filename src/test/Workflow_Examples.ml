@@ -86,9 +86,8 @@ let run_command_with_python_hack ~host cmd =
   )
 (*M
 
-The <code>`Python_daemon</code> way of daemonizing was hacked together because
+The `` `Python_daemon`` way of daemonizing was hacked together because
 MacOSX does not support the `nohup` and `setsid` commands any more.
-
 
 
 ### A First Dependency Chain
