@@ -300,6 +300,7 @@ export BACKUP_PASSPHRASE="some passsphraaase"
 M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
+  let daemonize = daemonize ~using:`Python_daemon in
   let dest_base =
     match dest_prefix with
     | Some s -> s
@@ -329,7 +330,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     match gpg with
     | false -> []
     | true ->
-      let gpg_file = destination "gpg" in
+      let gpg_file = destination "tar.gz.gpg" in
       let make_it =
         target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists ~dependencies:[make_targz]
           ~make:(daemonize ~host
