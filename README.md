@@ -15,6 +15,9 @@ This is **Work in Progress**, not ready for general use.
 Build & Install
 ---------------
 
+For now Ketrew requires OCaml **4.01.0** (because it uses `ocp-build`) and
+should be able to build & work  on any Unix platform.
+
 ### From Opam
 
 If you have `opam` up and running:
@@ -25,6 +28,12 @@ If you have `opam` up and running:
 Then you need at runtime `ssh` and `git` in the `$PATH`.
 
 This gets you the `ketrew` executable and the `ketrew` library.
+
+### Without Opam
+
+See the [development documentation](src/doc/Developer_Documentation.md) to find
+out how to build Ketrew (and its dependencies) from the sources.
+
 
 The EDSL: Defining Workflows
 ----------------------------
