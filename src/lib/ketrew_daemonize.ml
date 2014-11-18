@@ -87,6 +87,7 @@ let additional_queries = function
     "stderr", Log.(s "Stardard error");
     "log", Log.(s "Monitored-script `log` file");
     "script", Log.(s "Monitored-script used");
+    "check-process", Log.(s "Check the process-group with `ps`");
   ]
 
 let query run_parameters item =
@@ -106,6 +107,19 @@ let query run_parameters item =
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
       Ketrew_host.grab_file_or_log rp.created.host monitored_script_path
+    | "check-process" ->
+      begin match rp.pid with
+      | Some pid ->
+        begin Host.get_shell_command_output rp.created.host
+            (fmt "ps -g %d" pid)
+          >>< function
+          | `Ok (o, _) -> return o
+          | `Error e ->
+            fail Log.(s "Command `ps -g PID` failed: " % s (Error.to_string e))
+        end
+      | None ->
+        fail Log.(s "Cannot get the processes status, PID not known (yet)")
+      end
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
@@ -235,13 +249,14 @@ let update run_parameters =
         (* we consider it didn't start yet *)
         return (`Still_running run_parameters)
       | Some p ->
+        let new_run_parameters = `Running {run with pid = Some p} in
         let cmd = fmt "ps -g %d" p in
         Host.get_shell_command_return_value run.created.host cmd
         >>= fun ps_return ->
         begin match ps_return with
         | 0 -> (* most likely still running *)
           (* TOOD save pid + find other way of checking *)
-          return (`Still_running run_parameters)
+          return (`Still_running new_run_parameters)
         | n -> (* not running, for “sure” *)
           (* we fetch the log file again, because the process could have
              finished between the last fetch and the call to `ps`. *)
@@ -249,11 +264,11 @@ let update run_parameters =
           >>= fun log_opt ->
           begin match Option.bind log_opt List.last with
           | None -> (* no log at all *)
-            return (`Failed (run_parameters, "no log file"))
+            return (`Failed (new_run_parameters, "no log file"))
           | Some (`Success  date) ->
-            return (`Succeeded run_parameters)
+            return (`Succeeded new_run_parameters)
           | Some other ->
-            return (`Failed (run_parameters, "failure in log"))
+            return (`Failed (new_run_parameters, "failure in log"))
           end
         end
       end
