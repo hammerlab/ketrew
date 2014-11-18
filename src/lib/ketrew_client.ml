@@ -70,22 +70,24 @@ module Http_client = struct
           Log.(s "HTTP call: " % uri uri_ @ very_verbose);
           Cohttp_lwt_unix.Client.call ~body meth uri)
     >>= fun (response, body) ->
+    begin match body with
+    | `Empty ->
+      fail (client_error ~where ~what:(`Wrong_response (response, "")))
+    | `String s -> return s
+    | `Stream s -> lwt_stream_to_string s
+    end
+    >>= fun body_str ->
     begin match Cohttp_lwt_unix.Client.Response.status response with
     | `OK ->
-      begin match body with
-      | `Empty ->
-        fail (client_error ~where ~what:(`Wrong_response (response, body)))
-      | `String s -> return s
-      | `Stream s -> lwt_stream_to_string s
-      end
-      >>= fun body_str ->
       begin try
         return (Yojson.Basic.from_string body_str)
       with e ->
         fail (`Client (`Http (where, `Json_parsing (body_str, `Exn e))))
       end
+    | `Not_found ->
+        fail (`Client (`Server_error_response (where, body_str)))
     | other ->
-      fail (`Client (`Http (where, `Wrong_response (response, body))))
+      fail (`Client (`Http (where, `Wrong_response (response, body_str))))
     end
 
   let filter_down_message json ~f ~loc =
