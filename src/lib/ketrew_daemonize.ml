@@ -115,10 +115,10 @@ let query run_parameters item =
           >>< function
           | `Ok (o, _) -> return o
           | `Error e ->
-            fail Log.(s "Command `bpeek` failed: " % s (Error.to_string e))
+            fail Log.(s "Command `ps -g PID` failed: " % s (Error.to_string e))
         end
       | None ->
-        fail Log.(s "Cannot get the processes status, PID not known yet: ")
+        fail Log.(s "Cannot get the processes status, PID not known (yet)")
       end
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
