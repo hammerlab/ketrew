@@ -972,7 +972,6 @@ let inspect ~client ~in_dollar_editor ~format ?since how =
          | Some stime ->
            List.filter ~f:(fun m -> Time.to_filename m.Mtem.time >= stime) all)
       |> return
-          
   in
   let is s ~prefix_of =
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
@@ -990,7 +989,7 @@ let inspect ~client ~in_dollar_editor ~format ?since how =
           List.map document ~f:(fun row ->
               (List.map row ~f:(fun cell ->
                    match String.index_of_character cell ',' with
-                   | Some _ -> fmt "%s" cell
+                   | Some _ -> fmt "%S" cell
                    | None -> cell)
                |> String.concat ~sep:",") ^ "\n")
           |> String.concat ~sep:""
