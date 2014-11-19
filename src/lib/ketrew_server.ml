@@ -513,7 +513,8 @@ let start ~configuration  =
             >>= fun high_level_answer ->
             let respond_string ?headers ~status ~body () =
               (* Cohttp's `respond_string` function does not flush in `0.12.0`
-                 so here it is pasted and fixed. *)
+                 so here it is pasted and fixed.
+                 See <https://github.com/mirage/ocaml-cohttp/issues/205>.  *)
               let res = Cohttp.Response.make ~status ~flush:true
                   ~encoding:(Cohttp.Transfer.Fixed (Int64.of_int (String.length body)))
                   ?headers () in
@@ -533,7 +534,7 @@ let start ~configuration  =
                 if return_error_messages
                 then "Error: " ^ (Ketrew_error.to_string e)
                 else "Undisclosed server error" in
-              respond_string ~status:`Not_found  ~body ()
+              respond_string ~status:`Not_found ~body ()
             end
             >>= fun ((response, body) as cohttp_answer) ->
             let response_log =
