@@ -105,13 +105,17 @@ type happening_list = happening list
 
 type http_request = {
   connection_id: string;
-  meth: [ DELETE | GET | HEAD | OPTIONS | PATCH | POST | PUT ];
+  meth: [ DELETE | GET | HEAD | OPTIONS | PATCH | POST | PUT | Other of string ];
   uri: string;
+}
+type response_log = {
+  response: string;
+  body_length: int;
 }
 type measurement = [
   | Creation
   | Incoming_request of http_request
-  | End_of_request of http_request
+  | End_of_request of (http_request * response_log)
   | Tag of string
 ]
 type measurement_item = {

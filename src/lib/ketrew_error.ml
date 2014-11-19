@@ -90,6 +90,8 @@ let to_string = function
 | `Shell _ as se -> System.error_to_string se
 | `Volume (`No_size l) ->
   fmt "Did not get the size of the volume: %s" (Log.to_long_string l)
+| `Deserialization (except, str) ->
+  fmt "Deserialization: %s (%S)" (Printexc.to_string except) str
 | `Start_server_error e -> fmt "Error starting the server: %s" e
 | `Stop_server_error e -> fmt "Error stopping the server: %s" e
 | `Server_status_error e -> fmt "Error while getting the server's status: %s" e

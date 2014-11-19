@@ -74,6 +74,7 @@ module Http_client = struct
     | `Empty ->
       fail (client_error ~where ~what:(`Wrong_response (response, "")))
     | `String s -> return s
+    | `Strings s -> return (String.concat ~sep:"" s)
     | `Stream s -> lwt_stream_to_string s
     end
     >>= fun body_str ->

@@ -160,6 +160,27 @@ module Interaction = struct
         wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
           ~on_exn:(fun e -> (`Failure "get_key")))
 
+  let open_in_dollar_editor file =
+    let editor =
+      try Sys.getenv "EDITOR"
+      with _ ->
+        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
+        "vi" in
+    let command = fmt "%s %s" editor file in
+    Log.(s "Running " % s command @ verbose);
+    (* We actually want (for now) to bloc the whole process and wait for
+       the editor to end. *)
+    ignore (Sys.command command);
+    return ()
+
+  let view_in_dollar_editor ?(extension="txt") content =
+    let tmp =
+      Filename.(concat temp_dir_name
+                  (fmt "%s.%s" (Unique_id.create ()) extension))
+    in
+    IO.write_file ~content tmp
+    >>= fun () ->
+    open_in_dollar_editor tmp
   let interaction_chars =
     List.init 10 (fun i -> Char.chr (48 + i))
     @ List.init 26 (fun i -> Char.chr (97 + i))
@@ -575,27 +596,6 @@ module Explorer = struct
         menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
       ])
 
-  let open_in_dollar_editor file =
-    let editor =
-      try Sys.getenv "EDITOR"
-      with _ ->
-        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
-        "vi" in
-    let command = fmt "%s %s" editor file in
-    Log.(s "Running " % s command @ verbose);
-    (* We actually want (for now) to bloc the whole process and wait for
-       the editor to end. *)
-    ignore (Sys.command command);
-    return ()
-
-  let view_in_dollar_editor ?(extension="txt") ~client content =
-    let tmp =
-      Filename.(concat temp_dir_name
-                  (fmt "%s.%s" (Unique_id.create ()) extension))
-    in
-    IO.write_file ~content tmp
-    >>= fun () ->
-    open_in_dollar_editor tmp
 
   let filter ~log ~char f =
     (char, log, `Set (f, log))
@@ -632,7 +632,7 @@ module Explorer = struct
       let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
       IO.write_file tmpfile ~content:initial_ask_tags_content
       >>= fun () ->
-      open_in_dollar_editor tmpfile 
+      Interaction.open_in_dollar_editor tmpfile 
       >>= fun () ->
       IO.read_file tmpfile
       >>= fun content ->
@@ -748,7 +748,7 @@ module Explorer = struct
 
   let view_json ~client target =
     let content = Target.serialize target in
-    view_in_dollar_editor ~extension:"json" ~client content
+    Interaction.view_in_dollar_editor ~extension:"json" content
 
   let rec target_status
       ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
@@ -839,7 +839,7 @@ module Explorer = struct
             return (Some Log.(log % s ":" % n
                               % verbatim ("\n" ^ formatted ^ "\n") % n))
           | `Dollar_editor ->
-            view_in_dollar_editor ~client qlog
+            Interaction.view_in_dollar_editor qlog
             >>= fun () ->
             return None
           end
@@ -954,6 +954,113 @@ module Explorer = struct
       end
     end
 end
+
+let inspect ~client ~in_dollar_editor ~format ?since how =
+  let module Mtem = Ketrew_gen_base_v0.Measurement_item in
+  let get_all () =
+    match Ketrew_client.get_local_engine client with
+    | None ->
+      Log.(s "HTTP Client cannot inspect for now." @ error); 
+      fail (`Not_implemented "inspect")
+    | Some engine ->
+      Ketrew_engine.Measurements.get_all engine
+      >>= fun all ->
+      List.sort
+        ~cmp:(fun ma mb -> Float.compare ma.Mtem.time mb.Mtem.time)
+        (match since with
+         | None -> all
+         | Some stime ->
+           List.filter ~f:(fun m -> Time.to_filename m.Mtem.time >= stime) all)
+      |> return
+          
+  in
+  let is s ~prefix_of =
+    String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
+  let display document =
+    match in_dollar_editor with
+    | true -> 
+      let str =
+        match format with
+        | `Tsv ->
+          List.map document ~f:(fun row ->
+              (List.map row ~f:(String.map ~f:(function '\t' -> ' ' | c -> c))
+               |> String.concat ~sep:"\t") ^ "\n")
+          |> String.concat ~sep:""
+        | `Csv ->
+          List.map document ~f:(fun row ->
+              (List.map row ~f:(fun cell ->
+                   match String.index_of_character cell ',' with
+                   | Some _ -> fmt "%s" cell
+                   | None -> cell)
+               |> String.concat ~sep:",") ^ "\n")
+          |> String.concat ~sep:""
+      in
+      Interaction.view_in_dollar_editor str
+    | false ->
+      Log.(s "Measurements:" % n % 
+           separate n
+             (List.map document ~f:(fun str ->
+                  separate (s "\t") (List.map ~f:s str)))
+           @ normal);
+      return ()
+  in
+  begin match how with
+  | [all; mea] when is all ~prefix_of:"all"
+                 && is mea ~prefix_of:"measurements" ->
+    get_all ()
+    >>= fun measurements ->
+    let document =
+      List.map measurements ~f:(fun item ->
+          let date =
+            Time.to_filename item.Ketrew_gen_base_v0.Measurement_item.time in
+          match item.Ketrew_gen_base_v0.Measurement_item.content with
+          | `Creation -> [date; "Creation"]
+            | `Incoming_request hr ->
+              [date; "Incomming HTTP request";
+               hr.Ketrew_gen_base_v0.Http_request.uri]
+            | `End_of_request (hr, rl) ->
+              [date; "End of HTTP request";
+               hr.Ketrew_gen_base_v0.Http_request.uri;
+               Int.to_string rl.Ketrew_gen_base_v0.Response_log.body_length;
+               rl.Ketrew_gen_base_v0.Response_log.response; ]
+            | `Tag t -> [date; "Tag"; t])
+    in
+    display document
+  | [ht; dur] when is ht ~prefix_of:"http-request"
+                && is dur ~prefix_of:"benchmark" ->
+    get_all ()
+    >>= fun measurements ->
+    let all_reqs =
+      let r = ref [] in
+      List.iter measurements ~f:(fun item ->
+          let date = item.Ketrew_gen_base_v0.Measurement_item.time in
+          match item.Ketrew_gen_base_v0.Measurement_item.content with
+          | `Tag _ | `Creation -> ()
+          | `Incoming_request hr ->
+            r := (hr, date, None) :: !r
+          | `End_of_request (hr, rl) ->
+            r := List.map !r ~f:(function
+              | (h, i, None) when h = hr -> (h, i, Some (date, rl))
+              | other -> other)
+        );
+      List.filter_map !r ~f:(function
+        | (hr, t, Some (t2, rl)) -> Some (hr, t, (t2 -. t), rl)
+        | _ -> None)
+      |> List.sort ~cmp:(fun (_, _, a, _) (_, _, b, _) -> Float.compare b a)
+    in
+    let document =
+      List.map all_reqs ~f:(fun (hr, date, duration, response_log) ->
+          [Time.to_filename date; hr.Ketrew_gen_base_v0.Http_request.uri;
+           Float.to_string duration;
+           Int.to_string
+             response_log.Ketrew_gen_base_v0.Response_log.body_length; ])
+    in
+    display document
+  | other ->
+    Log.(s "Don't know what to do with " % OCaml.list quote other @ error);
+    fail (`Failure "command line")
+  end
+
 
 (** The function behind [ketrew interact]. *)
 let interact ~client =
@@ -1132,6 +1239,48 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
+  let inspect_cmd =
+    sub_command
+      ~term:Term.(
+        pure (fun config_path in_dollar_editor csv since how ->
+            Configuration.get_configuration ?override_configuration config_path
+            >>= fun configuration ->
+            let in_dollar_editor = in_dollar_editor || csv in
+            let format = if csv then `Csv else `Tsv in
+            Ketrew_client.as_client ~configuration
+              ~f:(inspect ~in_dollar_editor ~format ?since how))
+        $ config_file_argument
+        $ Arg.(value @@ flag 
+               @@ info ["e"; "view-in-editor"]
+                 ~doc:"Open stuff in $EDITOR (by default in TSV).")
+        $ Arg.(value @@ flag 
+               @@ info ["csv"]
+                 ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
+        $ Arg.(value & opt (some string) None
+               & info ["S"; "since"] ~docv:"TIME-STRING"
+                 ~doc:(fmt
+                         "Get measurements that are younger than $(docv); \
+                          the date-format is (any prefix of) `%s`"
+                         Time.(now () |> to_filename)))
+        $ Arg.(non_empty @@ pos_all string [] @@
+               info [] ~docv:"HOW"
+                 ~doc:"How to do the inspection")
+      )
+      ~info:(
+        let man = [
+          `S "THE HOW ARGUMENT";
+          `P "The following $(b,HOW) arguments are possible:";
+          `I ("`all measurements`", "display all the known measurements");
+          `Noblank;
+          `I ("`http-request benchmark`",
+              "display durations and response-sizes of HTTP");
+          `P "Note that one can use unambiguous prefixes, e.g.:";
+          `P "    ketrew insp h b -e";
+          `P "to open all HTTP benchmarks in `$EDITOR`";
+        ] in
+        Term.info "inspect" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Run steps of the engine."  ~man)
+  in
   let run_cmd =
     let open Term in
     sub_command
@@ -1329,6 +1478,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
       init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+      inspect_cmd;
       interact_cmd;
       explore_cmd;
       autoclean_command;

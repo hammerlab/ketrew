@@ -229,13 +229,15 @@ module Measure: sig
 
   val incomming_request:
     t ->
-    connection_id:Cohttp.Connection.t ->
+    connection_id:string ->
     request:Cohttp.Request.t ->
     unit
   val end_of_request:
     t ->
-    connection_id:Cohttp.Connection.t ->
+    connection_id:string ->
     request:Cohttp.Request.t ->
+    response_log: string ->
+    body_length: int ->
     unit
   val tag: t -> string -> unit
 end
@@ -246,5 +248,11 @@ module Measurements: sig
         | `Database of Ketrew_database.error
         | `Database_unavailable of Ketrew_target.id
       ]) Deferred_result.t
+
+  val get_all: t ->
+    (Ketrew_gen_base_v0.Measurement_item.t list,
+     [> `Database of
+          [> `Get_all of string | `Load of string ] * string
+     | `Deserialization of exn * string ]) Deferred_result.t
 
 end

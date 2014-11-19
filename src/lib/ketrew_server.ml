@@ -18,10 +18,6 @@
 open Ketrew_pervasives
 
 
-(** To use SSL we need to apply the server Cohhtp functor ourselves. *)
-module Cohttp_server_core = Cohttp_lwt.Make_server
-    (Cohttp_lwt_unix_io)(Cohttp_lwt_unix.Request)(Cohttp_lwt_unix.Response)(Cohttp_lwt_unix_net)
-
 
 (** A common error that simply means “invalid argument”. *)
 let wrong_request short long = fail (`Wrong_http_request (short, long))
@@ -114,20 +110,20 @@ type answer = [
 type 'error service =
   server_state:Server_state.t ->
   body:Cohttp_lwt_body.t ->
-  Cohttp_server_core.Request.t ->
+  Cohttp_lwt_unix.Server.Request.t ->
   (answer, 'error) Deferred_result.t
 (** A service is something that replies an [answer] on a ["/<path>"] URL. *)
 
 (** Get the ["token"] parameter from an URI. *)
 let token_parameter req =
   let token =
-    Uri.get_query_param (Cohttp_server_core.Request.uri req) "token" in
+    Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "token" in
   Log.(s "Got token: " % OCaml.option quote token @ very_verbose);
   token
 
 (** Get a parameter or fail. *)
 let mandatory_parameter req ~name =
-  match Uri.get_query_param (Cohttp_server_core.Request.uri req) name with
+  match Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) name with
   | Some v ->
     Log.(s "Got " % quote name % s ": " % quote v @ very_verbose);
     return v
@@ -144,7 +140,7 @@ let format_parameter req =
 
 (** Fail if the request is not a [`GET]. *)
 let check_that_it_is_a_get request =
-  begin match Cohttp_server_core.Request.meth request with
+  begin match Cohttp_lwt_unix.Server.Request.meth request with
   | `GET ->
     Log.(s "It is a GET request" @ very_verbose);
     return ()
@@ -153,12 +149,13 @@ let check_that_it_is_a_get request =
 
 (** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
 let get_post_body request ~body =
-  begin match Cohttp_server_core.Request.meth request with
+  begin match Cohttp_lwt_unix.Server.Request.meth request with
   | `POST ->
     Log.(s "It is a GET request" @ very_verbose);
     begin match body with
     | `Empty -> wrong_request "empty body" ""
     | `String s -> return s
+    | `Strings l -> return (String.concat ~sep:"" l)
     | `Stream lwt_stream ->
       lwt_stream_to_string lwt_stream
     end
@@ -174,7 +171,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
   Authentication.ensure_can server_state.authentication ?token `See_targets
   >>= fun () ->
   let target_ids =
-    Uri.get_query_param' (Cohttp_server_core.Request.uri req) "id"
+    Uri.get_query_param' (Cohttp_lwt_unix.Server.Request.uri req) "id"
     |> Option.value ~default:[] in
   format_parameter req
   >>= fun response_format ->
@@ -183,7 +180,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
     Ketrew_engine.current_targets server_state.state
     >>= fun current_targets ->
     begin
-      if Uri.get_query_param (Cohttp_server_core.Request.uri req) "archived"
+      if Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "archived"
          = Some "true"
       then
         Ketrew_engine.archived_targets server_state.state
@@ -323,9 +320,9 @@ let list_cleanable_targets ~server_state ~body req =
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
-  Log.(s "Request-in: " % sexp Cohttp_server_core.Request.sexp_of_t req
+  Log.(s "Request-in: " % sexp Cohttp_lwt_unix.Server.Request.sexp_of_t req
        @ verbose);
-  match Uri.path (Cohttp_server_core.Request.uri req) with
+  match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/targets" -> targets_service ~server_state ~body req
   | "/target-available-queries" ->
@@ -503,22 +500,33 @@ let start ~configuration  =
         | e -> `Start_server_error (Printexc.to_string e))
       Lwt.(fun () ->
           let mode =
-            `SSL (
+            `OpenSSL (
               `Crt_file_path certfile,
-              `Key_file_path keyfile) in
-          (* `No_password, `Port port) in *)
-          let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in
-          let callback connection_id request body =
+              `Key_file_path keyfile,
+              `No_password, `Port port) in
+          (* let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in *)
+          let callback _ request body =
+            let connection_id = Unique_id.create () in
             Ketrew_engine.Measure.incomming_request
               server_state.state ~connection_id ~request;
             handle_request ~server_state ~body request 
             >>= fun high_level_answer ->
+            let respond_string ?headers ~status ~body () =
+              (* Cohttp's `respond_string` function does not flush in `0.12.0`
+                 so here it is pasted and fixed.
+                 See <https://github.com/mirage/ocaml-cohttp/issues/205>.  *)
+              let res = Cohttp.Response.make ~status ~flush:true
+                  ~encoding:(Cohttp.Transfer.Fixed (Int64.of_int (String.length body)))
+                  ?headers () in
+              let body = Cohttp_lwt_body.of_string body in
+              return (res,body)
+            in
             begin match high_level_answer with
             | `Ok `Unit ->
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
+              respond_string ~status:`OK  ~body:"" ()
             | `Ok (`Message (`Json, msg)) ->
               let body = Ketrew_protocol.Down_message.serialize msg in
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
+              respond_string ~status:`OK  ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "
                    % s (Ketrew_error.to_string e) @ error);
@@ -526,21 +534,31 @@ let start ~configuration  =
                 if return_error_messages
                 then "Error: " ^ (Ketrew_error.to_string e)
                 else "Undisclosed server error" in
-              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found  ~body ()
+              respond_string ~status:`Not_found ~body ()
             end
-            >>= fun cohttp_answer ->
-            Ketrew_engine.Measure.end_of_request
-              server_state.state ~connection_id ~request;
+            >>= fun ((response, body) as cohttp_answer) ->
+            let response_log =
+              Cohttp.Response.sexp_of_t response
+              |> Sexplib.Sexp.to_string_hum ~indent:2 in
+            let body_length =
+              match body with
+              | `Stream s -> -1
+              | `String s -> String.length s
+              | `Strings l -> 
+                List.fold ~init:0 ~f:(fun a b -> a + String.length b) l
+              | `Empty -> 0
+            in
+            Ketrew_engine.Measure.end_of_request server_state.state
+              ~connection_id ~request ~response_log ~body_length;
             return cohttp_answer
           in
-          let conn_closed conn_id () =
+          let conn_closed (_, conn_id) () =
             Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
                  @ verbose);
           in
-          let config = 
-            { Cohttp_lwt_unix.Server.callback = callback; conn_closed } in
-          let handler_http = Cohttp_server_core.(callback config) in
-          Lwt_unix_conduit.serve ~mode ~sockaddr handler_http)
+          Cohttp_lwt_unix.Server.create ~mode
+            { Cohttp_lwt_unix.Server.callback = callback; conn_closed }
+        )
   end
 
 let stop ~configuration =
