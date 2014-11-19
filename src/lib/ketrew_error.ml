@@ -14,7 +14,7 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** Deal with error values common accros the library. *)
+(** Deal with error values common across the library. *)
 
 open Ketrew_pervasives
 
