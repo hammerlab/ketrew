@@ -70,13 +70,8 @@ module Http_client = struct
           Log.(s "HTTP call: " % uri uri_ @ very_verbose);
           Cohttp_lwt_unix.Client.call ~body meth uri)
     >>= fun (response, body) ->
-    begin match body with
-    | `Empty ->
-      fail (client_error ~where ~what:(`Wrong_response (response, "")))
-    | `String s -> return s
-    | `Strings s -> return (String.concat ~sep:"" s)
-    | `Stream s -> lwt_stream_to_string s
-    end
+    wrap_deferred ~on_exn:(fun e -> client_error ~where ~what:(`Exn e))
+      (fun () -> Cohttp_lwt_body.to_string  body)
     >>= fun body_str ->
     begin match Cohttp_lwt_unix.Client.Response.status response with
     | `OK ->
