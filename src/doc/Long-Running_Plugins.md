@@ -22,7 +22,7 @@ There are (for now) three long-running methods in the library, see
 [`Ketrew_pbs`](../lib/ketrew_pbs.mli), and
 [`Ketrew_daemonize`](../lib/ketrew_daemonize.mli).
 They all use the module `Ketrew_long_running_utilities` which provides a few
-helpers for plugin-writers.
+helpers for plugin writers.
 
 Moreover, the tests contain a “dynamically linked plugin” that uses the
 implementation of `Ketrew_daemonize` and adds a (stupid) custom runtime-query:
