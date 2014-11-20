@@ -86,9 +86,8 @@ let run_command_with_python_hack ~host cmd =
   )
 (*M
 
-The <code>`Python_daemon</code> way of daemonizing was hacked together because
+The `` `Python_daemon`` way of daemonizing was hacked together because
 MacOSX does not support the `nohup` and `setsid` commands any more.
-
 
 
 ### A First Dependency Chain
@@ -173,8 +172,9 @@ The Explorer™ will show the failed targets:
 A function that creates a workflow that builds the website for given list of
 Git-branches.
 
-It used to be simple but got pretty complex with time, because it
-is really used to build Ketrew's [website](http://hammerlab.github.io/ketrew/):
+It used to be simple but got pretty complex with time as it
+was really used to build Ketrew's
+[website](http://seb.mondet.org/software/ketrew/):
 
 - take a list of branch names (`[]` meaning “default branch”)
 - clone the repository in a temporary locations
@@ -300,6 +300,7 @@ export BACKUP_PASSPHRASE="some passsphraaase"
 M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
+  let daemonize = daemonize ~using:`Python_daemon in
   let dest_base =
     match dest_prefix with
     | Some s -> s
@@ -329,7 +330,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     match gpg with
     | false -> []
     | true ->
-      let gpg_file = destination "gpg" in
+      let gpg_file = destination "tar.gz.gpg" in
       let make_it =
         target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists ~dependencies:[make_targz]
           ~make:(daemonize ~host
