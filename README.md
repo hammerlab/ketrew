@@ -10,7 +10,7 @@ parameter variations, running on different *hosts* with various schedulers).
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
-This is **Work in Progress**, not ready general for use.
+This is **Work in Progress**, not ready for general use.
 
 Build & Install
 ---------------
