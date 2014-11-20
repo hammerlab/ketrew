@@ -164,7 +164,7 @@ end
 
 type t = [
   | `Standalone of Standalone.t
-  | `Http of Http_client.t
+  | `Http_client of Http_client.t
 ]
 
 let create configuration =
