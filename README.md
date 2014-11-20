@@ -6,7 +6,7 @@ Ketrew: Keep Track of Experimental Workflows
 - an OCaml library providing an EDSL API to define complex and convoluted
 workflows (interdependent steps/programs using a lot of data, with many
 parameter variations, running on different *hosts* with various schedulers).
-- an engine taking care of orchestrating the run of those workflows, 
+- an engine taking care of orchestrating the run of those workflows,
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
@@ -16,7 +16,7 @@ Build & Install
 ---------------
 
 For now Ketrew requires OCaml **4.01.0** (because it uses `ocp-build`) and
-should be able to build & work  on any Unix platform.
+should be able to build & work on any Unix platform.
 
 ### From Opam
 
@@ -80,7 +80,7 @@ let run_command_with_lsf cmd =
        to monitor the jobs. *)
   in
   let program =
-    (* A “program” is a datastructure representing “extended shell scripts”. 
+    (* A “program” is a datastructure representing “extended shell scripts”.
        `Program.sh` creates one out a shell command. *)
     KEDSL.Program.sh cmd in
   let lsf_build_process =
@@ -95,13 +95,13 @@ let run_command_with_lsf cmd =
      This one is very simple, it has a name and a build-process,
      and since it doesn't have dependencies or fallbacks, it is a
      “single-node” workflow: *)
-  KEDSL.target 
+  KEDSL.target
      "run_command_with_lsf"
      ~make:lsf_build_process
 
-let () = 
+let () =
   let workflow =
-     (* Create the  workflow with the first argument of the command line: *) 
+     (* Create the  workflow with the first argument of the command line: *)
      run_command_with_lsf Sys.argv.(1) in
   (* Then, `run` is the only function that “does” something, it submits the
      workflow to the engine: *)
