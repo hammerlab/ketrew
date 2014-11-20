@@ -118,7 +118,7 @@ while [ "$1" != "" ]; do
     "setup" ) setup ;;
     "build" ) build ;;
     "build-no-color" ) build -no-color ;;
-    "clean" ) rm -fr _prebuild _obuild _build _test_env build.ocp .merlin ocp-build.root* ;;
+    "clean" ) rm -fr _prebuild _obuild _build build.ocp .merlin ocp-build.root* ;;
     "doc" )
       . ./tools/build_documentation.env
       make_doc ;;
