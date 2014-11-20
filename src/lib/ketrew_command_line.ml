@@ -168,7 +168,7 @@ module Interaction = struct
         "vi" in
     let command = fmt "%s %s" editor file in
     Log.(s "Running " % s command @ verbose);
-    (* We actually want (for now) to bloc the whole process and wait for
+    (* We actually want (for now) to block the whole process and wait for
        the editor to end. *)
     ignore (Sys.command command);
     return ()
@@ -181,6 +181,7 @@ module Interaction = struct
     IO.write_file ~content tmp
     >>= fun () ->
     open_in_dollar_editor tmp
+
   let interaction_chars =
     List.init 10 (fun i -> Char.chr (48 + i))
     @ List.init 26 (fun i -> Char.chr (97 + i))
@@ -955,7 +956,12 @@ module Explorer = struct
     end
 end
 
-let inspect ~client ~in_dollar_editor ~format ?since how =
+let inspect
+    ~(client:Ketrew_client.t)
+    ~(in_dollar_editor: bool)
+    ~(format: [ `Tsv | `Csv ])
+    ?since (* String representing a date for lexicographic comparison *)
+    how (* list of strings: how to inspect *) =
   let module Mtem = Ketrew_gen_base_v0.Measurement_item in
   let get_all () =
     match Ketrew_client.get_local_engine client with
@@ -972,7 +978,6 @@ let inspect ~client ~in_dollar_editor ~format ?since how =
          | Some stime ->
            List.filter ~f:(fun m -> Time.to_filename m.Mtem.time >= stime) all)
       |> return
-          
   in
   let is s ~prefix_of =
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
@@ -990,7 +995,7 @@ let inspect ~client ~in_dollar_editor ~format ?since how =
           List.map document ~f:(fun row ->
               (List.map row ~f:(fun cell ->
                    match String.index_of_character cell ',' with
-                   | Some _ -> fmt "%s" cell
+                   | Some _ -> fmt "%S" cell
                    | None -> cell)
                |> String.concat ~sep:",") ^ "\n")
           |> String.concat ~sep:""
