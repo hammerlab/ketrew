@@ -107,15 +107,31 @@ use:
     ./please.sh test-env
 
 ```goodresult
-Using package lwt.react add findlin-plugin
-Compiling the Dummy-plugin and its user
-
-Creating cert-key pair: _obuild/test-cert.pem, _obuild/test-key.pem
-Creating _obuild/test-config-file.toml
-Creating _obuild/test-authorized-tokens
-Creating _obuild/test.env
+Creating cert-key pair: _test_env/test-cert.pem, _test_env/test-key.pem
+Creating _test_env/standalone-config-file.toml
+Creating _test_env/server-config-file.toml
+Creating _test_env/client-config-file.toml
+Creating _test_env/test-authorized-tokens
+Creating _test_env/env.env
 ```
 
-then sourcing `_obuild/test.env` will give a few aliases to run the tests (like
-`kdtest`, `kdclient`, etc. see inside the file).
+The command creates the directory `_test_env/` with a preconfigured
+test-environment (a self-signed SSL certificate/key pair,
+client/server/standalone configuration files, an “authorization-tokens”
+configuration, … which all work together harmoniously).
+
+Sourcing `_test_env/test.env` will give a few aliases to run the tests.
+Aliases which start with `ks` mean “with a *standalone-mode* configuration file;”
+those which start with `kd` are in *client-server* mode (`'d'` for “distributed”).
+
+- `kscli`: the standalone `ketrew` application.
+- `kdserver`: the server `ketrew` application.
+- `kdclient`: the client `ketrew` application.
+- `kstest`: the [`cli` test](../test/Workflow_Examples.ml) with a “standalone-mode” configuration file.
+- `kdtest`: the same `cli` test but as a client.
+- `ksintegration`, and `kdintegration`: the
+  [integration](../test/integration.ml) test in standalone and client modes.
+- `ksplugin_user`, and `kdplugin_user`: the mini-workflow
+  [using the plugin](src/test/dummy_plugin_user.ml).
+
 
