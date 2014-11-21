@@ -99,6 +99,20 @@ in its `/tmp` directory.
 The workflow [examples](../test/Workflow_Examples.ml) in the documentation
 are actually interactive tests.
 
+### The `integration` Test
+
+The [integration](../test/integration.ml) test uses Ketrew to build
+*Vagrant* virtual machines and uses them to test further features: we
+test the PBS and LSF long-running backends by creating “one-node
+clusters”.
+
+### Dynamically Loaded Plugins
+
+The build-system creates a plugin and a workflow which uses it:
+
+- [`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml), and
+- [`src/test/dummy_plugin_user.ml`](src/test/dummy_plugin_user.ml).
+
 ### Generating a Test Environment
 
 In order to not impact a potential “global” installation of Ketrew, one can
