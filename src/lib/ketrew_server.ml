@@ -152,13 +152,8 @@ let get_post_body request ~body =
   begin match Cohttp_lwt_unix.Server.Request.meth request with
   | `POST ->
     Log.(s "It is a GET request" @ very_verbose);
-    begin match body with
-    | `Empty -> wrong_request "empty body" ""
-    | `String s -> return s
-    | `Strings l -> return (String.concat ~sep:"" l)
-    | `Stream lwt_stream ->
-      lwt_stream_to_string lwt_stream
-    end
+    wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
+      (fun () -> Cohttp_lwt_body.to_string  body)
   | other ->
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
