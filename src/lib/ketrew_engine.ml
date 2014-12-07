@@ -774,7 +774,7 @@ let step t: (happening list, _) Deferred_result.t =
   begin
     current_targets t >>= fun targets ->
     database t >>= fun db ->
-    Deferred_list.for_concurrent targets ~f:(fun target ->
+    Deferred_list.for_sequential targets ~f:(fun target ->
         (* Log.(s "Engine.step dealing with " % Target.log target @ verbose); *)
         match target.Target.history with
         | `Created _ -> (* nothing to do *) return []
