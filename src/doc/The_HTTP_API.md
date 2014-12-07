@@ -8,7 +8,7 @@ Examples
 Let's create a test environment, and source the resulting shell environment:
 
     ./please.sh test-env
-    . _obuild/test.env
+    . _test_env/env.env
 
 Let's start the server:
 
@@ -20,7 +20,7 @@ You should be able to stop it with
 
 Let's add some targets to the database (c.f. `src/test/Workflow_Examples.ml`):
 
-    kdtest website some_branch
+    kdtest website master
 
 You can always browse with the client working like in standalone mode:
 
@@ -47,7 +47,7 @@ Error: Wrong HTTP Request: format-mandatory-parameter → Missing mandatory para
 
 Let's try again:
 
-    curl -k "$ktest_url/targets?token=nekot&format=json"
+    curl -k "$ktest_url/targets?token=nekot&format=json" | less
 
 Yay we get some Json \o/ i.e. a list of target JSON representations:
 
@@ -71,12 +71,8 @@ Yay we get some Json \o/ i.e. a list of target JSON representations:
 We can use `id` parameters to limit the request to one or more
 targets:
 
-    one_of_them="ketrew_2014-09-16-18h02m29s828ms-UTC_290180182"
+    one_of_them="ketrew_2014-11-21-19h44m24s850ms-UTC_994326685"
     curl -k "$ktest_url/targets?token=nekot&format=json&id=$one_of_them"
-
-or with a pretty-printer:
-
-    curl -k "$ktest_url/targets?token=nekot&format=json&id=$one_of_them" | json_pp
 
 ```goodresult
 [
@@ -150,18 +146,29 @@ available for this particular target:
 
 ```goodresult
 [
-  [ "stdout", "Stardard output" ],
-  [ "stderr", "Stardard error" ],
-  [ "log", "Monitored-script `log` file" ],
-  [ "script", "Monitored-script used" ]
+  "V0",
+  [
+    "List_of_query_descriptions",
+    [
+      [ "stdout", "Stardard output" ],
+      [ "stderr", "Stardard error" ],
+      [ "log", "Monitored-script `log` file" ],
+      [ "script", "Monitored-script used" ],
+      [ "check-process", "Check the process-group with `ps`" ]
+    ]
+  ]
 ]
 ```
 
-    curl -k "$ktest_url/target-call-query?token=nekot&format=json&id=$one_of_them&query=log" | json_pp
+    curl -k "$ktest_url/target-call-query?token=nekot&format=json&id=$one_of_them&query=log"
 
 ```goodresult
 [
-  "start\t2014-09-05 19:09:01\t\nbefore-cmd\t2014-09-05 19:09:01\tCMD0000\tcd /tmp/deploy_website_ketrew_2014-09-05-20h06m11s022ms-UTC_089809344/ketrew\nafter-cmd\t2014-09-05 19:09:01\tCMD0000\treturned 0\nbefore-cmd\t2014-09-05 19:09:01\tCMD0001\tbash _/please_sh clean build doc\nafter-cmd\t2014-09-05 19:09:14\tCMD0001\treturned 0\nsuccess\t2014-09-05 19:09:14\t\n"
+   "V0",
+   [
+      "Query_result",
+      "start\t2014-11-21 18:44:27\t\nbefore-cmd\t2014-11-21 18:44:27\tCMD0000\tmkdir -p /tmp/deploy_website_ketrew_2014-11-21-19h44m24s848ms-UTC_089809344\nafter-cmd\t2014-11-21 18:44:27\tCMD0000\treturned 0\nbefore-cmd\t2014-11-21 18:44:27\tCMD0001\tcd /tmp/deploy_website_ketrew_2014-11-21-19h44m24s848ms-UTC_089809344\nafter-cmd\t2014-11-21 18:44:27\tCMD0001\treturned 0\nbefore-cmd\t2014-11-21 18:44:27\tCMD0002\tgit clone /Volumes/Encrypted_zzz/dev/ketrew\nafter-cmd\t2014-11-21 18:44:28\tCMD0002\treturned 0\nsuccess\t2014-11-21 18:44:28\t\n"
+   ]
 ]
 ```
 
