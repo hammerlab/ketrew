@@ -102,9 +102,12 @@ are actually interactive tests.
 ### The `integration` Test
 
 The [integration](../test/integration.ml) test uses Ketrew to build
-*Vagrant* virtual machines and uses them to test further features: we
-test the PBS and LSF long-running backends by creating “one-node
-clusters”.
+[Vagrant](https://github.com/mitchellh/vagrant) virtual machines and uses them
+to test further features: we test the PBS and LSF long-running backends by
+creating “one-node clusters”. For now, running the whole test as a single
+workflow is a bit “shaky” (see progress of
+[issue 62](https://github.com/hammerlab/ketrew/issues/62)), please use the
+commands `prepare`, `go`, and `clean-up` separately.
 
 ### Dynamically Loaded Plugins
 
