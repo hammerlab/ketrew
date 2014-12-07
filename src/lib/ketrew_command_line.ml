@@ -606,8 +606,8 @@ module Explorer = struct
     filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
     filter Target.Is.activated  ~char:'a' ~log:Log.(s "Activated");
     filter Target.Is.running    ~char:'r' ~log:Log.(s "Running");
-    filter Target.Is.failed     ~char:'t' ~log:Log.(s "Terminated, success or failure");
-    filter Target.Is.finished   ~char:'f' ~log:Log.(s "Failed");
+    filter Target.Is.finished   ~char:'t' ~log:Log.(s "Terminated, success or failure");
+    filter Target.Is.failed     ~char:'f' ~log:Log.(s "Failed");
     filter Target.Is.successful ~char:'s' ~log:Log.(s "Successful");
     filter Target.Is.activated_by_user ~char:'u'
       ~log:Log.(s "Activated by user (i.e. not as dependency)");
