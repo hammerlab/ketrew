@@ -163,6 +163,7 @@ release workflow:
 - Release dependencies for which we are using unreleased features
 (e.g. [`adt2cconv`](https://github.com/smondet/atd2cconv),
 [`sosa`](https://github.com/smondet/sosa), etc.).
+- Set version string in `please.sh`.
 - Update the introductory paragraph of the `README.md` file for the particular
 version.
 - Write a human-friendly change-log (go through git history and write important
