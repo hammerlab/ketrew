@@ -102,9 +102,12 @@ are actually interactive tests.
 ### The `integration` Test
 
 The [integration](../test/integration.ml) test uses Ketrew to build
-*Vagrant* virtual machines and uses them to test further features: we
-test the PBS and LSF long-running backends by creating “one-node
-clusters”.
+[Vagrant](https://github.com/mitchellh/vagrant) virtual machines and uses them
+to test further features: we test the PBS and LSF long-running backends by
+creating “one-node clusters”. For now, running the whole test as a single
+workflow is a bit “shaky” (see progress of
+[issue 62](https://github.com/hammerlab/ketrew/issues/62)), please use the
+commands `prepare`, `go`, and `clean-up` separately.
 
 ### Dynamically Loaded Plugins
 
@@ -148,4 +151,35 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
 - `ksplugin_user`, and `kdplugin_user`: the mini-workflow
   [using the plugin](src/test/dummy_plugin_user.ml).
 
+
+How to Release
+--------------
+
+Once we are somewhat happy about the state of the `master` branch (tests,
+documentation, issues that went into the “next release”
+[milestone](https://github.com/hammerlab/ketrew/milestones)), this is the
+release workflow:
+
+- Release dependencies for which we are using unreleased features
+(e.g. [`adt2cconv`](https://github.com/smondet/atd2cconv),
+[`sosa`](https://github.com/smondet/sosa), etc.).
+- Set version string in `please.sh`.
+- Update the introductory paragraph of the `README.md` file for the particular
+version.
+- Write a human-friendly change-log (go through git history and write important
+changes).
+- Create the release/tag `ketrew.x.y.z` (put the change-log there, see
+releases [documentation](https://github.com/blog/1547-release-your-software)).
+- Fork the
+[mothership opam-repository](https://github.com/ocaml/opam-repository).
+- Add a new package by modifying the auto-generated one (see `please.sh opam`),
+fix the URL and the MD5 sum (from release), test the package (in a new
+opam-switch, or remove `ocamlfind`), create pull-request.
+- Add the tag as an “interesting checkout” in
+[`smondet/build-docs-workflow`](https://github.com/smondet/build-docs-workflow),
+then build and push the documentation (which is for now part of
+[`smondet/smondet.github.com`](https://github.com/smondet/smondet.github.com)).
+- Once the opam PR is merged, brag about it, write a blog post, start
+[hacking](https://github.com/hammerlab/ketrew/issues?q=is%3Aopen+is%3Aissue)
+on the next version.
 
