@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-version_string="`git describe --tags --always --dirty || echo '0.0.0-alpha'`"
+version_string="0.0.0"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
   atd cconv.yojson \
   yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="Apache-2.0"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )
 authors=( "seb" )
-homepage="http://hammerlab.github.io/ketrew/"
+homepage="http://seb.mondet.org/software/ketrew/"
 
 ocp_build_version=1.99.6-beta
 
