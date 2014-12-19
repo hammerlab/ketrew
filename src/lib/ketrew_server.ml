@@ -500,7 +500,7 @@ let start ~configuration  =
               `Key_file_path keyfile,
               `No_password, `Port port) in
           (* let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in *)
-          let callback _ request body =
+          let request_callback _ request body =
             let connection_id = Unique_id.create () in
             Ketrew_engine.Measure.incomming_request
               server_state.state ~connection_id ~request;
@@ -547,12 +547,12 @@ let start ~configuration  =
               ~connection_id ~request ~response_log ~body_length;
             return cohttp_answer
           in
-          let conn_closed (_, conn_id) () =
+          let conn_closed (_, conn_id) =
             Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
                  @ verbose);
           in
-          Cohttp_lwt_unix.Server.create ~mode
-            { Cohttp_lwt_unix.Server.callback = callback; conn_closed }
+          Cohttp_lwt_unix.Server.(
+            create ~mode (make ~callback:request_callback ~conn_closed ()))
         )
   end
 
