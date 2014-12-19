@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-version_string="0.0.0"
+version_string="`git describe --tags --always --dirty || echo '0.0.0+master'`"
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
   atd cconv.yojson \
   yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib"

@@ -12,7 +12,9 @@ parameter variations, running on different *hosts* with various schedulers).
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
-This is Ketrew `0.0.0`, our first release.
+This is Ketrew `0.0.0+master` the development version of the system,
+see also the
+[`0.0.0`](http://seb.mondet.org/software/ketrew/doc.0.0.0/index.html) release.
 
 Build & Install
 ---------------
@@ -24,6 +26,7 @@ should be able to build & work on any Unix platform.
 
 If you have `opam` up and running:
 
+    opam remote add smondet git@github.com:smondet/dev-opam-repo
     opam install ketrew
 
 Then you need at runtime `ssh` and `git` in the `$PATH`.
