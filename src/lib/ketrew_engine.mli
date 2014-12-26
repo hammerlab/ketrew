@@ -24,7 +24,7 @@ type t
 val with_engine: 
   configuration:Ketrew_configuration.engine ->
   (engine:t ->
-   (unit, [> `Database of Ketrew_database.error 
+   (unit, [> `Database of Trakeva_interface.Error.t
           | `Failure of string
           | `Database_unavailable of Ketrew_target.id
           | `Dyn_plugin of
@@ -36,7 +36,7 @@ val with_engine:
 val load: 
   configuration:Ketrew_configuration.engine ->
   (t,
-   [> `Database of Ketrew_database.error 
+   [> `Database of Trakeva_interface.Error.t
    | `Failure of string
    | `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
@@ -45,10 +45,10 @@ val load:
 val unload: t -> 
   (unit, [>
       | `Database_unavailable of Ketrew_target.id
-      | `Database of [> `Act of Ketrew_database.action | `Close ] * string 
+      | `Database of  Trakeva_interface.Error.t
     ]) Deferred_result.t
 
-val database: t -> (Ketrew_database.t,
+val database: t -> (Trakeva_sqlite.t,
                     [> `Database of [> `Load of string ] * string ]) Deferred_result.t
 (** Get the database handle managed by the engine. *)
 
@@ -59,17 +59,17 @@ val add_targets :
   t ->
   Ketrew_target.t list ->
   (unit,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
    | `Target of [> `Deserilization of string ]
    | `Persistent_state of [> `Deserilization of string ] ])
-  Deferred_result.t
+    Deferred_result.t
 (** Add a list of targets to the engine. *)
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Persistent_state of [> `Deserilization of string ]
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
@@ -79,7 +79,7 @@ val get_target: t -> Unique_id.t ->
 val current_targets :
   t ->
   (Ketrew_target.t list,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of Ketrew_target.id
@@ -92,25 +92,25 @@ val current_targets :
 val archived_targets :
   t ->
   (Ketrew_target.t list,
-   [> `Database of Ketrew_database.error
-    | `IO of
+   [> `Database of Trakeva_interface.Error.t
+   | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Missing_data of Ketrew_target.id
-    | `Persistent_state of [> `Deserilization of string ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ]
-    | `Target of [> `Deserilization of string ] ])
-  Deferred_result.t
+   | `Missing_data of Ketrew_target.id
+   | `Persistent_state of [> `Deserilization of string ]
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
 (** Get the list of targets that have been archived. *)
 
 val is_archived: t -> Unique_id.t -> 
   (bool, 
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Missing_data of Ketrew_target.id
    | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Check whether a target is in the “archive”. *)
-  
+
 type happening = Ketrew_gen_base_v0.Happening.t
 (** Structured log of what can happen during {!step} or {!kill}. *)
 
@@ -123,7 +123,7 @@ val log_what_happened : happening -> Log.t
 val step :
   t ->
   (happening list,
-   [> `Database of Ketrew_database.error
+   [> `Database of  Trakeva_interface.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Host of _ Ketrew_host.Error.non_zero_execution
    | `Volume of [> `No_size of Log.t]
@@ -139,7 +139,7 @@ val step :
 
 val fix_point: t ->
   ([ `Steps of int] * happening list list,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Host of _ Ketrew_host.Error.non_zero_execution
    | `Volume of [> `No_size of Log.t]
@@ -154,7 +154,7 @@ val fix_point: t ->
 
 val get_status : t -> Ketrew_target.id ->
   (Ketrew_target.workflow_state,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
    | `Missing_data of string
@@ -166,7 +166,7 @@ val get_status : t -> Ketrew_target.id ->
 
 val kill:  t -> id:Ketrew_target.id ->
   (happening list,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Failed_to_kill of string
    | `Database_unavailable of string
    | `IO of
@@ -182,7 +182,7 @@ val kill:  t -> id:Ketrew_target.id ->
 val archive_target: t ->
   Ketrew_target.id ->
   (happening list,
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t 
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
    | `Target of [> `Deserilization of string ]
@@ -192,7 +192,7 @@ val archive_target: t ->
 
 val restart_target: t -> Ketrew_target.id -> 
   (happening list, 
-   [> `Database of Ketrew_database.error
+   [> `Database of Trakeva_interface.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
    | `Persistent_state of [> `Deserilization of string ]
@@ -211,7 +211,7 @@ module Target_graph: sig
 
   val get_current: engine:engine -> 
     (t,
-     [> `Database of Ketrew_database.error
+     [> `Database of Trakeva_interface.Error.t
      | `Missing_data of Ketrew_target.id
      | `Persistent_state of [> `Deserilization of string ]
      | `Target of [> `Deserilization of string ] ]) Deferred_result.t
@@ -245,7 +245,7 @@ module Measurements: sig
 
   val flush: t ->
     (unit, [>
-        | `Database of Ketrew_database.error
+        | `Database of Trakeva_interface.Error.t
         | `Database_unavailable of Ketrew_target.id
       ]) Deferred_result.t
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 version_string="`git describe --tags --always --dirty || echo '0.0.0+master'`"
-findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
-  atd cconv.yojson \
+findlib_packages="trakeva_sqlite sosa nonstd docout pvem pvem_lwt_unix \
+ cmdliner atd cconv.yojson \
   yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib"
 license_name="Apache-2.0"
 seb=( "Sebastien Mondet" "seb@mondet.org" "http://seb.mondet.org" )

@@ -21,7 +21,9 @@ module Path = Ketrew_path
 module Host = Ketrew_host
 module Artifact = Ketrew_artifact
 module Target = Ketrew_target
-module Database = Ketrew_database
+module Database = Trakeva_sqlite
+module Database_action = Trakeva_interface.Action
+module Database_error = Trakeva_interface.Error
 
 module Configuration = Ketrew_configuration
 
@@ -86,9 +88,9 @@ module Measurement_collection = struct
     let action =
       let key = Unique_id.create () in
       let value = serialize !collection in
-      Ketrew_database.(set ~collection:"measurements" ~key value)
+      Trakeva_interface.Action.(set ~collection:"measurements" ~key value)
     in
-    begin Ketrew_database.act db ~action
+    begin Database.act db ~action
       >>= function
       | `Done ->
         collection :=  [item `Creation]; 
@@ -97,7 +99,7 @@ module Measurement_collection = struct
     end
 
   let load_all db =
-    Ketrew_database.get_all db ~collection:"measurements"
+    Database.get_all db ~collection:"measurements"
     >>= fun all_strings ->
     Deferred_list.while_sequential all_strings (fun s ->
         try return (deserialize_exn s)
@@ -189,7 +191,7 @@ let get_persistent t =
 let save_persistent t persistent =
   database t >>= fun db ->
   let key = Configuration.persistent_state_key t.configuration in
-  let action = Database.(set ~key (Persistent_state.serialize persistent)) in
+  let action = Database_action.(set ~key (Persistent_state.serialize persistent)) in
   begin Database.act db ~action
     >>= function
     | `Done -> 
@@ -198,8 +200,8 @@ let save_persistent t persistent =
   end
 
 let set_target_db_action target =
-  Database.(set ~collection:"targets"
-              ~key:target.Target.id Target.(serialize target))
+  Database_action.(set ~collection:"targets"
+                     ~key:target.Target.id Target.(serialize target))
 
 let add_or_update_target t target =
   database t
@@ -449,7 +451,7 @@ let add_targets t tlist =
   in
   let targets_to_add, new_persistent = stuff_to_do in
   let transaction = 
-    let open Database in
+    let open Database_action in
     let persistent_action =
       let key = Configuration.persistent_state_key t.configuration in
       (set ~key (Persistent_state.serialize new_persistent)) in
@@ -460,7 +462,8 @@ let add_targets t tlist =
   in
   database t
   >>= fun db ->
-  Log.(s "Going to perform: " % Database.log_action transaction @ verbose);
+  Log.(s "Going to perform: "
+       % s (Database_action.to_string transaction) @ verbose);
   begin
     Database.(act db transaction)
     >>= function
@@ -511,7 +514,7 @@ let _check_and_activate_dependencies ~t ids =
         (* Dependency not-found => should get out of the way *)
         let errlog =
           match e with
-          | `Database _ as e -> Ketrew_database.log_error e
+          | `Database e -> Log.s (Database_error.to_string e)
           | `Missing_data id -> Log.(s "Missing target: " % quote id) in
         Log.(s "Error while activating dependencies: " % errlog @ error);
         return (`Die dep)
