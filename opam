@@ -1,0 +1,26 @@
+opam-version: "1"
+maintainer: "seb@mondet.org"
+ocaml-version: [ >= "4.01.0" ]
+build: [
+  [make "gen"]
+  [make "_oasis"]
+  ["oasis" "setup" ]
+  ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
+  ["ocaml" "setup.ml" "-build" ]
+  ["ocaml" "setup.ml" "-install" ]
+]
+remove: [
+  ["ocamlfind" "remove" "ketrew"]
+  ["ocamlfind" "remove" "ketrew_data"]
+  ["rm" "-f" "%{bin}%/ketrew"]
+]
+depends: [
+  "oasis" "atd2cconv" "ocamlfind"
+  "cconv" {= "0.1" }
+  "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
+  "cmdliner" "atd" "cconv" "yojson" "uri"
+  "toml" {= "1.0.0" }
+  "cohttp" "lwt" "ssl"
+  "conduit"
+  ]
+
