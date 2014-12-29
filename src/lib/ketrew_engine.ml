@@ -462,8 +462,8 @@ let add_targets t tlist =
   in
   database t
   >>= fun db ->
-  Log.(s "Going to perform: "
-       % s (Database_action.to_string transaction) @ verbose);
+  Log.(s "Adding new " % i (List.length targets_to_add) % s " to the DB"
+       @ verbose);
   begin
     Database.(act db transaction)
     >>= function
