@@ -92,6 +92,7 @@ module Volume = struct
 
 end
 
+(*
 module Value = struct
 
   type t = Ketrew_gen_base_v0.Artifact_value.t
@@ -107,12 +108,13 @@ module Value = struct
   let unit = `Unit
 end
 
+*)
 
-
+(*
 type t = Ketrew_gen_base_v0.Artifact.t
 
 let log = function
 | `Volume v -> Volume.log v
 | `Value v -> Value.log v
 
-
+*)

@@ -51,16 +51,20 @@ module Document = struct
   let build_process ?(with_details=false)  =
     let open Log in
     let open Target in
+    (*
     let add_details details =
       if with_details then s ": " % n % details else empty in
     let command_details c = add_details (Target.Command.log c) in
+    *)
     function
-    | `Artifact a ->
-      s "Artifact" % add_details (Artifact.log a)
+    (* | `Artifact a -> s "Artifact" % add_details (Artifact.log a) *)
+    (*
     | `Direct_command c ->
       s "Direct command" % command_details c
     | `Get_output c ->
       s "Get output of command" % command_details c
+    *)
+    | `No_operation -> s "No-op"
     | `Long_running (name, content) ->
       s "Long-running " % parens (s name)
       % if with_details
@@ -84,40 +88,40 @@ module Document = struct
 
   let target ?build_process_details ?condition_details t =
     let open Log in
+    let doc_build_process = build_process in
+    let doc_condition = condition in
     let open Target in
     let itemize l =
       indent (concat (List.map l ~f:(fun (name, log) ->
           s "* " % s name % s ": " % log %n))) in
-    s "Target " % s t.name % n
+    s "Target " % a name t % n
     % itemize [
-      "ID", s t.id;
-      "Persistence",
-      (match t.persistence with
-       | `Recomputable bility -> s "Recomputable " % f bility
-       | `Result -> s "Result"
-       | `Input_data -> s "Input-data");
-      "Dependencies", OCaml.list s t.dependencies;
-      "Fallbacks", OCaml.list s t.if_fails_activate;
-      "On Success trigger", OCaml.list s t.success_triggers;
-      "Metadata", Artifact.Value.log t.metadata;
+      "ID", a id t;
+      "Dependencies", OCaml.list s (dependencies t);
+      "Fallbacks", OCaml.list s (fallbacks t);
+      "On Success trigger", OCaml.list s (success_triggers t);
+      "Metadata", OCaml.option s (metadata t);
       "Build-process",
-      build_process  ?with_details:build_process_details t.make;
-      "Condition", condition  ?with_details:condition_details t.condition;
-      "Equivalence", (match t.equivalence with
+      doc_build_process ?with_details:build_process_details
+        (Target.build_process t);
+      "Condition",
+      doc_condition ?with_details:condition_details (Target.condition t);
+      "Equivalence", (match equivalence t with
         | `None -> s "None"
         | `Same_active_condition -> s "Same active condition");
-      "Tags", OCaml.list quote t.tags;
+      "Tags", OCaml.list quote (tags t);
       "Status",
-      (match t.history with
-       | `Dead _       -> s "Dead"
-       | `Successful _ -> s "Successful"
-       | `Activated _  -> s "Activated"
-       | `Created _    -> s "Created"
-       | `Running (rb, _) ->
-         s "Running " % parens (s rb.plugin_name));
+      (match state t with
+       | _ -> s "TODO");
+       (* | `Dead _       -> s "Dead" *)
+       (* | `Successful _ -> s "Successful" *)
+       (* | `Activated _  -> s "Activated" *)
+       (* | `Created _    -> s "Created" *)
+       (* | `Running (rb, _) -> *)
+       (*   s "Running " % parens (s rb.plugin_name)); *)
       "Additional Log",
       OCaml.list (fun (time, msg) ->
-          brakets (Time.log time) % s ": " % s msg) t.log;
+          brakets (Time.log time) % s ": " % s msg) (additional_log t);
     ]
 end
 
@@ -256,13 +260,16 @@ module Interaction = struct
     if_color bold_yellow (s (Target.name t)) % n
     % if_color greyish (s (Target.id t)) % n
     % (
-      begin match t.Target.history with
+      begin match Target.state t with
+      | _ -> s "TODO"
+               (*
       | `Created _ -> s "Created"
       | `Activated _ -> s "Activated"
       | `Running _ -> if_color bold_red (s "Running")
       | `Dead (_, _, `Killed reason) -> if_color bold_red (sf "Killed: %s" reason)
       | `Dead (_, _, `Failed reason) -> if_color bold_red (sf "Failed: %s" reason)
       | `Successful _ -> if_color bold_green (s "Successful")
+      *)
       end
     )
 
@@ -328,77 +335,59 @@ end
 let get_status ~client =
   Ketrew_client.current_targets client
   >>= fun targets ->
-  return (
-    List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
-      ~f:(fun ((`Running r, `Created c, `Activated a) as prev) t ->
-          let open Target in
-          match t.history with
+  let in_progress =
+    List.fold targets ~init:0 ~f:(fun prev t ->
+        let open Target in
+        match state t  |> State.simplify with
+        | `In_progress -> prev + 1
+        | `Failed
+        | `Activable
+        | `Successful -> prev)
+  in
+  return (`In_progress in_progress)
+            (*
           | `Dead _       -> prev
           | `Successful _ -> prev
           | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
           | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
-          | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a))
-  )
+          | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a)
+         *)
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let rec display_status ~client ~loop  =
   get_status ~client
-  >>= fun (`Running rr, `Created cc, `Activated aa) ->
-  Log.(s "Current targets: "
-       % i rr % s " Running, "
-       % i aa % s " Activated, "
-       % i cc % s " Created." %n
-       @ normal);
-  begin match loop, rr,  aa with
-  | Some _, 0, 0 -> 
+  >>= fun (`In_progress inp) ->
+  Log.(s "Current targets “in-progress”: " % i inp @ normal);
+  begin match loop, inp with
+  | Some _, 0 -> 
     Log.(s "Nothing left to do" @ verbose);
     return ()
-  | Some seconds, _, _ ->
+  | Some seconds, _ ->
     (System.sleep seconds >>< fun _ -> return ())
     >>= fun () ->
     display_status ~client ~loop
-  | None, _, _ ->
+  | None, _ ->
     return ()
   end
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let run_state ~client ~max_sleep ~how =
-  let log_happening ~what_happened =
-    let open Log in
-    let step_count = List.length what_happened in
-    let happening_list =
-      List.mapi what_happened ~f:(fun step_index happening_list ->
-          List.map happening_list ~f:(fun happening ->
-              brakets (s "step " % i (step_index + 1)) % sp %
-              s (Ketrew_engine.what_happened_to_string happening)))
-      |> List.concat
-    in
-    let step_sentence =
-      match step_count with
-      | 0 -> s "No step was executed"
-      | 1 -> s "One step was executed"
-      | more -> i more % s " steps were executed"
-    in
-    Log.(step_sentence % s ":"  %
-         Document.log_list ~empty:(s "Nothing happened") happening_list
-         @ normal);
-    return ()
-  in
   begin match Ketrew_client.get_local_engine client with
   | None ->
     fail (`Failure "This client is not Standalone, it can not run stuff.")
   | Some state ->
     begin match how with
     | ["step"] ->
-      Ketrew_engine.step state
-      >>= fun what_happened ->
-      log_happening ~what_happened:[what_happened]
+      Ketrew_engine.Run_automaton.step state
+      >>= fun (_ : bool) ->
+      return ()
     | ["fix"] ->
-      Ketrew_engine.fix_point state
-      >>= fun (`Steps step_count, what_happened) ->
-      log_happening ~what_happened:List.(rev what_happened)
+      Ketrew_engine.Run_automaton.fix_point state
+      >>= fun (`Steps step_count) ->
+      Log.(i step_count % s " steps ran" @ normal);
+      return ()
     | "loop" :: [] ->
       let block, should_keep_going, stop_it =
         let keep_going = ref true in
@@ -408,36 +397,30 @@ let run_state ~client ~max_sleep ~how =
         (fun () ->
            keep_going := false;
            Light.green traffic_light ) in
-      let rec loop previous_sleep happenings =
-        Ketrew_engine.fix_point state
-        >>= fun (`Steps step_count, what_happened) ->
+      let rec loop previous_sleep =
+        Ketrew_engine.Run_automaton.fix_point state
+        >>= fun (`Steps step_count) ->
         Log.(s "Getting new status" @ verbose);
-        let new_happenings = what_happened @ happenings in
         get_status ~client
-        >>= fun (`Running rr, `Created cc, `Activated aa) ->
-        begin match rr,  aa with
-        | 0, 0 -> 
+        >>= begin function
+        | `In_progress 0 ->
           Log.(s "Nothing left to do" @ verbose);
           stop_it ();
-          log_happening ~what_happened:(List.rev new_happenings)
-        | _, _ ->
+          return ()
+        | _ ->
           let seconds =
-            match what_happened with
-            | [] | [[]] ->
-              min (previous_sleep *. 2.) max_sleep
-            | something -> 2.
+            match step_count with
+            | 1 -> 2.
+            | _ -> min (previous_sleep *. 2.) max_sleep
           in
           Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-          log_happening ~what_happened:what_happened
-          >>= fun () ->
           begin Deferred_list.pick_and_cancel [
               System.sleep seconds;
               block ();
             ] >>< function
             | `Ok () when should_keep_going () -> 
-              loop seconds new_happenings
-            | `Ok () ->
-              log_happening ~what_happened:(List.rev new_happenings)
+              loop seconds
+            | `Ok () -> return ()
             | `Error e ->
               Log.(s "System.Sleep Error!!"  @ error);
               fail (`Failure "System.sleep")
@@ -445,7 +428,7 @@ let run_state ~client ~max_sleep ~how =
         end
       in
       Deferred_list.pick_and_cancel [
-        begin loop 2. [] end;
+        begin loop 2. end;
         begin
           let rec kbd_loop () =
             Log.(s "Press the 'q' key to stop looping." @ normal);
@@ -465,6 +448,7 @@ let run_state ~client ~max_sleep ~how =
       fail (`Wrong_command_line sl)
     end
   end
+  
 (** Kill targets (command line, ["--interactive"], or within
     [ketrew interactive]. *)
 let kill ~client ~interactive ids =
@@ -472,7 +456,7 @@ let kill ~client ~interactive ids =
     begin if interactive then
         Interaction.build_sublist_of_targets ~client ~list_name:"Kill list"
           ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
-          ~filter:Target.Is.killable
+          ~filter:(fun t -> Target.(state t |> State.Is.killable))
       else
         return (`Go [])
     end
@@ -502,6 +486,8 @@ let kill ~client ~interactive ids =
 (** Archive targets (command line, ["--interactive"], or within
     [ketrew interactive]. *)
 let archive ~client ~interactive ids =
+  assert false
+    (*
   begin
     begin if interactive then
         Interaction.build_sublist_of_targets ~client ~list_name:"Archival list"
@@ -529,6 +515,7 @@ let archive ~client ~interactive ids =
       Log.(s "Cancelling archival" @ normal);
       return ()
   end
+*)
 
 (** Kill and archive targets that are done or useless. *)
 let autoclean ~client ~how_much ~interactive () =
@@ -603,7 +590,8 @@ module Explorer = struct
 
   let filters = [
     filter (fun _ -> true)      ~char:'n' ~log:Log.(s "No-filter, see them all");
-    filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
+    (*
+      filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
     filter Target.Is.activated  ~char:'a' ~log:Log.(s "Activated");
     filter Target.Is.running    ~char:'r' ~log:Log.(s "Running");
     filter Target.Is.finished   ~char:'t' ~log:Log.(s "Terminated, success or failure");
@@ -611,6 +599,7 @@ module Explorer = struct
     filter Target.Is.successful ~char:'s' ~log:Log.(s "Successful");
     filter Target.Is.activated_by_user ~char:'u'
       ~log:Log.(s "Activated by user (i.e. not as dependency)");
+ *)
   ]
 
   let initial_ask_tags_content =
@@ -652,7 +641,7 @@ module Explorer = struct
       return (
         (fun trgt ->
            List.for_all tag_regs ~f:(fun (_, reg) ->
-               List.exists trgt.Target.tags ~f:(fun tag ->
+               List.exists Target.(tags trgt) ~f:(fun tag ->
                    Re.execp reg tag))),
         Log.(s "Tags matching " 
              % OCaml.list (fun (s, _) -> quote s) tag_regs))
@@ -686,6 +675,8 @@ module Explorer = struct
         (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
 
   let explore_single_target ~client (es: exploration_state) target =
+    assert false
+      (*
     let sentence =
       let build_process_details = es.build_process_details in
       let condition_details = es.condition_details in
@@ -722,13 +713,13 @@ module Explorer = struct
         | some -> [menu_item ~char ~log result] in
       let follow_deps_item =
         menu_item_of_id_list ~char:'d' ~log:Log.(s "Follow a dependency")
-          ~result:`Follow_dependencies target.Target.dependencies in
+          ~result:`Follow_dependencies (Target.dependencies target) in
       let follow_fbacks_item =
         menu_item_of_id_list ~char:'f' ~log:Log.(s "Follow a fallback")
-          ~result:`Follow_fallbacks target.Target.if_fails_activate in
+          ~result:`Follow_fallbacks (Target.fallbacks target) in
       let follow_success_triggers_item =
         menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success-trigger")
-          ~result:`Follow_success_triggers target.Target.success_triggers in
+          ~result:`Follow_success_triggers (Target.success_triggers target) in
       let restart_item =
         if Target.Is.finished target
         then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
@@ -746,17 +737,22 @@ module Explorer = struct
         @ restart_item
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
+  *)
 
   let view_json ~client target =
+    assert false (*
     let content = Target.serialize target in
     Interaction.view_in_dollar_editor ~extension:"json" content
+  *)
 
   let rec target_status
       ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
     let sentence =
-      let rec log_of_status (status: Target.workflow_state) =
+      let rec log_of_status (status: Target.State.t) =
         let open Log in
         match status with
+        | _ -> s "TODO"
+                 (*
         | `Created time -> s "Created: " % Time.log time
         | `Activated (time, subm, why) ->
           log_of_status (subm :> Target.workflow_state) % n
@@ -784,11 +780,12 @@ module Explorer = struct
         | `Successful (time, prev, arti) ->
           log_of_status (prev :> Target.workflow_state) % n
           % s "Successful: " % Time.log time % s "→ " % Artifact.log arti
+  *)
       in
       let open Log in
       Document.target target
       % s "Status:" % n
-      % indent (log_of_status target.Target.history)
+      % indent (log_of_status (Target.state target))
       % n % add_info
     in
     let open Interaction in
@@ -929,9 +926,9 @@ module Explorer = struct
             as follow ->
             let target_ids t =
               match follow with
-              | `Follow_fallbacks -> t.Target.if_fails_activate
-              | `Follow_success_triggers -> t.Target.success_triggers
-              | `Follow_dependencies -> t.Target.dependencies in
+              | `Follow_fallbacks -> (Target.fallbacks t)
+              | `Follow_success_triggers -> (Target.success_triggers t)
+              | `Follow_dependencies -> (Target.dependencies t) in
             let rec next_target ids =
               begin pick_a_target_from_list ~client ids
                 >>= function

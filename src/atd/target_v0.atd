@@ -18,8 +18,7 @@ type time <ocaml from="Ketrew_gen_base_v0.Time"> = abstract
 type unique_id <ocaml from="Ketrew_gen_base_v0.Unique_id"> = abstract
 type host <ocaml from="Ketrew_gen_base_v0.Host"> = abstract
 type program <ocaml from="Ketrew_gen_base_v0.Program"> = abstract
-type artifact <ocaml from="Ketrew_gen_base_v0.Artifact"> = abstract
-type artifact_value <ocaml from="Ketrew_gen_base_v0.Artifact_value"> = abstract
+(* type artifact <ocaml from="Ketrew_gen_base_v0.Artifact"> = abstract *)
 type volume <ocaml from="Ketrew_gen_base_v0.Volume"> = abstract
 
 type command = {
@@ -28,43 +27,118 @@ type command = {
 }
 
 type build_process = [
-  | Artifact of artifact
-  | Direct_command of command
+  | No_operation
+  (* | Direct_command of command *)
   | Long_running of (string * string)
 ]
-
-type submitted_state = [
-  | Created of time
-]
-type activated_state = [
-  | Activated of (time * submitted_state * 
-                  [ User | Dependency | Fallback | Success_trigger ])
-]
 type run_bookkeeping = 
-  { plugin_name: string; run_parameters: string; run_history: string list}
-type running_state = [
-  | Running of (run_bookkeeping * activated_state) 
+  { plugin_name: string; run_parameters: string }
+
+type log = {
+  time: time;
+  message: string option;
+}
+type 'a history = {
+  log: log;
+  previous_state: 'a;
+}
+type passive = [ Passive of log ]
+type active = [ Active of (passive history * [ User | Dependency of id ]) ]
+
+(* type 'a successful = [ Successful of ('a * log) ] *)
+
+type already_done = [ Already_done of active history ]
+
+type building = [ Building of active history
+                | Still_building of building history  ]
+
+type dependency_failure = [
+  | Dependencies_failed of (building history * id list)
 ]
-type death_reason = [
-  | Killed of string
-  | Failed of string
+
+type starting = [
+  | Starting of building history
+  | Tried_to_start of (starting history * run_bookkeeping)
 ]
-type activated_or_running = [ (* Must be verbatim [activated_state | running_state] *)
-  | inherit activated_state
-  | inherit running_state
+
+type failed_to_start = [
+  | Failed_to_start of (starting history * run_bookkeeping)
 ]
-type finished_state = [ 
-  | Dead of (time * activated_or_running * death_reason)
-  | Successful of (time * activated_or_running * artifact)
+
+type running = [
+  | Started_running of (starting history * run_bookkeeping)
+  | Still_running  of (running history * run_bookkeeping)
 ]
-(* [ submitted_state | activated_state | running_state | finished_state] *)
-type workflow_state = [ 
-  (* | Created of time *)
-  | inherit submitted_state
-  | inherit activated_state
-  | inherit running_state
-  | inherit finished_state
-] 
+
+(*
+Successful run is the success of the process, we still have to verify
+that the potential condition has been ensured
+*)
+type successful_run = [
+  | Successfully_did_nothing of starting history
+  | Ran_successfully of (running history * run_bookkeeping)
+]
+
+
+type process_failure_reason = [
+  (* | Did_not_ensure_condition of string *)
+  | Long_running_failure of string
+]
+type failed_run = [
+  | Failed_running of
+      (running history * process_failure_reason * run_bookkeeping)
+]
+
+type verified_run = [
+  | Verified_success of successful_run history
+]
+type failed_to_verify_success = [
+  | Did_not_ensure_condition of successful_run history
+]
+
+
+type killable_state = [
+  | inherit passive
+  | inherit active
+  | inherit building
+  | inherit starting
+  | inherit running
+]
+
+type killing = [
+  | Killing of killable_state history
+  | Tried_to_kill of killing history
+]
+type killed = [
+  | Killed of killing history
+]
+type failed_to_kill = [
+  | Failed_to_kill of killing history
+]
+  
+type finishing_state = [
+  | inherit failed_run
+  | inherit verified_run
+  | inherit already_done
+  | inherit dependency_failure
+  | inherit failed_to_start
+  | inherit killed
+  | inherit failed_to_kill
+  | inherit failed_to_verify_success
+]
+
+type finished = [
+  | Finished of finishing_state history
+]
+
+type state = [
+  | inherit killing
+  | inherit killed
+  | inherit killable_state
+  | inherit successful_run
+  | inherit finishing_state
+  | inherit finished
+]
 
 type condition = [
   | True
@@ -84,8 +158,8 @@ type id = unique_id
 type target = {
   id: id;
   name: string;
-  persistence: [ Input_data | Recomputable of float | Result ];
-  metadata: artifact_value;
+  (* persistence: [ Input_data | Recomputable of float | Result ]; *)
+  metadata: string option;
   dependencies: id list;
   if_fails_activate: id list;
   success_triggers: id list;
@@ -93,7 +167,17 @@ type target = {
   condition: condition option;
   equivalence: equivalence;
   (* result_type: artifact_type; *)
-  history: workflow_state;
+  history: state;
   log: (time * string) list;
   tags: string list;
 }
+
+type target_pointer = {
+  original: target;
+  pointer: id;
+}
+
+type stored_target = [
+  | Target of target
+  | Pointer of target_pointer
+]

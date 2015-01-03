@@ -20,7 +20,7 @@ open Ketrew_pervasives
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig
 
-    type t = Ketrew_gen_target_v0.Command.t
+    type t
     (** The type of commands. *)
 
     val shell : ?host:Ketrew_host.t -> string -> t
@@ -56,8 +56,7 @@ module Command : sig
 
 module Build_process: sig
   type t = [
-    | `Artifact of Ketrew_artifact.t (** Literal, already-built, artifact *)
-    | `Direct_command of Command.t (** [Command.t] to run. *)
+    | `No_operation
     | `Long_running of (string * string) 
     (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
   ]
@@ -74,45 +73,6 @@ module Build_process: sig
   val nop : t
   (** A build process that does nothing. *)
 end
-
-type submitted_state = [ `Created of Time.t ]
-type activated_state = [
-  | `Activated of Time.t * submitted_state * 
-                  [ `Dependency | `User | `Fallback | `Success_trigger ]
-]
-type run_bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t = {
-  plugin_name : string;
-  run_parameters : string;
-  run_history : string list;
-}
-type running_state = [ `Running of run_bookkeeping * activated_state ]
-type death_reason = [ `Failed of string | `Killed of string ]
-type finished_state = [
-  | `Dead of Time.t * [ activated_state | running_state ] * death_reason
-  | `Successful of
-      Time.t * [ activated_state | running_state ] * Ketrew_artifact.t 
-]
-(** The potential cases of a “finished” target (defined as {[
-type finished_state = [
-  | `Dead of Time.t * [ activated_state | running_state ] * death_reason
-  | `Successful of
-      Time.t * [ activated_state | running_state ] * Ketrew_artifact.t ] ]}).
-    ]} — ocamldoc wrong display). *)
-
-type workflow_state = [
-  | submitted_state
-  | activated_state
-  | running_state
-  | finished_state
-]
-(** The all the potential cases of the state of a target (defined as {[
-type workflow_state = [
-  | submitted_state
-  | activated_state
-  | running_state
-  | finished_state
-]
-    ]} — ocamldoc wrong display). *)
 
 type id = Unique_id.t
 (** The identifiers of targets. *)
@@ -143,34 +103,76 @@ module Condition : sig
   val log: t -> Log.t
   val to_string_hum: t -> string
 
+  val eval: t -> (bool,
+                  [> `Host of
+                       [> `Execution of
+                            < host : string; message : string;
+                              stderr : string option; stdout : string option >
+                       | `Non_zero of string * int
+                       | `Ssh_failure of
+                            [> `Wrong_log of string
+                            | `Wrong_status of Ketrew_unix_process.Exit_code.t ] *
+                            string
+                       | `System of [> `Sleep of float ] * [> `Exn of exn ]
+                       | `Timeout of float
+                       | `Unix_exec of string ]
+                         Ketrew_host.Error.execution
+                  | `Volume of [> `No_size of Ketrew_pervasives.Log.t ] ]) Deferred_result.t
+
 end
 
 module Equivalence: sig
-  type t = Ketrew_gen_target_v0.Equivalence.t
-
+  type t = [
+    | `None
+    | `Same_active_condition
+  ]
 end
 
-type t = Ketrew_gen_target_v0.Target.t = {
-  id : id;
-  name : string;
-  persistence : [ `Input_data | `Recomputable of float | `Result ];
-  metadata : Ketrew_artifact.Value.t;
-  dependencies : id list;
-  if_fails_activate : id list;
-  success_triggers : id list;
-  make : Build_process.t;
-  condition : Condition.t option;
-  equivalence: Equivalence.t;
-  history : workflow_state;
-  log: (Time.t * string) list;
-  tags: string list;
-}
-(** The fat record holding targets. *)
+module State : sig
+  type t
+  type history = Ketrew_gen_target_v0.State.t
+  val simplify: t -> [
+      | `Activable
+      | `In_progress
+      | `Successful
+      | `Failed
+    ]
+  val history: t -> history
+
+  val log: ?depth:int ->  t -> Log.t
+
+  module Is : sig
+    val building : t -> bool
+    val tried_to_start : t -> bool
+    val started_running : t -> bool
+    val starting : t -> bool
+    val still_building : t -> bool
+    val still_running : t -> bool
+    val ran_successfully : t -> bool
+    val successfully_did_nothing : t -> bool
+    val active : t -> bool
+    val verified_success : t -> bool
+    val already_done : t -> bool
+    val dependencies_failed : t -> bool
+    val failed_running : t -> bool
+    val failed_to_kill : t -> bool
+    val failed_to_start : t -> bool
+    val killing : t -> bool
+    val tried_to_kill : t -> bool
+    val did_not_ensure_condition : t -> bool
+    val killed : t -> bool
+    val finished : t -> bool
+    val passive : t -> bool
+    val killable: t -> bool
+  end
+end
+
+type t
+(** The thing holding targets. *)
 
 val create :
   ?id:id -> ?name:string ->
-  ?persistence:[ `Input_data | `Recomputable of float | `Result ] ->
-  ?metadata:Ketrew_artifact.Value.t ->
+  ?metadata:string ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
   ?success_triggers:id list ->
@@ -182,19 +184,75 @@ val create :
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val activate_exn : t ->
-  by:[ `Dependency | `User | `Fallback | `Success_trigger ] -> t
+val to_serializable: t -> Ketrew_gen_target_v0.Target.t
+val of_serializable: Ketrew_gen_target_v0.Target.t -> t
+
+
+val id : t -> Unique_id.t
+(** Get a target's id. *)
+
+val name : t -> string
+(** Get a target's user-defined name. *)
+
+val dependencies: t -> id list
+val fallbacks: t -> id list
+val success_triggers: t -> id list
+val metadata: t -> string option
+val build_process: t -> Build_process.t
+val condition: t -> Condition.t option
+val equivalence: t -> Equivalence.t
+val additional_log: t -> (Time.t * string) list
+val tags: t -> string list
+val state: t -> State.t
+
+
+module Automaton : sig
+
+  (** A {i pure} automaton *)
+
+  type failure_reason = Ketrew_gen_target_v0.Process_failure_reason.t
+  type progress = [ `Changed_state | `No_change ]
+  type 'a transition_callback = ?log:string -> 'a -> t * progress
+  type severity = [ `Try_again | `Fatal ]
+  (* type 'a io_action = [ `Succeeded of 'a | `Failed of 'a ] *)
+  type bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t =
+    { plugin_name: string; run_parameters: string}
+  type long_running_failure = severity * string * bookkeeping
+  type long_running_action =  (bookkeeping, long_running_failure) Pvem.Result.t
+  type process_check =
+    [ `Successful of bookkeeping | `Still_running of bookkeeping ]
+  type process_status_check = (process_check, long_running_failure) Pvem.Result.t
+  type dependencies_status = 
+    [ `All_succeeded | `At_least_one_failed of id list | `Still_processing ]
+  type transition = [
+    | `Do_nothing of unit transition_callback
+    | `Activate of id list * unit transition_callback
+    | `Check_and_activate_dependencies of dependencies_status transition_callback
+    | `Start_running of bookkeeping * long_running_action transition_callback
+    | `Eval_condition of Condition.t * bool transition_callback
+    | `Check_process of bookkeeping * process_status_check transition_callback
+    | `Kill of bookkeeping * long_running_action transition_callback
+  ]
+  val transition: t -> transition
+  (*
+    val to_active_exn :
+    ?log:string ->
+    t ->
+    reason:[ `Dependency of id | `User ] ->
+    t
+ *)
+end
+
+val activate_exn :
+  ?log:string -> t -> reason:[ `Dependency of id | `User ] -> t
 (** Get an activated target out of a “submitted” one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
-val make_succeed_exn : t -> Ketrew_artifact.t -> t
-(** Get a successfully finished target out of an activated  or running one, 
-    raises [Invalid_argument _] if the target is in a wrong state. *)
+val kill : ?log:string -> t -> t option
+(** Get dead target out of a killable one, 
+    or [None] if not killable. *)
 
-val kill_exn : ?msg:string -> t -> t
-(** Get dead target out of an activated  or running one, 
-    raises [Invalid_argument _] if the target is in a wrong state. *)
-
+(*
 val make_fail_exn : ?msg:string -> t -> t
 (** Get dead target out of an activated  or running one, 
     raises [Invalid_argument _] if the target is in a wrong state. *)
@@ -207,49 +265,42 @@ val update_running_exn : t -> run_parameters:string -> t
 (** Get a new target updated with new run paramters (from a plugin), 
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
-val active :
-  ?id:id -> ?name:string ->
-  ?persistence:[ `Input_data | `Recomputable of float | `Result ] ->
-  ?metadata:Ketrew_artifact.Value.t ->
-  ?dependencies:id list ->
-  ?if_fails_activate:id list ->
-  ?success_triggers:id list ->
-  ?make:Build_process.t  ->
-  ?condition:Condition.t ->
-  ?equivalence: Equivalence.t ->
-  ?tags: string list ->
-  unit -> t
-(** Like {!create} but set as already activated. *)
 
 val reactivate: 
   ?with_id:string ->
   ?with_name:string ->
-  ?with_metadata:Ketrew_artifact.Value.t ->
+  (* ?with_metadata:Ketrew_artifact.Value.t -> *)
   t -> t
 (** “Clone” the target as an activated new target. *)
 
+*)
 val is_equivalent: t -> t -> bool
 (** Tell whether the first on is equivalent to the second one. This not
     a commutative operation: the function does not look at
     the second target's [Equivalence] field. *)
 
-val id : t -> Unique_id.t
-(** Get a target's id. *)
+module Stored_target : sig
+  type target = t
+  type t
+  val to_json: t -> Json.t
+  (** Serialize a target to [Json.t] intermediate representation. *)
 
-val name : t -> string
-(** Get a target's user-defined name. *)
+  val serialize : t -> string
+  (** Serialize a target (for the database). *)
 
-val to_json: t -> Json.t
-(** Serialize a target to [Json.t] intermediate representation. *)
+  val deserialize :
+    string ->
+    (t, [> `Target of [> `Deserilization of string ] ])
+      Result.t
+      (** Deserilize a target from a string. *)
 
-val serialize : t -> string
-(** Serialize a target (for the database). *)
+  val get_target: t -> [ `Target of target | `Pointer of id ]
+  val of_target: target -> t
 
-val deserialize :
-  string ->
-  (t, [> `Target of [> `Deserilization of string ] ])
-  Result.t
-(** Deserilize a target from a string. *)
+  val id: t -> id
+
+  val make_pointer: from:target -> pointing_to:target -> t
+end
 
 val log : t -> Log.t
 (** Get a [Log.t] “document” to display the target. *)
@@ -267,7 +318,8 @@ val did_ensure_condition:
 (** Check whether a target actually did its job, given its condition.  *)
 
 (** Basic boolean queries on targets. *)
-module Is: sig
+    (*
+      module Is: sig
   val created: t -> bool
   val activated: t -> bool
   val running: t -> bool
@@ -277,6 +329,7 @@ module Is: sig
   val killable: t -> bool
   val activated_by_user: t -> bool
 end
+ *)
 
 (** Get the most recent serialized 
     [run_parameters] if the target is a “long-running”,

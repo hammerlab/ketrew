@@ -103,10 +103,14 @@ module Http_client = struct
       ~args:(if archived then ["archived", "true"] else [])
     >>= filter_down_message
       ~loc:`Targets
-      ~f:(function `List_of_targets tl -> Some tl | _ -> None)
+      ~f:(function
+        | `List_of_targets tl ->
+          Some (List.map tl ~f:Ketrew_target.of_serializable)
+        | _ -> None)
 
   let add_targets t ~targets =
-    let msg = (`List_of_targets targets) in
+    let msg =
+      `List_of_targets (List.map targets ~f:Ketrew_target.to_serializable) in
     call_json t ~path:"/add-targets" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
@@ -115,7 +119,9 @@ module Http_client = struct
     call_json t ~path:"/targets" ~meta_meth:`Get ~args:["id", id]
     >>= filter_down_message
       ~loc:`Targets
-      ~f:(function `List_of_targets [t] -> Some t | _ -> None)
+      ~f:(function
+        | `List_of_targets [t] -> Some (Ketrew_target.of_serializable t)
+        | _ -> None)
 
   let kill_or_archive t what =
     let ids, error_loc, path =
@@ -230,7 +236,8 @@ let kill t id_list =
     let open Standalone in
     Deferred_list.while_sequential id_list (fun id ->
         Ketrew_engine.kill s.engine ~id)
-    >>| List.concat
+    >>= fun (_ : unit list) ->
+    return []
   | `Http_client c ->
     Http_client.kill c id_list
 

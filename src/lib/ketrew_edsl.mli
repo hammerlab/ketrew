@@ -164,7 +164,7 @@ class type user_target =
     method name : string
     (** Get the name of the target *)
 
-    method metadata: Ketrew_artifact.Value.t
+    method metadata: string option
     (** The metadata that has been set for the target ({i work-in-progress}). *)
 
     method product: user_artifact
@@ -188,7 +188,7 @@ val target :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
   ?done_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
+  ?metadata:string ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
@@ -200,7 +200,7 @@ val target :
 val file_target:
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
+  ?metadata:string ->
   ?name:string ->
   ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->
@@ -219,6 +219,7 @@ val daemonize :
   Ketrew_target.Build_process.t
 (** Create a “daemonize” build process. *)
 
+(*
 val direct_execution :
   ?host:Host.t -> Program.t -> Ketrew_target.Build_process.t
 (** Create a direct process (not “long-running”). *)
@@ -226,7 +227,8 @@ val direct_execution :
 val direct_shell_command :
   ?host:Host.t -> string -> Ketrew_target.Build_process.t
 (** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
-
+*)
+    
 val lsf :
   ?host:Host.t ->
   ?queue:string ->

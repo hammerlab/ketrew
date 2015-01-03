@@ -30,7 +30,11 @@ module Down_message = struct
     let open Ketrew_gen_protocol_v0.Clean_up_todo_list in
     {to_kill; to_archive}
 
-  let log : t -> Log.t = function
+  let log : t -> Log.t =
+    fun _ ->
+    assert false
+      (*
+    function
   | `List_of_targets ts -> 
     Log.(s "List_of_targets: " % OCaml.list Ketrew_target.log ts)
   | `List_of_query_descriptions tsl ->
@@ -51,6 +55,7 @@ module Down_message = struct
     Log.(s "Clean_up_todo_list: " % n
          % s "to-kill: " % OCaml.list string todo.to_kill 
          % s "to-archive: " % OCaml.list string todo.to_archive) 
+  *)
 end
 
 module Post_message = struct
@@ -59,11 +64,16 @@ module Post_message = struct
       (Ketrew_gen_protocol_v0.Post_message)
       (Ketrew_gen_versioned.Post_message)
 
-  let log : t -> Log.t = function
+  let log : t -> Log.t =
+    fun _ ->
+    assert false
+      (*
+    function
   | `List_of_targets ts -> 
     Log.(s "List_of_targets: " % OCaml.list Ketrew_target.log ts)
   | `List_of_target_ids ts ->
     Log.(s "List_of_target_ids: " % OCaml.list string ts)
+  *)
 
   let to_string_hum t = log t |> Log.to_long_string
 end

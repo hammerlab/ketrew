@@ -82,7 +82,8 @@ module Volume : sig
 
   end
 
-module Value : sig
+(*
+  module Value : sig
   type t = [ `Number of float | `String of string | `Unit ]
       (** Literal values. *)
 
@@ -99,3 +100,4 @@ type t = [ `Value of Value.t | `Volume of Volume.t ]
 
 val log: t -> Log.t
 (** Get a [Log] document. *)
+ *)

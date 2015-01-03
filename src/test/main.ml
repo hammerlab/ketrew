@@ -31,6 +31,16 @@ module Test = struct
       raise Tests_failed 
     ) else ()
 
+  let over_verbose =
+    try Sys.getenv "KETREW_TEST_VERBOSE" = "true" with _ -> false
+
+  let checkf b fmt =
+    ksprintf (function
+      | name when not b -> fail name
+      | name when over_verbose ->
+        Log.(s "Testing " % quote name % s ": SUCCESS" @ warning);
+      | _ -> ()) fmt
+
   let test_ssh_host =
     let open Ketrew in
     try
@@ -42,6 +52,8 @@ module Test = struct
     Ketrew.EDSL.Host.parse "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
 
   let test_targets ?wait_between_steps ~engine ~name targets checks =
+    assert false
+      (*
     let open Ketrew in
     Ketrew_engine.add_targets engine targets
     >>= fun () ->
@@ -49,18 +61,19 @@ module Test = struct
         Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
         >>< fun _ ->
         match check with
-        | `Dont_care -> Ketrew_engine.step engine >>= fun _ -> return ()
+        | `Dont_care -> Ketrew_engine.Run_automaton.step engine >>= fun _ -> return ()
         | `Happens check ->
-          Ketrew_engine.step engine >>= fun happening ->
+          Ketrew_engine.Run_automaton.step engine >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
-            fail (fmt "T: %S: wrong happening: %s" name (List.map ~f:Ketrew_engine.what_happened_to_string happening
+            fail (fmt "T: %S: wrong happening: %s" name
+                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end
         | `Status (id, check) ->
-          Ketrew_engine.step engine >>= fun _ ->
+          Ketrew_engine.Run_automaton.step engine >>= fun _ ->
           begin Ketrew_engine.get_status engine id
             >>= function
             | s when check s -> return ()
@@ -79,7 +92,9 @@ module Test = struct
           end)
     >>= fun (_: unit list) ->
     return ()
+  *)
 
+  (*
     let test_target_one_step ?condition ~engine ~make name check =
       let open Ketrew in
       let target = Target.active ~name ?condition  ~make () in
@@ -90,6 +105,7 @@ module Test = struct
       `Status (id, function `Dead _ -> true | _ -> false)
     let check_one_step ~id check = `Happens (check ~id)
     let nothing_happens = `Happens (function [] -> true | _ -> false)
+  *)
 
     let new_db_file () =
       let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
@@ -99,17 +115,28 @@ module Test = struct
       >>= fun () ->
       return db_file
 
+    module Target = struct
+      let check_history t ~matches fmt =
+        ksprintf (fun msg ->
+            let state = Ketrew_target.(state t) in
+            let b = state |> matches in
+            if not b && over_verbose then
+              Log.(s "Test: " % s msg % s ": unexpected history: "
+                   % n % indent (Ketrew_target.State.log state) @ warning);
+            checkf b "%s" msg
+          ) fmt
+    end
+
 end
 
-module Happenings = struct
-
+(*
+  module Happenings = struct
   let contains h1 ~f =
     let yes, no =
       List.partition h1 ~f in
     match yes, no with
     | [], all -> None
     | one :: more, rest -> Some (one, more @ rest)
-
   let look ?(and_nothing_more=true) ~like () haps =
     let rec go prev = 
       function
@@ -121,45 +148,119 @@ module Happenings = struct
         end
     in
     go haps like
-
   let check_option opt v =
     begin match opt with
     | None -> true
     | Some h when h = v -> true
     | Some _ -> false
     end
-
   let success ?how ?what hap =
     match hap with
     | `Target_succeeded (trgt, meth) ->
       check_option how meth
       && check_option what trgt 
     | _ -> false
-
   let activation ?how ?what hap =
     match hap with
     | `Target_activated (trgt, meth) ->
       check_option how meth
       && check_option what trgt 
     | _ -> false
-
   let death ?how ?what hap =
     match hap with
     | `Target_died (trgt, meth) ->
       check_option how meth
       && check_option what trgt 
     | _ -> false
-
 end
+ *)
 
 
 let test_0 () =
-  let open Ketrew in
   Lwt_main.run begin
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = 
-      Configuration.engine ~database_parameters:db_file () in
+      Ketrew_configuration.engine ~database_parameters:db_file () in
+    Ketrew_engine.with_engine ~configuration (fun ~engine ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Test.checkf (not v) "1st step, nothing to do";
+        let test_steps ~checks msg =
+          List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
+            prev >>= fun () ->
+            Ketrew_engine.Run_automaton.step engine
+            >>= fun v ->
+            let rec do_checks = 
+              function
+              | `None -> return ()
+              | `Step_returns ret ->
+                Test.checkf (ret = v) "step %d of %s step-returned: %b" idx msg v;
+                return ()
+              | `Target_is (id, matches) ->
+                Ketrew_engine.get_target engine id
+                >>= fun re_re_target_01 ->
+                Test.Target.check_history re_re_target_01 ~matches
+                  "step %d of %s target-matching %s" idx msg id;
+                return ()
+              | `And l ->
+                Deferred_list.while_sequential l ~f:do_checks
+                >>= fun (_ : unit list) ->
+                return ()
+            in
+            do_checks check_step
+          end 
+        in
+        let target_01 = Ketrew_edsl.target "01" in
+        target_01#activate;
+        Ketrew_engine.add_targets engine [target_01#render]
+        >>= fun () ->
+        let open Ketrew_target.State.Is in
+        test_steps "almost empty target" ~checks:[
+          `And [
+            `Step_returns true;
+            `Target_is (target_01#id, building);
+          ];
+          `Target_is (target_01#id, starting);
+          `Target_is (target_01#id, successfully_did_nothing);
+          `Target_is (target_01#id, verified_success);
+          `Target_is (target_01#id, finished);
+          `Step_returns false;
+          `None;
+        ]
+        >>= fun () ->
+
+        
+        (*
+          Ketrew_engine.get_target engine target_01#id
+        >>= fun re_target_01 ->
+        Test.checkf (Ketrew_target.(state re_target_01 |> State.simplify = `In_progress))
+          "After adding, it's in-progress";
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Test.checkf v "2nd step, something happends";
+        Ketrew_engine.get_target engine target_01#id
+        >>= fun re_re_target_01 ->
+        Test.checkf (Ketrew_target.(state re_re_target_01 |> State.simplify = `In_progress))
+          "After one step, it's still in-progress";
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Test.checkf v "3rd step, something happends";
+        Ketrew_engine.get_target engine target_01#id
+        >>= fun re_re_target_01 ->
+        Test.Target.check_history re_re_target_01 ~matches:Ketrew_target.State.Is.passive 
+          "After more steps, it's still in-progress";
+        *)
+        return ())
+    (*
     Ketrew_engine.with_engine ~configuration begin fun ~engine ->
       Ketrew_engine.add_targets engine
         [Target.(create ~name:"First target" ())]
@@ -418,6 +519,7 @@ let test_0 () =
     end
 
 
+*)
     >>= fun () ->
     return ()
   end |> function
@@ -427,6 +529,8 @@ let test_0 () =
     Test.fail "test_0 ends with error"
 
 let test_ssh_failure_vs_target_failure () =
+  assert false
+    (*
   let open Ketrew in
   Lwt_main.run begin
     let test_wrong_host turn_unix_ssh_failure_into_target_failure expect =
@@ -475,10 +579,13 @@ let test_ssh_failure_vs_target_failure () =
   | `Error e ->
     Log.(s "test_ssh_failure_vs_target_failure: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
     Test.fail "test_ssh_failure_vs_target_failure ends with error"
+*)
 
 
 
 let test_long_running_nohup () =
+  assert false
+    (*
   let open Ketrew in
   Lwt_main.run begin
     Test.new_db_file ()
@@ -578,6 +685,7 @@ let test_long_running_nohup () =
     Log.(s "test_long_running_nohup: Ketrew ERROR:  "
          %s (Error.to_string e) @ error);
     Test.fail "test_long_running_nohup ends with error"
+*)
 
 
 let () =

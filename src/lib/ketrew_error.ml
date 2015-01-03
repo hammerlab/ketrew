@@ -72,7 +72,7 @@ let to_string = function
     (match got with
      | `Expected s -> fmt "expected %s" s
      | `Exn e -> fmt "exception: %S" (Printexc.to_string e))
-| `Database e -> (Trakeva_interface.Error.to_string e)
+| `Database e -> (Trakeva.Error.to_string e)
 | `Host e ->
   fmt "Host: %s" (Ketrew_host.Error.log e |> Log.to_long_string)
 | `Persistent_state (`Deserilization s) ->

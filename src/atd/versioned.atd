@@ -19,6 +19,8 @@ type persistent_state_v0
 
 type target_v0 
   <ocaml from="Ketrew_gen_target_v0.Target" > = abstract
+type stored_target_v0 
+  <ocaml from="Ketrew_gen_target_v0.Stored_target" > = abstract
 
 type daemonize_run_parameters_v0 
   <ocaml from="Ketrew_gen_daemonize_v0.Run_parameters" > = abstract
@@ -31,6 +33,7 @@ type pbs_run_parameters_v0
 
 type persistent_state = [ V0 of persistent_state_v0 ]
 type target = [ V0 of target_v0 ]
+type stored_target = [ V0 of stored_target_v0 ]
 
 type daemonize_run_parameters = [ V0 of daemonize_run_parameters_v0 ] 
 type lsf_run_parameters = [ V0 of lsf_run_parameters_v0 ] 

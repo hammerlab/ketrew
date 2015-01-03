@@ -195,7 +195,10 @@ let targets_service: _ service = fun ~server_state ~body req ->
     >>| List.filter_opt
   end
   >>= fun targets ->
-  return (`Message (response_format, `List_of_targets targets))
+  return (`Message
+            (response_format,
+             `List_of_targets
+               (List.map ~f:Ketrew_target.to_serializable targets)))
 
 let target_available_queries_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -255,7 +258,7 @@ let add_targets_service  ~server_state ~body req =
   get_post_body req ~body 
   >>= fun body ->
   message_of_body ~body ~select:(function
-    | `List_of_targets t -> Some t
+    | `List_of_targets t -> Some (List.map ~f:Ketrew_target.of_serializable t)
     | _ -> None)
   >>= fun targets ->
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
@@ -282,7 +285,10 @@ let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service =
     >>= fun target_ids ->
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
-        | `Kill -> Ketrew_engine.kill server_state.state id
+        | `Kill ->
+          Ketrew_engine.kill server_state.state id
+          >>= fun () ->
+          return []
         | `Archive -> Ketrew_engine.archive_target server_state.state id
         | `Restart -> Ketrew_engine.restart_target server_state.state id
         end)
@@ -435,17 +441,19 @@ let start_engine_loop ~server_state =
   let time_factor = 2. in
   let max_sleep = 120. in
   let rec loop previous_sleep =
-    Ketrew_engine.fix_point server_state.state
-    >>= fun (`Steps step_count, what_happened) ->
+    Ketrew_engine.Run_automaton.fix_point server_state.state
+    >>= fun (`Steps step_count) ->
+    (*
     List.iter what_happened ~f:(List.iter ~f:(fun hp ->
         Log.(brakets (f (Time.now ())) % sp % s "Fix-point"
              % Ketrew_engine.log_what_happened hp @ normal);
       ));
+    *)
     let seconds =
-      match what_happened with
-      | [] | [[]] -> 
+      if step_count = 1 then
         min (previous_sleep *. time_factor) max_sleep
-      | something -> time_step
+      else
+        time_step
     in
     Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
     Deferred_list.pick_and_cancel [

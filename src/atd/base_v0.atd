@@ -57,12 +57,13 @@ type volume = {
   structure: volume_structure;
 }
 
+(*
 type artifact_value = [ Unit | String of string | Number of float ]
 type artifact = [
   | Value of artifact_value
   | Volume of volume
 ]
-
+*)
 type program = [
   | Shell_command of string
   | Exec of string list
@@ -78,9 +79,8 @@ type monitored_script = {
   Ketrew_state.Persistent_state.t:
 *)
 type persistent_state = {
-  current_targets: unique_id list;
-  archived_targets: unique_id list;
-  pointers: (unique_id * unique_id) list;
+  targets_collection: string;
+  (* pointers: (unique_id * unique_id) list; *)
 }
 
 type happening = [

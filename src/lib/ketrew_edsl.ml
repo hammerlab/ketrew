@@ -92,24 +92,24 @@ class type user_target =
     method dependencies: user_target list
     method if_fails_activate: user_target list
     method success_triggers: user_target list
-    method metadata: Ketrew_artifact.Value.t
+    method metadata: string option
     method product: user_artifact
   end
 
 
 let user_target_internal
-  ?(active = false)
-  ?(dependencies = [])
-  ?(if_fails_activate = [])
-  ?(success_triggers = [])
-  ?(name: string option)
-  ?(make: Target.Build_process.t = Target.Build_process.nop)
-  ?done_when
-  ?(metadata = Artifact.Value.unit)
-  ?product
-  ?equivalence
-  ?tags
-  ()
+    ?(active = false)
+    ?(dependencies = [])
+    ?(if_fails_activate = [])
+    ?(success_triggers = [])
+    ?(name: string option)
+    ?(make: Target.Build_process.t = Target.Build_process.nop)
+    ?done_when
+    ?metadata
+    ?product
+    ?equivalence
+    ?tags
+    ()
   =
   let id = Unique_id.create () in
   object (self)
@@ -126,8 +126,7 @@ let user_target_internal
     method is_active = active
     method metadata = metadata
     method render =
-      let creation = if active then Target.active else Target.create in
-      creation ~metadata
+      Target.create ?metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
@@ -135,10 +134,12 @@ let user_target_internal
         ~name:self#name ?condition:done_when
         ?equivalence ?tags
         ~make ()
+      |> (fun x ->
+          if active then Target.activate_exn ~reason:`User x else x)
     method product =
       Option.value_exn product 
         ~msg:(fmt "Target %s has no known product" self#name)
-        
+
   end
 
 let target ?active ?dependencies ?make ?done_when ?metadata ?product
@@ -171,7 +172,7 @@ let user_command_list t =
   in
   let targets =
     (go_through_deps t)
-    |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id)
+    |> List.dedup ~compare:Target.(fun ta tb -> compare (id ta) (id tb))
   in
   match targets with
   | first :: more -> (first, more)
@@ -233,11 +234,12 @@ end
 
 let daemonize  = Ketrew_daemonize.create
 
+(*
 let direct_execution ?host cmd =
   `Direct_command Target.Command.(program ?host cmd)
 let direct_shell_command ?host cmd =
   direct_execution ?host Program.(sh cmd)
-
+*)
 
 let lsf = Ketrew_lsf.create
 let pbs = Ketrew_pbs.create
