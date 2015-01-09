@@ -89,37 +89,6 @@ val current_targets :
   Deferred_result.t
 (** Get the list of targets currently handled. *)
   
-val archived_targets :
-  t ->
-  (Ketrew_target.t list,
-   [> `Database of Trakeva.Error.t
-   | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-   | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
-   | `System of [> `File_info of string ] * [> `Exn of exn ]
-   | `Target of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Get the list of targets that have been archived. *)
-
-val is_archived: t -> Unique_id.t -> 
-  (bool, 
-   [> `Database of Trakeva.Error.t
-   | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
-   | `Target of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Check whether a target is in the “archive”. *)
-
-type happening = Ketrew_gen_base_v0.Happening.t
-(** Structured log of what can happen during {!step} or {!kill}. *)
-
-val what_happened_to_string : happening -> string
-(** Transform an item of the result of {!step} to a human-readable string. *)
-
-val log_what_happened : happening -> Log.t
-(** Transform a {!happening} into {!Log.t} document. *)
-
 module Run_automaton : sig
   val step :
     t ->
@@ -175,19 +144,8 @@ val kill :
     Deferred_result.t
 (** Kill a target *)
 
-val archive_target: t ->
-  Ketrew_target.id ->
-  (happening list,
-   [> `Database of Trakeva.Error.t 
-   | `Database_unavailable of Ketrew_target.id
-   | `Missing_data of Ketrew_target.id
-   | `Target of [> `Deserilization of string ]
-   | `Persistent_state of [> `Deserilization of string ] ])
-    Deferred_result.t
-(** Move a target to the “archived” list. *)
-
 val restart_target: t -> Ketrew_target.id -> 
-  (happening list, 
+  (unit, 
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id

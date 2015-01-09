@@ -98,9 +98,8 @@ module Http_client = struct
     end
 
 
-  let get_current_targets ~archived t =
+  let get_current_targets t =
     call_json t ~path:"/targets" ~meta_meth:`Get 
-      ~args:(if archived then ["archived", "true"] else [])
     >>= filter_down_message
       ~loc:`Targets
       ~f:(function
@@ -134,7 +133,7 @@ module Http_client = struct
     call_json t ~path ~meta_meth:(`Post_message msg)
     >>= filter_down_message
       ~loc:error_loc
-      ~f:(function `Happens sl -> Some sl | _ -> None)
+      ~f:(function `Ok -> Some () | _ -> None)
 
   let kill t id_list = kill_or_archive t (`Kill_targets id_list)
   let archive t id_list = kill_or_archive t (`Archive_targets id_list)
@@ -216,19 +215,12 @@ let add_targets t tlist =
   | `Http_client c ->
     Http_client.add_targets c tlist
 
-let current_targets ?(archived=false) = function
+let current_targets = function
 | `Standalone s ->
   let open Standalone in
   Ketrew_engine.current_targets s.engine
-  >>= fun current ->
-  begin if archived
-    then
-      Ketrew_engine.archived_targets s.engine
-      >>| (@) current
-    else return current
-  end
 | `Http_client c ->
-  Http_client.get_current_targets ~archived c
+  Http_client.get_current_targets c
 
 let kill t id_list =
   match t with
@@ -237,29 +229,9 @@ let kill t id_list =
     Deferred_list.while_sequential id_list (fun id ->
         Ketrew_engine.kill s.engine ~id)
     >>= fun (_ : unit list) ->
-    return []
+    return ()
   | `Http_client c ->
     Http_client.kill c id_list
-
-let archive t id_list =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Deferred_list.while_sequential id_list (fun id ->
-        Ketrew_engine.archive_target s.engine id)
-    >>| List.concat
-  | `Http_client c ->
-    Http_client.archive c id_list
-
-let is_archived t ~id =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Ketrew_engine.is_archived s.engine id
-  | `Http_client c ->
-    Log.(s "Function is_archived not implemented over HTTP: returning `false`"
-         @ warning);
-    return false
 
 let get_target t ~id =
   match t with
@@ -300,7 +272,8 @@ let restart_target t ids =
   | `Standalone s ->
     let open Standalone in
     Deferred_list.while_sequential ids (Ketrew_engine.restart_target s.engine)
-    >>| List.concat
+    >>= fun (_ : unit list) ->
+    return ()
   | `Http_client c ->
     Http_client.restart c ids
 

@@ -469,15 +469,6 @@ let kill ~client ~interactive ids =
          | _ -> s "Killing " % OCaml.list s to_kill)
         @ warning);
       Ketrew_client.kill client to_kill
-      >>= fun happenings ->
-      List.iter happenings ~f:(function
-        | `Target_died (id, `Killed) ->
-          Log.(s "Target " % s id % s " killed" @ normal);
-        | other ->
-          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
-               @ error);
-        );
-      return ()
     | `Cancel ->
       Log.(s "Cancelling murder plans." @ normal);
       return ()
@@ -564,7 +555,6 @@ let autoclean ~client ~how_much ~interactive () =
 module Explorer = struct
   type exploration_state = {
     build_process_details: bool;
-    show_archived: bool;
     target_filter: (Target.t -> bool) * Log.t;
     current_target: Target.id option;
     condition_details: bool;
@@ -572,7 +562,6 @@ module Explorer = struct
   let create_state () =
     {build_process_details = false;
      condition_details = false;
-     show_archived = false;
      target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
      current_target = None}
 
@@ -657,7 +646,7 @@ module Explorer = struct
         (make_target_menu ~targets ()))
 
   let pick_a_target ~client (es : exploration_state) =
-    Ketrew_client.current_targets ~archived:es.show_archived client
+    Ketrew_client.current_targets client
     >>= fun targets ->
     Interaction.(
       menu ~sentence:Log.(s "Pick a target")
@@ -668,9 +657,6 @@ module Explorer = struct
               ~log:Log.(s "Change filter "
                         % parens (s "current: " % snd es.target_filter))
               `Filter;
-            menu_item ~char:'a'  (`Set_with_archived (not es.show_archived))
-              ~log:Log.(s (if es.show_archived then "Hide" else "Show")
-                        % s " archived targets");
           ])
         (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
 
@@ -866,8 +852,6 @@ module Explorer = struct
           | `Cancel -> go_back ~client history (* go back in history *)
           | `Quit -> return ()
           | `Reload -> explore ~client exploration_state_stack
-          | `Set_with_archived b ->
-            explore ~client ({one with show_archived = b } :: history)
           | `Filter ->
             get_filter () >>= fun f ->
             explore ~client ({one with target_filter = f } :: one :: history)
@@ -894,30 +878,11 @@ module Explorer = struct
           | `Kill ->
             Log.(s "Killing target …" @ warning);
             Ketrew_client.kill client [Target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "→ " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
-            explore ~client (one :: history)
-          | `Archive ->
-            Ketrew_client.archive client [Target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "Archival of " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
+            >>= fun () ->
             explore ~client (one :: history)
           | `Restart ->
             Ketrew_client.restart_target client [Ketrew_target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "Restart of " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
+            >>= fun () ->
             explore ~client (one :: history)
           | `View_json ->
             view_json ~client chosen >>= fun () ->

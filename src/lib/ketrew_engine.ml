@@ -30,48 +30,6 @@ module Configuration = Ketrew_configuration
 
 module Daemonize = Ketrew_daemonize
 
-module Persistent_state = struct
-  type t = Ketrew_gen_base_v0.Persistent_state.t 
-  open Ketrew_gen_base_v0.Persistent_state
-  let create () = {targets_collection = "targets"}
-
-  include
-    Json.Make_versioned_serialization
-      (Ketrew_gen_base_v0.Persistent_state)
-      (Ketrew_gen_versioned.Persistent_state)
-
-  let deserialize s = 
-    try return (deserialize_exn s)
-    with e -> fail (`Persistent_state (`Deserilization (Printexc.to_string e)))
-
-  (*
-  let add t target = { t with current_targets = Target.id target :: t.current_targets }
-
-  let archive t target =
-    { 
-      current_targets = List.filter t.current_targets (fun i -> i <> target);
-      archived_targets = target :: t.archived_targets }
-
-  let current_targets t = t.current_targets
-  let archived_targets t = t.archived_targets
-*)
-  let add_pointer t ~permanent ~newcomer =
-    assert false
-      (*
-    let pointers = (newcomer, permanent) :: t.pointers in
-    { t with pointers }
-*)
- 
-  let rec follow_pointers t ~id =
-    assert false
-      (*
-    match List.find t.pointers ~f:(fun (left, _) -> left = id) with
-    | Some (_, right) -> follow_pointers t ~id:right
-    | None -> id
-         *)
-
-end
-
 module Measurement_collection = struct
   type item = Ketrew_gen_base_v0.Measurement_item.t
   type t = Ketrew_gen_base_v0.Measurement_collection.t ref
@@ -180,28 +138,6 @@ let database t =
     t.database_handle <- Some db;
     return db
 
-let get_persistent t =
-  database t >>= fun db ->
-  let key = Configuration.persistent_state_key t.configuration in
-  begin Database.get db ~key >>= function
-    | Some persistent_serialized ->
-      Persistent_state.deserialize persistent_serialized
-    | None ->
-      let e = Persistent_state.create () in
-      return e
-  end
-
-
-let save_persistent t persistent =
-  database t >>= fun db ->
-  let key = Configuration.persistent_state_key t.configuration in
-  let action = Database_action.(set ~key (Persistent_state.serialize persistent)) in
-  begin Database.act db ~action
-    >>= function
-    | `Done -> 
-      return ()
-    | `Not_done -> fail (`Database_unavailable key)
-  end
 
 let targets_collection = "targets"
 let targets_to_kill_collection = "targets-to-kill"
@@ -261,18 +197,6 @@ let get_all_targets_to_kill t : (Target.id list, _) Deferred_result.t =
 let remove_from_kill_list_action id =
   Database_action.(unset ~collection:targets_to_kill_collection id)
 
-(** This internal function gets a target value from the database {b without
-    following pointers}.
-*)
-let _get_target_no_pointers t id =
-  assert false (*
-  database t >>= fun db ->
-  Database.get db ~collection:"targets" ~key:id
-  >>= function
-  | Some s -> 
-    of_result (Target.deserialize s)
-  | None -> fail (`Missing_data id)
-*)
 
 let get_target t id =
   database t >>= fun db ->
@@ -330,40 +254,16 @@ let alive_targets t =
     | `In_progress
     | `Activable -> return (target :: previous)
   end
-let current_targets = alive_targets
 
-    (*
-  database t >>= fun db ->
-  get_persistent t >>= fun persistent ->
-  let target_ids = Persistent_state.current_targets persistent in
-  (** The [current_targets] are the ones we care about; not pointers which
-      would create a lot useless duplicates. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
-  >>= fun (targets, errors) ->
-  begin match errors with
-  | [] -> return targets
-  | some :: more -> fail some (* TODO do not forget other errors *)
+let all_targets t =
+  fold_targets t ~init:[] ~f:begin fun previous ~target ->
+    return (target :: previous)
   end
-*)
+
+let current_targets = all_targets
 
 let archive_target t target_id =
   assert false
-    (*
-  get_target t target_id (* Assert this targets "exists" *)
-  >>= fun actual_target ->
-  get_persistent t
-  >>= fun persistent ->
-  let target_ids = Persistent_state.current_targets persistent in
-  begin match List.exists target_ids ~f:((=) (Target.id actual_target)) with
-  | true ->
-    let new_persistent = Persistent_state.archive persistent target_id in
-    save_persistent t new_persistent
-    >>= fun () ->
-    return [`Target_archived target_id]
-  | false -> return [] (* already archived no-op *)
-  end
-*)
-
 
 module Target_graph = struct
   type engine = t
@@ -393,8 +293,9 @@ module Target_graph = struct
   }
 
   let get_current ~engine =
-    alive_targets engine >>= fun targets ->
-    get_persistent engine >>= fun persistent ->
+    assert false
+      (*
+    all_targets engine >>= fun targets ->
     let archived_but_there = ref [] in
     let build_edges ~from_list ~edgify =
       Deferred_list.while_sequential from_list (fun id ->
@@ -425,6 +326,7 @@ module Target_graph = struct
       List.fold ~init:Target_set.empty (targets @ !archived_but_there) 
         ~f:Target_set.add in
     return {vertices; edges}
+*)
 
   let log_arrow verb (t1, t2) =
     let open Log in
@@ -559,328 +461,7 @@ let add_targets t tlist =
        % s " things to the DB" @ verbose);
   add_stored_targets t stuff_to_actually_add
 
-let archived_targets t =
-  assert false (*
-  database t >>= fun db ->
-  get_persistent t >>= fun persistent ->
-  let target_ids = Persistent_state.archived_targets persistent in
-  (** Here also we don't want duplicates, [Persistent_state.archived_targets]
-      are “real” targets. *)
-  Deferred_list.for_concurrent target_ids ~f:(_get_target_no_pointers t)
-  >>= fun (targets, errors) ->
-  begin match errors with
-  | [] -> return targets
-  | some :: more -> fail some (* TODO do not forget other errors *)
-  end
-*)
 
-let is_archived t tid =
-  archived_targets t
-  >>= fun arch ->
-  return (List.exists arch ~f:(fun x -> Target.id x = tid))
-
-let _check_and_activate_dependencies ~t ids =
-  (* database t >>= fun db -> *)
-  assert false
-    (*
-  let what_happened = ref [] in
-  let happened h = what_happened := h :: !what_happened in
-  Deferred_list.while_sequential ids ~f:(fun dep ->
-      get_target t dep >>< function
-      | `Ok dependency ->
-        begin match (Target.state dependency) with
-        | `Created _  ->
-          let newdep = Target.(activate_exn dependency ~by:`Dependency) in
-          add_or_update_target t newdep
-          >>= fun () ->
-          `Target_activated (Target.id dependency, `Dependency) |> happened;
-          return `Wait
-        | `Activated _ | `Running _ -> return `Wait
-        | `Dead _ -> return (`Die dep)
-        | `Successful _ -> return `Go
-        end
-      | `Error (`Database _ as e)
-      | `Error (`Missing_data _ as e) ->
-        (* Dependency not-found => should get out of the way *)
-        let errlog =
-          match e with
-          | `Database e -> Log.s (Database_error.to_string e)
-          | `Missing_data id -> Log.(s "Missing target: " % quote id) in
-        Log.(s "Error while activating dependencies: " % errlog @ error);
-        return (`Die dep)
-      | `Error (`Persistent_state _ as e)
-      | `Error (`Target _ as e) -> fail e
-    )
-  >>= fun statuses ->
-  let happenings = List.rev !what_happened in 
-  begin match statuses with
-  | some_list when List.for_all some_list ~f:((=) `Go) ->
-    return (`Go_now, happenings)
-  | some_dependency_died
-    when List.exists some_dependency_died
-        ~f:(function `Die _ -> true | _ -> false) ->
-    return (`Some_dependencies_died
-              (List.filter_map some_dependency_died
-                 ~f:(function `Die d -> Some d | _ -> None)),
-            happenings)
-  | no_death_but_not_all_go -> return (`Wait, happenings)
-  end
-*)
-
-let make_target_die ?explanation t ~target ~reason =
-  assert false
-    (*
-  let msg =
-    begin match reason with
-    | `Dependencies_died -> "Dependencies died"
-    | `Plugin_not_found p -> fmt "Plugin not found: %S" p
-    | `Process_failure -> "Process Failure"
-    | `Long_running_unrecoverable (plugin_name, s) ->
-      fmt "[%s] Unrecoverable: %s" plugin_name s
-    | `Killed -> "Killed"
-    end
-    ^ Option.value_map ~default:"" explanation ~f:(fmt ": %s")
-  in
-  let new_target =
-    match reason with
-    | `Killed -> Target.kill_exn target ~msg
-    | other -> Target.make_fail_exn target ~msg in
-  add_or_update_target t new_target
-  >>= fun () ->
-  Deferred_list.while_sequential (Target.fallbacks target) ~f:(fun tid ->
-      get_target t tid
-      >>= fun trgt ->
-      (* Here two targets with the same fallback could activate the same target
-         concurrently, we don't care, target activation just means
-         “change the state in the DB”. *)
-      begin match (Target.state trgt) with
-      | `Created _ ->
-        let newdep = Target.(activate_exn trgt ~by:`Fallback) in
-        add_or_update_target t newdep
-        >>= fun () ->
-        return (Some (`Target_activated (tid, `Fallback)))
-      | other -> return None
-      end)
-  >>| List.filter_opt
-  >>= fun happens ->
-  return (`Target_died (Target.id target, reason) :: happens)
-*)
-
-let make_target_succeed t target ~why ~artifact =
-  assert false
-    (*
-  add_or_update_target t Target.(make_succeed_exn target artifact)
-  >>= fun () ->
-  Deferred_list.while_sequential (Target.success_triggers target) ~f:(fun tid ->
-      get_target t tid
-      >>= fun trgt ->
-      begin match (Target.history trgt) with
-      | `Created _ ->
-        let newdep = Target.(activate_exn trgt ~by:`Success_trigger) in
-        add_or_update_target t newdep
-        >>= fun () ->
-        return (Some (`Target_activated (tid, `Success_trigger)))
-      | other -> return None
-      end)
-  >>| List.filter_opt
-  >>= fun happens ->
-  return (`Target_succeeded (Target.id target, why) :: happens)
-*)
-
-let with_plugin_or_kill_target t ~target ~plugin_name f =
-  match Ketrew_plugin.find_plugin plugin_name with
-  | Some m -> f m
-  | None -> 
-    make_target_die t ~target ~reason:(`Plugin_not_found plugin_name)
-
-let host_error_to_potential_target_failure t ~target ~error =
-  assert false
-    (*
-  let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
-  match Host.Error.classify error with
-  | `Ssh | `Unix when not should_kill ->
-    let e = Host.Error.log error in
-    Log.(s "SSH failed, but not killing " % s (Target.id target)
-         % sp % e @ warning);
-    add_or_update_target t Target.({
-        target  with log = (Time.now (), 
-                            fmt "Non fatal error: %s" (Log.to_long_string e)) 
-                           :: target.log })
-    >>= fun () ->
-    return []
-  | _ ->
-    make_target_die t ~target ~reason:`Process_failure
-      ~explanation:(fmt "Host error: %s" 
-                      (Host.Error.log error |> Log.to_long_string))
-*)
-
-let long_running_error_to_potential_target_failure t
-    ~target ~make_error ~plugin_name e =
-  assert false
-    (*
-  let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
-  match e, should_kill with
-  | `Recoverable str, true
-  | `Fatal str, _ ->
-    make_target_die t ~target ~reason:(make_error plugin_name str)
-  | `Recoverable str, false ->
-    add_or_update_target t Target.({
-        target  with log = (Time.now (),
-                            fmt "Non fatal long-running error: %s" str)
-                           :: target.log })
-    >>= fun () ->
-    Log.(s "Recoverable error: " % s str @ warning);
-    return []
-*)
-
-let _start_running_target t target =
-    assert false
-      (*
-  begin match (Target.make target) with
-  | `Artifact a ->
-    begin Target.did_ensure_condition target
-      >>= function
-      | false ->
-        make_target_die t ~target ~reason:(`Process_failure)
-          ~explanation:
-            (fmt "artifact-literal %S did not ensure %S" 
-               (Ketrew_artifact.log a |> Log.to_long_string)
-               (Option.value_map ~default:"None-condition" 
-                  ~f:Target.Condition.to_string_hum (Target.condition target)))
-      | true ->
-        make_target_succeed t target ~why:`Artifact_literal ~artifact:a
-    end
-  | `Direct_command cmd ->
-    begin Target.Command.run cmd
-      >>< function
-      | `Ok () -> 
-        begin Target.did_ensure_condition target
-          >>= function
-          | false ->
-            make_target_die t ~target ~reason:(`Process_failure)
-              ~explanation:Target.(
-                  fmt "command %S did not ensure %S" 
-                    (Command.to_string_hum cmd)
-                    (Option.value_map ~default:"None-condition" 
-                       ~f:Condition.to_string_hum target.condition))
-          | true ->
-            make_target_succeed t target ~artifact:(`Value `Unit)
-              ~why:`Process_success
-        end
-      | `Error (`Host error) ->
-        host_error_to_potential_target_failure ~target ~error t
-    end
-  | `Long_running (plugin_name, created_run_paramters) ->
-    with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        let c = Long_running.deserialize_exn created_run_paramters in
-        begin Long_running.start c
-          >>< function
-          | `Ok run_parameters ->
-            let run_parameters = Long_running.serialize run_parameters in
-            add_or_update_target t Target.(
-                set_running_exn target ~plugin_name ~run_parameters)
-            >>= fun () ->
-            return [`Target_started (Target.id target, plugin_name)]
-          | `Error (`Fatal s) ->
-            make_target_die t ~target
-              ~reason:(`Long_running_unrecoverable (plugin_name, s))
-          | `Error e ->
-            long_running_error_to_potential_target_failure t e ~target
-              ~plugin_name
-              ~make_error:(fun plugin_name s ->
-                  `Long_running_unrecoverable (plugin_name, s))
-        end)
-  end
-  *)
-
-let _update_status t ~target ~bookkeeping =
-  assert false
-    (*
-  let plugin_name = bookkeeping.Target.plugin_name in
-  with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
-      let log_prefix =
-        Log.(brakets (s plugin_name) % sp % Target.log target % s ": ") in
-      let module Long_running = (val m : LONG_RUNNING) in
-      let run_parameters =
-        Long_running.deserialize_exn bookkeeping.Target.run_parameters in
-      begin Long_running.update run_parameters
-        >>< function
-        | `Ok (`Still_running run_parameters) ->
-          let run_parameters = Long_running.serialize run_parameters in
-          add_or_update_target t Target.(
-              update_running_exn target ~run_parameters)
-          >>= fun () ->
-          return []
-        | `Ok (`Succeeded run_parameters) ->
-          begin Target.did_ensure_condition target >>= function
-            | false ->
-              Log.(log_prefix 
-                   % s "succeeded by itself but did not ensure condition"
-                   @ very_verbose);
-              make_target_die t ~target ~reason:(`Process_failure)
-                ~explanation:Target.(
-                    fmt "the target did not ensure %s" 
-                      (Option.value_map ~default:"None-condition" 
-                         ~f:Condition.to_string_hum target.condition))
-            | true ->
-              let run_parameters = Long_running.serialize run_parameters in
-              (* result_type must be a Volume: *)
-              make_target_succeed t 
-                (Target.update_running_exn target ~run_parameters)
-                ~artifact:(`Value `Unit)
-                ~why:`Process_success
-          end
-        | `Ok (`Failed (run_parameters, msg)) ->
-          let run_parameters = Long_running.serialize run_parameters in
-          Log.(log_prefix % s " failed: " % s msg @ very_verbose);
-          (* result_type must be a Volume: *)
-          make_target_die t  ~reason:(`Process_failure)
-            ~target:Target.(update_running_exn target ~run_parameters)
-        | `Error e ->
-          long_running_error_to_potential_target_failure t e ~target
-            ~plugin_name
-            ~make_error:(fun plugin_name s ->
-                `Long_running_unrecoverable (plugin_name, s))
-      end)
-*)
-
-type happening = Ketrew_gen_base_v0.Happening.t
-
-let log_what_happened =
-  let open Log in
-  function
-  | `Error e -> s "Error " % s e
-  | `Target_activated (id, by) ->
-    s "Target " % s id % s " activated: " %
-    (match by with
-     | `Dependency -> s "Dependency"
-     | `Fallback -> s "Fallback"
-     | `Success_trigger -> s "Success-trigger")
-  | `Target_succeeded (id, how) ->
-    s "Target " % s id % s " succeeded: " 
-    % (match how with
-      | `Artifact_ready -> s "Artifact_ready"
-      | `Artifact_literal -> s "Artifact_literal"
-      | `Process_success -> s "Process success")
-  | `Target_started (id, plugin_name) ->
-    s "Target " % s id % s " started " % parens (s plugin_name)
-  | `Target_archived id ->
-    s "Target " % s id % s " was archived "
-  | `Target_created id ->
-    s "Target " % s id % s " was created "
-  | `Target_died (id, how) ->
-    s "Target " % s id % s " died: " 
-    % (match how with
-      | `Dependencies_died -> s "Dependencies_died"
-      | `Plugin_not_found p -> sf "Plugin %S not found" p
-      | `Killed -> s "Killed"
-      | `Long_running_unrecoverable (plug, str) ->
-        brakets (s plug) % s ": Unrecoverable error: " % s str
-      | `Process_failure -> s "Process_failure")
-
-let what_happened_to_string w =
-  Log.to_string ~indent:0 ~line_width:max_int (log_what_happened w)
 
 module Run_automaton = struct
   
@@ -912,31 +493,6 @@ module Run_automaton = struct
       let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
       fail (_long_running_action_error t ~error ~bookkeeping)
     end
-
-  (*
-  | `Long_running (plugin_name, created_run_paramters) ->
-    with_plugin_or_kill_target t ~plugin_name ~target (fun m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        let c = Long_running.deserialize_exn created_run_paramters in
-        begin Long_running.start c
-          >>< function
-          | `Ok run_parameters ->
-            let run_parameters = Long_running.serialize run_parameters in
-            add_or_update_target t Target.(
-                set_running_exn target ~plugin_name ~run_parameters)
-            >>= fun () ->
-            return [`Target_started (Target.id target, plugin_name)]
-          | `Error (`Fatal s) ->
-            make_target_die t ~target
-              ~reason:(`Long_running_unrecoverable (plugin_name, s))
-          | `Error e ->
-            long_running_error_to_potential_target_failure t e ~target
-              ~plugin_name
-              ~make_error:(fun plugin_name s ->
-                  `Long_running_unrecoverable (plugin_name, s))
-        end)
-  end
-  *)
 
   let _check_and_activate_dependencies t ~dependency_of ~ids =
     Deferred_list.for_concurrent ids ~f:(fun dep ->

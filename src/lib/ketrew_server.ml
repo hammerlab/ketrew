@@ -173,16 +173,6 @@ let targets_service: _ service = fun ~server_state ~body req ->
   begin match target_ids  with
   | [] ->
     Ketrew_engine.current_targets server_state.state
-    >>= fun current_targets ->
-    begin
-      if Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "archived"
-         = Some "true"
-      then
-        Ketrew_engine.archived_targets server_state.state
-        >>= fun archived ->
-        return (current_targets @ archived)
-      else return current_targets
-    end
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
         Ketrew_engine.get_target server_state.state id
@@ -275,7 +265,7 @@ let add_targets_service  ~server_state ~body req =
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Targets_added added_targets))
 
-let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service = 
+let action_on_ids_service: [`Kill  | `Restart] -> _ service = 
   fun what_to_do ~server_state ~body req ->
     get_post_body req ~body 
     >>= fun body ->
@@ -285,17 +275,12 @@ let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service =
     >>= fun target_ids ->
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
-        | `Kill ->
-          Ketrew_engine.kill server_state.state id
-          >>= fun () ->
-          return []
-        | `Archive -> Ketrew_engine.archive_target server_state.state id
+        | `Kill -> Ketrew_engine.kill server_state.state id
         | `Restart -> Ketrew_engine.restart_target server_state.state id
         end)
-    >>| List.concat
-    >>= fun happenings ->
+    >>= fun (_ : unit list) ->
     Light.green server_state.loop_traffic_light;
-    return (`Message (`Json, `Happens happenings))
+    return (`Message (`Json, `Ok))
 
 let list_cleanable_targets ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -332,8 +317,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
     action_on_ids_service `Kill  ~server_state ~body req
-  | "/archive-targets" ->
-    action_on_ids_service `Archive  ~server_state ~body req
   | "/restart-targets" ->
     action_on_ids_service `Restart  ~server_state ~body req
   | "/cleanable-targets" ->
