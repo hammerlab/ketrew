@@ -687,6 +687,181 @@ let test_long_running_nohup () =
     Test.fail "test_long_running_nohup ends with error"
 *)
 
+type state = { name : string }
+type action = string
+type tree = [
+  | `Leaf of state
+  | `Node of state * action * (string * tree) list
+]
+let rec tree_to_log =
+  let open Log in
+  function
+  | `Leaf {name} -> braces (s name)
+  | `Node ({name}, action, trees) ->
+    parens (braces (s name) % s " → " % s action 
+            % OCaml.list (fun (response, tree) ->
+                s response % s ": " % tree_to_log tree)
+              trees)
+
+let rec tree_has_action t action =
+  match t with
+  | `Leaf _ -> false
+  | `Node (_, a, _) when a = action -> true
+  | `Node (_, a, l) -> List.exists l ~f:(fun (_, t) -> tree_has_action t action)
+
+let tree_to_dot ?(style=`Action_boxes) t =
+  let open Log in
+  let arrow = s " -> " in
+  let semicolon = s ";" in
+  let transition state1 action response state2 =
+    match style with
+    (* | `Arrow_labels -> *)
+    (*   (s state1 % arrow % s state2 *)
+    (*    % sp % brakets (s "label=" % sf "%S" action) *)
+    (*    % s ";" % n) *)
+    | `Action_boxes ->
+      let action_name, action_attributes =
+        match state2 with
+        | "Killing" ->
+          state1 ^ state2,
+          sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "MURDER"
+        | "Active" ->
+          state1 ^ action ^ state2,
+          sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "ACTIVATION"
+        | _ ->
+          state1 ^ action, sf "fontname=\"monospace\",shape=box label=\"%s\"" action in
+      let response_name, response_attributes =
+        "response" ^ state1 ^ action ^ state2,
+        sf "shape=diamond,fontsize=9,fontname=\"monospace\",label=%S" response
+      in
+      (* s state1 % sp % brakets (s "shape=oval") % s ";" % n *)
+      (* % s state2 % sp % brakets (s "shape=oval") % s ";" % n *)
+      (* % s action_name % sp % brakets action_attributes % s ";" % n *)
+      (* % s state1 % arrow % s action_name % arrow % s state2 % semicolon % n *)
+      let state_attributes =
+        s "fontname=\"monospace\",fontsize=18,shape=oval" in
+      let state_action_arrow =
+        s "arrowhead=\"open\"" in
+      let action_respoonse_arrow =
+        s "dir=\"none\"" in
+      [
+        s state1 % sp % brakets state_attributes;
+        s state2 % sp % brakets state_attributes;
+        s action_name % sp % brakets action_attributes;
+        s response_name % sp % brakets response_attributes;
+        s state1 % arrow % s action_name % brakets state_action_arrow;
+        s action_name % arrow % s response_name % brakets action_respoonse_arrow;
+        s response_name % arrow % s state2;
+      ]
+  in
+  s "digraph target_graph"
+  % braces (
+    let rec go =
+      let continue = fun (_, t) -> go t in
+      function
+      | `Leaf (state) -> []
+      | `Node (state, "NONE", trees) ->
+        List.concat_map ~f:continue trees
+      | `Node (state, action, trees) ->
+        let arrows =
+          List.map trees (function
+            | response, `Leaf (statei)
+            | response, `Node (statei, _, _) ->
+              transition state.name action response statei.name)
+        in
+        List.append arrows (List.map ~f:continue trees) |> List.concat
+    in
+    (go t |> List.dedup |> separate (semicolon % n))
+  )
+
+(* "{" ^ action ^ " -> " ^ state ^ "\n" *)
+(* ^ String.concat ~sep:" --- " (List.map ~f:tree_to_string trees) ^ "}" *)
+
+let make_automaton_graph () =
+  let module T = Ketrew_target in
+  let state_name t = {name = Ketrew_target.(State.name (state t)) } in
+  let rec loop ?(stop_afterwards=false) target =
+    (* Log.(s "status: " % Ketrew_target.(State.log ~depth:1 (state target)) @ normal); *)
+    let node action l : tree =
+      `Node (state_name target, action, l) in
+    let additional =
+      match T.state target |> T.State.Is.killable with
+      | true ->
+        ["OK", (T.kill target |> Option.value_exn ~msg:"Killing TOKILL",
+                    `Changed_state)]
+      | false -> [] in
+    let node_map action l : tree =
+      node action (List.map (additional @ l) ~f:(function
+        | response, (t, `No_change) when stop_afterwards ->
+          response, `Leaf (state_name t)
+        | response, (t, `No_change) -> response, loop ~stop_afterwards:true t
+        | response, (t, `Changed_state) -> response, loop t)) in
+    match Ketrew_target.Automaton.transition target with
+    | `Kill (b, mkt) ->
+      node_map "kill"
+        ["OK", mkt (`Ok b);
+         "Try-Again", mkt (`Error (`Try_again,  "", b));
+         "Fatal", mkt (`Error (`Fatal,  "", b));]
+    | `Do_nothing mkt ->
+      let action = "do_nothing"  in
+      node_map action ["OK", mkt ()]
+    | `Check_and_activate_dependencies mkt ->
+      node_map "check_and_activate_dependencies" [
+        "All-succeeded", mkt `All_succeeded;
+        "At-least-one-failed", mkt (`At_least_one_failed []);
+        "Still-processing", mkt `Still_processing;
+      ]
+    | `Start_running (book, mkt) ->
+      node_map "start_running" [
+        "OK", mkt (`Ok book);
+        "Try-again", mkt (`Error (`Try_again,  "", book));
+        "Fatal", mkt (`Error (`Fatal,  "", book));
+      ]
+    | `Activate (_, mkt) ->
+      node_map "activate_targets" ["OK", mkt ()]
+    | `Eval_condition (condition, mkt) ->
+      node_map "eval_condition" ["true", mkt true; "false", mkt false]
+    | `Check_process (book, mkt) ->
+      node_map "check_process" [
+        "Success", mkt (`Ok (`Successful book));
+        "Still-running", mkt (`Ok (`Still_running book));
+        "Try-again", mkt (`Error (`Try_again,  "", book));
+        "Fatal", mkt (`Error (`Fatal,  "", book));
+      ]
+  in
+  let activate_and_render t = t#activate; t#render in
+  let dep =(Ketrew.EDSL.target "01") in
+  let targets = [
+    dep #render;
+    (Ketrew.EDSL.target "02" |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~dependencies:[dep] |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~make:(`Long_running ("", "")) |> activate_and_render);
+    (Ketrew.EDSL.target "04" ~done_when:(`True) |> activate_and_render);
+    (Ketrew.EDSL.target "04" |> activate_and_render
+     |> Ketrew_target.kill ?log:None |> Option.value_exn ~msg:"not killable?");
+    (Ketrew.EDSL.target "TOKILL" ~make:(`Long_running ("", ""))
+     |> activate_and_render);
+  ] in
+  let result_tree =
+    (`Node ({name= "ROOT"}, "NONE",
+            ("OK", `Node ({name = "Passive"}, "Activation", ["OK", `Leaf {name = "Active"}]))
+            :: List.map targets ~f:(fun t ->
+                ("", `Node (state_name t, "NONE", ["", loop t]))))) in
+  let all_actions = [
+    "kill"; "do_nothing"; "check_and_activate_dependencies";
+    "start_running"; "activate_targets"; "eval_condition"; "check_process"
+  ] in
+  Test.checkf (List.for_all all_actions (tree_has_action result_tree))
+    "tree having all actions: missing: %s"
+    (List.filter all_actions ~f:(fun a -> tree_has_action result_tree a |> not)
+     |> String.concat ~sep:", ") ;
+  let o = open_out "target_graph.dot" in
+  output_string o (Log.to_long_string
+                     (tree_to_dot result_tree));
+  close_out o;
+  if Test.over_verbose then
+    Log.(s "Trrreeees: " % n % tree_to_log result_tree @ normal);
+  ()
 
 let () =
   let argl = Sys.argv |> Array.to_list in
@@ -696,6 +871,7 @@ let () =
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
   if List.mem ~set:argl "ssh-failure" || all then test_ssh_failure_vs_target_failure ();
+  if List.mem ~set:argl "automaton-graph" || all then make_automaton_graph ();
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "
