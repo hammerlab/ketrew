@@ -139,6 +139,8 @@ module State : sig
     ]
   val history: t -> history
 
+  val name: t -> string
+    
   val log: ?depth:int ->  t -> Log.t
 
   module Is : sig
