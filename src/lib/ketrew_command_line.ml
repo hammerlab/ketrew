@@ -159,10 +159,32 @@ module Interaction = struct
          >>= fun () ->
          return res)
 
+  let use_cbreak () =
+    try Sys.getenv "WITH_CBREAK" <> "no" with _ -> true
+
   let get_key () =
-    with_cbreak (fun () ->
-        wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
-          ~on_exn:(fun e -> (`Failure "get_key")))
+    match use_cbreak () with
+    | true ->
+      with_cbreak (fun () ->
+          wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
+            ~on_exn:(fun e -> (`Failure "get_key")))
+    | false ->
+      wrap_deferred
+        ~on_exn:(fun e -> (`Failure "get_key"))
+        begin fun () ->
+          let open Lwt in
+          Lwt_io.read_line Lwt_io.stdin
+          >>= fun l ->
+          begin match String.get l 0 with
+          | Some c -> return c
+          | None -> return '\n'
+          end
+        end
+
+  let get_key_question () =
+    match use_cbreak () with
+    | true -> "Press a single key:"
+    | false -> "Enter a character and <enter>:"
 
   let open_in_dollar_editor file =
     let editor =
@@ -223,7 +245,7 @@ module Interaction = struct
            % (if nth = 0 && number_of_menus = 1
               then empty
               else brakets (i (nth + 1) % s "/" % i number_of_menus)) % n
-           % s "Press a key: " % n
+           % s (get_key_question ()) % n
            % concat
              (List.map filled_items ~f:(function
                 | (Some k, l, v) -> sf "* [%c]: " k % l % n
