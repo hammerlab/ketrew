@@ -633,25 +633,23 @@ module Explorer = struct
         (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
 
   let explore_single_target ~client (es: exploration_state) target =
-    assert false
-      (*
     let sentence =
       let build_process_details = es.build_process_details in
       let condition_details = es.condition_details in
       Log.(s "Exploring "
            % Document.target ~build_process_details ~condition_details target)
     in
-    Ketrew_client.is_archived client ~id:(Target.id target)
-    >>= fun is_archived ->
+    (* Ketrew_client.is_archived client ~id:(Target.id target) *)
+    (* >>= fun is_archived -> *)
     Interaction.(
       let kill_item =
-        if Target.Is.killable target
+        if Target.state target |> Target.State.Is.killable
         then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
         else [] in
-      let archive_item =
-        if not is_archived && Target.Is.finished target
-        then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
-        else [] in
+      (* let archive_item = *)
+      (*   if not is_archived && Target.Is.finished target *)
+      (*   then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive] *)
+      (*   else [] in *)
       let boolean_item ~value ~char ~to_false ~to_true =
         match value with
         | true -> [menu_item ~char ~log:(fst to_false) (snd to_false)]
@@ -679,7 +677,7 @@ module Explorer = struct
         menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success-trigger")
           ~result:`Follow_success_triggers (Target.success_triggers target) in
       let restart_item =
-        if Target.Is.finished target
+        if Target.state target |> Target.State.Is.finished
         then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
                 `Restart]
         else [] in
@@ -691,17 +689,15 @@ module Explorer = struct
         @ follow_fbacks_item
         @ follow_success_triggers_item
         @ kill_item
-        @ archive_item
+        (* @ archive_item *)
         @ restart_item
         @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
       ))
-  *)
+
 
   let view_json ~client target =
-    assert false (*
-    let content = Target.serialize target in
+    let content = Target.Stored_target.(of_target target |> serialize) in
     Interaction.view_in_dollar_editor ~extension:"json" content
-  *)
 
   let rec target_status
       ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
