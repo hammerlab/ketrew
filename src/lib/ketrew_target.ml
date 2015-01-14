@@ -184,6 +184,34 @@ module State = struct
     | `Finished _ -> "Finished"
     | `Passive _ -> "Passive"
 
+  let rec latest_run_bookkeeping (t: t) =
+    let continue history =
+      latest_run_bookkeeping
+        (history.Ketrew_gen_target_v0.History.previous_state :> t)
+    in
+    match t with
+    | `Building history -> None
+    | `Tried_to_start (hist, book) -> (Some book)
+    | `Started_running (hist, book) -> (Some book)
+    | `Starting history -> (None)
+    | `Still_building history -> (None)
+    | `Still_running (hist, book) -> (Some book)
+    | `Ran_successfully (hist, book) -> (Some book)
+    | `Successfully_did_nothing history -> (None)
+    | `Active (history, _) -> (None)
+    | `Verified_success history -> continue history
+    | `Already_done history -> None
+    | `Dependencies_failed (history, _) -> (None)
+    | `Failed_running (hist, _, book) -> (Some book)
+    | `Failed_to_kill history -> continue history
+    | `Failed_to_start (hist, book) -> (Some book)
+    | `Killing history -> continue history
+    | `Tried_to_kill history -> continue history
+    | `Did_not_ensure_condition history -> continue history
+    | `Killed history -> continue history
+    | `Finished history -> continue history
+    | `Passive log -> (None)
+
   let contents (t: t) =
     let some h = Some (h :> t Ketrew_gen_target_v0.History.t) in
     match t with
@@ -208,7 +236,7 @@ module State = struct
     | `Killed history -> (some history, None)
     | `Finished history -> (some history, None)
     | `Passive log -> (None, None)
-      
+
   let rec to_flat_list (t : t) =
     let open Ketrew_gen_target_v0.History in
     let open Ketrew_gen_target_v0.Log in
@@ -268,7 +296,7 @@ module State = struct
     let killed = function `Killed _ -> true | _ -> false
     let finished = function `Finished _ -> true | _ -> false
     let passive = function `Passive _ -> true | _ -> false
-
+  
     let killable = function
     | #Ketrew_gen_target_v0.Killable_state.t -> true
     | _ -> false
@@ -547,75 +575,9 @@ let did_ensure_condition t =
   | Some c -> Condition.eval c
   | None -> return true
 
-(*
-  module Is = struct
-
-  let created (t: t) = 
-    match t.history with
-    | `Created _ -> true
-    | _ -> false
-
-  let activated (t: t) = 
-    match t.history with
-    | `Activated _ -> true
-    | _ -> false
-
-  let running t = 
-    match t.history with
-    | `Running _ -> true
-    | _ -> false
-  let finished t =
-    match t.history with
-    | `Successful _ | `Dead _ -> true
-    | _ -> false
-
-  let failed t =
-    match t.history with
-    | `Dead _ -> true
-    | _ -> false
-  let successful t =
-    match t.history with
-    | `Successful _ -> true
-    | _ -> false 
-    
-  let killable t =
-    match t.history with
-    | `Created _ | `Activated _ | `Running _ -> true
-    | _ -> false
-
-  let activated_by_user t =
-    let open Ketrew_gen_target_v0 in
-    let rec go_through_history (history: Workflow_state.t) =
-      match history with
-      | `Created _ -> false
-      | `Activated (_, _, `User) -> true
-      | `Activated (_, _, `Dependency) -> false
-      | `Activated (_, _, `Fallback) -> false
-      | `Activated (_, _, `Success_trigger) -> false
-      | `Running (_, prev) -> go_through_history (prev :> Workflow_state.t)
-      | `Successful (_, prev, _) -> go_through_history (prev :> Workflow_state.t)
-      | `Dead (_, prev, _) -> go_through_history (prev :> Workflow_state.t)
-    in
-    go_through_history t.history
-
-end
- *)
-
 
 let latest_run_parameters target =
-  assert false
-    (*
   let open Ketrew_gen_target_v0.Run_bookkeeping in
-  match target.history with
-  | `Running (rb, _) -> Some (rb.run_parameters)
-  | `Dead (_, `Running (rb, _), _)
-  | `Successful (_, `Running (rb, _), _) ->
-    Some (rb.run_parameters)
-  | `Created _ | `Activated _ 
-  | `Successful (_, `Activated _, _)
-  | `Dead (_, `Activated _, _) ->
-    begin match target.make with
-    | `Long_running (plugin, rp) -> Some (rp)
-    | _ -> None
-    end
-*)
+  state target |> State.latest_run_bookkeeping
+  |> Option.map 
+    ~f:(fun rb -> rb.run_parameters)
