@@ -158,9 +158,8 @@ module Http_client = struct
     call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
     >>= fun json ->
     filter_down_message json ~loc
-      ~f:(function `Clean_up s -> Some s | _ -> None)
-    >>= fun {Ketrew_gen_protocol_v0.Clean_up_todo_list. to_kill; to_archive} ->
-    return (`To_kill to_kill, `To_archive to_archive)
+      ~f:(function `List_of_target_ids s -> Some s | _ -> None)
+
 end
 
 type t = [

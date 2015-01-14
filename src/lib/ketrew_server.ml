@@ -297,10 +297,8 @@ let list_cleanable_targets ~server_state ~body req =
   Ketrew_engine.Target_graph.(
     get_current server_state.state
     >>= fun graph ->
-    let `To_kill to_kill, `To_archive to_archive =
-      targets_to_clean_up graph how_much in
-    let msg = Ketrew_protocol.Down_message.clean_up ~to_archive ~to_kill in
-    return (`Message (`Json, `Clean_up msg))
+    let  to_kill = targets_to_clean_up graph how_much in
+    return (`Message (`Json, `List_of_target_ids to_kill))
   )
 
 (** {2 Dispatcher} *)

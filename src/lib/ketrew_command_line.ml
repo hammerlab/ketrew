@@ -367,13 +367,6 @@ let get_status ~client =
         | `Successful -> prev)
   in
   return (`In_progress in_progress)
-            (*
-          | `Dead _       -> prev
-          | `Successful _ -> prev
-          | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
-          | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
-          | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a)
-         *)
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
@@ -496,64 +489,24 @@ let kill ~client ~interactive ids =
       return ()
   end
 
-(** Archive targets (command line, ["--interactive"], or within
-    [ketrew interactive]. *)
-let archive ~client ~interactive ids =
-  assert false
-    (*
-  begin
-    begin if interactive then
-        Interaction.build_sublist_of_targets ~client ~list_name:"Archival list"
-          ~all_log:Log.(s "Archive them all") ~go_verb:Log.(s "archive")
-          ~filter:Target.Is.finished
-      else
-        return (`Go [])
-    end
-    >>= function
-    | `Go additional_ids ->
-      let to_archive = additional_ids @ ids in
-      if List.length to_archive = 0 then
-        Log.(s "There is nothing to archive." @ warning);
-      Ketrew_client.archive client to_archive
-      >>= fun happenings ->
-      List.iter happenings ~f:(function
-        | `Target_archived id ->
-          Log.(s "Target " % s id % s " archived" @ normal);
-        | other ->
-          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
-               @ error);
-        );
-      return ()
-    | `Cancel ->
-      Log.(s "Cancelling archival" @ normal);
-      return ()
-  end
-*)
-
-(** Kill and archive targets that are done or useless. *)
+(** Kill targets that are useless. *)
 let autoclean ~client ~how_much ~interactive () =
   let module G = Ketrew_engine.Target_graph in
   Ketrew_client.targets_to_clean_up client ~how_much
-  >>= fun (`To_kill to_kill, `To_archive to_archive) ->
+  >>= fun (to_kill) ->
   let proceed () =
     kill ~client ~interactive:false to_kill
-    >>= fun () ->
-    archive ~client ~interactive:false (to_kill @ to_archive) in
-  begin match interactive, to_kill, to_archive with
-  | _, [], [] -> Log.(s "Nothing to do" @ normal); return ()
-  | true, _, _ ->
+  in
+  begin match interactive, to_kill with
+  | _, [] -> Log.(s "Nothing to do" @ normal); return ()
+  | true, _ ->
     let sentence =
       let open Log in
       s "Going to"
       % (match to_kill with
         | [] -> empty
         | more ->
-          s " kill & archive: " % OCaml.list string to_kill)
-      % (match to_archive with
-        | [] -> empty
-        | more ->
-          (if to_kill = [] then empty else s " and ")
-          % s " archive: " % OCaml.list string to_archive)
+          s " kill: " % OCaml.list string to_kill)
       % n % s "Proceed?"
     in
     Interaction.(
@@ -567,10 +520,7 @@ let autoclean ~client ~how_much ~interactive () =
         Log.(s "Cancelling" @ normal);
         return ()
     )
-  | false, _, _ ->
-    kill ~client ~interactive:false to_kill
-    >>= fun () ->
-    archive ~client ~interactive:false to_archive
+  | false, _ -> proceed ()
   end
 
 (** The “Target Explorer™“ *)
@@ -1072,7 +1022,6 @@ let interact ~client =
              ])
           @ [
             menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
-            menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
             menu_item ~char:'c'
               ~log:Log.(s "Auto-clean-up: orphans, successes")
               (`Autoclean `Soft);
@@ -1095,10 +1044,6 @@ let interact ~client =
       main_loop ()
     | `Run how ->
       run_state ~client  ~max_sleep:120. ~how
-      >>= fun () ->
-      main_loop ()
-    | `Archive ->
-      archive ~interactive:true ~client []
       >>= fun () ->
       main_loop ()
     | `Autoclean how_much ->
@@ -1320,24 +1265,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ~doc:"Kill a target."
           ~man:[])
   in
-  let archive_cmd =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun config_path interactive ids ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
-            Ketrew_client.as_client ~configuration
-              ~f:(archive ~interactive ids))
-        $ config_file_argument
-        $ interactive_flag "Go through running targets and kill them with 'y' \
-                            or 'n'."
-        $ Arg.(value @@ pos_all string [] @@
-               info [] ~docv:"Target-Id" ~doc:"Archive target $(docv)"))
-      ~info:(
-        info "archive" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Archive targets." ~man:[])
-  in
   let autoclean_command =
     let open Term in
     sub_command
@@ -1466,7 +1393,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Ok o -> return o
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
-      init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+      init_cmd; status_cmd; run_cmd; kill_cmd;
       inspect_cmd;
       interact_cmd;
       explore_cmd;

@@ -26,10 +26,6 @@ module Down_message = struct
     let open Ketrew_gen_protocol_v0.Added_target in
     {original_id; fresh_id}
 
-  let clean_up ~to_kill ~to_archive =
-    let open Ketrew_gen_protocol_v0.Clean_up_todo_list in
-    {to_kill; to_archive}
-
   let log : t -> Log.t =
     fun _ ->
     assert false

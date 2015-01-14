@@ -175,8 +175,8 @@ module Target_graph: sig
   val log: t -> Log.t
   (** Get a displayable {!Log.t} for the graph. *)
 
-  val targets_to_clean_up: t -> [`Hard | `Soft] ->
-    [ `To_kill of Ketrew_target.id list ] * [ `To_archive of Ketrew_target.id list ]
+  val targets_to_clean_up: t -> [`Hard | `Soft] -> Ketrew_target.id list
+
 end
 
 module Measure: sig
