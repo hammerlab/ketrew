@@ -505,11 +505,11 @@ module Run_automaton = struct
             in
             add_or_update_targets t [newdep]
             >>= fun () ->
-            return (`In_progress)
+            return (dep, `In_progress)
           | `In_progress
           | `Successful
           | `Failed as c ->
-            return c
+            return (dep, c)
           end
         | `Error (`Database _ as e)
         | `Error (`Missing_data _ as e) ->
@@ -519,22 +519,33 @@ module Run_automaton = struct
             | `Database e -> Log.s (Database_error.to_string e)
             | `Missing_data id -> Log.(s "Missing target: " % quote id) in
           Log.(s "Error while activating dependencies: " % errlog @ error);
-          return (`Failed)
+          Log.(s "return (dep, `Failed)" @ verbose);
+          return (dep, `Failed)
         | `Error (`Persistent_state _ as e)
         | `Error (`Target _ as e) -> fail e)
-    >>= begin function
-    | (oks, []) when List.for_all oks ~f:((=) `Successful) ->
-      return `All_succeeded
-    | (oks, []) when List.exists oks ~f:((=) `Failed) ->
-      return (`At_least_one_failed [])
-    | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
-      return `Still_processing
-    | (_, errors) ->
-      Log.(s "Some errors while activating dependencies: " %n
-           % separate n
-             (List.map ~f:(fun x -> s (Ketrew_error.to_string x)) errors)
-           @ error);
-      return (`At_least_one_failed [])
+    >>= begin
+      let is a b =
+        match b with
+        | (_, s) when s = a -> true
+        | _ -> false in
+      let all_successful = List.for_all ~f:(is `Successful) in
+      let one_failed = List.exists ~f:(is `Failed) in
+      function
+      | (oks, []) when all_successful oks -> return `All_succeeded
+      | (oks, []) when one_failed oks ->
+        let failed_ones = List.filter oks ~f:(is `Failed) |> List.map ~f:fst in
+        Log.(s "Targets " % OCaml.list s failed_ones % s " considered failed"
+             @ verbose);
+        Log.(s "return (`At_least_one_failed failed_ones)" @ verbose);
+        return (`At_least_one_failed failed_ones)
+      | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
+        return `Still_processing
+      | (_, errors) ->
+        Log.(s "Some errors while activating dependencies: " %n
+             % separate n
+               (List.map ~f:(fun x -> s (Ketrew_error.to_string x)) errors)
+             @ error);
+        return (`At_least_one_failed [])
     end
 
 
