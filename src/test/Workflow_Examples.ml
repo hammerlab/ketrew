@@ -293,11 +293,11 @@ call `gpg -c` and delete the tar.gz.
 
 The passphrase for GPG must be in a file `~/.backup_passphrase` as
 
-```shell
-export BACKUP_PASSPHRASE="some passsphraaase"
-```
-    
-M*)
+  ```shell
+  export BACKUP_PASSPHRASE="some passsphraaase"
+  ```
+
+  M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
   let daemonize = daemonize ~using:`Python_daemon in
@@ -317,8 +317,8 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       ~make:(daemonize ~host
                (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
       (* A first target using `daemonize`
-        see [nohup(1)](http://linux.die.net/man/1/nohup)
-        and [setsid(1)](http://linux.die.net/man/1/setsid). *)
+         see [nohup(1)](http://linux.die.net/man/1/nohup)
+         and [setsid(1)](http://linux.die.net/man/1/setsid). *)
   in
   let md5 = destination "md5" in
   let md5_targz =
@@ -326,27 +326,28 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       ~make:(daemonize ~host
                Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
-  let gpg = (* `gpg` is a list of targets, `[]` or `[gpg-c, rm-tar.gz]` *)
-    match gpg with
-    | false -> []
-    | true ->
-      let gpg_file = destination "tar.gz.gpg" in
-      let make_it =
-        target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists ~dependencies:[make_targz]
-          ~make:(daemonize ~host
-                   Program.(
-                     sh ". ~/.backup_passphrase"
-                     && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
-                              gpg_file#path targz#path)) in
-      let clean_up =
-        target "rm-tar.gz" ~dependencies:[make_it]
-          ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
-      [make_it; clean_up]
+  let gpg_targets () = (* `gpg` is a list of targets, lazily `[gpg-c, rm-tar.gz]` *)
+    let gpg_file = destination "tar.gz.gpg" in
+    let make_it =
+      target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists
+        ~dependencies:[make_targz; md5_targz]
+        ~make:(daemonize ~host
+                 Program.(
+                   sh ". ~/.backup_passphrase"
+                   && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
+                     gpg_file#path targz#path)) in
+    let clean_up =
+      target "rm-tar.gz" ~dependencies:[make_it]
+        ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
+    [make_it; clean_up]
   in
   let common_ancestor =
-    (* A Target that does nothing, but is used as root of the dependency tree. *)
-    target "make-targz common ancestor"
-      ~dependencies:(gpg @ [make_targz; md5_targz])
+    let dependencies =
+      match gpg with
+      | false -> [make_targz; md5_targz]
+      | true ->  gpg_targets ()
+    in
+    target "make-targz common ancestor" ~dependencies
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
   run common_ancestor
