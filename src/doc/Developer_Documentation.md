@@ -47,11 +47,11 @@ directly)
 
 For now, `ketrew` uses a custom install/uninstall procedure:
 
-    ./please.sh install <prefix>
+    ./please.sh install <install_dir>
 
 and uninstall with:
 
-    ./please.sh uninstall <prefix>
+    ./please.sh uninstall <install_dir>
 
 
 If you use Opam ≥ *1.2.0~beta4*, you don't need a custom opam-repository:

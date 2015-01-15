@@ -72,10 +72,10 @@ ocaml-version: [ >= "4.01.0" ]
 build: [
   ["./please.sh" "setup"]
   ["./please.sh" "build"]
-  ["./please.sh" "install" prefix ]
+  ["./please.sh" "install" install_dir ]
 ]
 remove: [
-  ["./please.sh" "uninstall" prefix ]
+  ["./please.sh" "uninstall" install_dir ]
 ]
 depends: [ "ocp-build" {= "$ocp_build_version" } "atd2cconv" "ocamlfind" $quoted_opam_packages ]
 
