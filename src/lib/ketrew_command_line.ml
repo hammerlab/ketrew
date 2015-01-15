@@ -51,19 +51,7 @@ module Document = struct
   let build_process ?(with_details=false)  =
     let open Log in
     let open Target in
-    (*
-    let add_details details =
-      if with_details then s ": " % n % details else empty in
-    let command_details c = add_details (Target.Command.log c) in
-    *)
     function
-    (* | `Artifact a -> s "Artifact" % add_details (Artifact.log a) *)
-    (*
-    | `Direct_command c ->
-      s "Direct command" % command_details c
-    | `Get_output c ->
-      s "Get output of command" % command_details c
-    *)
     | `No_operation -> s "No-op"
     | `Long_running (name, content) ->
       s "Long-running " % parens (s name)
@@ -85,6 +73,28 @@ module Document = struct
       if with_details
       then Target.Condition.log c
       else s "Runs When “Not Done”"
+
+  let if_color f x = if !global_with_color then f x else x
+
+  let short_status t =
+    let open Log in
+    let state = Target.state t in
+    let add_color =
+      match Target.State.simplify state with
+      | `In_progress -> if_color bold_yellow
+      | `Failed -> if_color bold_red
+      | `Activable -> if_color greyish
+      | `Successful -> if_color bold_green
+    in
+    add_color (s (Target.State.name state))
+
+
+  let target_for_menu t =
+    let open Log in
+    let if_color f x = if !global_with_color then f x else x in
+    if_color bold_yellow (s (Target.name t)) % n
+    % if_color greyish (s (Target.id t)) % n
+    % short_status t
 
   let target ?build_process_details ?condition_details t =
     let open Log in
@@ -110,15 +120,7 @@ module Document = struct
         | `None -> s "None"
         | `Same_active_condition -> s "Same active condition");
       "Tags", OCaml.list quote (tags t);
-      "Status",
-      (match state t with
-       | _ -> s "TODO");
-       (* | `Dead _       -> s "Dead" *)
-       (* | `Successful _ -> s "Successful" *)
-       (* | `Activated _  -> s "Activated" *)
-       (* | `Created _    -> s "Created" *)
-       (* | `Running (rb, _) -> *)
-       (*   s "Running " % parens (s rb.plugin_name)); *)
+      "Status", short_status t;
       "Additional Log",
       OCaml.list (fun (time, msg) ->
           brakets (Time.log time) % s ": " % s msg) (additional_log t);
@@ -276,24 +278,6 @@ module Interaction = struct
     in
     menu_loop 0
 
-  let format_target_for_menu t =
-    let open Log in
-    let if_color f x = if !global_with_color then f x else x in
-    if_color bold_yellow (s (Target.name t)) % n
-    % if_color greyish (s (Target.id t)) % n
-    % (
-      begin match Target.state t with
-      | _ -> s "TODO"
-               (*
-      | `Created _ -> s "Created"
-      | `Activated _ -> s "Activated"
-      | `Running _ -> if_color bold_red (s "Running")
-      | `Dead (_, _, `Killed reason) -> if_color bold_red (sf "Killed: %s" reason)
-      | `Dead (_, _, `Failed reason) -> if_color bold_red (sf "Failed: %s" reason)
-      | `Successful _ -> if_color bold_green (s "Successful")
-      *)
-      end
-    )
 
   (** Sort a list of targets from the most recent to the oldest
       (using the unique IDs which is hackish …). *)
@@ -314,7 +298,7 @@ module Interaction = struct
     let target_menu () =
       List.map (all_valid_targets ()) ~f:(fun t ->
           menu_item
-            ~log:Log.(s "Add: " % format_target_for_menu t)
+            ~log:Log.(s "Add: " % Document.target_for_menu t)
             (`Add (Target.id t)))
     in
     let rec loop () =
@@ -349,7 +333,7 @@ module Interaction = struct
     List.filter targets ~f:filter_target
     |> sort_target_list
     |> List.map ~f:(fun target ->
-        menu_item ~log:Log.(format_target_for_menu target)
+        menu_item ~log:Log.(Document.target_for_menu target)
           (`Go (Target.id target)))
 
 end
@@ -702,41 +686,9 @@ module Explorer = struct
   let rec target_status
       ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
     let sentence =
-      let rec log_of_status (status: Target.State.t) =
-        let open Log in
-        match status with
-        | _ -> s "TODO"
-                 (*
-        | `Created time -> s "Created: " % Time.log time
-        | `Activated (time, subm, why) ->
-          log_of_status (subm :> Target.workflow_state) % n
-          % s "Activated: " % Time.log time % sp
-          % parens
-            (match why with
-             | `User -> s "user"
-             | `Dependency -> s "dependency"
-             | `Success_trigger -> s "success-trigger"
-             | `Fallback -> s "fallback")
-        | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
-          log_of_status (act :> Target.workflow_state) % n
-          % s "Running " % parens (s plugin_name) % s ":" % n
-          % indent (
-            separate n
-              (List.map
-                 ~f:(fun (key, value) -> s "* " % s key % s ": " % value)
-                 (Ketrew_plugin.long_running_log plugin_name run_parameters)))
-        | `Dead (time, prev, why) ->
-          log_of_status (prev :> Target.workflow_state) % n
-          % s "Dead: " % Time.log time % n
-          % parens (match why with
-            | `Failed reason -> s "Failed: " % s reason
-            | `Killed reason -> s "Killed: " % s reason)
-        | `Successful (time, prev, arti) ->
-          log_of_status (prev :> Target.workflow_state) % n
-          % s "Successful: " % Time.log time % s "→ " % Artifact.log arti
-  *)
-      in
       let open Log in
+      let log_of_status (status: Target.State.t) =
+        Target.State.log ~depth:4 status % n % s "..." in
       Document.target target
       % s "Status:" % n
       % indent (log_of_status (Target.state target))
