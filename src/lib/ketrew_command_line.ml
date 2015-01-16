@@ -537,19 +537,23 @@ module Explorer = struct
 
   let filter ~log ~char f =
     (char, log, `Set (f, log))
+  let simple_filter ~log ~char simple =
+    filter ~log ~char (fun t -> Target.state t |> Target.State.simplify = simple)
+  let finished t =
+    let simple = Target.state t |> Target.State.simplify in
+    match simple with
+    | `Failed 
+    | `Successful -> true
+    | `In_progress
+    | `Activable -> false
 
   let filters = [
     filter (fun _ -> true)      ~char:'n' ~log:Log.(s "No-filter, see them all");
-    (*
-      filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
-    filter Target.Is.activated  ~char:'a' ~log:Log.(s "Activated");
-    filter Target.Is.running    ~char:'r' ~log:Log.(s "Running");
-    filter Target.Is.finished   ~char:'t' ~log:Log.(s "Terminated, success or failure");
-    filter Target.Is.failed     ~char:'f' ~log:Log.(s "Failed");
-    filter Target.Is.successful ~char:'s' ~log:Log.(s "Successful");
-    filter Target.Is.activated_by_user ~char:'u'
-      ~log:Log.(s "Activated by user (i.e. not as dependency)");
- *)
+    simple_filter `Activable ~char:'p' ~log:Log.(s "Passive/Activable");
+    simple_filter `In_progress ~char:'r' ~log:Log.(s "Running/In-progress");
+    simple_filter `Successful ~char:'s' ~log:Log.(s "Successful");
+    simple_filter `Failed ~char:'f' ~log:Log.(s "Failed");
+    filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
   ]
 
   let initial_ask_tags_content =
