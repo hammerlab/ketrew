@@ -436,7 +436,7 @@ let start_engine_loop ~server_state =
       else
         time_step
     in
-    Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+    Log.(s "Sleeping " % f seconds % s " s" @ verbose);
     Deferred_list.pick_and_cancel [
       System.sleep seconds;
       begin

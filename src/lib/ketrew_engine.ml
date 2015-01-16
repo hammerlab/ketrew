@@ -669,7 +669,7 @@ Process to-add list
            % Target.log target
            % s "Done: " % n
            % Target.(State.log ~depth:2 (state new_target))
-           @ verbose);
+           @ very_verbose);
       return (progress :: previous_happenings)
     end
     >>| List.exists ~f:((=) `Changed_state)
