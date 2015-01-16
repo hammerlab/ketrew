@@ -164,7 +164,7 @@ class type user_target =
     method name : string
     (** Get the name of the target *)
 
-    method metadata: string option
+    method metadata: [ `String of string ] option
     (** The metadata that has been set for the target ({i work-in-progress}). *)
 
     method product: user_artifact
@@ -188,7 +188,7 @@ val target :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
   ?done_when:Ketrew_target.Condition.t ->
-  ?metadata:string ->
+  ?metadata:[ `String of string ] ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
@@ -200,7 +200,7 @@ val target :
 val file_target:
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
-  ?metadata:string ->
+  ?metadata:[ `String of string ] ->
   ?name:string ->
   ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->

@@ -178,7 +178,7 @@ type t
 
 val create :
   ?id:id -> ?name:string ->
-  ?metadata:string ->
+  ?metadata:[ `String of string ] ->
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
   ?success_triggers:id list ->
@@ -203,7 +203,7 @@ val name : t -> string
 val dependencies: t -> id list
 val fallbacks: t -> id list
 val success_triggers: t -> id list
-val metadata: t -> string option
+val metadata: t -> [`String of string] option
 val build_process: t -> Build_process.t
 val condition: t -> Condition.t option
 val equivalence: t -> Equivalence.t

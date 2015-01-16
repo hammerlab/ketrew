@@ -158,15 +158,13 @@ type id = unique_id
 type target = {
   id: id;
   name: string;
-  (* persistence: [ Input_data | Recomputable of float | Result ]; *)
-  metadata: string option;
+  metadata: [String of string] option;
   dependencies: id list;
   if_fails_activate: id list;
   success_triggers: id list;
   make: build_process;
   condition: condition option;
   equivalence: equivalence;
-  (* result_type: artifact_type; *)
   history: state;
   log: (time * string) list;
   tags: string list;

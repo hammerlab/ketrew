@@ -115,7 +115,7 @@ module Document = struct
       "Dependencies", OCaml.list s (dependencies t);
       "Fallbacks", OCaml.list s (fallbacks t);
       "On Success trigger", OCaml.list s (success_triggers t);
-      "Metadata", OCaml.option s (metadata t);
+      "Metadata", OCaml.option (function `String m -> s m) (metadata t);
       "Build-process",
       doc_build_process ?with_details:build_process_details
         (Target.build_process t);

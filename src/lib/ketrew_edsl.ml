@@ -92,7 +92,7 @@ class type user_target =
     method dependencies: user_target list
     method if_fails_activate: user_target list
     method success_triggers: user_target list
-    method metadata: string option
+    method metadata: [`String of string ] option
     method product: user_artifact
   end
 
