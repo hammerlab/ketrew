@@ -86,7 +86,12 @@ module Document = struct
       | `Activable -> if_color greyish
       | `Successful -> if_color bold_green
     in
+    let (`Time time, `Log log, `Info info) = Target.State.summary state in
     add_color (s (Target.State.name state))
+    %sp % braces (Time.log time
+                  % Option.value_map
+                    ~default:empty log ~f:(fun m -> sp % parens (s m))
+                  % separate empty (List.map ~f:(fun m -> s ", " % s m) info))
 
 
   let target_for_menu t =

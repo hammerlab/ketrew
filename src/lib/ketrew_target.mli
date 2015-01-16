@@ -140,7 +140,11 @@ module State : sig
   val history: t -> history
 
   val name: t -> string
-    
+
+  val summary :
+    t ->
+    [ `Time of Time.t ] * [ `Log of string option ] * [ `Info of string list ]
+
   val log: ?depth:int ->  t -> Log.t
 
   module Is : sig
