@@ -129,52 +129,6 @@ module Test = struct
 
 end
 
-(*
-  module Happenings = struct
-  let contains h1 ~f =
-    let yes, no =
-      List.partition h1 ~f in
-    match yes, no with
-    | [], all -> None
-    | one :: more, rest -> Some (one, more @ rest)
-  let look ?(and_nothing_more=true) ~like () haps =
-    let rec go prev = 
-      function
-      | [] -> if and_nothing_more then prev = [] else true
-      | f :: more ->
-        begin match contains ~f prev with
-        | None -> false
-        | Some (_, rest) -> go rest more
-        end
-    in
-    go haps like
-  let check_option opt v =
-    begin match opt with
-    | None -> true
-    | Some h when h = v -> true
-    | Some _ -> false
-    end
-  let success ?how ?what hap =
-    match hap with
-    | `Target_succeeded (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
-  let activation ?how ?what hap =
-    match hap with
-    | `Target_activated (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
-  let death ?how ?what hap =
-    match hap with
-    | `Target_died (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
-end
- *)
-
 
 let test_0 () =
   Lwt_main.run begin
@@ -229,36 +183,6 @@ let test_0 () =
           `None;
         ]
         >>= fun () ->
-
-        
-        (*
-          Ketrew_engine.get_target engine target_01#id
-        >>= fun re_target_01 ->
-        Test.checkf (Ketrew_target.(state re_target_01 |> State.simplify = `In_progress))
-          "After adding, it's in-progress";
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Test.checkf v "2nd step, something happends";
-        Ketrew_engine.get_target engine target_01#id
-        >>= fun re_re_target_01 ->
-        Test.checkf (Ketrew_target.(state re_re_target_01 |> State.simplify = `In_progress))
-          "After one step, it's still in-progress";
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Ketrew_engine.Run_automaton.step engine
-        >>= fun v ->
-        Test.checkf v "3rd step, something happends";
-        Ketrew_engine.get_target engine target_01#id
-        >>= fun re_re_target_01 ->
-        Test.Target.check_history re_re_target_01 ~matches:Ketrew_target.State.Is.passive 
-          "After more steps, it's still in-progress";
-        *)
         return ())
     (*
     Ketrew_engine.with_engine ~configuration begin fun ~engine ->
@@ -726,7 +650,8 @@ let tree_to_dot ?(style=`Action_boxes) t =
           state1 ^ state2,
           sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "MURDER"
         | "Active" ->
-          state1 ^ action ^ state2,
+    
+      state1 ^ action ^ state2,
           sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "ACTIVATION"
         | _ ->
           state1 ^ action, sf "fontname=\"monospace\",shape=box label=\"%s\"" action in

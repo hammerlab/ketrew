@@ -240,13 +240,6 @@ module Automaton : sig
     | `Kill of bookkeeping * long_running_action transition_callback
   ]
   val transition: t -> transition
-  (*
-    val to_active_exn :
-    ?log:string ->
-    t ->
-    reason:[ `Dependency of id | `User ] ->
-    t
- *)
 end
 
 val activate_exn :
@@ -258,32 +251,32 @@ val kill : ?log:string -> t -> t option
 (** Get dead target out of a killable one, 
     or [None] if not killable. *)
 
-(*
-val make_fail_exn : ?msg:string -> t -> t
-(** Get dead target out of an activated  or running one, 
-    raises [Invalid_argument _] if the target is in a wrong state. *)
-
-val set_running_exn : t -> plugin_name:string -> run_parameters:string -> t
-(** Get a running target out of an activated “long-running-plugin” one,
-    raises [Invalid_argument _] if the target is in a wrong state. *)
-
-val update_running_exn : t -> run_parameters:string -> t
-(** Get a new target updated with new run paramters (from a plugin), 
-    raises [Invalid_argument _] if the target is in a wrong state. *)
-
-
-val reactivate: 
-  ?with_id:string ->
-  ?with_name:string ->
-  (* ?with_metadata:Ketrew_artifact.Value.t -> *)
-  t -> t
-(** “Clone” the target as an activated new target. *)
-
-*)
 val is_equivalent: t -> t -> bool
 (** Tell whether the first on is equivalent to the second one. This not
     a commutative operation: the function does not look at
     the second target's [Equivalence] field. *)
+
+val log : t -> Log.t
+(** Get a [Log.t] “document” to display the target. *)
+
+val should_start:
+  t ->
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
+(** Check whether a target is ready or should start, given its condition.  *)
+
+val did_ensure_condition:
+  t ->
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
+(** Check whether a target actually did its job, given its condition.  *)
+
+
+(** Get the most recent serialized 
+    [run_parameters] if the target is a “long-running”,
+    [None] otherwise. *)
+val latest_run_parameters: t -> string option
+
 
 module Stored_target : sig
   type target = t
@@ -308,36 +301,4 @@ module Stored_target : sig
   val make_pointer: from:target -> pointing_to:target -> t
 end
 
-val log : t -> Log.t
-(** Get a [Log.t] “document” to display the target. *)
 
-val should_start:
-  t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
-         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
-(** Check whether a target is ready or should start, given its condition.  *)
-
-val did_ensure_condition:
-  t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
-         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
-(** Check whether a target actually did its job, given its condition.  *)
-
-(** Basic boolean queries on targets. *)
-    (*
-      module Is: sig
-  val created: t -> bool
-  val activated: t -> bool
-  val running: t -> bool
-  val finished: t -> bool
-  val failed: t -> bool
-  val successful: t -> bool
-  val killable: t -> bool
-  val activated_by_user: t -> bool
-end
- *)
-
-(** Get the most recent serialized 
-    [run_parameters] if the target is a “long-running”,
-    [None] otherwise. *)
-val latest_run_parameters: t -> string option

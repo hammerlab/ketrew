@@ -549,23 +549,6 @@ module Run_automaton = struct
     end
 
 
-  (*
-  let with_plugin t ~plugin_name ~f =
-    begin match Ketrew_plugin.find_plugin plugin_name with
-    | Some m ->
-      (* let module Long_running = (val m : LONG_RUNNING) in *)
-      begin f m
-        >>< function
-        | `Ok o -> return o
-        | `Error e ->
-          fail (_long_running_action_error t ~error:e ~bookkeeping)
-      end
-    | None ->
-      let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
-      fail (_long_running_action_error t ~error ~bookkeeping)
-    end
-  *)
-
   let _attempt_to_kill t ~target ~bookkeeping =
     let {Target.Automaton. plugin_name; run_parameters} = bookkeeping in
     begin match Ketrew_plugin.find_plugin plugin_name with
@@ -655,11 +638,12 @@ module Run_automaton = struct
 
   let step t: (bool, _) Deferred_result.t =
   (*
-Call Target.Automaton.step, do the action requested, call the target function, save-it
-Process Murders to-do list (set as `Killing, remove from list)
-Process Archival to-do list (?)
-Process to-add list
-*)
+    - Call Target.Automaton.step, do the action requested, call the
+      target function, save-it
+    - Process Murders to-do list (set as `Killing, remove from list)
+    - Process Archival to-do list (?)
+    - Process to-add list
+  *)
     fold_targets t ~init:[] ~f:begin fun previous_happenings ~target ->
       _process_automaton_transition t target
       >>= fun (new_target, progress) ->
@@ -716,66 +700,11 @@ Process to-add list
     fix_point ~count:0
     >>= fun (count) ->
     return (`Steps count)
+
 end
-
-    (*
-  begin
-    current_targets t >>= fun targets ->
-    database t >>= fun db ->
-    Deferred_list.for_sequential targets ~f:(fun target ->
-        (* Log.(s "Engine.step dealing with " % Target.log target @ verbose); *)
-        match (Target.history target) with
-        | `Created _ -> (* nothing to do *) return []
-        | `Activated _ ->
-          begin Target.should_start target
-            >>< function
-            | `Ok true ->
-              _check_and_activate_dependencies ~t (Target.dependencies target)
-              >>= fun (what_now, happenings) ->
-              begin match what_now with
-              | `Go_now ->
-                _start_running_target t target
-              | `Some_dependencies_died l ->
-                let explanation = String.concat ~sep:", " l ^ " died" in
-                make_target_die t ~target ~reason:(`Dependencies_died)
-                  ~explanation
-                >>= fun happened ->
-                return (happened @ happenings)
-              | `Wait -> return happenings
-              end
-            | `Ok false ->
-              make_target_succeed t  target
-                ~artifact:(`Value `Unit)
-                ~why:`Artifact_ready
-            | `Error (`Volume (`No_size log)) ->
-              make_target_die t ~target ~reason:(`Process_failure)
-                ~explanation:Log.(to_long_string
-                                    (s "No-size for volume, " % log))
-              >>= fun happened ->
-              return happened
-            | `Error (`Host error) ->
-              host_error_to_potential_target_failure ~target ~error t
-          end
-        (* start or run *)
-        | `Running (bookkeeping, _)  ->
-          _update_status t ~target ~bookkeeping
-        | `Dead _ | `Successful _ -> return [])
-    >>= fun (what_happened, errors) ->
-    let what_happened = 
-      List.map errors ~f:(fun e -> `Error (Ketrew_error.to_string e))
-      @ List.concat  what_happened
-      |> List.dedup
-    in
-    Log.(s "Step: " % OCaml.list log_what_happened what_happened 
-         @ very_verbose);
-    return what_happened
-  end 
-*)
-
 
 
 let get_status t id =
-  (* database t >>= fun db -> *)
   get_target t id >>= fun target ->
   return (Target.state target) 
 

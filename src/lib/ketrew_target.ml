@@ -474,7 +474,6 @@ module Automaton = struct
   type progress = [ `Changed_state | `No_change ]
   type 'a transition_callback = ?log:string -> 'a -> t * progress
   type severity = [ `Try_again | `Fatal ]
-  (* type 'a io_action = [ `Succeeded of 'a | `Failed of 'a ] *)
   type bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t =
     { plugin_name: string; run_parameters: string}
   type long_running_failure = severity * string * bookkeeping
