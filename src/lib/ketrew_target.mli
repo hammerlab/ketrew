@@ -251,6 +251,12 @@ val kill : ?log:string -> t -> t option
 (** Get dead target out of a killable one, 
     or [None] if not killable. *)
 
+val reactivate :
+  ?with_id:id -> ?with_name:string ->
+  ?with_metadata:[`String of string] option  ->
+  ?log:string -> t -> t
+(** *)
+
 val is_equivalent: t -> t -> bool
 (** Tell whether the first on is equivalent to the second one. This not
     a commutative operation: the function does not look at

@@ -459,8 +459,9 @@ let kill ?log t =
   | other ->
     None
 
-let reactivate_exn
+let reactivate
     ?with_id ?with_name ?with_metadata ?log t =
+  (* It's [`Passive] so there won't be any [exn]. *)
   activate_exn ~reason:`User
     {t with
      history = `Passive (make_log ?message:log ());

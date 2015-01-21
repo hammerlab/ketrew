@@ -712,23 +712,20 @@ let kill t ~id =
   add_target_ids_to_kill_list t [id]
 
 let restart_target engine target_id =
-  assert false
-    (*
-  current_targets engine
-  >>= fun targets ->
   get_target engine target_id
   >>= fun target ->
   let new_target trgt  =
     let with_name = "Re:" ^ Target.name trgt in
-    let re = Target.reactivate ~with_name trgt in
+    let log = fmt "Reactivation of %s" (Target.id trgt) in
+    let re = Target.reactivate ~with_name ~log trgt in
     re
   in
   let this_new_target = new_target target in
   add_targets engine [this_new_target]
   >>= fun () ->
   let id = Target.id this_new_target in
-  return ([`Target_created id; `Target_activated (id, `Dependency)]: happening list)
-*)
+  return id
+
     
 module Measure = struct
   open Measurement_collection

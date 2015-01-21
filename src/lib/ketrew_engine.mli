@@ -145,7 +145,7 @@ val kill :
 (** Kill a target *)
 
 val restart_target: t -> Ketrew_target.id -> 
-  (unit, 
+  (Ketrew_target.id, 
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id

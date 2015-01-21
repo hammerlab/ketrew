@@ -276,7 +276,10 @@ let action_on_ids_service: [`Kill  | `Restart] -> _ service =
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
         | `Kill -> Ketrew_engine.kill server_state.state id
-        | `Restart -> Ketrew_engine.restart_target server_state.state id
+        | `Restart ->
+          Ketrew_engine.restart_target server_state.state id
+          >>= fun (_ : Ketrew_target.id) ->
+          return ()
         end)
     >>= fun (_ : unit list) ->
     Light.green server_state.loop_traffic_light;
