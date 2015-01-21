@@ -142,7 +142,7 @@ test-environment (a self-signed SSL certificate/key pair,
 client/server/standalone configuration files, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
-Sourcing `_test_env/test.env` will give a few aliases to run the tests.
+Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 Aliases which start with `ks` mean “with a *standalone-mode* configuration file;”
 those which start with `kd` are in *client-server* mode (`'d'` for “distributed”).
 
