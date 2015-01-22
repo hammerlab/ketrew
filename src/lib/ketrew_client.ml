@@ -209,8 +209,6 @@ let add_targets t tlist =
   | `Standalone s ->
     let open Standalone in
     Ketrew_engine.add_targets s.engine tlist
-    >>= fun _ ->
-    return ()
   | `Http_client c ->
     Http_client.add_targets c tlist
 

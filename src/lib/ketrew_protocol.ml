@@ -22,9 +22,11 @@ module Down_message = struct
       (Ketrew_gen_protocol_v0.Down_message)
       (Ketrew_gen_versioned.Down_message)
 
-  let added_target ~original_id ~fresh_id =
+  (*
+    let added_target ~original_id ~fresh_id =
     let open Ketrew_gen_protocol_v0.Added_target in
     {original_id; fresh_id}
+ *)
 
   let log : t -> Log.t =
     fun _ ->

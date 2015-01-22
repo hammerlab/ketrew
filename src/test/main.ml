@@ -171,6 +171,7 @@ let test_0 () =
         >>= fun () ->
         let open Ketrew_target.State.Is in
         test_steps "almost empty target" ~checks:[
+          `Step_returns true;
           `And [
             `Step_returns true;
             `Target_is (target_01#id, building);
