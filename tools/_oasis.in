@@ -2,7 +2,7 @@ OASISFormat: 0.4
 Name:        ketrew
 Version:     %%VERSION%%
 Synopsis:    Keep Track of Experimental Workflows
-Authors:     Sebastien Monde <seb@mondet.org>,
+Authors:     Sebastien Mondet <seb@mondet.org>,
              Jeff Hammerbacher <jeff.hammerbacher@gmail.com>
 License:     Apache-2.0
 Plugins:     META (0.4)
