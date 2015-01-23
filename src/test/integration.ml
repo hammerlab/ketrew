@@ -535,7 +535,7 @@ let () =
       ~info:Term.(info the_name ~version ~doc)
       ~term:Term.(
           pure (fun () ->
-              Ketrew.EDSL.run (
+              Ketrew_client.submit (
                 make_target ()
               ))
           $ pure ()

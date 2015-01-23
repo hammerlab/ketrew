@@ -156,43 +156,6 @@ let file_target
   target ~product ?equivalence ?if_fails_activate ?tags ?success_triggers
     ~done_when:product#exists ?dependencies ?make ?metadata name
 
-(*
-  Run a workflow:
-
-   - make sure the run target is active,
-   - render all the depdendencies/fallbacks/success-triggers,
-*)
-let user_command_list t =
-  t#activate;
-  let rec go_through_deps t =
-    t#render :: 
-    List.concat_map t#dependencies ~f:go_through_deps
-    @ List.concat_map t#if_fails_activate ~f:go_through_deps
-    @ List.concat_map t#success_triggers ~f:go_through_deps
-  in
-  let targets =
-    (go_through_deps t)
-    |> List.dedup ~compare:Target.(fun ta tb -> compare (id ta) (id tb))
-  in
-  match targets with
-  | first :: more -> (first, more)
-  | [] -> assert false (* there is at least the argument one *)
-
-let run ?override_configuration t =
-  let active, dependencies = user_command_list t in
-  let config_path = Ketrew_configuration.get_path () in
-  match Lwt_main.run (
-    Ketrew_configuration.(
-      get_configuration ?override_configuration config_path)
-    >>= fun configuration ->
-    Ketrew_client.as_client ~configuration ~f:(fun ~client ->
-        Ketrew_client.add_targets client (active :: dependencies))
-  ) with
-  | `Ok () -> ()
-  | `Error e ->
-    Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
-    failwith (Ketrew_error.to_string e)
-
 module Program = struct
 
   type t = Ketrew_program.t

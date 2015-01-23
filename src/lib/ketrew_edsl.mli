@@ -250,14 +250,3 @@ val pbs :
   [> `Long_running of string * string ]
 (** Create a “PSB” build process. *)
 
-(** {3 Workflows} *)
-
-val run:
-  ?override_configuration:Ketrew_configuration.t ->
-  user_target ->
-  unit
-(** Submit and activate a [user_target] (the next time Ketrew runs a step, the
-    target will be started/run (all the graph of dependencies and fallbacks is
-    submitted at once). *)
-
-
