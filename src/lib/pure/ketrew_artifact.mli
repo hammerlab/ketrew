@@ -16,7 +16,8 @@
 
 open Ketrew_pervasives
 
-(** Artifacts are input values or files, or results of computations. *)
+(** Artifacts are inputs such as values or files, or outputs such as the
+    results of computations. *)
 
 (** Module defining “Volumes” which are definitions of a given file structure
     on a given {!Ketrew_host.t}. *)
@@ -51,9 +52,7 @@ module Volume : sig
     type t = Ketrew_gen_base_v0.Volume.t
     (** The container of volumes. *)
 
-    val create :
-      host:Ketrew_host.t -> root:Ketrew_path.t -> structure ->
-      t
+    val create : host:Ketrew_host.t -> root:Ketrew_path.t -> structure -> t
     (** Create a volume. Example {[
           let sources =
             Volume.create ~host:deployment_server ~root:git_repository

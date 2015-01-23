@@ -25,7 +25,7 @@
     There are two methods for starting/detaching the computation
     (set with the [~using] parameter): 
 
-    - [`Nohup_setsid] means that the script will be started with
+    - [`Nohup_setsid] (the default) means that the script will be started with
     ["nohup setsid bash <script> &"].
     This method is the {i POSIX-ly} portable one; but, sadly,
     it is broken on MacOSX
