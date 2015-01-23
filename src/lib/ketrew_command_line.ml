@@ -1107,10 +1107,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
-    let default =
-      (try Sys.getenv "KETREW_CONFIGURATION" with _ ->
-         (try Sys.getenv "KETREW_CONFIG" with _ ->
-            Configuration.default_configuration_path)) in
+    let default = Configuration.get_path () in
     let docv = "FILE" in
     let doc = "Use $(docv) as configuration file (can be overriden also \
                with `$KETREW_CONFIGURATION`)." in

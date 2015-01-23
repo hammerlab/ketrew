@@ -180,10 +180,7 @@ let user_command_list t =
 
 let run ?override_configuration t =
   let active, dependencies = user_command_list t in
-  let config_path = 
-    (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
-       (try Sys.getenv "KETREW_CONFIG" with _ ->
-          Ketrew_configuration.default_configuration_path)) in
+  let config_path = Ketrew_configuration.get_path () in
   match Lwt_main.run (
     Ketrew_configuration.(
       get_configuration ?override_configuration config_path)

@@ -116,6 +116,10 @@ val parse :
 (* val apply_globals: t -> unit *)
 (** Apply options that have global impact. *)
 
+val get_path : unit -> string
+(** Check environment variable KETREW_CONFIGURATION before returning
+    [default_configuration_path]. *)
+
 val get_configuration :
   ?and_apply:bool ->
   ?override_configuration:t ->
