@@ -315,7 +315,9 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let make_targz =
     target ~done_when:targz#exists "make-tar.gz" ~dependencies:[]
       ~make:(daemonize ~host
-               (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
+               Program.(
+                 shf "cd %s/../" dir
+                 && shf  "tar cfz '%s' '%s'" targz#path (Filename.basename dir)))
       (* A first target using `daemonize`
          see [nohup(1)](http://linux.die.net/man/1/nohup)
          and [setsid(1)](http://linux.die.net/man/1/setsid). *)
