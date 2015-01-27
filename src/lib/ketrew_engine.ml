@@ -721,7 +721,7 @@ module Run_automaton = struct
     | `Activate (ids, make_new_target) ->
       _check_and_activate_dependencies t
         ~dependency_of:(Target.id target) ~ids
-      >>= fun (_ : Target.Automaton.dependencies_status) ->
+      >>< fun (_ : (_, [`Empty]) Result.t) ->
       return (make_new_target ())
     | `Check_process (bookkeeping, make_new_target) ->
       _check_process t ~target ~bookkeeping
@@ -738,16 +738,28 @@ module Run_automaton = struct
     - Process to-add list
   *)
     fold_targets t ~init:[] ~f:begin fun previous_happenings ~target ->
-      _process_automaton_transition t target
-      >>= fun (new_target, progress) ->
-      add_or_update_targets t [new_target]
-      >>= fun () ->
-      Log.(s "Transition for target: "
-           % Target.log target
-           % s "Done: " % n
-           % Target.(State.log ~depth:2 (state new_target))
-           @ very_verbose);
-      return (progress :: previous_happenings)
+      begin
+        _process_automaton_transition t target
+        >>< function
+        | `Ok (new_target, progress) ->
+          add_or_update_targets t [new_target]
+          >>= fun () ->
+          Log.(s "Transition for target: "
+               % Target.log target
+               % s "Done: " % n
+               % Target.(State.log ~depth:2 (state new_target))
+               @ very_verbose);
+          return (progress :: previous_happenings)
+        | `Error e ->
+          Log.(s "Error for target: " % Target.log target % n
+               % s (Ketrew_error.to_string e) @ error);
+          begin match e with
+          | `Volume _ ->
+            return []
+          | `Host _ ->
+            return []
+          end
+      end
     end
     >>| List.exists ~f:((=) `Changed_state)
     >>= fun has_progressed ->

@@ -427,27 +427,32 @@ let start_engine_loop ~server_state =
   let time_factor = 2. in
   let max_sleep = 120. in
   let rec loop previous_sleep =
-    Ketrew_engine.Run_automaton.fix_point server_state.state
-    >>= fun (`Steps step_count) ->
-    (*
-    List.iter what_happened ~f:(List.iter ~f:(fun hp ->
-        Log.(brakets (f (Time.now ())) % sp % s "Fix-point"
-             % Ketrew_engine.log_what_happened hp @ normal);
-      ));
-    *)
-    let seconds =
-      if step_count = 1 then
-        min (previous_sleep *. time_factor) max_sleep
-      else
-        time_step
-    in
-    Log.(s "Sleeping " % f seconds % s " s" @ verbose);
+    begin
+      Ketrew_engine.Run_automaton.fix_point server_state.state
+      >>< function
+      | `Ok (`Steps step_count) ->
+        let seconds =
+          if step_count = 1 then
+            min (previous_sleep *. time_factor) max_sleep
+          else
+            time_step
+        in
+        Log.(s "Successful fix-point: "
+             % parens (i step_count % s " steps") %n
+             % s "Sleeping " % f seconds % s " s" @ verbose);
+        return seconds
+      | `Error e ->
+        Log.(s "Errorneous fix-point: "
+             % s (Ketrew_error.to_string e) %n
+             % s "Sleeping " % f time_step % s " s" @ verbose);
+        return time_step
+    end
+    >>= fun seconds ->
     Deferred_list.pick_and_cancel [
       System.sleep seconds;
       begin
         Light.try_to_pass server_state.loop_traffic_light
         >>= fun () ->
-        Log.(s "Waken-up early" @ verbose); 
         server_state.loop_traffic_light.Light.color <- `Red;
         return ()
       end;
