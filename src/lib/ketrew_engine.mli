@@ -95,13 +95,7 @@ module Run_automaton : sig
     (bool,
      [> `Database of  Trakeva.Error.t
      | `Database_unavailable of Ketrew_target.id
-     | `Host of _ Ketrew_host.Error.non_zero_execution
-     | `Volume of [> `No_size of Log.t]
-     | `IO of
-          [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
      | `Missing_data of Ketrew_target.id
-     | `Persistent_state of [> `Deserilization of string ]
-     | `System of [> `File_info of string ] * [> `Exn of exn ]
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
   (** Run one step of the engine; [step] returns [true] if something happened. *)
@@ -110,13 +104,7 @@ module Run_automaton : sig
     ([ `Steps of int],
      [> `Database of Trakeva.Error.t
      | `Database_unavailable of Ketrew_target.id
-     | `Host of _ Ketrew_host.Error.non_zero_execution
-     | `Volume of [> `No_size of Log.t]
-     | `IO of
-          [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
      | `Missing_data of Ketrew_target.id
-     | `Persistent_state of [> `Deserilization of string ]
-     | `System of [> `File_info of string ] * [> `Exn of exn ]
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
       (** Run {!step} many times until nothing happens or nothing “new” happens. *)
