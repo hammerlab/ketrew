@@ -228,6 +228,7 @@ module Automaton : sig
   type process_check =
     [ `Successful of bookkeeping | `Still_running of bookkeeping ]
   type process_status_check = (process_check, long_running_failure) Pvem.Result.t
+  type condition_evaluation = (bool, severity * string) Pvem.Result.t
   type dependencies_status = 
     [ `All_succeeded | `At_least_one_failed of id list | `Still_processing ]
   type transition = [
@@ -235,7 +236,7 @@ module Automaton : sig
     | `Activate of id list * unit transition_callback
     | `Check_and_activate_dependencies of dependencies_status transition_callback
     | `Start_running of bookkeeping * long_running_action transition_callback
-    | `Eval_condition of Condition.t * bool transition_callback
+    | `Eval_condition of Condition.t * condition_evaluation transition_callback
     | `Check_process of bookkeeping * process_status_check transition_callback
     | `Kill of bookkeeping * long_running_action transition_callback
   ]

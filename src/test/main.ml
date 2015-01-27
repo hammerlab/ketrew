@@ -746,7 +746,12 @@ let make_automaton_graph () =
     | `Activate (_, mkt) ->
       node_map "activate_targets" ["OK", mkt ()]
     | `Eval_condition (condition, mkt) ->
-      node_map "eval_condition" ["true", mkt true; "false", mkt false]
+      node_map "eval_condition" [
+        "true", mkt (`Ok true);
+        "false", mkt (`Ok false);
+        "Try-again", mkt (`Error (`Try_again,  ""));
+        "Fatal", mkt (`Error (`Fatal,  ""));
+      ]
     | `Check_process (book, mkt) ->
       node_map "check_process" [
         "Success", mkt (`Ok (`Successful book));
@@ -762,6 +767,8 @@ let make_automaton_graph () =
     (Ketrew.EDSL.target "02" |> activate_and_render);
     (Ketrew.EDSL.target "03" ~dependencies:[dep] |> activate_and_render);
     (Ketrew.EDSL.target "03" ~make:(`Long_running ("", "")) |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~make:(`Long_running ("", ""))
+       ~done_when:`False |> activate_and_render);
     (Ketrew.EDSL.target "04" ~done_when:(`True) |> activate_and_render);
     (Ketrew.EDSL.target "04" |> activate_and_render
      |> Ketrew_target.kill ?log:None |> Option.value_exn ~msg:"not killable?");

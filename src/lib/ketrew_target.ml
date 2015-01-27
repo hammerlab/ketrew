@@ -144,6 +144,7 @@ module State = struct
     | `Still_running _
     | `Ran_successfully _
     | `Successfully_did_nothing _
+    | `Tried_to_eval_condition _
     | `Active _ -> `In_progress
     | `Verified_success _
     | `Already_done _ -> `Successful
@@ -151,6 +152,7 @@ module State = struct
     | `Failed_running _
     | `Failed_to_kill _
     | `Failed_to_start _
+    | `Failed_to_eval_condition _
     | `Killing _
     | `Tried_to_kill _
     | `Did_not_ensure_condition _
@@ -173,11 +175,13 @@ module State = struct
     | `Ran_successfully (history, _) -> continue history
     | `Successfully_did_nothing history -> continue history
     | `Active (history, _) -> continue history
+    | `Tried_to_eval_condition history -> continue history
     | `Verified_success history -> continue history
     | `Already_done history -> continue history
     | `Dependencies_failed (history, _) -> continue history
     | `Failed_running (history, _, _) -> continue history
     | `Failed_to_kill history -> continue history
+    | `Failed_to_eval_condition history -> continue history
     | `Failed_to_start (history, _) -> continue history
     | `Killing history -> continue history
     | `Tried_to_kill history -> continue history
@@ -198,11 +202,13 @@ module State = struct
     | `Ran_successfully _ -> "Ran_successfully"
     | `Successfully_did_nothing _ -> "Successfully_did_nothing"
     | `Active _ -> "Active"
+    | `Tried_to_eval_condition _ -> "Tried_to_eval_condition"
     | `Verified_success _ -> "Verified_success"
     | `Already_done _ -> "Already_done"
     | `Dependencies_failed _ -> "Dependencies_failed"
     | `Failed_running _ -> "Failed_running"
     | `Failed_to_kill _ -> "Failed_to_kill"
+    | `Failed_to_eval_condition _ -> "Failed_to_eval_condition"
     | `Failed_to_start _ -> "Failed_to_start"
     | `Killing _ -> "Killing"
     | `Tried_to_kill _ -> "Tried_to_kill"
@@ -225,12 +231,14 @@ module State = struct
     | `Still_running (hist, book) -> (Some book)
     | `Ran_successfully (hist, book) -> (Some book)
     | `Successfully_did_nothing history -> (None)
+    | `Tried_to_eval_condition _ -> (None)
     | `Active (history, _) -> (None)
     | `Verified_success history -> continue history
     | `Already_done history -> None
     | `Dependencies_failed (history, _) -> (None)
     | `Failed_running (hist, _, book) -> (Some book)
     | `Failed_to_kill history -> continue history
+    | `Failed_to_eval_condition history -> continue history
     | `Failed_to_start (hist, book) -> (Some book)
     | `Killing history -> continue history
     | `Tried_to_kill history -> continue history
@@ -251,11 +259,13 @@ module State = struct
     | `Ran_successfully (hist, book) -> (some hist, Some book)
     | `Successfully_did_nothing history -> (some history, None)
     | `Active (history, _) -> (some history, None)
+    | `Tried_to_eval_condition history -> (some history, None)
     | `Verified_success history -> (some history, None)
     | `Already_done history -> (some history, None)
     | `Dependencies_failed (history, _) -> (some history, None)
     | `Failed_running (hist, _, book) -> (some hist, Some book)
     | `Failed_to_kill history -> (some history, None)
+    | `Failed_to_eval_condition history -> (some history, None)
     | `Failed_to_start (hist, book) -> (some hist, Some book)
     | `Killing history -> (some history, None)
     | `Tried_to_kill history -> (some history, None)
@@ -299,6 +309,7 @@ module State = struct
       | `Ran_successfully (history, book) -> continue history
       | `Successfully_did_nothing history -> continue history
       | `Active (history, _) -> continue history
+      | `Tried_to_eval_condition history -> continue history
       | `Verified_success history -> continue history
       | `Already_done history ->
         "already-done" :: continue history
@@ -309,8 +320,8 @@ module State = struct
       | `Failed_running (history, reason, book) ->
         fmt "Reason: %S" (match reason with | `Long_running_failure s -> s)
         :: continue history
-      | `Failed_to_kill history ->
-        continue history
+      | `Failed_to_kill history -> continue history
+      | `Failed_to_eval_condition history -> continue history
       | `Failed_to_start (history, book) ->
         continue history
       | `Killing history ->
@@ -385,12 +396,14 @@ module State = struct
     let ran_successfully = function `Ran_successfully _ -> true | _ -> false
     let successfully_did_nothing = function `Successfully_did_nothing _ -> true | _ -> false
     let active = function `Active _ -> true | _ -> false
+    let tried_to_eval_condition = function `Tried_to_eval_condition _ -> true | _ -> false
     let verified_success = function `Verified_success _ -> true | _ -> false
     let already_done = function `Already_done _ -> true | _ -> false
     let dependencies_failed = function `Dependencies_failed _ -> true | _ -> false
     let failed_running = function `Failed_running _ -> true | _ -> false
     let failed_to_kill = function `Failed_to_kill _ -> true | _ -> false
     let failed_to_start = function `Failed_to_start _ -> true | _ -> false
+    let failed_to_eval_condition = function `Failed_to_eval_condition _ -> true | _ -> false
     let killing = function `Killing _ -> true | _ -> false
     let tried_to_kill = function `Tried_to_kill _ -> true | _ -> false
     let did_not_ensure_condition = function `Did_not_ensure_condition _ -> true | _ -> false
@@ -482,6 +495,7 @@ module Automaton = struct
   type process_check =
     [ `Successful of bookkeeping | `Still_running of bookkeeping ]
   type process_status_check = (process_check, long_running_failure) Pvem.Result.t
+  type condition_evaluation = (bool, severity * string) Pvem.Result.t
   type dependencies_status = 
     [ `All_succeeded | `At_least_one_failed of id list | `Still_processing ]
   type transition = [
@@ -489,7 +503,7 @@ module Automaton = struct
     | `Activate of id list * unit transition_callback
     | `Check_and_activate_dependencies of dependencies_status transition_callback
     | `Start_running of bookkeeping * long_running_action transition_callback
-    | `Eval_condition of Condition.t * bool transition_callback
+    | `Eval_condition of Condition.t * condition_evaluation transition_callback
     | `Check_process of bookkeeping * process_status_check transition_callback
     | `Kill of bookkeeping * long_running_action transition_callback
   ]
@@ -512,6 +526,7 @@ module Automaton = struct
       | `Passive _
       | `Tried_to_start _
       | `Still_building _ (* should we ask to kill the dependencies? *)
+      | `Tried_to_eval_condition _
       | `Active _ ->
         `Do_nothing (fun ?log () ->
             return_with_history t (`Killed (to_history ?log current_state)))
@@ -532,12 +547,18 @@ module Automaton = struct
     | `Finished _
     | `Passive _ ->
       `Do_nothing (fun ?log () -> t, `No_change)
+    | `Tried_to_eval_condition _
     | `Active _ as c ->
       begin match t.condition with
       | Some cond ->
         `Eval_condition (cond, begin fun ?log -> function
-          | true -> return_with_history t (`Already_done (to_history ?log c))
-          | false -> return_with_history t (`Building (to_history ?log c))
+          | `Ok true -> return_with_history t (`Already_done (to_history ?log c))
+          | `Ok false -> return_with_history t (`Building (to_history ?log c))
+          | `Error (`Try_again, log)  ->
+            return_with_history t ~no_change:true
+              (`Tried_to_eval_condition (to_history ~log c))
+          | `Error (`Fatal, reason)  ->
+            return_with_history t (`Failed_to_eval_condition (to_history ?log c))
           end)
       | None ->
         `Do_nothing (fun ?log () ->
@@ -595,9 +616,11 @@ module Automaton = struct
       begin match t.condition with
       | Some cond ->
         `Eval_condition (cond, begin fun ?log -> function
-          | true -> return_with_history t (`Verified_success (to_history ?log c))
-          | false ->
+          | `Ok true -> return_with_history t (`Verified_success (to_history ?log c))
+          | `Ok false ->
             return_with_history t (`Did_not_ensure_condition (to_history ?log c))
+          | `Error (_, log)  -> (* for now all errors are fatal ! *)
+            return_with_history t (`Did_not_ensure_condition (to_history ~log c))
           end)
       | None ->
         `Do_nothing (fun ?log () ->
@@ -621,6 +644,7 @@ module Automaton = struct
       from_killing_state history c
     | `Killed _
     | `Failed_to_start _
+    | `Failed_to_eval_condition _
     | `Failed_to_kill _ as c ->
       (* what should we actually do? *)
       activate_fallbacks c

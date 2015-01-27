@@ -58,9 +58,14 @@ type 'a history = {
 type passive = [ Passive of log ]
 type active = [ Active of (passive history * [ User | Dependency of id ]) ]
 
-type already_done = [ Already_done of active history ]
+type evaluating_condition = [
+  | inherit active
+  | Tried_to_eval_condition of evaluating_condition history
+]
 
-type building = [ Building of active history
+type already_done = [ Already_done of evaluating_condition history ]
+
+type building = [ Building of evaluating_condition history
                 | Still_building of building history  ]
 
 type dependency_failure = [
@@ -73,6 +78,7 @@ type starting = [
 ]
 
 type failed_to_start = [
+  | Failed_to_eval_condition of evaluating_condition history
   | Failed_to_start of (starting history * run_bookkeeping)
 ]
 
@@ -109,7 +115,7 @@ type failed_to_verify_success = [
 
 type killable_state = [
   | inherit passive
-  | inherit active
+  | inherit evaluating_condition
   | inherit building
   | inherit starting
   | inherit running

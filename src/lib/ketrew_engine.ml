@@ -716,8 +716,20 @@ module Run_automaton = struct
       >>< fun starting_attemp ->
       return (make_new_target ~log:("Attempt to start") starting_attemp)
     | `Eval_condition (condition, make_new_target) ->
-      Target.Condition.eval condition
-      >>| make_new_target ?log:None
+      begin
+        Target.Condition.eval condition
+        >>< function
+        | `Ok answer ->
+          return (make_new_target ?log:None (`Ok answer))
+        | `Error e ->
+          let log = Ketrew_error.to_string e in
+          let severity =
+            match e with
+            | `Volume _  -> `Fatal
+            | `Host _ -> `Try_again
+          in
+          return (make_new_target ?log:None (`Error (severity, log)))
+      end
     | `Activate (ids, make_new_target) ->
       _check_and_activate_dependencies t
         ~dependency_of:(Target.id target) ~ids
@@ -750,15 +762,8 @@ module Run_automaton = struct
                % Target.(State.log ~depth:2 (state new_target))
                @ very_verbose);
           return (progress :: previous_happenings)
-        | `Error e ->
-          Log.(s "Error for target: " % Target.log target % n
-               % s (Ketrew_error.to_string e) @ error);
-          begin match e with
-          | `Volume _ ->
-            return []
-          | `Host _ ->
-            return []
-          end
+        | `Error `Empty_should_not_exist ->
+          return []
       end
     end
     >>| List.exists ~f:((=) `Changed_state)
