@@ -473,7 +473,7 @@ let pbs_job ?success_triggers ?if_fails_activate ~box kind =
       ~make:(
         pbs ~host ~name Program.(
             sh "sleep 42"
-            && shf "du -sh / > %s" output
+            && shf "du -sh $HOME > %s" output
             && exec ["cat"; output])
         (* ~queue:"normal" *)
       )

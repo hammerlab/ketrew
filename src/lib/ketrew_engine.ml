@@ -140,7 +140,6 @@ let database t =
 
 
 let targets_collection = "targets"
-let targets_to_kill_collection = "targets-to-kill"
   
 let set_target_db_action target =
   let key = Target.id target in
@@ -179,25 +178,6 @@ let add_stored_targets t st_list =
             (List.map st_list ~f:Target.Stored_target.id
              |> String.concat ~sep:", "))
 
-let add_target_ids_to_kill_list t id_list =
-  let action =
-    let open Database_action in
-    List.map id_list ~f:(fun id ->
-        set ~collection:targets_to_kill_collection ~key:id id)
-    |> seq in
-  run_database_action t action
-    ~msg:(fmt "add_target_ids_to_kill_list [%s]"
-            (String.concat ~sep:", " id_list))
-
-let get_all_targets_to_kill t : (Target.id list, _) Deferred_result.t =
-  database t
-  >>= fun db ->
-  Database.get_all db ~collection:targets_to_kill_collection
-
-let remove_from_kill_list_action id =
-  Database_action.(unset ~collection:targets_to_kill_collection id)
-
-
 let get_target t id =
   database t >>= fun db ->
   let rec get_following_pointers ~key ~count =
@@ -218,8 +198,6 @@ let get_target t id =
     end
   in
   get_following_pointers ~key:id ~count:0
-
-
 
 let fold_targets t ~init ~f =
   database t
@@ -261,6 +239,154 @@ let all_targets t =
   end
 
 let current_targets = all_targets
+module Killing_targets = struct
+  let targets_to_kill_collection = "targets-to-kill"
+  let add_target_ids_to_kill_list t id_list =
+    let action =
+      let open Database_action in
+      List.map id_list ~f:(fun id ->
+          set ~collection:targets_to_kill_collection ~key:id id)
+      |> seq in
+    run_database_action t action
+      ~msg:(fmt "add_target_ids_to_kill_list [%s]"
+              (String.concat ~sep:", " id_list))
+
+  let get_all_targets_to_kill t : (Target.id list, _) Deferred_result.t =
+    database t
+    >>= fun db ->
+    Database.get_all db ~collection:targets_to_kill_collection
+
+  let remove_from_kill_list_action id =
+    Database_action.(unset ~collection:targets_to_kill_collection id)
+
+  let proceed_to_mass_killing t =
+    get_all_targets_to_kill t
+    >>= fun to_kill_list ->
+    Log.(s "Going to actuall kill: "
+         % OCaml.list (sf "{%S}") to_kill_list @ verbose);
+    List.fold to_kill_list ~init:(return []) ~f:(fun prev id ->
+        prev >>= fun prev_list ->
+        get_target t id
+        >>= fun target ->
+        begin match Target.kill target with
+        | Some t ->
+          return [
+            remove_from_kill_list_action id;
+            set_target_db_action t;
+          ]
+        | None ->
+          return [remove_from_kill_list_action id;]
+        end
+        >>= fun actions ->
+        Log.(s "Going to add: "
+             % OCaml.list (fun act -> s (Database_action.to_string act))
+               actions @ verbose);
+        return (prev_list @ actions)
+      )
+    >>= begin function
+    | [] -> return false
+    | actions ->
+      run_database_action t Database_action.(seq actions)
+        ~msg:(fmt "killing %d targets" (List.length to_kill_list))
+      >>= fun () ->
+      return true
+    end
+
+end
+
+
+
+module Adding_targets = struct
+  let targets_to_add_collection = "targets-to-add"
+  let store_targets_to_add t t_list =
+    let action =
+      let open Database_action in
+      List.map t_list ~f:(fun trgt ->
+          let st = Target.Stored_target.of_target trgt in
+          let key = Target.Stored_target.id st in
+          set ~collection:targets_to_add_collection ~key
+            (Target.Stored_target.serialize st))
+      |> seq in
+    Log.(s "Storing " % i (List.length t_list) % s " to be added at next step"
+         @ verbose);
+    run_database_action t action
+      ~msg:(fmt "store_targets_to_add [%s]"
+              (List.map t_list ~f:Target.id
+               |> String.concat ~sep:", "))
+
+  let get_all_targets_to_add t =
+    database t
+    >>= fun db ->
+    Database.get_all db ~collection:targets_to_add_collection
+    >>= fun l ->
+    Deferred_list.while_sequential l ~f:(fun blob ->
+        of_result (Target.Stored_target.deserialize blob)
+        >>= fun st ->
+        begin match Target.Stored_target.get_target st with
+        | `Target t -> return t
+        | `Pointer p ->
+          get_target t p (* We don't use this case in practice maybe
+                            it would be better to fail there *)
+        end)
+
+  let check_and_really_add_targets t =
+    get_all_targets_to_add t
+    >>= fun tlist ->
+    begin match tlist with
+    | [] -> return false
+    | _ :: _ ->
+      alive_targets t
+      >>= fun current_targets ->
+      (* current targets are alive, so activable or in_progress *)
+      let stuff_to_actually_add =
+        List.fold ~init:[] tlist ~f:begin fun to_store_targets target ->
+          let equivalences =
+            let we_kept_so_far =
+              List.filter_map to_store_targets
+                ~f:(fun st ->
+                    match Target.Stored_target.get_target st with
+                    | `Target t -> Some t
+                    | `Pointer _ -> None) in
+            List.filter (current_targets @ we_kept_so_far)
+              ~f:(fun t -> Target.is_equivalent target t) in
+          Log.(Target.log target % s " is "
+               % (match equivalences with
+                 | [] -> s "pretty fresh"
+                 | more ->
+                   s " equivalent to " % OCaml.list Target.log equivalences)
+               @ very_verbose);
+          match equivalences with
+          | [] -> 
+            (Target.Stored_target.of_target target :: to_store_targets)
+          | at_least_one :: _ -> 
+            (Target.Stored_target.make_pointer
+               ~from:target ~pointing_to:at_least_one :: to_store_targets)
+        end
+      in
+      Log.(s "Adding new " % i (List.length stuff_to_actually_add)
+           % s " things to the DB" @ verbose);
+      let action =
+        let open Database_action in
+        List.map tlist ~f:(fun trgt ->
+            let key = Target.id trgt in
+            unset ~collection:targets_to_add_collection key)
+        @ List.map stuff_to_actually_add ~f:(fun st ->
+            let key = Target.Stored_target.id st in
+            set ~collection:targets_collection ~key
+              (Target.Stored_target.serialize st))
+        |> seq in
+      run_database_action t action
+        ~msg:(fmt "check_and_really_add_targets [%s]"
+                (List.map tlist ~f:Target.id |> String.concat ~sep:", "))
+      >>= fun () ->
+      return true
+    end
+    (* add_stored_targets t stuff_to_actually_add *)
+
+  
+end
+let add_targets = Adding_targets.store_targets_to_add
+
 
 let archive_target t target_id =
   assert false
@@ -428,39 +554,6 @@ module Target_graph = struct
 end 
 
 
-let add_targets t tlist =
-  alive_targets t
-  >>= fun current_targets ->
-  (* current targets are alive, so activable or in_progress *)
-  let stuff_to_actually_add =
-    List.fold ~init:[] tlist ~f:begin fun to_store_targets target ->
-      let equivalences =
-        let we_kept_so_far =
-          List.filter_map to_store_targets
-            ~f:(fun st ->
-                match Target.Stored_target.get_target st with
-                | `Target t -> Some t
-                | `Pointer _ -> None) in
-        List.filter (current_targets @ we_kept_so_far)
-          ~f:(fun t -> Target.is_equivalent target t) in
-      Log.(Target.log target % s " is "
-           % (match equivalences with
-             | [] -> s "pretty fresh"
-             | more ->
-               s " equivalent to " % OCaml.list Target.log equivalences)
-           @ very_verbose);
-      match equivalences with
-      | [] -> 
-        (Target.Stored_target.of_target target :: to_store_targets)
-      | at_least_one :: _ -> 
-        (Target.Stored_target.make_pointer
-           ~from:target ~pointing_to:at_least_one :: to_store_targets)
-    end
-  in
-  Log.(s "Adding new " % i (List.length stuff_to_actually_add)
-       % s " things to the DB" @ verbose);
-  add_stored_targets t stuff_to_actually_add
-
 
 
 module Run_automaton = struct
@@ -505,11 +598,11 @@ module Run_automaton = struct
             in
             add_or_update_targets t [newdep]
             >>= fun () ->
-            return (`In_progress)
+            return (dep, `In_progress)
           | `In_progress
           | `Successful
           | `Failed as c ->
-            return c
+            return (dep, c)
           end
         | `Error (`Database _ as e)
         | `Error (`Missing_data _ as e) ->
@@ -519,41 +612,35 @@ module Run_automaton = struct
             | `Database e -> Log.s (Database_error.to_string e)
             | `Missing_data id -> Log.(s "Missing target: " % quote id) in
           Log.(s "Error while activating dependencies: " % errlog @ error);
-          return (`Failed)
+          Log.(s "return (dep, `Failed)" @ verbose);
+          return (dep, `Failed)
         | `Error (`Persistent_state _ as e)
         | `Error (`Target _ as e) -> fail e)
-    >>= begin function
-    | (oks, []) when List.for_all oks ~f:((=) `Successful) ->
-      return `All_succeeded
-    | (oks, []) when List.exists oks ~f:((=) `Failed) ->
-      return (`At_least_one_failed [])
-    | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
-      return `Still_processing
-    | (_, errors) ->
-      Log.(s "Some errors while activating dependencies: " %n
-           % separate n
-             (List.map ~f:(fun x -> s (Ketrew_error.to_string x)) errors)
-           @ error);
-      return (`At_least_one_failed [])
+    >>= begin
+      let is a b =
+        match b with
+        | (_, s) when s = a -> true
+        | _ -> false in
+      let all_successful = List.for_all ~f:(is `Successful) in
+      let one_failed = List.exists ~f:(is `Failed) in
+      function
+      | (oks, []) when all_successful oks -> return `All_succeeded
+      | (oks, []) when one_failed oks ->
+        let failed_ones = List.filter oks ~f:(is `Failed) |> List.map ~f:fst in
+        Log.(s "Targets " % OCaml.list s failed_ones % s " considered failed"
+             @ verbose);
+        Log.(s "return (`At_least_one_failed failed_ones)" @ verbose);
+        return (`At_least_one_failed failed_ones)
+      | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
+        return `Still_processing
+      | (_, errors) ->
+        Log.(s "Some errors while activating dependencies: " %n
+             % separate n
+               (List.map ~f:(fun x -> s (Ketrew_error.to_string x)) errors)
+             @ error);
+        return (`At_least_one_failed [])
     end
 
-
-  (*
-  let with_plugin t ~plugin_name ~f =
-    begin match Ketrew_plugin.find_plugin plugin_name with
-    | Some m ->
-      (* let module Long_running = (val m : LONG_RUNNING) in *)
-      begin f m
-        >>< function
-        | `Ok o -> return o
-        | `Error e ->
-          fail (_long_running_action_error t ~error:e ~bookkeeping)
-      end
-    | None ->
-      let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
-      fail (_long_running_action_error t ~error ~bookkeeping)
-    end
-  *)
 
   let _attempt_to_kill t ~target ~bookkeeping =
     let {Target.Automaton. plugin_name; run_parameters} = bookkeeping in
@@ -644,11 +731,12 @@ module Run_automaton = struct
 
   let step t: (bool, _) Deferred_result.t =
   (*
-Call Target.Automaton.step, do the action requested, call the target function, save-it
-Process Murders to-do list (set as `Killing, remove from list)
-Process Archival to-do list (?)
-Process to-add list
-*)
+    - Call Target.Automaton.step, do the action requested, call the
+      target function, save-it
+    - Process Murders to-do list (set as `Killing, remove from list)
+    - Process Archival to-do list (?)
+    - Process to-add list
+  *)
     fold_targets t ~init:[] ~f:begin fun previous_happenings ~target ->
       _process_automaton_transition t target
       >>= fun (new_target, progress) ->
@@ -658,39 +746,16 @@ Process to-add list
            % Target.log target
            % s "Done: " % n
            % Target.(State.log ~depth:2 (state new_target))
-           @ verbose);
+           @ very_verbose);
       return (progress :: previous_happenings)
     end
     >>| List.exists ~f:((=) `Changed_state)
     >>= fun has_progressed ->
-    get_all_targets_to_kill t
-    >>= fun to_kill_list ->
-    Log.(s "Going to actuall kill: "
-         % OCaml.list (sf "{%S}") to_kill_list @ verbose);
-    List.fold to_kill_list ~init:(return []) ~f:(fun prev id ->
-        prev >>= fun prev_list ->
-        get_target t id
-        >>= fun target ->
-        begin match Target.kill target with
-        | Some t ->
-          return [
-            remove_from_kill_list_action id;
-            set_target_db_action t;
-          ]
-        | None ->
-          return [remove_from_kill_list_action id;]
-        end
-        >>= fun actions ->
-        Log.(s "Going to add: "
-             % OCaml.list (fun act -> s (Database_action.to_string act))
-               actions @ verbose);
-        return (prev_list @ actions)
-      )
-    >>= fun actions ->
-    run_database_action t Database_action.(seq actions)
-      ~msg:(fmt "killing %d targets" (List.length to_kill_list))
-    >>= fun () ->
-    return (has_progressed || List.length to_kill_list > 0)
+    Killing_targets.proceed_to_mass_killing t
+    >>= fun killing_did_something ->
+    Adding_targets.check_and_really_add_targets t
+    >>= fun adding_did_something ->
+    return (has_progressed || adding_did_something || killing_did_something)
 
   let fix_point state =
     let rec fix_point ~count =
@@ -705,90 +770,32 @@ Process to-add list
     fix_point ~count:0
     >>= fun (count) ->
     return (`Steps count)
+
 end
-
-    (*
-  begin
-    current_targets t >>= fun targets ->
-    database t >>= fun db ->
-    Deferred_list.for_sequential targets ~f:(fun target ->
-        (* Log.(s "Engine.step dealing with " % Target.log target @ verbose); *)
-        match (Target.history target) with
-        | `Created _ -> (* nothing to do *) return []
-        | `Activated _ ->
-          begin Target.should_start target
-            >>< function
-            | `Ok true ->
-              _check_and_activate_dependencies ~t (Target.dependencies target)
-              >>= fun (what_now, happenings) ->
-              begin match what_now with
-              | `Go_now ->
-                _start_running_target t target
-              | `Some_dependencies_died l ->
-                let explanation = String.concat ~sep:", " l ^ " died" in
-                make_target_die t ~target ~reason:(`Dependencies_died)
-                  ~explanation
-                >>= fun happened ->
-                return (happened @ happenings)
-              | `Wait -> return happenings
-              end
-            | `Ok false ->
-              make_target_succeed t  target
-                ~artifact:(`Value `Unit)
-                ~why:`Artifact_ready
-            | `Error (`Volume (`No_size log)) ->
-              make_target_die t ~target ~reason:(`Process_failure)
-                ~explanation:Log.(to_long_string
-                                    (s "No-size for volume, " % log))
-              >>= fun happened ->
-              return happened
-            | `Error (`Host error) ->
-              host_error_to_potential_target_failure ~target ~error t
-          end
-        (* start or run *)
-        | `Running (bookkeeping, _)  ->
-          _update_status t ~target ~bookkeeping
-        | `Dead _ | `Successful _ -> return [])
-    >>= fun (what_happened, errors) ->
-    let what_happened = 
-      List.map errors ~f:(fun e -> `Error (Ketrew_error.to_string e))
-      @ List.concat  what_happened
-      |> List.dedup
-    in
-    Log.(s "Step: " % OCaml.list log_what_happened what_happened 
-         @ very_verbose);
-    return what_happened
-  end 
-*)
-
 
 
 let get_status t id =
-  (* database t >>= fun db -> *)
   get_target t id >>= fun target ->
   return (Target.state target) 
 
 let kill t ~id =
-  add_target_ids_to_kill_list t [id]
+  Killing_targets.add_target_ids_to_kill_list t [id]
 
 let restart_target engine target_id =
-  assert false
-    (*
-  current_targets engine
-  >>= fun targets ->
   get_target engine target_id
   >>= fun target ->
   let new_target trgt  =
     let with_name = "Re:" ^ Target.name trgt in
-    let re = Target.reactivate ~with_name trgt in
+    let log = fmt "Reactivation of %s" (Target.id trgt) in
+    let re = Target.reactivate ~with_name ~log trgt in
     re
   in
   let this_new_target = new_target target in
   add_targets engine [this_new_target]
   >>= fun () ->
   let id = Target.id this_new_target in
-  return ([`Target_created id; `Target_activated (id, `Dependency)]: happening list)
-*)
+  return id
+
     
 module Measure = struct
   open Measurement_collection

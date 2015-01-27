@@ -254,7 +254,8 @@ let add_targets_service  ~server_state ~body req =
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
   Ketrew_engine.add_targets server_state.state targets
   >>= fun () ->
-  Deferred_list.while_sequential targets ~f:(fun t ->
+  (*
+    Deferred_list.while_sequential targets ~f:(fun t ->
       let original_id = Ketrew_target.id t in
       Ketrew_engine.get_target server_state.state original_id
       >>= fun freshen ->
@@ -262,8 +263,9 @@ let add_targets_service  ~server_state ~body req =
                 ~original_id ~fresh_id:(Ketrew_target.id freshen))
     )
   >>= fun added_targets ->
+ *)
   Light.green server_state.loop_traffic_light;
-  return (`Message (`Json, `Targets_added added_targets))
+  return (`Message (`Json, `Ok))
 
 let action_on_ids_service: [`Kill  | `Restart] -> _ service = 
   fun what_to_do ~server_state ~body req ->
@@ -276,7 +278,10 @@ let action_on_ids_service: [`Kill  | `Restart] -> _ service =
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
         | `Kill -> Ketrew_engine.kill server_state.state id
-        | `Restart -> Ketrew_engine.restart_target server_state.state id
+        | `Restart ->
+          Ketrew_engine.restart_target server_state.state id
+          >>= fun (_ : Ketrew_target.id) ->
+          return ()
         end)
     >>= fun (_ : unit list) ->
     Light.green server_state.loop_traffic_light;
@@ -436,7 +441,7 @@ let start_engine_loop ~server_state =
       else
         time_step
     in
-    Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+    Log.(s "Sleeping " % f seconds % s " s" @ verbose);
     Deferred_list.pick_and_cancel [
       System.sleep seconds;
       begin

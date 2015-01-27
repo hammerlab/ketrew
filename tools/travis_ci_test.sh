@@ -102,7 +102,9 @@ shopt -s expand_aliases
 echo "Kdserver"
 kdserver --help=plain
 
-ksplugin_user "du -sh $HOME"
-kscli run loop
+ksplugin_user "ls -l $HOME"
+kscli run loop > kscli_01.out
 
+echo "Output file kscli_01.out"
+tail -n 50 kscli_01.out
 

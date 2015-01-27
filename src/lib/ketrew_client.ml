@@ -209,8 +209,6 @@ let add_targets t tlist =
   | `Standalone s ->
     let open Standalone in
     Ketrew_engine.add_targets s.engine tlist
-    >>= fun _ ->
-    return ()
   | `Http_client c ->
     Http_client.add_targets c tlist
 
@@ -271,7 +269,7 @@ let restart_target t ids =
   | `Standalone s ->
     let open Standalone in
     Deferred_list.while_sequential ids (Ketrew_engine.restart_target s.engine)
-    >>= fun (_ : unit list) ->
+    >>= fun (_ : Ketrew_target.id list) ->
     return ()
   | `Http_client c ->
     Http_client.restart c ids

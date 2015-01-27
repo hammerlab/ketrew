@@ -26,10 +26,6 @@ module Down_message : sig
   val serialize : Ketrew_gen_protocol_v0.Down_message.t -> string
   val deserialize_exn : string -> Ketrew_gen_protocol_v0.Down_message.t
 
-  val added_target :
-    original_id:string ->
-    fresh_id:string -> Ketrew_gen_protocol_v0.Added_target.t
-
   val log : t -> Ketrew_pervasives.Log.t
 end
 

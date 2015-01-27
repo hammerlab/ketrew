@@ -57,13 +57,6 @@ type volume = {
   structure: volume_structure;
 }
 
-(*
-type artifact_value = [ Unit | String of string | Number of float ]
-type artifact = [
-  | Value of artifact_value
-  | Volume of volume
-]
-*)
 type program = [
   | Shell_command of string
   | Exec of string list

@@ -81,22 +81,3 @@ module Volume : sig
 
   end
 
-(*
-  module Value : sig
-  type t = [ `Number of float | `String of string | `Unit ]
-      (** Literal values. *)
-
-  val log: t -> Log.t
-
-  val unit : t
-  (** Alias for [`Unit]. *)
-end
-
-
-type t = [ `Value of Value.t | `Volume of Volume.t ]
-(* Literal artifact, i.e. a literal value, or the specification of a volume
-   (used for now also to represent its “value”). *)
-
-val log: t -> Log.t
-(** Get a [Log] document. *)
- *)

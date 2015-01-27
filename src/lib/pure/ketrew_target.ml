@@ -159,6 +159,33 @@ module State = struct
       simplify (s.Ketrew_gen_target_v0.History.previous_state :> t)
     | `Passive _ -> `Activable
 
+  let rec passive_time (t: t) =
+    let continue history =
+      passive_time (history.Ketrew_gen_target_v0.History.previous_state :> t)
+    in
+    match t with
+    | `Building history -> continue history
+    | `Tried_to_start (history, _) -> continue history
+    | `Started_running (history, _) -> continue history
+    | `Starting history -> continue history
+    | `Still_building history -> continue history
+    | `Still_running (history, _) -> continue history
+    | `Ran_successfully (history, _) -> continue history
+    | `Successfully_did_nothing history -> continue history
+    | `Active (history, _) -> continue history
+    | `Verified_success history -> continue history
+    | `Already_done history -> continue history
+    | `Dependencies_failed (history, _) -> continue history
+    | `Failed_running (history, _, _) -> continue history
+    | `Failed_to_kill history -> continue history
+    | `Failed_to_start (history, _) -> continue history
+    | `Killing history -> continue history
+    | `Tried_to_kill history -> continue history
+    | `Did_not_ensure_condition history -> continue history
+    | `Killed history -> continue history
+    | `Finished history -> continue history
+    | `Passive log -> log.Ketrew_gen_target_v0.Log.time
+
   let name (t: t) =
     let open Ketrew_gen_target_v0.State in
     match t with
@@ -236,6 +263,80 @@ module State = struct
     | `Killed history -> (some history, None)
     | `Finished history -> (some history, None)
     | `Passive log -> (None, None)
+
+  let summary t =
+    let open Ketrew_gen_target_v0 in
+    let rec count_start_attempts : Starting.t History.t -> int = fun h ->
+      let open History in
+      match h.previous_state with 
+      | `Starting _ -> 1
+      | `Tried_to_start (hh, _) -> 1 + (count_start_attempts hh)
+    in
+    let rec count_kill_attempts : Killing.t History.t -> int = fun h ->
+      let open History in
+      match h.previous_state with 
+      | `Killing _ -> 1
+      | `Tried_to_kill hh -> 1 + (count_kill_attempts hh)
+    in
+    let plural_of_int ?(y=false) n =
+      match y, n with
+      | true, 1 ->  "y"
+      | true, _ -> "ies"
+      | _, 1 ->  ""
+      | _, _ -> "s" in
+    let rec dive (t: t) =
+      let continue history = dive (history.History.previous_state :> t) in
+      match t with
+      | `Building history -> continue history
+      | `Tried_to_start (history, book) ->
+        let attempts = count_start_attempts history in
+        fmt " %d start-attempt%s" attempts (plural_of_int attempts)
+        :: continue history
+      | `Started_running (history, book) -> continue history
+      | `Starting history -> continue history
+      | `Still_building history -> continue history
+      | `Still_running (history, book) -> continue history
+      | `Ran_successfully (history, book) -> continue history
+      | `Successfully_did_nothing history -> continue history
+      | `Active (history, _) -> continue history
+      | `Verified_success history -> continue history
+      | `Already_done history ->
+        "already-done" :: continue history
+      | `Dependencies_failed (history, deps) ->
+        let nb_deps = (List.length deps) in
+        fmt "%d depependenc%s failed" nb_deps (plural_of_int ~y:true nb_deps)
+        :: continue history
+      | `Failed_running (history, reason, book) ->
+        fmt "Reason: %S" (match reason with | `Long_running_failure s -> s)
+        :: continue history
+      | `Failed_to_kill history ->
+        continue history
+      | `Failed_to_start (history, book) ->
+        continue history
+      | `Killing history ->
+        fmt "killed from %s" (name (history.History.previous_state :> t))
+        :: continue history
+      | `Tried_to_kill history ->
+        fmt "%d killing-attempts" (count_kill_attempts history)
+        :: continue history
+      | `Did_not_ensure_condition history ->
+        "Did_not_ensure_condition" :: continue history
+      | `Killed history ->
+        "killed" :: continue history
+      | `Finished history -> continue history
+      | `Passive log -> []
+    in
+    let history_opt, bookkeeping_opt = contents t in
+    let time, message =
+      Option.map history_opt ~f:(fun history ->
+        let open Ketrew_gen_target_v0.History in
+        let open Ketrew_gen_target_v0.Log in
+        let { log = {time; message}; previous_state } = history in
+        (time, message))
+      |> function
+      | None -> passive_time t, None
+      | Some (time, m) -> time, m in
+    (`Time time, `Log message, `Info (dive t))
 
   let rec to_flat_list (t : t) =
     let open Ketrew_gen_target_v0.History in
@@ -326,7 +427,7 @@ let name : t -> string = fun t -> t.name
 let dependencies: t -> id list = fun t -> t.dependencies
 let fallbacks: t -> id list = fun t -> t.if_fails_activate
 let success_triggers: t -> id list = fun t -> t.success_triggers
-let metadata: t -> string option = fun t -> t.metadata
+let metadata = fun t -> t.metadata
 let build_process: t -> Build_process.t = fun t -> t.make
 let condition: t -> Condition.t option = fun t -> t.condition
 let equivalence: t -> Equivalence.t = fun t -> t.equivalence
@@ -358,8 +459,9 @@ let kill ?log t =
   | other ->
     None
 
-let reactivate_exn
+let reactivate
     ?with_id ?with_name ?with_metadata ?log t =
+  (* It's [`Passive] so there won't be any [exn]. *)
   activate_exn ~reason:`User
     {t with
      history = `Passive (make_log ?message:log ());
@@ -373,7 +475,6 @@ module Automaton = struct
   type progress = [ `Changed_state | `No_change ]
   type 'a transition_callback = ?log:string -> 'a -> t * progress
   type severity = [ `Try_again | `Fatal ]
-  (* type 'a io_action = [ `Succeeded of 'a | `Failed of 'a ] *)
   type bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t =
     { plugin_name: string; run_parameters: string}
   type long_running_failure = severity * string * bookkeeping
