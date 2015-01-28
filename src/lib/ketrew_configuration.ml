@@ -277,6 +277,11 @@ let apply_globals t =
   | None -> ()
   end
 
+let get_path () =
+  try Sys.getenv "KETREW_CONFIGURATION" with _ ->
+    (try Sys.getenv "KETREW_CONFIG" with _ ->
+      default_configuration_path)
+
 let get_configuration ?(and_apply=true) ?override_configuration path =
   begin match override_configuration with
   | Some c -> 

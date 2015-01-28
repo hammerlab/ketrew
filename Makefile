@@ -19,9 +19,9 @@ gen:
 	$(PLEASE) generate ketrew_data
 
 OCAMLBUILD_ANNOYING_LINKS=main.byte main.native Workflow_Examples.native integration.native dummy_plugin_user.native
-OWN_BINARIES= ketrew-test ketrew ketrew-workflow-examples-test ketrew-integration-test
+OWN_BINARIES= ketrew-test ketrew ketrew-pure ketrew-workflow-examples-test ketrew-integration-test
 
-build:
+build: gen
 	ocaml setup.ml -build && \
 	    rm -f $(OCAMLBUILD_ANNOYING_LINKS) && \
 	    cp _build/src/test/main.native ketrew-test && \

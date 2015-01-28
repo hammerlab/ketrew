@@ -16,9 +16,9 @@
 
 (** Generate Shell scripts that “monitor” commands. *)
 
-(** The goal of this module is the create shell scripts from a high-level
-      representation; the scripts are “monitored” in the sense that code is
-      added to log every returned value or failure in a parsable [log] file.
+(** The goal of this module is to create shell scripts from a high-level
+    representation. The scripts are “monitored” in the sense that code is
+    added to log every returned value or failure in a parsable [log] file.
 *)
 
 open Ketrew_pervasives

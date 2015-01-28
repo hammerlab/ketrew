@@ -20,7 +20,7 @@
   This is a more stable EDSL/API for end-users to make workflows and deal with
   the system.
 
-  Many functions may raise exceptions when called on improperly, but this
+  Many functions may raise exceptions when called improperly, but this
   should happen while building the workflow, not after it starts running. *)
 
 
@@ -131,7 +131,7 @@ end
 
 (** {3 Artifacts} *)
 
-(** Artifacts are things to be built, or already existing, most often
+(** Artifacts are things to be built (they may already exist), most often
     file-tree-locations on a given [host] (see also {!Ketrew_artifact.t}).
 *)
 class type user_artifact = object
@@ -249,15 +249,4 @@ val pbs :
   Ketrew_gen_pbs_v0.Program.t ->
   [> `Long_running of string * string ]
 (** Create a “PSB” build process. *)
-
-(** {3 Workflows} *)
-
-val run:
-  ?override_configuration:Ketrew_configuration.t ->
-  user_target ->
-  unit
-(** Submit and activate a [user_target] (the next time Ketrew runs a step, the
-    target will be started/run (all the graph of dependencies and fallbacks is
-    submitted at once). *)
-
 
