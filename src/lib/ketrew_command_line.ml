@@ -138,6 +138,10 @@ module Interaction = struct
       ()
     )
 
+  let verbose_r = ref false
+  let toggle_verbose () =
+    verbose_r := not !verbose_r
+
   (** [with_cbreak f] calls with the terminal in “get key” mode.
          It comes from
          http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
@@ -151,7 +155,7 @@ module Interaction = struct
          let term_cbreak = { term_init with c_icanon = false; c_echo = false } in
          tcsetattr stdin TCSANOW term_cbreak
          >>= fun () ->
-         catch f (fun e -> 
+         catch f (fun e ->
              Log.(s "with_cbreak exn: " % exn e @ warning);
              return (`Error (`Failure "with_cbreak")))
          >>= fun res ->
@@ -262,6 +266,7 @@ module Interaction = struct
            @ normal);
       get_key ()
       >>= fun key ->
+      if !verbose_r then Log.(sf "%c pressed" key @ normal);
       begin match key with
       | '<' -> menu_loop (nth - 1)
       | '>' -> menu_loop (nth + 1)
@@ -375,7 +380,7 @@ let rec display_status ~client ~loop  =
   >>= fun (`In_progress inp) ->
   Log.(s "Current targets “in-progress”: " % i inp @ normal);
   begin match loop, inp with
-  | Some _, 0 -> 
+  | Some _, 0 ->
     Log.(s "Nothing left to do" @ verbose);
     return ()
   | Some seconds, _ ->
@@ -433,7 +438,7 @@ let run_state ~client ~max_sleep ~how =
               System.sleep seconds;
               block ();
             ] >>< function
-            | `Ok () when should_keep_going () -> 
+            | `Ok () when should_keep_going () ->
               loop seconds
             | `Ok () -> return ()
             | `Error e ->
@@ -463,7 +468,7 @@ let run_state ~client ~max_sleep ~how =
       fail (`Wrong_command_line sl)
     end
   end
-  
+
 (** Kill targets (command line, ["--interactive"], or within
     [ketrew interactive]. *)
 let kill ~client ~interactive ids =
@@ -583,7 +588,7 @@ module Explorer = struct
       let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
       IO.write_file tmpfile ~content:initial_ask_tags_content
       >>= fun () ->
-      Interaction.open_in_dollar_editor tmpfile 
+      Interaction.open_in_dollar_editor tmpfile
       >>= fun () ->
       IO.read_file tmpfile
       >>= fun content ->
@@ -595,7 +600,7 @@ module Explorer = struct
             | Some '#' -> None
             | None -> None
             | Some other ->
-              (try Some (stripped, 
+              (try Some (stripped,
                          Re_posix.compile_pat stripped)
               with _ -> None))
       in
@@ -604,7 +609,7 @@ module Explorer = struct
            List.for_all tag_regs ~f:(fun (_, reg) ->
                List.exists Target.(tags trgt) ~f:(fun tag ->
                    Re.execp reg tag))),
-        Log.(s "Tags matching " 
+        Log.(s "Tags matching "
              % OCaml.list (fun (s, _) -> quote s) tag_regs))
     | `Set f  -> return f
 
@@ -896,7 +901,7 @@ let inspect
   let get_all () =
     match Ketrew_client.get_local_engine client with
     | None ->
-      Log.(s "HTTP Client cannot inspect for now." @ error); 
+      Log.(s "HTTP Client cannot inspect for now." @ error);
       fail (`Not_implemented "inspect")
     | Some engine ->
       Ketrew_engine.Measurements.get_all engine
@@ -913,7 +918,7 @@ let inspect
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
   let display document =
     match in_dollar_editor with
-    | true -> 
+    | true ->
       let str =
         match format with
         | `Tsv ->
@@ -932,7 +937,7 @@ let inspect
       in
       Interaction.view_in_dollar_editor str
     | false ->
-      Log.(s "Measurements:" % n % 
+      Log.(s "Measurements:" % n %
            separate n
              (List.map document ~f:(fun str ->
                   separate (s "\t") (List.map ~f:s str)))
@@ -1005,15 +1010,16 @@ let interact ~client =
   let rec main_loop () =
     Interaction.(
       menu ~sentence:Log.(s "Main menu")
-        ~always_there:[menu_item ~char:'q' ~log:Log.(s "Quit") `Quit]
+        ~always_there:[ menu_item ~char:'q' ~log:Log.(s "Quit") `Quit;
+                        menu_item ~char:'v' ~log:Log.(s "Toggle verbose") `Verbose]
         (
-          [ menu_item ~char:'s' ~log:Log.(s "Display current status") 
+          [ menu_item ~char:'s' ~log:Log.(s "Display current status")
               (`Status None); ]
           @ (if can_run_stuff then [
               menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
               menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
             ] else [
-               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status") 
+               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status")
                  (`Status (Some 2.));
              ])
           @ [
@@ -1030,6 +1036,10 @@ let interact ~client =
     )
     >>= function
     | `Quit -> return ()
+    | `Verbose ->
+        Interaction.toggle_verbose ();
+        if !Interaction.verbose_r then Log.(s "v pressed" @ normal);
+        main_loop ()
     | `Status loop ->
       display_status ~client ~loop
       >>= fun () ->
@@ -1069,7 +1079,7 @@ let daemonize_if_applicable config =
         UnixLabels.(
           openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY])
       in
-      let channel = 
+      let channel =
         Lwt_io.of_unix_fd unix_fd ~buffer_size:1024 ~mode:Lwt_io.output in
       Lwt_main.at_exit (fun () -> Lwt_io.close channel);
       global_with_color := false;
@@ -1115,7 +1125,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let doc = "Use $(docv) as configuration file (can be overriden also \
                with `$KETREW_CONFIGURATION`)." in
     Arg.(value & opt string default
-         & info ["C"; "configuration-file"] 
+         & info ["C"; "configuration-file"]
            ~docs:common_options_section ~docv ~doc)
   in
   let init_cmd =
@@ -1165,7 +1175,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   return ()
                 end)
           $ config_file_argument
-          $ Arg.(value @@ flag 
+          $ Arg.(value @@ flag
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
@@ -1180,10 +1190,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             Ketrew_client.as_client ~configuration
               ~f:(inspect ~in_dollar_editor ~format ?since how))
         $ config_file_argument
-        $ Arg.(value @@ flag 
+        $ Arg.(value @@ flag
                @@ info ["e"; "view-in-editor"]
                  ~doc:"Open stuff in $EDITOR (by default in TSV).")
-        $ Arg.(value @@ flag 
+        $ Arg.(value @@ flag
                @@ info ["csv"]
                  ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
         $ Arg.(value & opt (some string) None
