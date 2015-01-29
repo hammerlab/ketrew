@@ -33,7 +33,6 @@ travis_install_on_osx () {
     brew install pkg-config sqlite
     # This path contains the version number which may change *often*
     export PKG_CONFIG_PATH=`find /usr/local/Cellar/sqlite -depth 1 | tail -n 1`/lib/pkgconfig
-    opam install sqlite3
     echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
     echo "/usr/local/Cellar/sqlite/:"
     ls -l /usr/local/Cellar/sqlite/
