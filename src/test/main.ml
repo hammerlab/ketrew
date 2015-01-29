@@ -129,7 +129,6 @@ module Test = struct
 
 end
 
-
 let test_0 () =
   Lwt_main.run begin
     Test.new_db_file ()

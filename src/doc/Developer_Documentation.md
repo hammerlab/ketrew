@@ -76,13 +76,18 @@ Run the tests like this:
     ketrew_test_ssh=<Host> ./ketrew-test [-no-color] ALL
 ```
 
-where `<Host>` is often an entry in your `.ssh/config` file.
+where `<Host>` is often an entry in your `.ssh/config` file and `TestName` is one of
 
-The test will indeed look for the environment variable `ketrew_test_ssh`; if
-not defined it will use `"localhost"`. But for the test to succeed it should be
-an SSH host for which the user running the test does not need password.
-The test will run some commands on that host and create files and directories
-in its `/tmp` directory.
+- `ALL` all of the following.
+- `db-test`
+- `basic-test`
+- `nohup-test`
+- `ssh-failure`
+
+The tests will look for the environment variable `ketrew_test_ssh` (defaulting to
+ `"localhost"`). But for the tests to succeed the user running a test should be
+able to login int `<Host>` without a password. The test will run some commands
+on that host and create files and directories in its `/tmp` directory.
 
 ### The `cli` Test
 
@@ -128,7 +133,7 @@ test-environment (a self-signed SSL certificate/key pair,
 client/server/standalone configuration files, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
-Sourcing `_test_env/test.env` will give a few aliases to run the tests.
+Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 Aliases which start with `ks` mean “with a *standalone-mode* configuration file;”
 those which start with `kd` are in *client-server* mode (`'d'` for “distributed”).
 
