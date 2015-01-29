@@ -39,13 +39,13 @@ Workflows
 
 This function is a more “parametrized” version of the example in the
 `README.md` file (`host` and `queue` come from the command line).
-It actually calls `run` directly itself.
+It actually calls `submit` directly itself.
 
 M*)
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  run (
+  Ketrew_client.submit (
     target "run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
@@ -62,7 +62,7 @@ M*)
 let run_command_with_nohup ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  run (
+  Ketrew_client.submit (
     target (sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
@@ -80,7 +80,7 @@ M*)
 let run_command_with_python_hack ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  run (
+  Ketrew_client.submit (
     target (sprintf "Pyd: %S" cmd)
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
   )
@@ -95,7 +95,7 @@ MacOSX does not support the `nohup` and `setsid` commands any more.
 This function runs a workflow with no less than 2 nodes!
 
 - `target2` depends on `target1`.
-- We call `run` on `target2` (the last target, i.e. the root of the dependency
+- We call `submit` on `target2` (the last target, i.e. the root of the dependency
   arborescence).
 - `target1` will run and if it succeeds `target2` will run.
 
@@ -112,7 +112,7 @@ let run_2_commands_with_python_hack ~host cmd1 cmd2 =
       ~dependencies:[ target1 ]
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd2) ~host)
   in
-  run target2
+  Ketrew_client.submit target2
 (*M
 For example:
 
@@ -152,7 +152,7 @@ let fail_because_of_condition ~host =
       ~cmd:"ls /tmp"
       ~dependencies:[ target_with_condition ]
   in
-  run target2
+  Ketrew_client.submit target2
 (*M
 
 The Explorer™ will show the failed targets:
@@ -278,9 +278,9 @@ let deploy_website branches =
                ))
       ~if_fails_activate:[ancestor "Failed" ~dependencies:[]]
   in
-  (* `run` will activate the target `ancestor` and then `commit_website`, and
+  (* `submit` will activate the target `ancestor` and then `commit_website`, and
      add all their (transitive) dependencies to the system.  *)
-  run (ancestor "Success" ~dependencies:[commit_website])
+  Ketrew_client.submit (ancestor "Success" ~dependencies:[commit_website])
 
 (*M
 
@@ -293,11 +293,11 @@ call `gpg -c` and delete the tar.gz.
 
 The passphrase for GPG must be in a file `~/.backup_passphrase` as
 
-```shell
-export BACKUP_PASSPHRASE="some passsphraaase"
-```
-    
-M*)
+  ```shell
+  export BACKUP_PASSPHRASE="some passsphraaase"
+  ```
+
+  M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
   let daemonize = daemonize ~using:`Python_daemon in
@@ -315,10 +315,12 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let make_targz =
     target ~done_when:targz#exists "make-tar.gz" ~dependencies:[]
       ~make:(daemonize ~host
-               (Program.shf  "tar cfz '%s' '%s'" targz#path dir))
+               Program.(
+                 shf "cd %s/../" dir
+                 && shf  "tar cfz '%s' '%s'" targz#path (Filename.basename dir)))
       (* A first target using `daemonize`
-        see [nohup(1)](http://linux.die.net/man/1/nohup)
-        and [setsid(1)](http://linux.die.net/man/1/setsid). *)
+         see [nohup(1)](http://linux.die.net/man/1/nohup)
+         and [setsid(1)](http://linux.die.net/man/1/setsid). *)
   in
   let md5 = destination "md5" in
   let md5_targz =
@@ -326,30 +328,31 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
       ~make:(daemonize ~host
                Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
-  let gpg = (* `gpg` is a list of targets, `[]` or `[gpg-c, rm-tar.gz]` *)
-    match gpg with
-    | false -> []
-    | true ->
-      let gpg_file = destination "tar.gz.gpg" in
-      let make_it =
-        target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists ~dependencies:[make_targz]
-          ~make:(daemonize ~host
-                   Program.(
-                     sh ". ~/.backup_passphrase"
-                     && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
-                              gpg_file#path targz#path)) in
-      let clean_up =
-        target "rm-tar.gz" ~dependencies:[make_it]
-          ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
-      [make_it; clean_up]
+  let gpg_targets () = (* `gpg` is a list of targets, lazily `[gpg-c, rm-tar.gz]` *)
+    let gpg_file = destination "tar.gz.gpg" in
+    let make_it =
+      target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists
+        ~dependencies:[make_targz; md5_targz]
+        ~make:(daemonize ~host
+                 Program.(
+                   sh ". ~/.backup_passphrase"
+                   && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
+                     gpg_file#path targz#path)) in
+    let clean_up =
+      target "rm-tar.gz" ~dependencies:[make_it]
+        ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
+    [make_it; clean_up]
   in
   let common_ancestor =
-    (* A Target that does nothing, but is used as root of the dependency tree. *)
-    target "make-targz common ancestor"
-      ~dependencies:(gpg @ [make_targz; md5_targz])
+    let dependencies =
+      match gpg with
+      | false -> [make_targz; md5_targz]
+      | true ->  gpg_targets ()
+    in
+    target "make-targz common ancestor" ~dependencies
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
-  run common_ancestor
+  Ketrew_client.submit common_ancestor
 
 (*M
 
@@ -535,11 +538,11 @@ let () =
   | "CI" :: more ->
     begin match more with
     | "prepare" :: [] ->
-      Ketrew.EDSL.run (run_ketrew_on_vagrant `Prepare)
+      Ketrew_client.submit (run_ketrew_on_vagrant `Prepare)
     | "go" :: [] ->
-      Ketrew.EDSL.run (run_ketrew_on_vagrant `Go)
+      Ketrew_client.submit (run_ketrew_on_vagrant `Go)
     | "clean" :: [] ->
-      Ketrew.EDSL.run (run_ketrew_on_vagrant `Clean)
+      Ketrew_client.submit (run_ketrew_on_vagrant `Clean)
     | other ->
       say "usage: %s CI {prepare,go,clean}" Sys.argv.(0);
       failwith "Wrong command line"

@@ -18,23 +18,13 @@
 type target_v0 
   <ocaml from="Ketrew_gen_target_v0.Target" > = abstract
 
-type happening_list_v0 
-  <ocaml from="Ketrew_gen_base_v0.Happening_list" > = abstract
-
-type added_target = { original_id: string; fresh_id: string}
-
-type clean_up_todo_list = {
-  to_kill: string list;
-  to_archive: string list;
-}
 
 type down_message = [
   | List_of_targets of target_v0 list
+  | List_of_target_ids of string list
   | List_of_query_descriptions of (string * string) list
   | Query_result of string
-  | Targets_added of added_target list
-  | Happens of happening_list_v0
-  | Clean_up of clean_up_todo_list
+  | Ok
 ]
 
 type post_message = [

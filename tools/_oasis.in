@@ -1,0 +1,117 @@
+OASISFormat: 0.4
+Name:        ketrew
+Version:     %%VERSION%%
+Synopsis:    Keep Track of Experimental Workflows
+Authors:     Sebastien Mondet <seb@mondet.org>,
+             Jeff Hammerbacher <jeff.hammerbacher@gmail.com>
+License:     Apache-2.0
+Plugins:     META (0.4)
+
+Flag all
+  Description: build and install everything
+  Default: false
+
+Flag test
+  Description: Build the Tests
+  Default$: flag(all)
+
+Library ketrew_data
+  Path: gen/
+  BuildTools: ocamlbuild
+  BuildDepends: cconv
+  Modules: Ketrew_gen_base_v0,
+           Ketrew_gen_daemonize_v0,
+           Ketrew_gen_lsf_v0,
+           Ketrew_gen_pbs_v0,
+           Ketrew_gen_protocol_v0,
+           Ketrew_gen_target_v0,
+           Ketrew_gen_versioned,
+           Ketrew_metadata
+
+Library ketrew_pure
+  Path: src/lib/pure
+  BuildTools: ocamlbuild
+  BuildDepends: ketrew_data, %%FINDLIB_PACKAGES%%
+  Modules: Ketrew_artifact,
+           Ketrew_daemonize,
+           Ketrew_edsl,
+           Ketrew_error,
+           Ketrew_host,
+           Ketrew_long_running,
+           Ketrew_long_running_utilities,
+           Ketrew_lsf,
+           Ketrew_monitored_script,
+           Ketrew_path,
+           Ketrew_pbs,
+           Ketrew_pervasives,
+           Ketrew_plugin,
+           Ketrew_program,
+           Ketrew_protocol,
+           Ketrew_target,
+           Ketrew_unix_process
+
+Library ketrew
+  Path:       src/lib
+  BuildTools: ocamlbuild
+  BuildDepends: ketrew_pure, %%FINDLIB_PACKAGES%%
+  Modules:
+    Ketrew,
+    Ketrew_configuration,
+    Ketrew_engine,
+    Ketrew_command_line,
+    Ketrew_client,
+    Ketrew_server
+
+Executable ketrew_test
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew
+  Build$: flag(all) || flag(test)
+  Install: false
+  MainIs:  main.ml
+
+Executable ketrew_cli_test
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew
+  Build$: flag(all) || flag(test)
+  Install: false
+  MainIs:  Workflow_Examples.ml
+
+Executable ketrew_integration_test
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew
+  Build$: flag(all) || flag(test)
+  Install: false
+  MainIs:  integration.ml
+
+Library ketrew_dummy_plugin_test_lib
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew
+  Build$: flag(all) || flag(test)
+  Install: false
+  Modules: Dummy_plugin
+
+Executable ketrew_dummy_plugin_user_test
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew, ketrew_dummy_plugin_test_lib
+  Build$: flag(all) || flag(test)
+  Install: false
+  MainIs:  dummy_plugin_user.ml
+
+Executable ketrew
+  Path: src/app/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: ketrew
+  Install: true
+  MainIs:  main.ml
+

@@ -20,7 +20,7 @@
   This is a more stable EDSL/API for end-users to make workflows and deal with
   the system.
 
-  Many functions may raise exceptions when called on improperly, but this
+  Many functions may raise exceptions when called improperly, but this
   should happen while building the workflow, not after it starts running. *)
 
 
@@ -131,7 +131,7 @@ end
 
 (** {3 Artifacts} *)
 
-(** Artifacts are things to be built, or already existing, most often
+(** Artifacts are things to be built (they may already exist), most often
     file-tree-locations on a given [host] (see also {!Ketrew_artifact.t}).
 *)
 class type user_artifact = object
@@ -164,7 +164,7 @@ class type user_target =
     method name : string
     (** Get the name of the target *)
 
-    method metadata: Ketrew_artifact.Value.t
+    method metadata: [ `String of string ] option
     (** The metadata that has been set for the target ({i work-in-progress}). *)
 
     method product: user_artifact
@@ -188,7 +188,7 @@ val target :
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
   ?done_when:Ketrew_target.Condition.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
+  ?metadata:[ `String of string ] ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
   ?if_fails_activate:user_target list ->
@@ -200,7 +200,7 @@ val target :
 val file_target:
   ?dependencies:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
-  ?metadata:Ketrew_artifact.Value.t ->
+  ?metadata:[ `String of string ] ->
   ?name:string ->
   ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->
@@ -219,6 +219,7 @@ val daemonize :
   Ketrew_target.Build_process.t
 (** Create a “daemonize” build process. *)
 
+(*
 val direct_execution :
   ?host:Host.t -> Program.t -> Ketrew_target.Build_process.t
 (** Create a direct process (not “long-running”). *)
@@ -226,7 +227,8 @@ val direct_execution :
 val direct_shell_command :
   ?host:Host.t -> string -> Ketrew_target.Build_process.t
 (** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
-
+*)
+    
 val lsf :
   ?host:Host.t ->
   ?queue:string ->
@@ -247,15 +249,4 @@ val pbs :
   Ketrew_gen_pbs_v0.Program.t ->
   [> `Long_running of string * string ]
 (** Create a “PSB” build process. *)
-
-(** {3 Workflows} *)
-
-val run:
-  ?override_configuration:Ketrew_configuration.t ->
-  user_target ->
-  unit
-(** Submit and activate a [user_target] (the next time Ketrew runs a step, the
-    target will be started/run (all the graph of dependencies and fallbacks is
-    submitted at once). *)
-
 

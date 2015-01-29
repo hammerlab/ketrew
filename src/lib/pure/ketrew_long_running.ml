@@ -24,7 +24,7 @@ type error = [
 ]
 (** The “imposed” error types for “long-running” plugins.
     A [`Fatal _] error will make the target die with the error,
-    whereas when an error is [`Recoverable _] Ketrew will keep trying again
+    whereas if an error is [`Recoverable _] Ketrew will keep trying
     (for example, a networking error which may not happen later).
 *)
 
@@ -42,7 +42,7 @@ module type LONG_RUNNING = sig
 
   val deserialize_exn: string -> run_parameters
   (** Deserialize the run parameters from a string; the engine guaranties
-      that [deserialize_exn] will be called onthe result of {!serialize};
+      that [deserialize_exn] will be called on the result of {!serialize};
       and assumes that no exception will be thrown in that case. *)
 
   val start: run_parameters ->

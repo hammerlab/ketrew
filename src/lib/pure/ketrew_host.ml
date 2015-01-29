@@ -349,7 +349,7 @@ let execute ?timeout t argl =
   in
   begin run_with_timeout ?timeout t ~run
     >>< fun result ->
-    Log.(!final_log @ verbose);
+    Log.(!final_log @ very_verbose);
     match result with
     | `Ok o -> return o
     | `Error (`Host e) -> fail (`Host e)

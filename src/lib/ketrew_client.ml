@@ -98,15 +98,18 @@ module Http_client = struct
     end
 
 
-  let get_current_targets ~archived t =
+  let get_current_targets t =
     call_json t ~path:"/targets" ~meta_meth:`Get 
-      ~args:(if archived then ["archived", "true"] else [])
     >>= filter_down_message
       ~loc:`Targets
-      ~f:(function `List_of_targets tl -> Some tl | _ -> None)
+      ~f:(function
+        | `List_of_targets tl ->
+          Some (List.map tl ~f:Ketrew_target.of_serializable)
+        | _ -> None)
 
   let add_targets t ~targets =
-    let msg = (`List_of_targets targets) in
+    let msg =
+      `List_of_targets (List.map targets ~f:Ketrew_target.to_serializable) in
     call_json t ~path:"/add-targets" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
@@ -115,7 +118,9 @@ module Http_client = struct
     call_json t ~path:"/targets" ~meta_meth:`Get ~args:["id", id]
     >>= filter_down_message
       ~loc:`Targets
-      ~f:(function `List_of_targets [t] -> Some t | _ -> None)
+      ~f:(function
+        | `List_of_targets [t] -> Some (Ketrew_target.of_serializable t)
+        | _ -> None)
 
   let kill_or_archive t what =
     let ids, error_loc, path =
@@ -128,7 +133,7 @@ module Http_client = struct
     call_json t ~path ~meta_meth:(`Post_message msg)
     >>= filter_down_message
       ~loc:error_loc
-      ~f:(function `Happens sl -> Some sl | _ -> None)
+      ~f:(function `Ok -> Some () | _ -> None)
 
   let kill t id_list = kill_or_archive t (`Kill_targets id_list)
   let archive t id_list = kill_or_archive t (`Archive_targets id_list)
@@ -153,9 +158,8 @@ module Http_client = struct
     call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
     >>= fun json ->
     filter_down_message json ~loc
-      ~f:(function `Clean_up s -> Some s | _ -> None)
-    >>= fun {Ketrew_gen_protocol_v0.Clean_up_todo_list. to_kill; to_archive} ->
-    return (`To_kill to_kill, `To_archive to_archive)
+      ~f:(function `List_of_target_ids s -> Some s | _ -> None)
+
 end
 
 type t = [
@@ -205,24 +209,15 @@ let add_targets t tlist =
   | `Standalone s ->
     let open Standalone in
     Ketrew_engine.add_targets s.engine tlist
-    >>= fun _ ->
-    return ()
   | `Http_client c ->
     Http_client.add_targets c tlist
 
-let current_targets ?(archived=false) = function
+let current_targets = function
 | `Standalone s ->
   let open Standalone in
   Ketrew_engine.current_targets s.engine
-  >>= fun current ->
-  begin if archived
-    then
-      Ketrew_engine.archived_targets s.engine
-      >>| (@) current
-    else return current
-  end
 | `Http_client c ->
-  Http_client.get_current_targets ~archived c
+  Http_client.get_current_targets c
 
 let kill t id_list =
   match t with
@@ -230,29 +225,10 @@ let kill t id_list =
     let open Standalone in
     Deferred_list.while_sequential id_list (fun id ->
         Ketrew_engine.kill s.engine ~id)
-    >>| List.concat
+    >>= fun (_ : unit list) ->
+    return ()
   | `Http_client c ->
     Http_client.kill c id_list
-
-let archive t id_list =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Deferred_list.while_sequential id_list (fun id ->
-        Ketrew_engine.archive_target s.engine id)
-    >>| List.concat
-  | `Http_client c ->
-    Http_client.archive c id_list
-
-let is_archived t ~id =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Ketrew_engine.is_archived s.engine id
-  | `Http_client c ->
-    Log.(s "Function is_archived not implemented over HTTP: returning `false`"
-         @ warning);
-    return false
 
 let get_target t ~id =
   match t with
@@ -293,11 +269,49 @@ let restart_target t ids =
   | `Standalone s ->
     let open Standalone in
     Deferred_list.while_sequential ids (Ketrew_engine.restart_target s.engine)
-    >>| List.concat
+    >>= fun (_ : Ketrew_target.id list) ->
+    return ()
   | `Http_client c ->
     Http_client.restart c ids
 
 let get_local_engine = function
 | `Standalone s -> (Some s.Standalone.engine)
 | `Http_client _ -> None
+
+(*
+  Submit a workflow:
+
+   - make sure the target is active,
+   - render all the dependencies/fallbacks/success-triggers,
+   - writes errors to Log
+*)
+let user_command_list t =
+  t#activate;
+  let rec go_through_deps t =
+    t#render ::
+    List.concat_map t#dependencies ~f:go_through_deps
+    @ List.concat_map t#if_fails_activate ~f:go_through_deps
+    @ List.concat_map t#success_triggers ~f:go_through_deps
+  in
+  let targets =
+    (go_through_deps t)
+    |> List.dedup ~compare:Ketrew_target.(fun ta tb -> compare (id ta) (id tb))
+  in
+  match targets with
+  | first :: more -> (first, more)
+  | [] -> assert false (* there is at least the argument one *)
+
+let submit ?override_configuration t =
+  let active, dependencies = user_command_list t in
+  let config_path = Ketrew_configuration.get_path () in
+  match Lwt_main.run (
+    Ketrew_configuration.get_configuration ?override_configuration config_path
+    >>= fun configuration ->
+          as_client ~configuration ~f:(fun ~client ->
+              add_targets client (active :: dependencies))
+  ) with
+  | `Ok () -> ()
+  | `Error e ->
+    Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
+    failwith (Ketrew_error.to_string e)
 
