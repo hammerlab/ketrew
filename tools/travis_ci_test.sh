@@ -29,10 +29,10 @@ travis_install_on_osx () {
     sudo installer -verbose -pkg /Volumes/XQuartz-2.7.6/XQuartz.pkg -target /
 
     brew update
-    brew install  opam --HEAD
+    brew install opam --HEAD
     brew install pkg-config sqlite
     # This path contains the version number which may change *often*
-    export PKG_CONFIG_PATH=/usr/local/Cellar/sqlite/3.8.7.4/lib/pkgconfig
+    export PKG_CONFIG_PATH=`find /usr/local/Cellar/sqlite -depth 1 | tail -n 1`/lib/pkgconfig
     echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
     echo "/usr/local/Cellar/sqlite/:"
     ls -l /usr/local/Cellar/sqlite/
