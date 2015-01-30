@@ -48,8 +48,6 @@ let condition ?(with_details=false) =
     then Target.Condition.log c
     else s "Runs When “Not Done”"
 
-let if_color f x = if !global_with_color then f x else x
-
 let short_status t =
   let open Log in
   let state = Target.state t in
@@ -69,7 +67,6 @@ let short_status t =
 
 let target_for_menu t =
   let open Log in
-  let if_color f x = if !global_with_color then f x else x in
   if_color bold_yellow (s (Target.name t)) % n
   % if_color greyish (s (Target.id t)) % n
   % short_status t
