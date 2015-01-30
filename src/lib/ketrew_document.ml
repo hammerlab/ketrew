@@ -17,7 +17,6 @@
 open Ketrew_pervasives
 module Target = Ketrew_target
 
-(** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
 let log_list ~empty l =
   let empty_log = empty in (** renaming because of {!Log.empty} *)
   let open Log in
@@ -67,7 +66,6 @@ let short_status t =
                 % Option.value_map
                   ~default:empty log ~f:(fun m -> sp % parens (s m))
                 % separate empty (List.map ~f:(fun m -> s ", " % s m) info))
-
 
 let target_for_menu t =
   let open Log in
