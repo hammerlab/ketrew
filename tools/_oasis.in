@@ -58,6 +58,9 @@ Library ketrew
     Ketrew,
     Ketrew_configuration,
     Ketrew_engine,
+    Ketrew_document,
+    Ketrew_interaction,
+    Ketrew_explorer,
     Ketrew_command_line,
     Ketrew_client,
     Ketrew_server
