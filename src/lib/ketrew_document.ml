@@ -17,6 +17,7 @@
 open Ketrew_pervasives
 module Target = Ketrew_target
 
+(* Is this necesary?
 let log_list ~empty l =
   let empty_log = empty in (** renaming because of {!Log.empty} *)
   let open Log in
@@ -24,6 +25,7 @@ let log_list ~empty l =
   match l with
   | [] -> if_empty
   | more -> n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
+  *)
 
 let build_process ?(with_details=false)  =
   let open Log in
