@@ -19,7 +19,6 @@ module Target = Ketrew_target
 module Document = Ketrew_document
 module Interaction = Ketrew_interaction
 
-(** The “Target Explorer™“ *)
 type exploration_state = {
   build_process_details: bool;
   target_filter: (Target.t -> bool) * Log.t;
@@ -53,12 +52,12 @@ let finished t =
   | `Activable -> false
 
 let filters = [
-  filter (fun _ -> true)      ~char:'n' ~log:Log.(s "No-filter, see them all");
-  simple_filter `Activable ~char:'p' ~log:Log.(s "Passive/Activable");
-  simple_filter `In_progress ~char:'r' ~log:Log.(s "Running/In-progress");
-  simple_filter `Successful ~char:'s' ~log:Log.(s "Successful");
-  simple_filter `Failed ~char:'f' ~log:Log.(s "Failed");
-  filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
+  filter        (fun _ -> true) ~char:'n' ~log:Log.(s "No-filter, see them all");
+  simple_filter `Activable      ~char:'p' ~log:Log.(s "Passive/Activable");
+  simple_filter `In_progress    ~char:'r' ~log:Log.(s "Running/In-progress");
+  simple_filter `Successful     ~char:'s' ~log:Log.(s "Successful");
+  simple_filter `Failed         ~char:'f' ~log:Log.(s "Failed");
+  filter        finished        ~char:'n' ~log:Log.(s "Finished (success or failure)");
 ]
 
 let initial_ask_tags_content =
@@ -115,7 +114,8 @@ let pick_a_target_from_list ~client target_ids =
       ~always_there:cancel_menu_items
       (make_target_menu ~targets ()))
 
-let pick_a_target ~client (es : exploration_state) =
+let pick_a_target ~client (es : exploration_state) :
+    (([> `Cancel | `Quit | `Reload | `Filter | `Go of string]), 'e) t =
   Ketrew_client.current_targets client
   >>= fun targets ->
   Interaction.(
