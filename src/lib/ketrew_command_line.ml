@@ -354,7 +354,6 @@ let interact ~client =
     | `Quit -> return ()
     | `Verbose ->
         Interaction.toggle_verbose ();
-        if Interaction.is_verbose () then Log.(s "v pressed" @ normal);
         main_loop ()
     | `Status loop ->
       display_status ~client ~loop

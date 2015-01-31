@@ -14,7 +14,6 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
 open Ketrew_pervasives
 module Target = Ketrew_target
 module Document = Ketrew_document
@@ -29,10 +28,17 @@ let init () =
     ()
   )
 
-let verbose_r = ref false
-let is_verbose () = !verbose_r
+let verbose_ref = ref false
+
+let pressed key =
+  if !verbose_ref then
+    Log.(sf "%c pressed" key @ normal)
+
 let toggle_verbose () =
-  verbose_r := not !verbose_r
+  begin
+    verbose_ref := not !verbose_ref;
+    pressed 'v'
+  end
 
 (** [with_cbreak f] calls with the terminal in “get key” mode.
     It comes from http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
@@ -107,6 +113,8 @@ let interaction_chars =
   List.init 10 (fun i -> Char.chr (48 + i))
   @ List.init 26 (fun i -> Char.chr (97 + i))
 
+type 'a menu_item = (char option * Log.t * 'a)
+
 let menu_item ?char ?(log=Log.empty) v =
   (char, log, v)
 
@@ -157,7 +165,7 @@ let menu ?(max_per_page=15) ?(always_there=[]) ~sentence items =
           @ normal);
     get_key ()
     >>= fun key ->
-    if is_verbose () then Log.(sf "%c pressed" key @ normal);
+    pressed key;
     begin match key with
     | '<' -> menu_loop (nth - 1)
     | '>' -> menu_loop (nth + 1)
