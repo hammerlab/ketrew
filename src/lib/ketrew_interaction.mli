@@ -29,7 +29,7 @@ val menu_item : ?char:char -> ?log:SmartPrint.t -> 'a -> 'a menu_item
 (** Represent a menu item. *)
 
 val menu : ?max_per_page:int ->
-           ?always_there:('a menu_item) list ->
+           ?always_there:'a menu_item list ->
            sentence:SmartPrint.t ->
            'a menu_item list ->
              ('a, [> `Failure of string ]) t
