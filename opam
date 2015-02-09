@@ -11,6 +11,7 @@ build: [
 ]
 remove: [
   ["ocamlfind" "remove" "ketrew"]
+  ["ocamlfind" "remove" "ketrew_pure"]
   ["ocamlfind" "remove" "ketrew_data"]
   ["rm" "-f" "%{bin}%/ketrew"]
 ]
