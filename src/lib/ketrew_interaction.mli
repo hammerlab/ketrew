@@ -24,6 +24,9 @@ val toggle_verbose : unit -> unit
 (** Turn on or off messages about which key is pressed. *)
 
 type 'a menu_item = char option * Log.t * 'a
+(** The type of a menu item.
+
+    TODO: Abstract this away.*)
 
 val menu_item : ?char:char -> ?log:SmartPrint.t -> 'a -> 'a menu_item
 (** Represent a menu item. *)
@@ -36,7 +39,7 @@ val menu : ?max_per_page:int ->
 (** Display a menu given the specified [menu_items] *)
 
 val open_in_dollar_editor : string -> (unit, 'a) t
-(** Open a file *)
+(** Open a file. *)
 
 val view_in_dollar_editor : ?extension:string -> string ->
   (unit, [> `IO of [> `Write_file_exn of string * exn ] ]) t
@@ -75,3 +78,4 @@ val make_target_menu : targets:Ketrew_target.t list ->
     ?filter_target:(Ketrew_target.t -> bool) ->
     unit ->
       ([> `Go of string ] menu_item) list
+(** Create a menu with the targets. *)

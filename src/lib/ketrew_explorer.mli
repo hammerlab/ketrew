@@ -46,4 +46,5 @@ val explore : client:[< `Http_client of Ketrew_client.Http_client.t
         | `Persistent_state of [> `Deserilization of string ]
         | `System of [> `File_info of string ] * [> `Exn of exn ]
         | `Target of [> `Deserilization of string ] ]) t
-
+(** [explore ~client exploration_states] runs a read-eval loop to explore and
+    interact with targets.*)
