@@ -23,10 +23,8 @@ val init : unit -> unit
 val toggle_verbose : unit -> unit
 (** Turn on or off messages about which key is pressed. *)
 
-type 'a menu_item = char option * Log.t * 'a
-(** The type of a menu item.
-
-    TODO: Abstract this away.*)
+type +'a menu_item
+(** The type of a menu item. *)
 
 val menu_item : ?char:char -> ?log:SmartPrint.t -> 'a -> 'a menu_item
 (** Represent a menu item. *)
