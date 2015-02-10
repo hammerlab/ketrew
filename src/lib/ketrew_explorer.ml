@@ -114,8 +114,7 @@ let pick_a_target_from_list ~client target_ids =
       ~always_there:cancel_menu_items
       (make_target_menu ~targets ()))
 
-let pick_a_target ~client (es : exploration_state) :
-    (([> `Cancel | `Quit | `Reload | `Filter | `Go of string]), 'e) t =
+let pick_a_target ~client (es : exploration_state) =
   Ketrew_client.current_targets client
   >>= fun targets ->
   Interaction.(
