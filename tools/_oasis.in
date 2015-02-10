@@ -34,6 +34,7 @@ Library ketrew_pure
   BuildDepends: ketrew_data, %%FINDLIB_PACKAGES%%
   Modules: Ketrew_artifact,
            Ketrew_daemonize,
+           Ketrew_document,
            Ketrew_edsl,
            Ketrew_error,
            Ketrew_host,
@@ -58,6 +59,8 @@ Library ketrew
     Ketrew,
     Ketrew_configuration,
     Ketrew_engine,
+    Ketrew_interaction,
+    Ketrew_explorer,
     Ketrew_command_line,
     Ketrew_client,
     Ketrew_server
