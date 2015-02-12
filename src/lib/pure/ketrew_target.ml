@@ -414,6 +414,13 @@ module State = struct
     let killable = function
     | #Ketrew_gen_target_v0.Killable_state.t -> true
     | _ -> false
+
+    let finished_because_dependencies_died =
+      let open Ketrew_gen_target_v0.History in
+      function
+      | `Finished {previous_state = (`Dependencies_failed _); _ } -> true
+      | other -> false
+
   end
 end
 
