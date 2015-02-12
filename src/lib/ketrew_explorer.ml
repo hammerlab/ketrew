@@ -41,8 +41,10 @@ let cancel_menu_items =
 
 let filter ~log ~char f =
   (char, log, `Set (f, log))
+
 let simple_filter ~log ~char simple =
   filter ~log ~char (fun t -> Target.state t |> Target.State.simplify = simple)
+
 let finished t =
   let simple = Target.state t |> Target.State.simplify in
   match simple with
@@ -51,19 +53,26 @@ let finished t =
   | `In_progress
   | `Activable -> false
 
+let failed_but_not_because_of_dependencies t =
+  let state = Target.state t in
+  Target.State.simplify state = `Failed
+  && not (Target.State.Is.finished_because_dependencies_died state)
+
 let filters = [
   filter        (fun _ -> true) ~char:'n' ~log:Log.(s "No-filter, see them all");
   simple_filter `Activable      ~char:'p' ~log:Log.(s "Passive/Activable");
   simple_filter `In_progress    ~char:'r' ~log:Log.(s "Running/In-progress");
   simple_filter `Successful     ~char:'s' ~log:Log.(s "Successful");
   simple_filter `Failed         ~char:'f' ~log:Log.(s "Failed");
-  filter        finished        ~char:'n' ~log:Log.(s "Finished (success or failure)");
+  filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
+  filter failed_but_not_because_of_dependencies
+    ~char:'D' ~log:Log.(s "Failed but not because of its depedencies");
 ]
 
 let initial_ask_tags_content =
   "# Enter regular expressions on `tags` of the targets\n\
-    # Lines beginning with '#' are thrown aways\n\
-    # The syntax of the regular expressions is “POSIX”\n\
+   # Lines beginning with '#' are thrown aways\n\
+   # The syntax of the regular expressions is “POSIX”\n\
   "
 
 let get_filter () =
