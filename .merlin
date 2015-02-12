@@ -1,6 +1,7 @@
-S ./src/lib/
+S ./src/lib/pure
 S ./src/test/
 S ./src/app/
+B _build/src/lib/pure
 B _build/src/lib
 B _build/src/app
 B _build/src/test
