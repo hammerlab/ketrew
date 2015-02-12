@@ -147,8 +147,8 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
           (option created.name (fmt "-J %s"));
         (option created.wall_limit (fmt "-W %s"));
         (option created.processors (function
-           | `Min m -> fmt "-n %d" m
-           | `Min_max (mi, ma) -> fmt "-n %d,%d" mi ma));
+           | `Min m -> fmt "-n %d -R 'span[hosts=1]'" m
+           | `Min_max (mi, ma) -> fmt "-n %d,%d -R 'span[hosts=1]'" mi ma));
         fmt "< %s"
           (Path.to_string_quoted monitored_script_path)
       ]
