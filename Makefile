@@ -5,15 +5,15 @@ PLEASE=ocaml tools/please.ml
 
 all: build
 
-configure: setup.data
-
 _oasis: tools/_oasis.in tools/please.ml
 	$(PLEASE) make _oasis
 
 setup.data: _oasis
-	oasis setup -setup-update dynamic && \
-	    ocaml setup.ml -configure --enable-all && \
-	    echo 'Configured'
+	oasis setup -setup-update dynamic
+
+configure: setup.data
+	ocaml setup.ml -configure --enable-all $(COPT) && \
+	echo 'Configured'
 
 gen:
 	$(PLEASE) generate ketrew_data
@@ -24,8 +24,8 @@ OWN_BINARIES= ketrew-test ketrew ketrew-pure ketrew-workflow-examples-test ketre
 build: gen
 	ocaml setup.ml -build && \
 	    rm -f $(OCAMLBUILD_ANNOYING_LINKS) && \
-	    cp _build/src/test/main.native ketrew-test && \
 	    cp _build/src/app/main.native ketrew && \
+	    cp _build/src/test/main.native ketrew-test && \
 	    cp _build/src/test/Workflow_Examples.native ketrew-workflow-examples-test && \
 	    cp _build/src/test/integration.native ketrew-integration-test && \
             echo "Done"
