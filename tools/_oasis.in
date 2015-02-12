@@ -6,6 +6,7 @@ Authors:     Sebastien Mondet <seb@mondet.org>,
              Jeff Hammerbacher <jeff.hammerbacher@gmail.com>
 License:     Apache-2.0
 Plugins:     META (0.4)
+BuildTools: ocamlbuild
 
 Flag all
   Description: build and install everything
@@ -17,7 +18,6 @@ Flag test
 
 Library ketrew_data
   Path: gen/
-  BuildTools: ocamlbuild
   BuildDepends: cconv
   Modules: Ketrew_gen_base_v0,
            Ketrew_gen_daemonize_v0,
@@ -30,7 +30,6 @@ Library ketrew_data
 
 Library ketrew_pure
   Path: src/lib/pure
-  BuildTools: ocamlbuild
   BuildDepends: ketrew_data, %%FINDLIB_PACKAGES%%
   Modules: Ketrew_artifact,
            Ketrew_daemonize,
@@ -53,7 +52,6 @@ Library ketrew_pure
 
 Library ketrew
   Path:       src/lib
-  BuildTools: ocamlbuild
   BuildDepends: ketrew_pure, %%FINDLIB_PACKAGES%%
   Modules:
     Ketrew,
@@ -67,7 +65,6 @@ Library ketrew
 
 Executable ketrew_test
   Path: src/test/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew
   Build$: flag(all) || flag(test)
@@ -76,7 +73,6 @@ Executable ketrew_test
 
 Executable ketrew_cli_test
   Path: src/test/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew
   Build$: flag(all) || flag(test)
@@ -85,7 +81,6 @@ Executable ketrew_cli_test
 
 Executable ketrew_integration_test
   Path: src/test/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew
   Build$: flag(all) || flag(test)
@@ -94,7 +89,6 @@ Executable ketrew_integration_test
 
 Library ketrew_dummy_plugin_test_lib
   Path: src/test/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew
   Build$: flag(all) || flag(test)
@@ -103,7 +97,6 @@ Library ketrew_dummy_plugin_test_lib
 
 Executable ketrew_dummy_plugin_user_test
   Path: src/test/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew, ketrew_dummy_plugin_test_lib
   Build$: flag(all) || flag(test)
@@ -112,7 +105,6 @@ Executable ketrew_dummy_plugin_user_test
 
 Executable ketrew
   Path: src/app/
-  BuildTools: ocamlbuild
   CompiledObject: best
   BuildDepends: ketrew
   Install: true
