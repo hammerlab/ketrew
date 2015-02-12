@@ -99,3 +99,9 @@ val get_pid_of_monitored_script :
   script:Ketrew_monitored_script.t ->
   (int option, [> `Timeout of Time.t ]) Deferred_result.t
 (** Fetch and parse the [pid] file of a monitored-script. *)
+
+val shell_command_output_or_log :
+  host:Ketrew_host.t ->
+  string -> (string, Ketrew_pervasives.Log.t) Ketrew_pervasives.t
+(** Call {!Ketrew_host.get_shell_command_output} and transform errors
+    into a {!Log.t}. *)

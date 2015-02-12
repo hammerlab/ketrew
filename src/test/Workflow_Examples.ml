@@ -82,13 +82,44 @@ let run_command_with_python_hack ~host cmd =
   let host = Host.parse host in
   Ketrew_client.submit (
     target (sprintf "Pyd: %S" cmd)
-      ~make:(daemonize ~using:`Python_daemon (Program.sh cmd) ~host)
+      ~make:(daemonize (Program.sh cmd)
+               ~using:`Python_daemon ~host
+               ~call_script:(fun script -> ["bash"; "--verbose"; script]))
   )
 (*M
 
 The `` `Python_daemon`` way of daemonizing was hacked together because
 MacOSX does not support the `nohup` and `setsid` commands any more.
 
+### Daemonize With “Apache Yarn”
+
+This function is like `run_command_with_lsf` but uses
+the
+[Yarn](http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html)
+backend (Yarn comes from the Hadoop ecosystem and is used to request resources).
+
+  The function `yarn` can...
+  M*)
+let run_command_with_yarn ~host cmd =
+  let open Ketrew.EDSL in
+  let host = Host.parse host in
+  let make =
+    (* Ketrew_yarn.create ~host (`Yarn_application (Program.sh cmd)) in *)
+    Ketrew_yarn.(
+      create ~host
+        (distributed_shell_program
+           ~container_memory:(`GB 12)
+           ~timeout:(`Seconds 3600)
+           ~application_name:"YarnKetrewExample"
+           (* do not put spaces up there, can break Yarn *)
+           (Program.sh cmd))
+  ) in
+  Ketrew_client.submit (
+    target (sprintf "Yarn: %S" cmd) ~make
+  )
+
+(*M
+  
 
 ### A First Dependency Chain
 
@@ -525,6 +556,13 @@ let () =
     | other ->
       say "usage: %s pyd <host> <cmd>" Sys.argv.(0);
       failwith "Wrong command line" end
+  | "yarn" :: more ->
+    begin match more with
+    | host :: cmd :: [] -> run_command_with_yarn ~host cmd
+    | other ->
+      say "usage: %s yarn <host> <cmd>" Sys.argv.(0);
+      failwith "Wrong command line"
+    end
   | "two-py" :: more ->
     begin match more with
     | host :: cmd1 :: cmd2 :: [] -> 

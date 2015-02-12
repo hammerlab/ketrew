@@ -213,6 +213,7 @@ val file_target:
 
 val daemonize :
   ?starting_timeout:float ->
+  ?call_script:(string -> string list) ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Host.t ->
   Program.t ->

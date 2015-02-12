@@ -1,3 +1,4 @@
+
 (**************************************************************************)
 (*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
@@ -20,20 +21,27 @@ type path <ocaml from="Ketrew_gen_base_v0.Path"> = abstract
 type program <ocaml from="Ketrew_gen_base_v0.Program"> = abstract
 type monitored_script <ocaml from="Ketrew_gen_base_v0.Monitored_script"> = abstract
 
+type daemonized_run <ocaml from="Ketrew_gen_daemonize_v0.Running"> = abstract
 
+type distributed_shell_parameters = {
+  hadoop_bin: string;
+  distributed_shell_shell_jar: string;
+  container_memory: [ GB of int | Raw of string ];
+  timeout: [ Seconds of int | Raw of string ];
+  application_name: string;
+}
 type created = {
   host: host;
-  program: program;
-  using_hack: [ Nohup_setsid | Python_daemon ];
-  starting_timeout: time;
-  shell_command: string list;
+  program: [
+    | Distributed_shell of (distributed_shell_parameters * program)
+    | Yarn_application of program
+  ];
+  daemonize_using: [ Nohup_setsid | Python_daemon ];
+  daemon_start_timeout: float;
 }
 type running = {
-  pid: int option;
-  playground: path;
-  script: monitored_script;
   created: created;
-  start_time: time;
+  daemonized_script: daemonized_run;
 }
 type run_parameters = [
   | Created of created

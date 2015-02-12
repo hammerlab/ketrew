@@ -49,12 +49,18 @@
 
 (** The “standard” plugin-API. *)
 include Ketrew_long_running.LONG_RUNNING
+          with type run_parameters = Ketrew_gen_daemonize_v0.Run_parameters.t
 
 val create:
   ?starting_timeout:float ->
+  ?call_script:(string -> string list) ->
   ?using:[ `Nohup_setsid | `Python_daemon] ->
   ?host:Ketrew_host.t -> Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
     are already serialized). *)
 
+
+val default_shell : string
+val script_placeholder : string
+val default_shell_command : string list

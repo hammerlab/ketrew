@@ -77,3 +77,12 @@ let get_pid_of_monitored_script ~host ~script =
     | `Error (`Timeout _ as e) -> fail e
   end
 
+
+let shell_command_output_or_log ~host cmd =
+  begin Ketrew_host.get_shell_command_output host cmd
+    >>< function
+    | `Ok (o, _) -> return o
+    | `Error e ->
+      fail Log.(s "Command " % quote cmd % s " on " % Host.log host
+                % s " failed: " % s (Ketrew_error.to_string e))
+  end
