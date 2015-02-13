@@ -180,6 +180,8 @@ let explore_single_target ~client (es: exploration_state) target =
         boolean_item ~value:es.metadata_details ~char:'m'
           ~to_false:(Log.(s "Hide metadata details"), `Show_metadata false)
           ~to_true:(Log.(s "Show metadata details"), `Show_metadata true)
+        @ [menu_item ~char:'M'
+             ~log:Log.(s "View Metadata in $EDITOR") `View_metadata]
     in
     let menu_item_of_id_list ~char ~log ~result ids =
       match ids with
@@ -216,6 +218,13 @@ let explore_single_target ~client (es: exploration_state) target =
 
 let view_json ~client target =
   let content = Target.Stored_target.(of_target target |> serialize) in
+  Interaction.view_in_dollar_editor ~extension:"json" content
+
+let view_metadata ~client target =
+  let content =
+    match Target.metadata target with
+    | Some (`String s) -> s
+    | None -> "" in
   Interaction.view_in_dollar_editor ~extension:"json" content
 
 let rec target_status
@@ -343,6 +352,9 @@ let rec explore ~client exploration_state_stack =
           explore ~client (one :: history)
         | `View_json ->
           view_json ~client chosen >>= fun () ->
+          explore ~client (one :: history)
+        | `View_metadata ->
+          view_metadata ~client chosen >>= fun () ->
           explore ~client (one :: history)
         | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
           as follow ->
