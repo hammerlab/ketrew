@@ -24,13 +24,15 @@ type exploration_state = {
   target_filter: (Target.t -> bool) * Log.t;
   current_target: Target.id option;
   condition_details: bool;
+  metadata_details: bool;
 }
 
 let create_state () =
   {build_process_details = false;
-    condition_details = false;
-    target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
-    current_target = None}
+   condition_details = false;
+   metadata_details = false;
+   target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
+   current_target = None}
 
 let cancel_menu_items =
   Interaction.([
@@ -142,8 +144,10 @@ let explore_single_target ~client (es: exploration_state) target =
   let sentence =
     let build_process_details = es.build_process_details in
     let condition_details = es.condition_details in
+    let metadata_details = es.metadata_details in
     Log.(s "Exploring "
-          % Document.target ~build_process_details ~condition_details target)
+         % Document.target
+           ~build_process_details ~condition_details ~metadata_details target)
   in
   (* Ketrew_client.is_archived client ~id:(Target.id target) *)
   (* >>= fun is_archived -> *)
@@ -169,6 +173,14 @@ let explore_single_target ~client (es: exploration_state) target =
       boolean_item ~value:es.condition_details ~char:'c'
         ~to_false:(Log.(s "Hide condition details"), `Show_condition false)
         ~to_true:(Log.(s "Show condition details"), `Show_condition true) in
+    let metadata_details_item =
+      match Target.metadata target with
+      | None -> []
+      | Some _ ->
+        boolean_item ~value:es.metadata_details ~char:'m'
+          ~to_false:(Log.(s "Hide metadata details"), `Show_metadata false)
+          ~to_true:(Log.(s "Show metadata details"), `Show_metadata true)
+    in
     let menu_item_of_id_list ~char ~log ~result ids =
       match ids with
       | [] -> []
@@ -191,6 +203,7 @@ let explore_single_target ~client (es: exploration_state) target =
       [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
       @ build_process_details_item
       @ condition_details_item
+      @ metadata_details_item
       @ follow_deps_item
       @ follow_fbacks_item
       @ follow_success_triggers_item
@@ -311,6 +324,8 @@ let rec explore ~client exploration_state_stack =
           explore ~client ({ one with build_process_details }  :: history)
         | `Show_condition condition_details ->
           explore ~client ({ one with condition_details }  :: history)
+        | `Show_metadata metadata_details ->
+          explore ~client ({ one with metadata_details }  :: history)
         | `Status ->
           begin target_status ~client one chosen
             >>= function
