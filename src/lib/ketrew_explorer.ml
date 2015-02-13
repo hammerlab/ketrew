@@ -60,10 +60,23 @@ let failed_but_not_because_of_dependencies t =
   Target.State.simplify state = `Failed
   && not (Target.State.Is.finished_because_dependencies_died state)
 
+let really_running t =
+  let state = Target.state t in
+  let open Target.State in
+  Is.started_running state || Is.still_running state
+  || Is.ran_successfully state
+
+let waiting_on_dependencies t =
+  let state = Target.state t in
+  let open Target.State in
+  Is.building state || Is.still_building state
+
 let filters = [
   filter        (fun _ -> true) ~char:'n' ~log:Log.(s "No-filter, see them all");
   simple_filter `Activable      ~char:'p' ~log:Log.(s "Passive/Activable");
   simple_filter `In_progress    ~char:'r' ~log:Log.(s "Running/In-progress");
+  filter really_running         ~char:'R' ~log:Log.(s "Really running, not waiting");
+  filter waiting_on_dependencies ~char:'d' ~log:Log.(s "Waiting on dependencies");
   simple_filter `Successful     ~char:'s' ~log:Log.(s "Successful");
   simple_filter `Failed         ~char:'f' ~log:Log.(s "Failed");
   filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
