@@ -26,6 +26,7 @@ type created = {
   queue: string option;
   name: string option;
   wall_limit: string option;
+  project: string option;
   processors: [ Min of int | Min_max of (int * int) ] option;
 }
 type running = {
