@@ -142,9 +142,11 @@ module State = struct
     | `Starting _
     | `Still_building _
     | `Still_running _
+    | `Still_running_despite_recoverable_error _
     | `Ran_successfully _
     | `Successfully_did_nothing _
     | `Tried_to_eval_condition _
+    | `Tried_to_reeval_condition _
     | `Active _ -> `In_progress
     | `Verified_success _
     | `Already_done _ -> `Successful
@@ -172,10 +174,12 @@ module State = struct
     | `Starting history -> continue history
     | `Still_building history -> continue history
     | `Still_running (history, _) -> continue history
+    | `Still_running_despite_recoverable_error (_, history, _) -> continue history
     | `Ran_successfully (history, _) -> continue history
     | `Successfully_did_nothing history -> continue history
     | `Active (history, _) -> continue history
     | `Tried_to_eval_condition history -> continue history
+    | `Tried_to_reeval_condition (_, history) -> continue history
     | `Verified_success history -> continue history
     | `Already_done history -> continue history
     | `Dependencies_failed (history, _) -> continue history
@@ -199,10 +203,13 @@ module State = struct
     | `Starting _ -> "Starting"
     | `Still_building _ -> "Still_building"
     | `Still_running _ -> "Still_running"
+    | `Still_running_despite_recoverable_error _ ->
+      "Still_running_despite_recoverable_error"
     | `Ran_successfully _ -> "Ran_successfully"
     | `Successfully_did_nothing _ -> "Successfully_did_nothing"
     | `Active _ -> "Active"
     | `Tried_to_eval_condition _ -> "Tried_to_eval_condition"
+    | `Tried_to_reeval_condition _ -> "Tried_to_reeval_condition"
     | `Verified_success _ -> "Verified_success"
     | `Already_done _ -> "Already_done"
     | `Dependencies_failed _ -> "Dependencies_failed"
@@ -229,9 +236,11 @@ module State = struct
     | `Starting history -> (None)
     | `Still_building history -> (None)
     | `Still_running (hist, book) -> (Some book)
+    | `Still_running_despite_recoverable_error (_, hist, book) -> (Some book)
     | `Ran_successfully (hist, book) -> (Some book)
     | `Successfully_did_nothing history -> (None)
     | `Tried_to_eval_condition _ -> (None)
+    | `Tried_to_reeval_condition (_, history) -> continue history
     | `Active (history, _) -> (None)
     | `Verified_success history -> continue history
     | `Already_done history -> None
@@ -256,10 +265,13 @@ module State = struct
     | `Starting history -> (some history, None)
     | `Still_building history -> (some history, None)
     | `Still_running (hist, book) -> (some hist, Some book)
+    | `Still_running_despite_recoverable_error (_, hist, book) ->
+      (some hist, Some book)
     | `Ran_successfully (hist, book) -> (some hist, Some book)
     | `Successfully_did_nothing history -> (some history, None)
     | `Active (history, _) -> (some history, None)
     | `Tried_to_eval_condition history -> (some history, None)
+    | `Tried_to_reeval_condition (_, history) -> (some history, None)
     | `Verified_success history -> (some history, None)
     | `Already_done history -> (some history, None)
     | `Dependencies_failed (history, _) -> (some history, None)
@@ -306,10 +318,14 @@ module State = struct
       | `Starting history -> continue history
       | `Still_building history -> continue history
       | `Still_running (history, book) -> continue history
+      | `Still_running_despite_recoverable_error (error, history, book) ->
+        fmt "non-fatal error %S (check-running)" error :: continue history
       | `Ran_successfully (history, book) -> continue history
       | `Successfully_did_nothing history -> continue history
       | `Active (history, _) -> continue history
       | `Tried_to_eval_condition history -> continue history
+      | `Tried_to_reeval_condition (error, history) ->
+        fmt "non-fatal error %S (eval-condition)" error :: continue history
       | `Verified_success history -> continue history
       | `Already_done history ->
         "already-done" :: continue history
@@ -534,10 +550,12 @@ module Automaton = struct
       | `Tried_to_start _
       | `Still_building _ (* should we ask to kill the dependencies? *)
       | `Tried_to_eval_condition _
+      | `Tried_to_reeval_condition _
       | `Active _ ->
         `Do_nothing (fun ?log () ->
             return_with_history t (`Killed (to_history ?log current_state)))
       | `Still_running (_, bookkeeping)
+      | `Still_running_despite_recoverable_error (_, _, bookkeeping)
       | `Started_running (_, bookkeeping) ->
         `Kill (bookkeeping, begin fun ?log -> function
           | `Ok bookkeeping -> (* loosing some bookeeping *)
@@ -606,6 +624,7 @@ module Automaton = struct
             return_with_history t (`Successfully_did_nothing (to_history ?log c)))
       end
     | `Started_running (_, bookkeeping)
+    | `Still_running_despite_recoverable_error (_, _, bookkeeping)
     | `Still_running (_, bookkeeping) as c ->
       `Check_process (bookkeeping, begin fun ?log -> function
         | `Ok (`Still_running bookkeeping) ->
@@ -613,12 +632,17 @@ module Automaton = struct
             (`Still_running (to_history ?log c, bookkeeping))
         | `Ok (`Successful bookkeeping) ->
           return_with_history t (`Ran_successfully (to_history ?log c, bookkeeping))
-        | `Error (_, how, bookkeeping) -> 
-          return_with_history t (`Failed_running (to_history ?log c,
-                                                  `Long_running_failure how,
-                                                  bookkeeping))
+        | `Error (`Try_again, how, bookkeeping) ->
+          return_with_history t ~no_change:true
+            (`Still_running_despite_recoverable_error
+               (how, to_history ?log c, bookkeeping))
+        | `Error (`Fatal, how, bookkeeping) -> 
+          return_with_history t
+            (`Failed_running (to_history ?log c,
+                              `Long_running_failure how, bookkeeping))
         end)
     | `Successfully_did_nothing _
+    | `Tried_to_reeval_condition _
     | `Ran_successfully _ as c ->
       begin match t.condition with
       | Some cond ->
@@ -626,7 +650,10 @@ module Automaton = struct
           | `Ok true -> return_with_history t (`Verified_success (to_history ?log c))
           | `Ok false ->
             return_with_history t (`Did_not_ensure_condition (to_history ?log c))
-          | `Error (_, log)  -> (* for now all errors are fatal ! *)
+          | `Error (`Try_again, how) ->
+            return_with_history t ~no_change:true
+              (`Tried_to_reeval_condition (how, to_history ?log c))
+          | `Error (`Fatal,log)  ->
             return_with_history t (`Did_not_ensure_condition (to_history ~log c))
           end)
       | None ->
