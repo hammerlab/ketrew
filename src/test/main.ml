@@ -705,7 +705,7 @@ let tree_to_dot ?(style=`Action_boxes) t =
 let make_automaton_graph () =
   let module T = Ketrew_target in
   let state_name t = {name = Ketrew_target.(State.name (state t)) } in
-  let rec loop ?(stop_afterwards=false) target =
+  let rec loop ~depth ?(stop_afterwards=false) target =
     (* Log.(s "status: " % Ketrew_target.(State.log ~depth:1 (state target)) @ normal); *)
     let node action l : tree =
       `Node (state_name target, action, l) in
@@ -713,14 +713,29 @@ let make_automaton_graph () =
       match T.state target |> T.State.Is.killable with
       | true ->
         ["OK", (T.kill target |> Option.value_exn ~msg:"Killing TOKILL",
-                    `Changed_state)]
+                `Changed_state)]
       | false -> [] in
+    let protect_rec_call log f =
+      (* If a change in the state-machine makes this happen, it
+         usually means that the author forgot to pass the `No-change`
+         information in `Target.Automaton.transition`. *)
+      try f ()
+      with Stack_overflow ->
+        eprintf "Test error! Stack_overflow: %d, %s\n%!" depth log;
+        raise Stack_overflow
+    in
     let node_map action l : tree =
       node action (List.map (additional @ l) ~f:(function
         | response, (t, `No_change) when stop_afterwards ->
           response, `Leaf (state_name t)
-        | response, (t, `No_change) -> response, loop ~stop_afterwards:true t
-        | response, (t, `Changed_state) -> response, loop t)) in
+        | response, (t, `No_change) ->
+          response,
+          protect_rec_call "no-change" (fun () ->
+              loop ~depth:(depth + 1) ~stop_afterwards:true t)
+        | response, (t, `Changed_state) ->
+          response,
+          protect_rec_call "changed-state" (fun () ->
+              loop ~depth:(depth + 1) t))) in
     match Ketrew_target.Automaton.transition target with
     | `Kill (b, mkt) ->
       node_map "kill"
@@ -778,7 +793,7 @@ let make_automaton_graph () =
     (`Node ({name= "ROOT"}, "NONE",
             ("OK", `Node ({name = "Passive"}, "Activation", ["OK", `Leaf {name = "Active"}]))
             :: List.map targets ~f:(fun t ->
-                ("", `Node (state_name t, "NONE", ["", loop t]))))) in
+                ("", `Node (state_name t, "NONE", ["", loop ~depth:0 t]))))) in
   let all_actions = [
     "kill"; "do_nothing"; "check_and_activate_dependencies";
     "start_running"; "activate_targets"; "eval_condition"; "check_process"
