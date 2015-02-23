@@ -43,6 +43,7 @@ val create :
   ?name:string ->
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
+  ?project:string ->
   Ketrew_program.t ->
   [> `Long_running of string  * string ]
   (** Create a “long-running” {!Ketrew_target.build_process} to run a 
@@ -52,6 +53,7 @@ val create :
       {li [?name] is the job name (["-J"] option). }
       {li [?wall_limit] is the job's Wall-time timeout (["-W"] option). }
       {li [?processors] is the “processors” request (["-n"] option). }
+      {li [?project] is the job assigned “project” (["-P"] option). }
     }
 
 *)

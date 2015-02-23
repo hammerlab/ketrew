@@ -7,7 +7,7 @@ The server listens on a command-pipe defined in the
 The commands are based on lines, that are “sent” to the pipe.
 
 In the examples below, we use `_test_env/test-command.pipe` because it is the
-path defined by `./please.sh test-env`.
+path defined by `make test-env`.
 
 To ask the server to die nicely:
 

@@ -14,20 +14,31 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
+open Ketrew_pervasives
 
-type target_v0 
-  <ocaml from="Ketrew_gen_target_v0.Target" > = abstract
+module Down_message : sig
+  type t = Ketrew_gen_protocol_v0.Down_message.t
 
+  val to_json : Ketrew_gen_protocol_v0.Down_message.t -> CConvYojson.t
+  val of_json_exn :
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Down_message.t
 
-type down_message = [
-  | List_of_targets of target_v0 list
-  | List_of_target_ids of string list
-  | List_of_query_descriptions of (string * string) list
-  | Query_result of string
-  | Ok
-]
+  val serialize : Ketrew_gen_protocol_v0.Down_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Down_message.t
 
-type post_message = [
-  | List_of_targets of target_v0 list
-  | List_of_target_ids of string list
-]
+  val log : t -> Ketrew_pervasives.Log.t
+end
+
+module Post_message : sig
+  type t = Ketrew_gen_protocol_v0.Post_message.t
+
+  val to_json : Ketrew_gen_protocol_v0.Post_message.t -> CConvYojson.t
+  val of_json_exn :
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Post_message.t
+
+  val serialize : Ketrew_gen_protocol_v0.Post_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Post_message.t
+
+  val log : t -> Ketrew_pervasives.Log.t
+  val to_string_hum : t -> string
+end

@@ -92,24 +92,24 @@ class type user_target =
     method dependencies: user_target list
     method if_fails_activate: user_target list
     method success_triggers: user_target list
-    method metadata: Ketrew_artifact.Value.t
+    method metadata: [`String of string ] option
     method product: user_artifact
   end
 
 
 let user_target_internal
-  ?(active = false)
-  ?(dependencies = [])
-  ?(if_fails_activate = [])
-  ?(success_triggers = [])
-  ?(name: string option)
-  ?(make: Target.Build_process.t = Target.Build_process.nop)
-  ?done_when
-  ?(metadata = Artifact.Value.unit)
-  ?product
-  ?equivalence
-  ?tags
-  ()
+    ?(active = false)
+    ?(dependencies = [])
+    ?(if_fails_activate = [])
+    ?(success_triggers = [])
+    ?(name: string option)
+    ?(make: Target.Build_process.t = Target.Build_process.nop)
+    ?done_when
+    ?metadata
+    ?product
+    ?equivalence
+    ?tags
+    ()
   =
   let id = Unique_id.create () in
   object (self)
@@ -126,8 +126,7 @@ let user_target_internal
     method is_active = active
     method metadata = metadata
     method render =
-      let creation = if active then Target.active else Target.create in
-      creation ~metadata
+      Target.create ?metadata
         ~id:self#id
         ~dependencies:(List.map dependencies ~f:(fun t -> t#id))
         ~if_fails_activate:(List.map if_fails_activate ~f:(fun t -> t#id))
@@ -135,10 +134,12 @@ let user_target_internal
         ~name:self#name ?condition:done_when
         ?equivalence ?tags
         ~make ()
+      |> (fun x ->
+          if active then Target.activate_exn ~reason:`User x else x)
     method product =
       Option.value_exn product 
         ~msg:(fmt "Target %s has no known product" self#name)
-        
+
   end
 
 let target ?active ?dependencies ?make ?done_when ?metadata ?product
@@ -154,46 +155,6 @@ let file_target
   let name = Option.value name ~default:("Make:" ^ path) in
   target ~product ?equivalence ?if_fails_activate ?tags ?success_triggers
     ~done_when:product#exists ?dependencies ?make ?metadata name
-
-(*
-  Run a workflow:
-
-   - make sure the run target is active,
-   - render all the depdendencies/fallbacks/success-triggers,
-*)
-let user_command_list t =
-  t#activate;
-  let rec go_through_deps t =
-    t#render :: 
-    List.concat_map t#dependencies ~f:go_through_deps
-    @ List.concat_map t#if_fails_activate ~f:go_through_deps
-    @ List.concat_map t#success_triggers ~f:go_through_deps
-  in
-  let targets =
-    (go_through_deps t)
-    |> List.dedup ~compare:Target.(fun ta tb -> compare ta.id tb.id)
-  in
-  match targets with
-  | first :: more -> (first, more)
-  | [] -> assert false (* there is at least the argument one *)
-
-let run ?override_configuration t =
-  let active, dependencies = user_command_list t in
-  let config_path = 
-    (try Sys.getenv "KETREW_CONFIGURATION" with _ -> 
-       (try Sys.getenv "KETREW_CONFIG" with _ ->
-          Ketrew_configuration.default_configuration_path)) in
-  match Lwt_main.run (
-    Ketrew_configuration.(
-      get_configuration ?override_configuration config_path)
-    >>= fun configuration ->
-    Ketrew_client.as_client ~configuration ~f:(fun ~client ->
-        Ketrew_client.add_targets client (active :: dependencies))
-  ) with
-  | `Ok () -> ()
-  | `Error e ->
-    Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
-    failwith (Ketrew_error.to_string e)
 
 module Program = struct
 
@@ -233,11 +194,12 @@ end
 
 let daemonize  = Ketrew_daemonize.create
 
+(*
 let direct_execution ?host cmd =
   `Direct_command Target.Command.(program ?host cmd)
 let direct_shell_command ?host cmd =
   direct_execution ?host Program.(sh cmd)
-
+*)
 
 let lsf = Ketrew_lsf.create
 let pbs = Ketrew_pbs.create

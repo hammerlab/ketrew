@@ -57,12 +57,6 @@ type volume = {
   structure: volume_structure;
 }
 
-type artifact_value = [ Unit | String of string | Number of float ]
-type artifact = [
-  | Value of artifact_value
-  | Volume of volume
-]
-
 type program = [
   | Shell_command of string
   | Exec of string list
@@ -74,34 +68,6 @@ type monitored_script = {
   program: program;
 }
 
-(*
-  Ketrew_state.Persistent_state.t:
-*)
-type persistent_state = {
-  current_targets: unique_id list;
-  archived_targets: unique_id list;
-  pointers: (unique_id * unique_id) list;
-}
-
-type happening = [
-  | Target_activated of (unique_id * [ Dependency | Fallback | Success_trigger])
-  | Target_died of
-      (unique_id  *
-       [ Dependencies_died
-       | Plugin_not_found of string
-       | Killed
-       | Long_running_unrecoverable of (string * string)
-       | Process_failure ])
-  | Target_started of (unique_id * string)
-  | Target_archived of unique_id
-  | Target_created of unique_id
-  | Target_succeeded of
-      (unique_id *
-       [ Artifact_literal | Artifact_ready | Process_success ])
-  | Error of string
-]
-
-type happening_list = happening list
 
 type http_request = {
   connection_id: string;

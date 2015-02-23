@@ -31,6 +31,16 @@ module Test = struct
       raise Tests_failed 
     ) else ()
 
+  let over_verbose =
+    try Sys.getenv "KETREW_TEST_VERBOSE" = "true" with _ -> false
+
+  let checkf b fmt =
+    ksprintf (function
+      | name when not b -> fail name
+      | name when over_verbose ->
+        Log.(s "Testing " % quote name % s ": SUCCESS" @ warning);
+      | _ -> ()) fmt
+
   let test_ssh_host =
     let open Ketrew in
     try
@@ -42,6 +52,8 @@ module Test = struct
     Ketrew.EDSL.Host.parse "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
 
   let test_targets ?wait_between_steps ~engine ~name targets checks =
+    assert false
+      (*
     let open Ketrew in
     Ketrew_engine.add_targets engine targets
     >>= fun () ->
@@ -49,18 +61,19 @@ module Test = struct
         Option.value_map ~default:(return ()) ~f:System.sleep wait_between_steps
         >>< fun _ ->
         match check with
-        | `Dont_care -> Ketrew_engine.step engine >>= fun _ -> return ()
+        | `Dont_care -> Ketrew_engine.Run_automaton.step engine >>= fun _ -> return ()
         | `Happens check ->
-          Ketrew_engine.step engine >>= fun happening ->
+          Ketrew_engine.Run_automaton.step engine >>= fun happening ->
           begin match check happening with
           | true -> return ()
           | false ->
-            fail (fmt "T: %S: wrong happening: %s" name (List.map ~f:Ketrew_engine.what_happened_to_string happening
+            fail (fmt "T: %S: wrong happening: %s" name
+                    (List.map ~f:Ketrew_engine.what_happened_to_string happening
                      |> String.concat ~sep:",\n  "));
             return ()
           end
         | `Status (id, check) ->
-          Ketrew_engine.step engine >>= fun _ ->
+          Ketrew_engine.Run_automaton.step engine >>= fun _ ->
           begin Ketrew_engine.get_status engine id
             >>= function
             | s when check s -> return ()
@@ -79,7 +92,9 @@ module Test = struct
           end)
     >>= fun (_: unit list) ->
     return ()
+  *)
 
+  (*
     let test_target_one_step ?condition ~engine ~make name check =
       let open Ketrew in
       let target = Target.active ~name ?condition  ~make () in
@@ -90,6 +105,7 @@ module Test = struct
       `Status (id, function `Dead _ -> true | _ -> false)
     let check_one_step ~id check = `Happens (check ~id)
     let nothing_happens = `Happens (function [] -> true | _ -> false)
+  *)
 
     let new_db_file () =
       let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
@@ -99,205 +115,76 @@ module Test = struct
       >>= fun () ->
       return db_file
 
-end
-
-module Happenings = struct
-
-  let contains h1 ~f =
-    let yes, no =
-      List.partition h1 ~f in
-    match yes, no with
-    | [], all -> None
-    | one :: more, rest -> Some (one, more @ rest)
-
-  let look ?(and_nothing_more=true) ~like () haps =
-    let rec go prev = 
-      function
-      | [] -> if and_nothing_more then prev = [] else true
-      | f :: more ->
-        begin match contains ~f prev with
-        | None -> false
-        | Some (_, rest) -> go rest more
-        end
-    in
-    go haps like
-
-  let check_option opt v =
-    begin match opt with
-    | None -> true
-    | Some h when h = v -> true
-    | Some _ -> false
+    module Target = struct
+      let check_history t ~matches fmt =
+        ksprintf (fun msg ->
+            let state = Ketrew_target.(state t) in
+            let b = state |> matches in
+            if not b && over_verbose then
+              Log.(s "Test: " % s msg % s ": unexpected history: "
+                   % n % indent (Ketrew_target.State.log state) @ warning);
+            checkf b "%s" msg
+          ) fmt
     end
-
-  let success ?how ?what hap =
-    match hap with
-    | `Target_succeeded (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
-
-  let activation ?how ?what hap =
-    match hap with
-    | `Target_activated (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
-
-  let death ?how ?what hap =
-    match hap with
-    | `Target_died (trgt, meth) ->
-      check_option how meth
-      && check_option what trgt 
-    | _ -> false
 
 end
-
-let mini_db_test () =
-  Lwt_main.run begin
-    let module DB = Ketrew_database in
-    Test.new_db_file ()
-    >>= fun db_file ->
-    DB.load db_file
-    >>= fun db ->
-    DB.get db ~key:"k"
-    >>= fun res ->
-    begin match res with
-    | None -> return ()
-    | Some v -> Test.fail (fmt "key k got %S" v); return ()
-    end
-    >>= fun () ->
-    begin DB.act db DB.(seq [ is_not_set "k"; set ~key:"k" "V" ])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 1 not done"; return ()
-    end
-    >>= fun () ->
-    let check_k current_db =
-      begin DB.get current_db ~key:"k" >>= function
-        | Some v when v = "V" -> return ()
-        | None -> Test.fail (fmt "get k got None"); return ()
-        | Some v -> Test.fail (fmt "get k got %S" v); return ()
-      end
-    in
-    check_k db >>= fun () ->
-    DB.close db >>= fun () ->
-    DB.load db_file
-    >>= fun db2 ->
-    check_k db2 >>= fun () ->
-    begin DB.act db2 DB.(seq [contains ~key:"k" "V"])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 2 not done"; return ()
-    end
-    >>= fun () ->
-    (* Transation that fails: *)
-    begin DB.act db2 DB.(seq [
-        set ~key:"k2" "vvv";
-        set ~collection:"c3" ~key:"k3" "vvv";
-        set ~key:"k2" "uuu";
-        contains ~key:"k" "u"])
-      >>= function
-      | `Not_done -> return ()
-      | `Done -> Test.fail "seq 3 done"; return ()
-    end
-    >>= fun () ->
-    (* Transation that succeeds: *)
-    begin DB.act db2 DB.(seq [
-        is_not_set "k2";
-        set ~key:"k2" "vvv";
-        contains ~key:"k2" "vvv";
-        set ~key:"k2" "uuu";
-        contains ~key:"k" "V";
-        contains ~key:"k2" "uuu";
-        unset "k2";
-        is_not_set "k2";
-      ])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 4 not done"; return ()
-    end
-    >>= fun () ->
-    (* Transations that fail hard: *)
-    let test_with_debug_artificial_failure name f =
-      DB.Debug.(global_debug := f "k2");
-      begin
-        Lwt.catch (fun () ->
-            DB.act db2 DB.(seq [
-                set ~key:"k2" "rrr";
-                set ~key:"k2" "uuu";
-                unset "k2";
-              ])
-            >>< function
-            | _ -> Test.fail (fmt "seq %s not exn" name); return ())
-          (fun e -> return ())
-      end
-      >>= fun () ->
-      DB.Debug.(global_debug := No);
-      (* We should be like end of seq 6 *)
-      begin DB.act db2 DB.(seq [
-          is_not_set "k2";
-          set ~collection:"c3" ~key:"k3" "uuu";
-          unset ~collection:"c3" "k3";
-          unset ~collection:"c3" "k3";
-        ])
-        >>= function
-        | `Done -> return ()
-        | `Not_done -> Test.fail (fmt "seq %s+1 not done" name); return ()
-      end
-    in
-    test_with_debug_artificial_failure "After_write"
-      (fun k -> DB.Debug.After_write k)
-    >>= fun () ->
-
-    test_with_debug_artificial_failure "After_git_add"
-      (fun k -> DB.Debug.After_git_add k)
-    >>= fun () ->
-    test_with_debug_artificial_failure "After_git_rm"
-      (fun k -> DB.Debug.After_git_rm k)
-    >>= fun () ->
-    let check_collection collection result =
-      let check r =
-        let sort = List.sort ~cmp:String.compare in
-        sort r = sort result in
-      DB.get_all db2 ~collection
-      >>= function
-      | r when check r -> return ()
-      | other ->
-        Test.fail (fmt "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
-                     collection (String.concat ~sep:", " result)
-                     (String.concat ~sep:", " other));
-        return ()
-    in
-    check_collection "" [] >>= fun () ->
-    check_collection "aslkdj" [] >>= fun () ->
-    check_collection "c3" [] >>= fun () ->
-    let collection = "c3" in
-    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                        set ~collection ~key:"k2" "v2"])
-    >>= fun _ ->
-    check_collection collection ["v1"; "v2"] >>= fun () ->
-    let collection = "c4" in
-    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                        set ~collection ~key:"k2" "v2"])
-    >>= fun _ ->
-    check_collection collection ["v1"; "v2"] >>= fun () ->
-    (* check_collection "c3" ["sld"] >>= fun () -> *)
-
-    return ()
-  end
-  |> function
-  | `Ok () -> ()
-  | `Error e ->
-    Log.(s "mini_db_test: ERROR:  " % s (Ketrew_error.to_string e) @ error);
-    Test.fail "mini_db_test ends with error"
 
 let test_0 () =
-  let open Ketrew in
   Lwt_main.run begin
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = 
-      Configuration.engine ~database_parameters:db_file () in
+      Ketrew_configuration.engine ~database_parameters:db_file () in
+    Ketrew_engine.with_engine ~configuration (fun ~engine ->
+        Ketrew_engine.Run_automaton.step engine
+        >>= fun v ->
+        Test.checkf (not v) "1st step, nothing to do";
+        let test_steps ~checks msg =
+          List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
+            prev >>= fun () ->
+            Ketrew_engine.Run_automaton.step engine
+            >>= fun v ->
+            let rec do_checks = 
+              function
+              | `None -> return ()
+              | `Step_returns ret ->
+                Test.checkf (ret = v) "step %d of %s step-returned: %b" idx msg v;
+                return ()
+              | `Target_is (id, matches) ->
+                Ketrew_engine.get_target engine id
+                >>= fun re_re_target_01 ->
+                Test.Target.check_history re_re_target_01 ~matches
+                  "step %d of %s target-matching %s" idx msg id;
+                return ()
+              | `And l ->
+                Deferred_list.while_sequential l ~f:do_checks
+                >>= fun (_ : unit list) ->
+                return ()
+            in
+            do_checks check_step
+          end 
+        in
+        let target_01 = Ketrew_edsl.target "01" in
+        target_01#activate;
+        Ketrew_engine.add_targets engine [target_01#render]
+        >>= fun () ->
+        let open Ketrew_target.State.Is in
+        test_steps "almost empty target" ~checks:[
+          `Step_returns true;
+          `And [
+            `Step_returns true;
+            `Target_is (target_01#id, building);
+          ];
+          `Target_is (target_01#id, starting);
+          `Target_is (target_01#id, successfully_did_nothing);
+          `Target_is (target_01#id, verified_success);
+          `Target_is (target_01#id, finished);
+          `Step_returns false;
+          `None;
+        ]
+        >>= fun () ->
+        return ())
+    (*
     Ketrew_engine.with_engine ~configuration begin fun ~engine ->
       Ketrew_engine.add_targets engine
         [Target.(create ~name:"First target" ())]
@@ -556,6 +443,7 @@ let test_0 () =
     end
 
 
+*)
     >>= fun () ->
     return ()
   end |> function
@@ -565,6 +453,8 @@ let test_0 () =
     Test.fail "test_0 ends with error"
 
 let test_ssh_failure_vs_target_failure () =
+  assert false
+    (*
   let open Ketrew in
   Lwt_main.run begin
     let test_wrong_host turn_unix_ssh_failure_into_target_failure expect =
@@ -613,10 +503,13 @@ let test_ssh_failure_vs_target_failure () =
   | `Error e ->
     Log.(s "test_ssh_failure_vs_target_failure: Ketrew ERROR:  " %s (Ketrew.Error.to_string e) @ error);
     Test.fail "test_ssh_failure_vs_target_failure ends with error"
+*)
 
 
 
 let test_long_running_nohup () =
+  assert false
+    (*
   let open Ketrew in
   Lwt_main.run begin
     Test.new_db_file ()
@@ -716,17 +609,216 @@ let test_long_running_nohup () =
     Log.(s "test_long_running_nohup: Ketrew ERROR:  "
          %s (Error.to_string e) @ error);
     Test.fail "test_long_running_nohup ends with error"
+*)
 
+type state = { name : string }
+type action = string
+type tree = [
+  | `Leaf of state
+  | `Node of state * action * (string * tree) list
+]
+let rec tree_to_log =
+  let open Log in
+  function
+  | `Leaf {name} -> braces (s name)
+  | `Node ({name}, action, trees) ->
+    parens (braces (s name) % s " → " % s action 
+            % OCaml.list (fun (response, tree) ->
+                s response % s ": " % tree_to_log tree)
+              trees)
+
+let rec tree_has_action t action =
+  match t with
+  | `Leaf _ -> false
+  | `Node (_, a, _) when a = action -> true
+  | `Node (_, a, l) -> List.exists l ~f:(fun (_, t) -> tree_has_action t action)
+
+let tree_to_dot ?(style=`Action_boxes) t =
+  let open Log in
+  let arrow = s " -> " in
+  let semicolon = s ";" in
+  let transition state1 action response state2 =
+    match style with
+    (* | `Arrow_labels -> *)
+    (*   (s state1 % arrow % s state2 *)
+    (*    % sp % brakets (s "label=" % sf "%S" action) *)
+    (*    % s ";" % n) *)
+    | `Action_boxes ->
+      let action_name, action_attributes =
+        match state2 with
+        | "Killing" ->
+          state1 ^ state2,
+          sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "MURDER"
+        | "Active" ->
+    
+      state1 ^ action ^ state2,
+          sf "fontname=\"monospace\",shape=doubleoctagon, label=%S" "ACTIVATION"
+        | _ ->
+          state1 ^ action, sf "fontname=\"monospace\",shape=box label=\"%s\"" action in
+      let response_name, response_attributes =
+        "response" ^ state1 ^ action ^ state2,
+        sf "shape=diamond,fontsize=9,fontname=\"monospace\",label=%S" response
+      in
+      (* s state1 % sp % brakets (s "shape=oval") % s ";" % n *)
+      (* % s state2 % sp % brakets (s "shape=oval") % s ";" % n *)
+      (* % s action_name % sp % brakets action_attributes % s ";" % n *)
+      (* % s state1 % arrow % s action_name % arrow % s state2 % semicolon % n *)
+      let state_attributes =
+        s "fontname=\"monospace\",fontsize=18,shape=oval" in
+      let state_action_arrow =
+        s "arrowhead=\"open\"" in
+      let action_respoonse_arrow =
+        s "dir=\"none\"" in
+      [
+        s state1 % sp % brakets state_attributes;
+        s state2 % sp % brakets state_attributes;
+        s action_name % sp % brakets action_attributes;
+        s response_name % sp % brakets response_attributes;
+        s state1 % arrow % s action_name % brakets state_action_arrow;
+        s action_name % arrow % s response_name % brakets action_respoonse_arrow;
+        s response_name % arrow % s state2;
+      ]
+  in
+  s "digraph target_graph"
+  % braces (
+    let rec go =
+      let continue = fun (_, t) -> go t in
+      function
+      | `Leaf (state) -> []
+      | `Node (state, "NONE", trees) ->
+        List.concat_map ~f:continue trees
+      | `Node (state, action, trees) ->
+        let arrows =
+          List.map trees (function
+            | response, `Leaf (statei)
+            | response, `Node (statei, _, _) ->
+              transition state.name action response statei.name)
+        in
+        List.append arrows (List.map ~f:continue trees) |> List.concat
+    in
+    (go t |> List.dedup |> separate (semicolon % n))
+  )
+
+(* "{" ^ action ^ " -> " ^ state ^ "\n" *)
+(* ^ String.concat ~sep:" --- " (List.map ~f:tree_to_string trees) ^ "}" *)
+
+let make_automaton_graph () =
+  let module T = Ketrew_target in
+  let state_name t = {name = Ketrew_target.(State.name (state t)) } in
+  let rec loop ~depth ?(stop_afterwards=false) target =
+    (* Log.(s "status: " % Ketrew_target.(State.log ~depth:1 (state target)) @ normal); *)
+    let node action l : tree =
+      `Node (state_name target, action, l) in
+    let additional =
+      match T.state target |> T.State.Is.killable with
+      | true ->
+        ["OK", (T.kill target |> Option.value_exn ~msg:"Killing TOKILL",
+                `Changed_state)]
+      | false -> [] in
+    let protect_rec_call log f =
+      (* If a change in the state-machine makes this happen, it
+         usually means that the author forgot to pass the `No-change`
+         information in `Target.Automaton.transition`. *)
+      try f ()
+      with Stack_overflow ->
+        eprintf "Test error! Stack_overflow: %d, %s\n%!" depth log;
+        raise Stack_overflow
+    in
+    let node_map action l : tree =
+      node action (List.map (additional @ l) ~f:(function
+        | response, (t, `No_change) when stop_afterwards ->
+          response, `Leaf (state_name t)
+        | response, (t, `No_change) ->
+          response,
+          protect_rec_call "no-change" (fun () ->
+              loop ~depth:(depth + 1) ~stop_afterwards:true t)
+        | response, (t, `Changed_state) ->
+          response,
+          protect_rec_call "changed-state" (fun () ->
+              loop ~depth:(depth + 1) t))) in
+    match Ketrew_target.Automaton.transition target with
+    | `Kill (b, mkt) ->
+      node_map "kill"
+        ["OK", mkt (`Ok b);
+         "Try-Again", mkt (`Error (`Try_again,  "", b));
+         "Fatal", mkt (`Error (`Fatal,  "", b));]
+    | `Do_nothing mkt ->
+      let action = "do_nothing"  in
+      node_map action ["OK", mkt ()]
+    | `Check_and_activate_dependencies mkt ->
+      node_map "check_and_activate_dependencies" [
+        "All-succeeded", mkt `All_succeeded;
+        "At-least-one-failed", mkt (`At_least_one_failed []);
+        "Still-processing", mkt `Still_processing;
+      ]
+    | `Start_running (book, mkt) ->
+      node_map "start_running" [
+        "OK", mkt (`Ok book);
+        "Try-again", mkt (`Error (`Try_again,  "", book));
+        "Fatal", mkt (`Error (`Fatal,  "", book));
+      ]
+    | `Activate (_, mkt) ->
+      node_map "activate_targets" ["OK", mkt ()]
+    | `Eval_condition (condition, mkt) ->
+      node_map "eval_condition" [
+        "true", mkt (`Ok true);
+        "false", mkt (`Ok false);
+        "Try-again", mkt (`Error (`Try_again,  ""));
+        "Fatal", mkt (`Error (`Fatal,  ""));
+      ]
+    | `Check_process (book, mkt) ->
+      node_map "check_process" [
+        "Success", mkt (`Ok (`Successful book));
+        "Still-running", mkt (`Ok (`Still_running book));
+        "Try-again", mkt (`Error (`Try_again,  "", book));
+        "Fatal", mkt (`Error (`Fatal,  "", book));
+      ]
+  in
+  let activate_and_render t = t#activate; t#render in
+  let dep =(Ketrew.EDSL.target "01") in
+  let targets = [
+    dep #render;
+    (Ketrew.EDSL.target "02" |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~dependencies:[dep] |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~make:(`Long_running ("", "")) |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~make:(`Long_running ("", ""))
+       ~done_when:`False |> activate_and_render);
+    (Ketrew.EDSL.target "04" ~done_when:(`True) |> activate_and_render);
+    (Ketrew.EDSL.target "04" |> activate_and_render
+     |> Ketrew_target.kill ?log:None |> Option.value_exn ~msg:"not killable?");
+    (Ketrew.EDSL.target "TOKILL" ~make:(`Long_running ("", ""))
+     |> activate_and_render);
+  ] in
+  let result_tree =
+    (`Node ({name= "ROOT"}, "NONE",
+            ("OK", `Node ({name = "Passive"}, "Activation", ["OK", `Leaf {name = "Active"}]))
+            :: List.map targets ~f:(fun t ->
+                ("", `Node (state_name t, "NONE", ["", loop ~depth:0 t]))))) in
+  let all_actions = [
+    "kill"; "do_nothing"; "check_and_activate_dependencies";
+    "start_running"; "activate_targets"; "eval_condition"; "check_process"
+  ] in
+  Test.checkf (List.for_all all_actions (tree_has_action result_tree))
+    "tree having all actions: missing: %s"
+    (List.filter all_actions ~f:(fun a -> tree_has_action result_tree a |> not)
+     |> String.concat ~sep:", ") ;
+  let o = open_out "target_graph.dot" in
+  output_string o (Log.to_long_string
+                     (tree_to_dot result_tree));
+  close_out o;
+  if Test.over_verbose then
+    Log.(s "Trrreeees: " % n % tree_to_log result_tree @ normal);
+  ()
 
 let () =
   let argl = Sys.argv |> Array.to_list in
   global_with_color := not (List.mem ~set:argl "-no-color");
   global_debug_level := 3;
   let all = List.mem ~set:argl "ALL" in
-  if List.mem ~set:argl "db-test" || all then mini_db_test ();
   if List.mem ~set:argl "basic-test" || all then test_0 ();
   if List.mem ~set:argl "nohup-test" || all then test_long_running_nohup ();
   if List.mem ~set:argl "ssh-failure" || all then test_ssh_failure_vs_target_failure ();
+  if List.mem ~set:argl "automaton-graph" || all then make_automaton_graph ();
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "

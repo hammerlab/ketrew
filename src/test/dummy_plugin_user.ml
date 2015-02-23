@@ -7,7 +7,7 @@ M*)
 open Printf
 let () =
   let open Ketrew.EDSL in
-  run (
+  Ketrew_client.submit (
     target (sprintf "%S with dummy-plugin" Sys.argv.(1))
       ~make:(Dummy_plugin.create
                ~host:(Host.parse "/tmp")

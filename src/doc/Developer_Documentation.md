@@ -24,56 +24,46 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 - `toml`: config-file parsing
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
+- `trakeva` with the `sqlite` backend
 
-and uses the `ocp-build` build system.
+and uses the `oasis` as a build system.
 
-At runtime, Ketrew will use a reasonably recent `git` command, and an `ssh`
-client (tested only with OpenSSH; but SSH calls are quite configurable).
+At runtime, Ketrew may use an `ssh` client (tested only with OpenSSH; but SSH
+calls are quite configurable).
 
-The `please.sh` script can call `opam` itself:
-
-    ./please.sh get-dependencies
 
 ### Build
 
 Then you may setup and build everything:
 
-    ./please.sh build
+     make gen       # Generates the code of the `ketrew_data` library
+     make configure # Generate the `_oasis`, call `oasis` and `configure`
+     make           # The actual compilation of the library
 
-(for incremental compilation while developing please use: `ocp-build <target>`
-directly)
 
 ### Install
 
-For now, `ketrew` uses a custom install/uninstall procedure:
+Ketrew is installed by Oasis:
 
-    ./please.sh install <prefix>
+     ocaml setup.ml -install
+     
+(using the option `--prefix` at configure time).
 
-and uninstall with:
+There is an `opam` file in the repository:
 
-    ./please.sh uninstall <prefix>
+     opam pin add ketrew .
 
-
-If you use Opam ≥ *1.2.0~beta4*, you don't need a custom opam-repository:
-
-    ./please.sh local-opam
-    opam pin add -k path ketrew .
+will pick it (Opam ≥ *1.2.0*).
 
 
 ### Build The Documentation
 
 The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 
-    please.sh doc
+    make doc
 
 and check-out `_doc/<branch>/index.html` (unless branch is `master`, then
 `_doc/index.html`).
-
-### Run a Toplevel
-
-One can start an ocaml-toplevel (`ocaml` or `utop`) with Ketrew loaded-in:
-
-    ./please.sh top
 
 Tests
 -----
@@ -83,21 +73,26 @@ Tests
 Run the tests like this:
 
 ```bash
-    ketrew_test_ssh=<Host> _obuild/ketrew-test/ketrew-test.asm [-no-color] ALL
+    ketrew_test_ssh=<Host> ./ketrew-test [-no-color] ALL
 ```
 
-where `<Host>` is often an entry in your `.ssh/config` file.
+where `<Host>` is often an entry in your `.ssh/config` file and `TestName` is one of
 
-The test will indeed look for the environment variable `ketrew_test_ssh`; if
-not defined it will use `"localhost"`. But for the test to succeed it should be
-an SSH host for which the user running the test does not need password.
-The test will run some commands on that host and create files and directories
-in its `/tmp` directory.
+- `ALL` all of the following.
+- `db-test`
+- `basic-test`
+- `nohup-test`
+- `ssh-failure`
+
+The tests will look for the environment variable `ketrew_test_ssh` (defaulting to
+ `"localhost"`). But for the tests to succeed the user running a test should be
+able to login int `<Host>` without a password. The test will run some commands
+on that host and create files and directories in its `/tmp` directory.
 
 ### The `cli` Test
 
 The workflow [examples](../test/Workflow_Examples.ml) in the documentation
-are actually interactive tests.
+are actually interactive tests (`./ketrew-workflow-examples-test`).
 
 ### The `integration` Test
 
@@ -121,9 +116,10 @@ The build-system creates a plugin and a workflow which uses it:
 In order to not impact a potential “global” installation of Ketrew, one can
 use:
 
-    ./please.sh test-env
+    make test-env
 
 ```goodresult
+Using package lwt.react as findlin-plugin
 Creating cert-key pair: _test_env/test-cert.pem, _test_env/test-key.pem
 Creating _test_env/standalone-config-file.toml
 Creating _test_env/server-config-file.toml
@@ -137,7 +133,7 @@ test-environment (a self-signed SSL certificate/key pair,
 client/server/standalone configuration files, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
-Sourcing `_test_env/test.env` will give a few aliases to run the tests.
+Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 Aliases which start with `ks` mean “with a *standalone-mode* configuration file;”
 those which start with `kd` are in *client-server* mode (`'d'` for “distributed”).
 
@@ -163,7 +159,7 @@ release workflow:
 - Release dependencies for which we are using unreleased features
 (e.g. [`adt2cconv`](https://github.com/smondet/atd2cconv),
 [`sosa`](https://github.com/smondet/sosa), etc.).
-- Set version string in `please.sh`.
+- Set version string in `tools/please.ml`.
 - Update the introductory paragraph of the `README.md` file for the particular
 version.
 - Write a human-friendly change-log (go through git history and write important
@@ -172,7 +168,7 @@ changes).
 releases [documentation](https://github.com/blog/1547-release-your-software)).
 - Fork the
 [mothership opam-repository](https://github.com/ocaml/opam-repository).
-- Add a new package by modifying the auto-generated one (see `please.sh opam`),
+- Add a new package by modifying the repository's one (see `./opam`),
 fix the URL and the MD5 sum (from release), test the package (in a new
 opam-switch, or remove `ocamlfind`), create pull-request.
 - Add the tag as an “interesting checkout” in

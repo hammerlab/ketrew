@@ -16,37 +16,17 @@
 
 open Ketrew_pervasives
 
-module Down_message : sig
-  type t = Ketrew_gen_protocol_v0.Down_message.t
+(** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
+val build_process : ?with_details:bool ->
+    [< `Long_running of string * string | `No_operation ] ->
+    SmartPrint.t
 
-  val to_json : Ketrew_gen_protocol_v0.Down_message.t -> CConvYojson.t
-  val of_json_exn :
-    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Down_message.t
+val target_for_menu : Ketrew_target.t -> Log.t
 
-  val serialize : Ketrew_gen_protocol_v0.Down_message.t -> string
-  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Down_message.t
+val metadata: full:bool -> [ `String of string ] -> Log.t
 
-  val added_target :
-    original_id:string ->
-    fresh_id:string -> Ketrew_gen_protocol_v0.Added_target.t
-
-  val clean_up :
-    to_kill:string list ->
-    to_archive:string list -> Ketrew_gen_protocol_v0.Clean_up_todo_list.t
-
-  val log : t -> Ketrew_pervasives.Log.t
-end
-
-module Post_message : sig
-  type t = Ketrew_gen_protocol_v0.Post_message.t
-
-  val to_json : Ketrew_gen_protocol_v0.Post_message.t -> CConvYojson.t
-  val of_json_exn :
-    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Post_message.t
-
-  val serialize : Ketrew_gen_protocol_v0.Post_message.t -> string
-  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Post_message.t
-
-  val log : t -> Ketrew_pervasives.Log.t
-  val to_string_hum : t -> string
-end
+val target : ?build_process_details:bool ->
+  ?condition_details:bool ->
+  ?metadata_details:bool ->
+  Ketrew_target.t ->
+  Log.t

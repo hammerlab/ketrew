@@ -19,6 +19,8 @@ module Target = Ketrew_target
 module Artifact = Ketrew_artifact
 module Error = Ketrew_error
 module Configuration = Ketrew_configuration
+module Interaction = Ketrew_interaction
+module Explorer = Ketrew_explorer
 
 (** Display errors, and return an exit code (integer). *)
 module Return_code = struct
@@ -36,369 +38,55 @@ module Return_code = struct
 
 end
 
-(** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
-module Document = struct
-
-  let log_list ~empty l =
-    let empty_log = empty in (** renaming because of {!Log.empty} *)
-    let open Log in
-    let if_empty = sp % empty_log in
-    match l with
-    | [] -> if_empty
-  | more ->
-    n % indent (separate n (List.map more ~f:(fun item -> s "- " % item)))
-
-  let build_process ?(with_details=false)  =
-    let open Log in
-    let open Target in
-    let add_details details =
-      if with_details then s ": " % n % details else empty in
-    let command_details c = add_details (Target.Command.log c) in
-    function
-    | `Artifact a ->
-      s "Artifact" % add_details (Artifact.log a)
-    | `Direct_command c ->
-      s "Direct command" % command_details c
-    | `Get_output c ->
-      s "Get output of command" % command_details c
-    | `Long_running (name, content) ->
-      s "Long-running " % parens (s name)
-      % if with_details
-      then
-        s ":" % n %
-        indent (concat (
-            List.map
-              (Ketrew_plugin.long_running_log name content)
-              ~f:(fun (title, descr) -> s title % s ": " % descr % n)
-        ))
-      else empty
-
-  let condition ?(with_details=false) =
-    let open Log in
-    function
-    | None -> s "Always Runs"
-    | Some c ->
-      if with_details
-      then Target.Condition.log c
-      else s "Runs When “Not Done”"
-
-  let target ?build_process_details ?condition_details t =
-    let open Log in
-    let open Target in
-    let itemize l =
-      indent (concat (List.map l ~f:(fun (name, log) ->
-          s "* " % s name % s ": " % log %n))) in
-    s "Target " % s t.name % n
-    % itemize [
-      "ID", s t.id;
-      "Persistence",
-      (match t.persistence with
-       | `Recomputable bility -> s "Recomputable " % f bility
-       | `Result -> s "Result"
-       | `Input_data -> s "Input-data");
-      "Dependencies", OCaml.list s t.dependencies;
-      "Fallbacks", OCaml.list s t.if_fails_activate;
-      "On Success trigger", OCaml.list s t.success_triggers;
-      "Metadata", Artifact.Value.log t.metadata;
-      "Build-process",
-      build_process  ?with_details:build_process_details t.make;
-      "Condition", condition  ?with_details:condition_details t.condition;
-      "Equivalence", (match t.equivalence with
-        | `None -> s "None"
-        | `Same_active_condition -> s "Same active condition");
-      "Tags", OCaml.list quote t.tags;
-      "Status",
-      (match t.history with
-       | `Dead _       -> s "Dead"
-       | `Successful _ -> s "Successful"
-       | `Activated _  -> s "Activated"
-       | `Created _    -> s "Created"
-       | `Running (rb, _) ->
-         s "Running " % parens (s rb.plugin_name));
-      "Additional Log",
-      OCaml.list (fun (time, msg) ->
-          brakets (Time.log time) % s ": " % s msg) t.log;
-    ]
-end
-
-(** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
-module Interaction = struct
-
-  let initialized = ref false
-  let init () =
-    if not !initialized then (
-      let open Unix in
-      let term_init = tcgetattr stdin in
-      at_exit (fun () -> tcsetattr stdin TCSADRAIN term_init);
-      initialized := true;
-      ()
-    )
-
-  (** [with_cbreak f] calls with the terminal in “get key” mode.
-         It comes from
-         http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html
-  *)
-  let with_cbreak (f: unit -> (_, _) t) =
-    init ();
-    let open Lwt_unix in
-    Lwt.(tcgetattr stdin
-         >>= fun term_init ->
-         let go_back_to_normal () = tcsetattr stdin TCSADRAIN term_init in
-         let term_cbreak = { term_init with c_icanon = false; c_echo = false } in
-         tcsetattr stdin TCSANOW term_cbreak
-         >>= fun () ->
-         catch f (fun e -> 
-             Log.(s "with_cbreak exn: " % exn e @ warning);
-             return (`Error (`Failure "with_cbreak")))
-         >>= fun res ->
-         go_back_to_normal ()
-         >>= fun () ->
-         return res)
-
-  let get_key () =
-    with_cbreak (fun () ->
-        wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
-          ~on_exn:(fun e -> (`Failure "get_key")))
-
-  let open_in_dollar_editor file =
-    let editor =
-      try Sys.getenv "EDITOR"
-      with _ ->
-        Log.(s "Using `vi` since $EDITOR is not defined" @ warning);
-        "vi" in
-    let command = fmt "%s %s" editor file in
-    Log.(s "Running " % s command @ verbose);
-    (* We actually want (for now) to block the whole process and wait for
-       the editor to end. *)
-    ignore (Sys.command command);
-    return ()
-
-  let view_in_dollar_editor ?(extension="txt") content =
-    let tmp =
-      Filename.(concat temp_dir_name
-                  (fmt "%s.%s" (Unique_id.create ()) extension))
-    in
-    IO.write_file ~content tmp
-    >>= fun () ->
-    open_in_dollar_editor tmp
-
-  let interaction_chars =
-    List.init 10 (fun i -> Char.chr (48 + i))
-    @ List.init 26 (fun i -> Char.chr (97 + i))
-
-  let menu_item ?char ?(log=Log.empty) v =
-    (char, log, v)
-
-  let menu ?(max_per_page=15) ?(always_there=[]) ~sentence items =
-    (* let item_number = List.length items in *)
-    let items_splitted =
-      let split_number = max_per_page - (List.length always_there) in
-      let rec split acc l =
-        let left, right = List.split_n l split_number in
-        match right with
-        | [] -> List.rev (left :: acc)
-        | more -> split (left :: acc) more
-      in
-      split [] items
-    in
-    let number_of_menus = List.length items_splitted in
-    let rec menu_loop nth =
-      let items =
-        always_there @ (List.nth items_splitted nth |> Option.value ~default:[])
-      in
-      let available_chars =
-        List.filter interaction_chars (fun c ->
-            List.for_all items (fun (k, _, _) -> k <> Some c)) in
-      let filled_items =
-        let n = ref 0 in
-        List.map items ~f:(function
-          | None, l, v -> (incr n; List.nth available_chars !n, l, v)
-          | Some k, l, v -> Some k, l, v)
-      in
-      Log.(sentence % sp
-           % (if nth = 0 && number_of_menus = 1
-              then empty
-              else brakets (i (nth + 1) % s "/" % i number_of_menus)) % n
-           % s "Press a key: " % n
-           % concat
-             (List.map filled_items ~f:(function
-                | (Some k, l, v) -> sf "* [%c]: " k % l % n
-                | None, _, _ -> s "ERROR, wrong usage of `menu`"))
-           % (
-             let previous = sf "* [<]: previous screen" % n in
-             let next = sf "* [>]: next screen" % n in
-             match number_of_menus, nth with
-             | 1, 0 -> empty
-             | _, 0 -> next
-             | n, t when t = n - 1 -> previous
-             | _, _ -> previous % next
-           )
-           @ normal);
-      get_key ()
-      >>= fun key ->
-      begin match key with
-      | '<' -> menu_loop (nth - 1)
-      | '>' -> menu_loop (nth + 1)
-      | other ->
-        begin match List.find filled_items (fun (k, _, _) -> k = Some key) with
-        | Some (_, _, v) -> return v
-        | None ->
-          Log.(sf "Cannot understand: %c, try again please." key @ normal);
-          menu_loop nth
-        end
-      end
-    in
-    menu_loop 0
-
-  let format_target_for_menu t =
-    let open Log in
-    let if_color f x = if !global_with_color then f x else x in
-    if_color bold_yellow (s (Target.name t)) % n
-    % if_color greyish (s (Target.id t)) % n
-    % (
-      begin match t.Target.history with
-      | `Created _ -> s "Created"
-      | `Activated _ -> s "Activated"
-      | `Running _ -> if_color bold_red (s "Running")
-      | `Dead (_, _, `Killed reason) -> if_color bold_red (sf "Killed: %s" reason)
-      | `Dead (_, _, `Failed reason) -> if_color bold_red (sf "Failed: %s" reason)
-      | `Successful _ -> if_color bold_green (s "Successful")
-      end
-    )
-
-  (** Sort a list of targets from the most recent to the oldest
-      (using the unique IDs which is hackish …). *)
-  let sort_target_list =
-    List.sort ~cmp:(fun ta tb -> compare (Target.id tb) (Target.id ta))
-
-  let build_sublist_of_targets
-      ~client ~list_name ~all_log ~go_verb ~filter =
-    Ketrew_client.current_targets client
-    >>| List.filter ~f:(fun target -> filter target)
-    >>| sort_target_list
-    >>= fun all_targets ->
-    let to_process = ref [] in
-    let all_valid_targets () =
-      List.filter all_targets ~f:(fun target ->
-          not (List.exists !to_process ~f:(fun id -> id = Target.id target)))
-    in
-    let target_menu () =
-      List.map (all_valid_targets ()) ~f:(fun t ->
-          menu_item
-            ~log:Log.(s "Add: " % format_target_for_menu t)
-            (`Add (Target.id t)))
-    in
-    let rec loop () =
-      let all_valid_ids = all_valid_targets () |> List.map ~f:Target.id in
-      let always_there =
-        let go =
-          if !to_process = [] then []
-          else
-            let log = Log.(s "Go; " % if_color bold_red go_verb % s " the "
-                           % (match !to_process with
-                             | [one] -> s "target"
-                             | more -> i (List.length more) % s " targets")) in
-            [menu_item ~char:'G' ~log `Done]
-        in
-        go @ [ menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel ]
-        @ (if all_valid_ids = [] then []
-           else [ menu_item ~char:'A' ~log:all_log `All; ])
-      in
-      let sentence =
-        if all_valid_ids = [] then Log.(s "Nothing to " % go_verb)
-        else Log.(s "Add targets to “" % s list_name % s "”") in
-      menu ~sentence ~always_there (target_menu ())
-      >>= function
-      | `Add id -> to_process := id :: !to_process; loop ()
-      | `All -> to_process := all_valid_ids @ !to_process; loop ()
-      | `Cancel -> return `Cancel
-      | `Done -> return (`Go !to_process)
-    in
-    loop ()
-
-  let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
-    List.filter targets ~f:filter_target
-    |> sort_target_list
-    |> List.map ~f:(fun target ->
-        menu_item ~log:Log.(format_target_for_menu target)
-          (`Go (Target.id target)))
-
-end
-
 let get_status ~client =
   Ketrew_client.current_targets client
   >>= fun targets ->
-  return (
-    List.fold targets ~init:(`Running 0, `Created 0, `Activated 0)
-      ~f:(fun ((`Running r, `Created c, `Activated a) as prev) t ->
-          let open Target in
-          match t.history with
-          | `Dead _       -> prev
-          | `Successful _ -> prev
-          | `Activated _  -> (`Running r, `Created c, `Activated (a + 1))
-          | `Created _    -> (`Running r, `Created (c + 1), `Activated a)
-          | `Running (_, _) -> (`Running (r + 1), `Created c, `Activated a))
-  )
+  let in_progress =
+    List.fold targets ~init:0 ~f:(fun prev t ->
+        let open Target in
+        match state t  |> State.simplify with
+        | `In_progress -> prev + 1
+        | `Failed
+        | `Activable
+        | `Successful -> prev)
+  in
+  return (`In_progress in_progress)
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let rec display_status ~client ~loop  =
   get_status ~client
-  >>= fun (`Running rr, `Created cc, `Activated aa) ->
-  Log.(s "Current targets: "
-       % i rr % s " Running, "
-       % i aa % s " Activated, "
-       % i cc % s " Created." %n
-       @ normal);
-  begin match loop, rr,  aa with
-  | Some _, 0, 0 -> 
+  >>= fun (`In_progress inp) ->
+  Log.(s "Current targets “in-progress”: " % i inp @ normal);
+  begin match loop, inp with
+  | Some _, 0 ->
     Log.(s "Nothing left to do" @ verbose);
     return ()
-  | Some seconds, _, _ ->
+  | Some seconds, _ ->
     (System.sleep seconds >>< fun _ -> return ())
     >>= fun () ->
     display_status ~client ~loop
-  | None, _, _ ->
+  | None, _ ->
     return ()
   end
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let run_state ~client ~max_sleep ~how =
-  let log_happening ~what_happened =
-    let open Log in
-    let step_count = List.length what_happened in
-    let happening_list =
-      List.mapi what_happened ~f:(fun step_index happening_list ->
-          List.map happening_list ~f:(fun happening ->
-              brakets (s "step " % i (step_index + 1)) % sp %
-              s (Ketrew_engine.what_happened_to_string happening)))
-      |> List.concat
-    in
-    let step_sentence =
-      match step_count with
-      | 0 -> s "No step was executed"
-      | 1 -> s "One step was executed"
-      | more -> i more % s " steps were executed"
-    in
-    Log.(step_sentence % s ":"  %
-         Document.log_list ~empty:(s "Nothing happened") happening_list
-         @ normal);
-    return ()
-  in
   begin match Ketrew_client.get_local_engine client with
   | None ->
     fail (`Failure "This client is not Standalone, it can not run stuff.")
   | Some state ->
     begin match how with
     | ["step"] ->
-      Ketrew_engine.step state
-      >>= fun what_happened ->
-      log_happening ~what_happened:[what_happened]
+      Ketrew_engine.Run_automaton.step state
+      >>= fun (_ : bool) ->
+      return ()
     | ["fix"] ->
-      Ketrew_engine.fix_point state
-      >>= fun (`Steps step_count, what_happened) ->
-      log_happening ~what_happened:List.(rev what_happened)
+      Ketrew_engine.Run_automaton.fix_point state
+      >>= fun (`Steps step_count) ->
+      Log.(i step_count % s " steps ran" @ normal);
+      return ()
     | "loop" :: [] ->
       let block, should_keep_going, stop_it =
         let keep_going = ref true in
@@ -408,36 +96,30 @@ let run_state ~client ~max_sleep ~how =
         (fun () ->
            keep_going := false;
            Light.green traffic_light ) in
-      let rec loop previous_sleep happenings =
-        Ketrew_engine.fix_point state
-        >>= fun (`Steps step_count, what_happened) ->
+      let rec loop previous_sleep =
+        Ketrew_engine.Run_automaton.fix_point state
+        >>= fun (`Steps step_count) ->
         Log.(s "Getting new status" @ verbose);
-        let new_happenings = what_happened @ happenings in
         get_status ~client
-        >>= fun (`Running rr, `Created cc, `Activated aa) ->
-        begin match rr,  aa with
-        | 0, 0 -> 
+        >>= begin function
+        | `In_progress 0 ->
           Log.(s "Nothing left to do" @ verbose);
           stop_it ();
-          log_happening ~what_happened:(List.rev new_happenings)
-        | _, _ ->
+          return ()
+        | _ ->
           let seconds =
-            match what_happened with
-            | [] | [[]] ->
-              min (previous_sleep *. 2.) max_sleep
-            | something -> 2.
+            match step_count with
+            | 1 -> 2.
+            | _ -> min (previous_sleep *. 2.) max_sleep
           in
           Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-          log_happening ~what_happened:what_happened
-          >>= fun () ->
           begin Deferred_list.pick_and_cancel [
               System.sleep seconds;
               block ();
             ] >>< function
-            | `Ok () when should_keep_going () -> 
-              loop seconds new_happenings
-            | `Ok () ->
-              log_happening ~what_happened:(List.rev new_happenings)
+            | `Ok () when should_keep_going () ->
+              loop seconds
+            | `Ok () -> return ()
             | `Error e ->
               Log.(s "System.Sleep Error!!"  @ error);
               fail (`Failure "System.sleep")
@@ -445,7 +127,7 @@ let run_state ~client ~max_sleep ~how =
         end
       in
       Deferred_list.pick_and_cancel [
-        begin loop 2. [] end;
+        begin loop 2. end;
         begin
           let rec kbd_loop () =
             Log.(s "Press the 'q' key to stop looping." @ normal);
@@ -465,6 +147,7 @@ let run_state ~client ~max_sleep ~how =
       fail (`Wrong_command_line sl)
     end
   end
+
 (** Kill targets (command line, ["--interactive"], or within
     [ketrew interactive]. *)
 let kill ~client ~interactive ids =
@@ -472,7 +155,7 @@ let kill ~client ~interactive ids =
     begin if interactive then
         Interaction.build_sublist_of_targets ~client ~list_name:"Kill list"
           ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
-          ~filter:Target.Is.killable
+          ~filter:(fun t -> Target.(state t |> State.Is.killable))
       else
         return (`Go [])
     end
@@ -485,75 +168,29 @@ let kill ~client ~interactive ids =
          | _ -> s "Killing " % OCaml.list s to_kill)
         @ warning);
       Ketrew_client.kill client to_kill
-      >>= fun happenings ->
-      List.iter happenings ~f:(function
-        | `Target_died (id, `Killed) ->
-          Log.(s "Target " % s id % s " killed" @ normal);
-        | other ->
-          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
-               @ error);
-        );
-      return ()
     | `Cancel ->
       Log.(s "Cancelling murder plans." @ normal);
       return ()
   end
 
-(** Archive targets (command line, ["--interactive"], or within
-    [ketrew interactive]. *)
-let archive ~client ~interactive ids =
-  begin
-    begin if interactive then
-        Interaction.build_sublist_of_targets ~client ~list_name:"Archival list"
-          ~all_log:Log.(s "Archive them all") ~go_verb:Log.(s "archive")
-          ~filter:Target.Is.finished
-      else
-        return (`Go [])
-    end
-    >>= function
-    | `Go additional_ids ->
-      let to_archive = additional_ids @ ids in
-      if List.length to_archive = 0 then
-        Log.(s "There is nothing to archive." @ warning);
-      Ketrew_client.archive client to_archive
-      >>= fun happenings ->
-      List.iter happenings ~f:(function
-        | `Target_archived id ->
-          Log.(s "Target " % s id % s " archived" @ normal);
-        | other ->
-          Log.(s "Wrong happening:" % Ketrew_engine.log_what_happened other
-               @ error);
-        );
-      return ()
-    | `Cancel ->
-      Log.(s "Cancelling archival" @ normal);
-      return ()
-  end
-
-(** Kill and archive targets that are done or useless. *)
+(** Kill targets that are useless. *)
 let autoclean ~client ~how_much ~interactive () =
   let module G = Ketrew_engine.Target_graph in
   Ketrew_client.targets_to_clean_up client ~how_much
-  >>= fun (`To_kill to_kill, `To_archive to_archive) ->
+  >>= fun (to_kill) ->
   let proceed () =
     kill ~client ~interactive:false to_kill
-    >>= fun () ->
-    archive ~client ~interactive:false (to_kill @ to_archive) in
-  begin match interactive, to_kill, to_archive with
-  | _, [], [] -> Log.(s "Nothing to do" @ normal); return ()
-  | true, _, _ ->
+  in
+  begin match interactive, to_kill with
+  | _, [] -> Log.(s "Nothing to do" @ normal); return ()
+  | true, _ ->
     let sentence =
       let open Log in
       s "Going to"
       % (match to_kill with
         | [] -> empty
         | more ->
-          s " kill & archive: " % OCaml.list string to_kill)
-      % (match to_archive with
-        | [] -> empty
-        | more ->
-          (if to_kill = [] then empty else s " and ")
-          % s " archive: " % OCaml.list string to_archive)
+          s " kill: " % OCaml.list string to_kill)
       % n % s "Proceed?"
     in
     Interaction.(
@@ -567,394 +204,8 @@ let autoclean ~client ~how_much ~interactive () =
         Log.(s "Cancelling" @ normal);
         return ()
     )
-  | false, _, _ ->
-    kill ~client ~interactive:false to_kill
-    >>= fun () ->
-    archive ~client ~interactive:false to_archive
+  | false, _ -> proceed ()
   end
-
-(** The “Target Explorer™“ *)
-module Explorer = struct
-  type exploration_state = {
-    build_process_details: bool;
-    show_archived: bool;
-    target_filter: (Target.t -> bool) * Log.t;
-    current_target: Target.id option;
-    condition_details: bool;
-  }
-  let create_state () =
-    {build_process_details = false;
-     condition_details = false;
-     show_archived = false;
-     target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
-     current_target = None}
-
-
-  let cancel_menu_items =
-    Interaction.([
-        menu_item ~char:'Q' ~log:Log.(s "Quit explorer") `Quit;
-        menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
-        menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
-      ])
-
-
-  let filter ~log ~char f =
-    (char, log, `Set (f, log))
-
-  let filters = [
-    filter (fun _ -> true)      ~char:'n' ~log:Log.(s "No-filter, see them all");
-    filter Target.Is.created    ~char:'c' ~log:Log.(s "Just created");
-    filter Target.Is.activated  ~char:'a' ~log:Log.(s "Activated");
-    filter Target.Is.running    ~char:'r' ~log:Log.(s "Running");
-    filter Target.Is.finished   ~char:'t' ~log:Log.(s "Terminated, success or failure");
-    filter Target.Is.failed     ~char:'f' ~log:Log.(s "Failed");
-    filter Target.Is.successful ~char:'s' ~log:Log.(s "Successful");
-    filter Target.Is.activated_by_user ~char:'u'
-      ~log:Log.(s "Activated by user (i.e. not as dependency)");
-  ]
-
-  let initial_ask_tags_content =
-    "# Enter regular expressions on `tags` of the targets\n\
-     # Lines beginning with '#' are thrown aways\n\
-     # The syntax of the regular expressions is “POSIX”\n\
-    "
-
-  let get_filter () =
-    Interaction.(
-      menu ~sentence:Log.(s "Pick a filter")
-        (List.map filters (fun (char, log, tag) ->
-             menu_item ~char ~log tag)
-         @ [menu_item ~char:'T'
-              ~log:Log.(s "Enter tag regular-expression(s)") `Ask_tags]
-        )
-    )
-    >>= function
-    | `Ask_tags ->
-      let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
-      IO.write_file tmpfile ~content:initial_ask_tags_content
-      >>= fun () ->
-      Interaction.open_in_dollar_editor tmpfile 
-      >>= fun () ->
-      IO.read_file tmpfile
-      >>= fun content ->
-      let tag_regs =
-        String.split ~on:(`Character '\n') content
-        |> List.filter_map ~f:(fun line ->
-            let stripped = String.strip line in
-            match String.get ~index:0 stripped with
-            | Some '#' -> None
-            | None -> None
-            | Some other ->
-              (try Some (stripped, 
-                         Re_posix.compile_pat stripped)
-              with _ -> None))
-      in
-      return (
-        (fun trgt ->
-           List.for_all tag_regs ~f:(fun (_, reg) ->
-               List.exists trgt.Target.tags ~f:(fun tag ->
-                   Re.execp reg tag))),
-        Log.(s "Tags matching " 
-             % OCaml.list (fun (s, _) -> quote s) tag_regs))
-    | `Set f  -> return f
-
-  let pick_a_target_from_list ~client target_ids =
-    Deferred_list.while_sequential target_ids
-      (fun id -> Ketrew_client.get_target client ~id)
-    >>= fun targets ->
-    Interaction.(
-      menu ~sentence:Log.(s "Pick a target")
-        ~always_there:cancel_menu_items
-        (make_target_menu ~targets ()))
-
-  let pick_a_target ~client (es : exploration_state) =
-    Ketrew_client.current_targets ~archived:es.show_archived client
-    >>= fun targets ->
-    Interaction.(
-      menu ~sentence:Log.(s "Pick a target")
-        ~always_there:(
-          cancel_menu_items
-          @ [
-            menu_item ~char:'f'
-              ~log:Log.(s "Change filter "
-                        % parens (s "current: " % snd es.target_filter))
-              `Filter;
-            menu_item ~char:'a'  (`Set_with_archived (not es.show_archived))
-              ~log:Log.(s (if es.show_archived then "Hide" else "Show")
-                        % s " archived targets");
-          ])
-        (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
-
-  let explore_single_target ~client (es: exploration_state) target =
-    let sentence =
-      let build_process_details = es.build_process_details in
-      let condition_details = es.condition_details in
-      Log.(s "Exploring "
-           % Document.target ~build_process_details ~condition_details target)
-    in
-    Ketrew_client.is_archived client ~id:(Target.id target)
-    >>= fun is_archived ->
-    Interaction.(
-      let kill_item =
-        if Target.Is.killable target
-        then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
-        else [] in
-      let archive_item =
-        if not is_archived && Target.Is.finished target
-        then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive]
-        else [] in
-      let boolean_item ~value ~char ~to_false ~to_true =
-        match value with
-        | true -> [menu_item ~char ~log:(fst to_false) (snd to_false)]
-        | false -> [menu_item ~char ~log:(fst to_true) (snd to_true)]
-      in
-      let build_process_details_item =
-        boolean_item ~value:es.build_process_details ~char:'b'
-          ~to_false:(Log.(s "Hide build process details"), `Show_make false)
-          ~to_true:(Log.(s "Show build process details"), `Show_make true) in
-      let condition_details_item =
-        boolean_item ~value:es.condition_details ~char:'c'
-          ~to_false:(Log.(s "Hide condition details"), `Show_condition false)
-          ~to_true:(Log.(s "Show condition details"), `Show_condition true) in
-      let menu_item_of_id_list ~char ~log ~result ids =
-        match ids with
-        | [] -> []
-        | some -> [menu_item ~char ~log result] in
-      let follow_deps_item =
-        menu_item_of_id_list ~char:'d' ~log:Log.(s "Follow a dependency")
-          ~result:`Follow_dependencies target.Target.dependencies in
-      let follow_fbacks_item =
-        menu_item_of_id_list ~char:'f' ~log:Log.(s "Follow a fallback")
-          ~result:`Follow_fallbacks target.Target.if_fails_activate in
-      let follow_success_triggers_item =
-        menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success-trigger")
-          ~result:`Follow_success_triggers target.Target.success_triggers in
-      let restart_item =
-        if Target.Is.finished target
-        then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
-                `Restart]
-        else [] in
-      menu ~sentence ~always_there:cancel_menu_items (
-        [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
-        @ build_process_details_item
-        @ condition_details_item
-        @ follow_deps_item
-        @ follow_fbacks_item
-        @ follow_success_triggers_item
-        @ kill_item
-        @ archive_item
-        @ restart_item
-        @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
-      ))
-
-  let view_json ~client target =
-    let content = Target.serialize target in
-    Interaction.view_in_dollar_editor ~extension:"json" content
-
-  let rec target_status
-      ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
-    let sentence =
-      let rec log_of_status (status: Target.workflow_state) =
-        let open Log in
-        match status with
-        | `Created time -> s "Created: " % Time.log time
-        | `Activated (time, subm, why) ->
-          log_of_status (subm :> Target.workflow_state) % n
-          % s "Activated: " % Time.log time % sp
-          % parens
-            (match why with
-             | `User -> s "user"
-             | `Dependency -> s "dependency"
-             | `Success_trigger -> s "success-trigger"
-             | `Fallback -> s "fallback")
-        | `Running ({Target.plugin_name; run_parameters; run_history}, act) ->
-          log_of_status (act :> Target.workflow_state) % n
-          % s "Running " % parens (s plugin_name) % s ":" % n
-          % indent (
-            separate n
-              (List.map
-                 ~f:(fun (key, value) -> s "* " % s key % s ": " % value)
-                 (Ketrew_plugin.long_running_log plugin_name run_parameters)))
-        | `Dead (time, prev, why) ->
-          log_of_status (prev :> Target.workflow_state) % n
-          % s "Dead: " % Time.log time % n
-          % parens (match why with
-            | `Failed reason -> s "Failed: " % s reason
-            | `Killed reason -> s "Killed: " % s reason)
-        | `Successful (time, prev, arti) ->
-          log_of_status (prev :> Target.workflow_state) % n
-          % s "Successful: " % Time.log time % s "→ " % Artifact.log arti
-      in
-      let open Log in
-      Document.target target
-      % s "Status:" % n
-      % indent (log_of_status target.Target.history)
-      % n % add_info
-    in
-    let open Interaction in
-    let additional =
-      Ketrew_plugin.additional_queries target
-      |> List.map ~f:(fun (key, log) -> menu_item ~log (`Call (key, log)))
-    in
-    let always_there =
-      let viewer_items =
-        let char = 'v' in
-        match additional, viewer with
-        | [], _ -> [] (* No additional → no need for this menu-item. *)
-        | _, `Inline ->
-          [menu_item ~char ~log:Log.(s "Use $EDITOR as viewer")
-             (`Set_viewer `Dollar_editor)]
-        | _, `Dollar_editor ->
-          [menu_item ~char ~log:Log.(s "View stuff inline")
-             (`Set_viewer `Inline)]
-      in
-      cancel_menu_items @  viewer_items  in
-    menu ~sentence ~always_there additional
-    >>= function
-    | `Set_viewer viewer ->
-      target_status ~client ~viewer exploration_state target
-    | `Call (key, log) ->
-      Log.(s "Calling query " % sf "%S" key % n
-           % s "Press " % bold_red (s "'K'") % s " for cancelling"
-           @ warning);
-      begin Deferred_list.pick_and_cancel [
-          Ketrew_client.call_query client ~target key;
-          begin
-            let rec loop () =
-              get_key ()
-              >>< function
-              | `Error (`Failure failure) ->
-                fail Log.(s "Interface fails: " % s failure)
-              | `Ok 'K' -> fail Log.(s "Cancelled by user")
-              | `Ok other -> loop () in
-            loop ()
-          end;
-        ]
-        >>< function
-        | `Ok qlog ->
-          begin match viewer with
-          | `Inline ->
-            let formatted =
-              let line = String.make 80 '`' in
-              String.concat ~sep:"\n" [line; qlog; line] in
-            return (Some Log.(log % s ":" % n
-                              % verbatim ("\n" ^ formatted ^ "\n") % n))
-          | `Dollar_editor ->
-            Interaction.view_in_dollar_editor qlog
-            >>= fun () ->
-            return None
-          end
-        | `Error e ->
-          return (Some Log.(log % s ": ERROR -> " % n % e % n))
-      end
-      >>= fun add_info ->
-      target_status ~client ~viewer ?add_info exploration_state target
-    | `Reload ->
-      Ketrew_client.get_target client (Ketrew_target.id target) >>= fun chosen ->
-      target_status ~client ~viewer exploration_state chosen
-    | `Cancel | `Quit as up -> return up
-
-  let rec explore ~client exploration_state_stack =
-    let go_back ~client history =
-      match history with
-      | [] -> return ()
-      | some -> explore ~client some in
-    begin match exploration_state_stack with
-    | [] -> explore ~client [create_state ()]
-    | one :: history ->
-      begin match one.current_target with
-      | None ->
-        begin pick_a_target ~client one
-          >>= function
-          | `Cancel -> go_back ~client history (* go back in history *)
-          | `Quit -> return ()
-          | `Reload -> explore ~client exploration_state_stack
-          | `Set_with_archived b ->
-            explore ~client ({one with show_archived = b } :: history)
-          | `Filter ->
-            get_filter () >>= fun f ->
-            explore ~client ({one with target_filter = f } :: one :: history)
-          | `Go t ->
-            explore ~client ({one with current_target = Some t } :: one :: history)
-        end
-      | Some chosen_id ->
-        Ketrew_client.get_target client chosen_id >>= fun chosen ->
-        begin explore_single_target ~client one chosen
-          >>= function
-          | `Cancel -> go_back ~client history
-          | `Quit -> return ()
-          | `Reload -> explore ~client exploration_state_stack
-          | `Show_make build_process_details ->
-            explore ~client ({ one with build_process_details }  :: history)
-          | `Show_condition condition_details ->
-            explore ~client ({ one with condition_details }  :: history)
-          | `Status ->
-            begin target_status ~client one chosen
-              >>= function
-              | `Cancel -> go_back ~client (one :: history)
-              | `Quit -> return ()
-            end
-          | `Kill ->
-            Log.(s "Killing target …" @ warning);
-            Ketrew_client.kill client [Target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "→ " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
-            explore ~client (one :: history)
-          | `Archive ->
-            Ketrew_client.archive client [Target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "Archival of " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
-            explore ~client (one :: history)
-          | `Restart ->
-            Ketrew_client.restart_target client [Ketrew_target.id chosen]
-            >>= fun what_happened ->
-            Log.(s "Restart of " % s (Target.name chosen) % n
-                 % (separate n
-                      (List.map ~f:Ketrew_engine.log_what_happened what_happened)
-                    |> indent)
-                 @ warning);
-            explore ~client (one :: history)
-          | `View_json ->
-            view_json ~client chosen >>= fun () ->
-            explore ~client (one :: history)
-          | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
-            as follow ->
-            let target_ids t =
-              match follow with
-              | `Follow_fallbacks -> t.Target.if_fails_activate
-              | `Follow_success_triggers -> t.Target.success_triggers
-              | `Follow_dependencies -> t.Target.dependencies in
-            let rec next_target ids =
-              begin pick_a_target_from_list ~client ids
-                >>= function
-                | `Cancel -> return `Cancel
-                | `Quit -> return `Quit
-                | `Reload ->
-                  Ketrew_client.get_target client chosen_id >>= fun chosen ->
-                  next_target (target_ids chosen)
-                | `Go t -> return (`Go t)
-              end
-            in
-            begin next_target (target_ids chosen)
-              >>= function
-              | `Cancel -> go_back ~client (one :: history)
-              | `Quit -> return ()
-              | `Go t ->
-                explore ~client
-                  ({one with current_target = Some t} :: one :: history)
-            end
-        end
-      end
-    end
-end
 
 let inspect
     ~(client:Ketrew_client.t)
@@ -966,7 +217,7 @@ let inspect
   let get_all () =
     match Ketrew_client.get_local_engine client with
     | None ->
-      Log.(s "HTTP Client cannot inspect for now." @ error); 
+      Log.(s "HTTP Client cannot inspect for now." @ error);
       fail (`Not_implemented "inspect")
     | Some engine ->
       Ketrew_engine.Measurements.get_all engine
@@ -983,7 +234,7 @@ let inspect
     String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
   let display document =
     match in_dollar_editor with
-    | true -> 
+    | true ->
       let str =
         match format with
         | `Tsv ->
@@ -1002,7 +253,7 @@ let inspect
       in
       Interaction.view_in_dollar_editor str
     | false ->
-      Log.(s "Measurements:" % n % 
+      Log.(s "Measurements:" % n %
            separate n
              (List.map document ~f:(fun str ->
                   separate (s "\t") (List.map ~f:s str)))
@@ -1075,20 +326,20 @@ let interact ~client =
   let rec main_loop () =
     Interaction.(
       menu ~sentence:Log.(s "Main menu")
-        ~always_there:[menu_item ~char:'q' ~log:Log.(s "Quit") `Quit]
+        ~always_there:[ menu_item ~char:'q' ~log:Log.(s "Quit") `Quit;
+                        menu_item ~char:'v' ~log:Log.(s "Toggle verbose") `Verbose]
         (
-          [ menu_item ~char:'s' ~log:Log.(s "Display current status") 
+          [ menu_item ~char:'s' ~log:Log.(s "Display current status")
               (`Status None); ]
           @ (if can_run_stuff then [
               menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
               menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
             ] else [
-               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status") 
+               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status")
                  (`Status (Some 2.));
              ])
           @ [
             menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
-            menu_item ~char:'a' ~log:Log.(s "Archive targets") `Archive;
             menu_item ~char:'c'
               ~log:Log.(s "Auto-clean-up: orphans, successes")
               (`Autoclean `Soft);
@@ -1101,6 +352,9 @@ let interact ~client =
     )
     >>= function
     | `Quit -> return ()
+    | `Verbose ->
+        Interaction.toggle_verbose ();
+        main_loop ()
     | `Status loop ->
       display_status ~client ~loop
       >>= fun () ->
@@ -1111,10 +365,6 @@ let interact ~client =
       main_loop ()
     | `Run how ->
       run_state ~client  ~max_sleep:120. ~how
-      >>= fun () ->
-      main_loop ()
-    | `Archive ->
-      archive ~interactive:true ~client []
       >>= fun () ->
       main_loop ()
     | `Autoclean how_much ->
@@ -1144,7 +394,7 @@ let daemonize_if_applicable config =
         UnixLabels.(
           openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY])
       in
-      let channel = 
+      let channel =
         Lwt_io.of_unix_fd unix_fd ~buffer_size:1024 ~mode:Lwt_io.output in
       Lwt_main.at_exit (fun () -> Lwt_io.close channel);
       global_with_color := false;
@@ -1182,15 +432,12 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
-    let default =
-      (try Sys.getenv "KETREW_CONFIGURATION" with _ ->
-         (try Sys.getenv "KETREW_CONFIG" with _ ->
-            Configuration.default_configuration_path)) in
+    let default = Configuration.get_path () in
     let docv = "FILE" in
     let doc = "Use $(docv) as configuration file (can be overriden also \
                with `$KETREW_CONFIGURATION`)." in
     Arg.(value & opt string default
-         & info ["C"; "configuration-file"] 
+         & info ["C"; "configuration-file"]
            ~docs:common_options_section ~docv ~doc)
   in
   let init_cmd =
@@ -1240,7 +487,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   return ()
                 end)
           $ config_file_argument
-          $ Arg.(value @@ flag 
+          $ Arg.(value @@ flag
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
@@ -1255,10 +502,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             Ketrew_client.as_client ~configuration
               ~f:(inspect ~in_dollar_editor ~format ?since how))
         $ config_file_argument
-        $ Arg.(value @@ flag 
+        $ Arg.(value @@ flag
                @@ info ["e"; "view-in-editor"]
                  ~doc:"Open stuff in $EDITOR (by default in TSV).")
-        $ Arg.(value @@ flag 
+        $ Arg.(value @@ flag
                @@ info ["csv"]
                  ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
         $ Arg.(value & opt (some string) None
@@ -1335,24 +582,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "kill" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Kill a target."
           ~man:[])
-  in
-  let archive_cmd =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun config_path interactive ids ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
-            Ketrew_client.as_client ~configuration
-              ~f:(archive ~interactive ids))
-        $ config_file_argument
-        $ interactive_flag "Go through running targets and kill them with 'y' \
-                            or 'n'."
-        $ Arg.(value @@ pos_all string [] @@
-               info [] ~docv:"Target-Id" ~doc:"Archive target $(docv)"))
-      ~info:(
-        info "archive" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Archive targets." ~man:[])
   in
   let autoclean_command =
     let open Term in
@@ -1482,7 +711,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Ok o -> return o
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
-      init_cmd; status_cmd; run_cmd; kill_cmd; archive_cmd;
+      init_cmd; status_cmd; run_cmd; kill_cmd;
       inspect_cmd;
       interact_cmd;
       explore_cmd;

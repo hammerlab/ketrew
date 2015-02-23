@@ -13,14 +13,14 @@ and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
 This is Ketrew `0.0.0+master` the development version of the system,
-see also the
+for a stable version, see the documentation for the
 [`0.0.0`](http://seb.mondet.org/software/ketrew/doc.0.0.0/index.html) release.
 
 Build & Install
 ---------------
 
-For now Ketrew requires OCaml **4.01.0** (because it uses `ocp-build`) and
-should be able to build & work on any Unix platform.
+Ketrew requires at least OCaml **4.01.0** and should be able to build & work on
+any Unix platform.
 
 ### From Opam
 
@@ -29,9 +29,10 @@ If you have `opam` up and running:
     opam remote add smondet git@github.com:smondet/dev-opam-repo
     opam install ketrew
 
-Then you need at runtime `ssh` and `git` in the `$PATH`.
+Then you need at runtime `ssh` in the `$PATH`.
 
-This gets you the `ketrew` executable and the `ketrew` library.
+This gets you the `ketrew` executable and the `ketrew_data` and `ketrew`
+libraries.
 
 ### Without Opam
 
@@ -45,8 +46,8 @@ The EDSL: Defining Workflows
 ### Overview
 
 The EDSL is an OCaml library where all the functions are used to build a
-workflow data-structure *except* one: `Ketrew.EDSL.run` which is used to submit
-workflows to the engine.
+workflow data-structure. Then, one function: `Ketrew.Client.submit` is used to
+submit workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
 
@@ -107,9 +108,9 @@ let () =
   let workflow =
      (* Create the  workflow with the first argument of the command line: *)
      run_command_with_lsf Sys.argv.(1) in
-  (* Then, `run` is the only function that “does” something, it submits the
-     workflow to the engine: *)
-  Ketrew.EDSL.run workflow
+  (* Then, `Client.submit` is the only function that “does” something, it
+     submits the workflow to the engine: *)
+  Ketrew.Client.submit workflow
   (* If Ketrew is in Standalone mode, this means writing the workflow in the
      database (nothing runs yet, you need to run Ketrew's engine yourself).
      If Ketrew is in Client-Server mode, this means sending the workflow to the
@@ -137,8 +138,8 @@ Then you can *submit* your workflow:
 
     ocaml my_first_workflow.ml 'du -sh $HOME'
 
-When the function `Ketrew.EDSL.run` is called, the workflow will be *submitted*
-but not yet running. To run the *engine* do:
+When the function `Ketrew.Client.submit` is called, the workflow will be
+*submitted* but not yet running. To run the *engine* do:
 
     ketrew run loop
 

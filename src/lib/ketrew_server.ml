@@ -173,16 +173,6 @@ let targets_service: _ service = fun ~server_state ~body req ->
   begin match target_ids  with
   | [] ->
     Ketrew_engine.current_targets server_state.state
-    >>= fun current_targets ->
-    begin
-      if Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "archived"
-         = Some "true"
-      then
-        Ketrew_engine.archived_targets server_state.state
-        >>= fun archived ->
-        return (current_targets @ archived)
-      else return current_targets
-    end
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
         Ketrew_engine.get_target server_state.state id
@@ -195,7 +185,10 @@ let targets_service: _ service = fun ~server_state ~body req ->
     >>| List.filter_opt
   end
   >>= fun targets ->
-  return (`Message (response_format, `List_of_targets targets))
+  return (`Message
+            (response_format,
+             `List_of_targets
+               (List.map ~f:Ketrew_target.to_serializable targets)))
 
 let target_available_queries_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -255,13 +248,14 @@ let add_targets_service  ~server_state ~body req =
   get_post_body req ~body 
   >>= fun body ->
   message_of_body ~body ~select:(function
-    | `List_of_targets t -> Some t
+    | `List_of_targets t -> Some (List.map ~f:Ketrew_target.of_serializable t)
     | _ -> None)
   >>= fun targets ->
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
   Ketrew_engine.add_targets server_state.state targets
   >>= fun () ->
-  Deferred_list.while_sequential targets ~f:(fun t ->
+  (*
+    Deferred_list.while_sequential targets ~f:(fun t ->
       let original_id = Ketrew_target.id t in
       Ketrew_engine.get_target server_state.state original_id
       >>= fun freshen ->
@@ -269,10 +263,11 @@ let add_targets_service  ~server_state ~body req =
                 ~original_id ~fresh_id:(Ketrew_target.id freshen))
     )
   >>= fun added_targets ->
+ *)
   Light.green server_state.loop_traffic_light;
-  return (`Message (`Json, `Targets_added added_targets))
+  return (`Message (`Json, `Ok))
 
-let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service = 
+let action_on_ids_service: [`Kill  | `Restart] -> _ service = 
   fun what_to_do ~server_state ~body req ->
     get_post_body req ~body 
     >>= fun body ->
@@ -283,13 +278,14 @@ let action_on_ids_service: [`Kill | `Archive | `Restart] -> _ service =
     Deferred_list.while_sequential target_ids (fun id ->
         begin match what_to_do with
         | `Kill -> Ketrew_engine.kill server_state.state id
-        | `Archive -> Ketrew_engine.archive_target server_state.state id
-        | `Restart -> Ketrew_engine.restart_target server_state.state id
+        | `Restart ->
+          Ketrew_engine.restart_target server_state.state id
+          >>= fun (_ : Ketrew_target.id) ->
+          return ()
         end)
-    >>| List.concat
-    >>= fun happenings ->
+    >>= fun (_ : unit list) ->
     Light.green server_state.loop_traffic_light;
-    return (`Message (`Json, `Happens happenings))
+    return (`Message (`Json, `Ok))
 
 let list_cleanable_targets ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -306,10 +302,8 @@ let list_cleanable_targets ~server_state ~body req =
   Ketrew_engine.Target_graph.(
     get_current server_state.state
     >>= fun graph ->
-    let `To_kill to_kill, `To_archive to_archive =
-      targets_to_clean_up graph how_much in
-    let msg = Ketrew_protocol.Down_message.clean_up ~to_archive ~to_kill in
-    return (`Message (`Json, `Clean_up msg))
+    let  to_kill = targets_to_clean_up graph how_much in
+    return (`Message (`Json, `List_of_target_ids to_kill))
   )
 
 (** {2 Dispatcher} *)
@@ -326,8 +320,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
     action_on_ids_service `Kill  ~server_state ~body req
-  | "/archive-targets" ->
-    action_on_ids_service `Archive  ~server_state ~body req
   | "/restart-targets" ->
     action_on_ids_service `Restart  ~server_state ~body req
   | "/cleanable-targets" ->
@@ -435,25 +427,32 @@ let start_engine_loop ~server_state =
   let time_factor = 2. in
   let max_sleep = 120. in
   let rec loop previous_sleep =
-    Ketrew_engine.fix_point server_state.state
-    >>= fun (`Steps step_count, what_happened) ->
-    List.iter what_happened ~f:(List.iter ~f:(fun hp ->
-        Log.(brakets (f (Time.now ())) % sp % s "Fix-point"
-             % Ketrew_engine.log_what_happened hp @ normal);
-      ));
-    let seconds =
-      match what_happened with
-      | [] | [[]] -> 
-        min (previous_sleep *. time_factor) max_sleep
-      | something -> time_step
-    in
-    Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
+    begin
+      Ketrew_engine.Run_automaton.fix_point server_state.state
+      >>< function
+      | `Ok (`Steps step_count) ->
+        let seconds =
+          if step_count = 1 then
+            min (previous_sleep *. time_factor) max_sleep
+          else
+            time_step
+        in
+        Log.(s "Successful fix-point: "
+             % parens (i step_count % s " steps") %n
+             % s "Sleeping " % f seconds % s " s" @ verbose);
+        return seconds
+      | `Error e ->
+        Log.(s "Errorneous fix-point: "
+             % s (Ketrew_error.to_string e) %n
+             % s "Sleeping " % f time_step % s " s" @ verbose);
+        return time_step
+    end
+    >>= fun seconds ->
     Deferred_list.pick_and_cancel [
       System.sleep seconds;
       begin
         Light.try_to_pass server_state.loop_traffic_light
         >>= fun () ->
-        Log.(s "Waken-up early" @ verbose); 
         server_state.loop_traffic_light.Light.color <- `Red;
         return ()
       end;

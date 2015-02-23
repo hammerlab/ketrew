@@ -106,7 +106,7 @@ let long_running_log plugin_name content =
 
 let additional_queries target =
   let module Target = Ketrew_target in
-  match target.Target.make with
+  match Target.(build_process target) with
   | `Long_running (plugin, _) ->
     begin match Target.latest_run_parameters target with
     | Some rp ->
@@ -135,7 +135,7 @@ let additional_queries target =
 
 let call_query ~target query =
   let module Target = Ketrew_target in
-  match target.Target.make with
+  match Target.build_process target with
   | `Long_running (plugin, _) ->
     begin match Target.latest_run_parameters target with
     | Some rp ->
