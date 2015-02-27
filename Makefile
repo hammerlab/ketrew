@@ -1,7 +1,7 @@
 
 .PHONY: all clean build configure distclean doc apidoc gen test-env
 
-PLEASE=ocaml tools/please.ml 
+PLEASE=ocaml tools/please.ml
 
 all: build
 
@@ -11,8 +11,8 @@ _oasis: tools/_oasis.in tools/please.ml
 setup.data: _oasis
 	oasis setup -setup-update dynamic
 
-configure: setup.data
-	ocaml setup.ml -configure --enable-all $(COPT) && \
+configure: myocamlbuild.ml setup.data
+	ocaml setup.ml -configure --enable-all $(EN) && \
 	echo 'Configured'
 
 gen:
@@ -41,6 +41,15 @@ test-env:
 clean:
 	rm -fr _build $(OWN_BINARIES)
 
-distclean: clean
+distclean: clean clean_reports
 	ocaml setup.ml -distclean || echo OK ; \
-	    rm -fr setup.ml _tags myocamlbuild.ml gen src/*/META src/*/*.mldylib src/*/*.mllib _oasis
+	    rm -fr setup.ml _tags gen src/*/META src/*/*.mldylib src/*/*.mllib _oasis
+
+clean_reports:
+	rm -rf _report_dir bisect*.out
+
+_report_dir:
+	mkdir _report_dir
+
+report: _report_dir
+	bisect-report -I _build -html _report_dir $(shell ls -t bisect*.out | head -1)

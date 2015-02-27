@@ -2,6 +2,7 @@ _build/
 _apidoc/
 _test_env/
 _doc/
+_report_dir/
 gen/
 /setup.data
 /setup.log
