@@ -186,7 +186,7 @@ module Condition = struct
 
   let (&&) a b = `And [a; b]
   let chain_and l = `And l
-  let never = `False
+  let never = `Never
   let program ?(returns=0) ?host p =
     `Command_returns (Ketrew_target.Command.program ?host p, returns)
 
