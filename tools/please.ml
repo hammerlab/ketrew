@@ -90,7 +90,7 @@ let () =
     cmd_exn "mkdir -p gen/";
     List.iter files ~f:begin fun atd ->
       printf "ATD: %s\n%!" atd;
-      cmd_exn "atd2cconv -inline-inherit-variants true -i %s \
+      cmd_exn "atd2cconv -sort false -inline-inherit-variants true -i %s \
                -o gen/ketrew_gen_%s.ml"
         atd Filename.(basename atd |> (fun f -> chop_suffix f ".atd"))
     end;

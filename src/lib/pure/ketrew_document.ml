@@ -73,10 +73,23 @@ let target_for_menu t =
   % if_color greyish (s (Target.id t)) % n
   % short_status t
 
-let target ?build_process_details ?condition_details t =
+let metadata ~full = function
+| `String str ->
+  let all_lines = String.split ~on:(`Character '\n') str in
+  begin match all_lines with
+  | [one] when String.length one < 70 -> Log.quote one
+  | _ when full -> Log.verbatim str
+  | _ ->
+    Log.(parens (i (String.length str) % s " bytes; "
+                 % i (List.length all_lines) % s " lines"))
+  end
+
+let target
+    ?build_process_details ?condition_details ?(metadata_details=false) t =
   let open Log in
   let doc_build_process = build_process in
   let doc_condition = condition in
+  let doc_metadata = metadata in (* names overriden by `open Target` *)
   let open Target in
   let itemize l =
     indent (concat (List.map l ~f:(fun (name, log) ->
@@ -87,7 +100,7 @@ let target ?build_process_details ?condition_details t =
     "Dependencies", OCaml.list s (dependencies t);
     "Fallbacks", OCaml.list s (fallbacks t);
     "On Success trigger", OCaml.list s (success_triggers t);
-    "Metadata", OCaml.option (function `String m -> s m) (metadata t);
+    "Metadata", OCaml.option (doc_metadata ~full:metadata_details) (metadata t);
     "Build-process",
     doc_build_process ?with_details:build_process_details
       (Target.build_process t);

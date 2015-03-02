@@ -171,6 +171,7 @@ module State : sig
     val finished : t -> bool
     val passive : t -> bool
     val killable: t -> bool
+    val finished_because_dependencies_died: t -> bool
   end
 end
 

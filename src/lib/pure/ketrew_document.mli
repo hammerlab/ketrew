@@ -23,7 +23,10 @@ val build_process : ?with_details:bool ->
 
 val target_for_menu : Ketrew_target.t -> Log.t
 
+val metadata: full:bool -> [ `String of string ] -> Log.t
+
 val target : ?build_process_details:bool ->
-             ?condition_details:bool ->
-             Ketrew_target.t ->
-             Log.t
+  ?condition_details:bool ->
+  ?metadata_details:bool ->
+  Ketrew_target.t ->
+  Log.t

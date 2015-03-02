@@ -24,13 +24,15 @@ type exploration_state = {
   target_filter: (Target.t -> bool) * Log.t;
   current_target: Target.id option;
   condition_details: bool;
+  metadata_details: bool;
 }
 
 let create_state () =
   {build_process_details = false;
-    condition_details = false;
-    target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
-    current_target = None}
+   condition_details = false;
+   metadata_details = false;
+   target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
+   current_target = None}
 
 let cancel_menu_items =
   Interaction.([
@@ -41,8 +43,10 @@ let cancel_menu_items =
 
 let filter ~log ~char f =
   (char, log, `Set (f, log))
+
 let simple_filter ~log ~char simple =
   filter ~log ~char (fun t -> Target.state t |> Target.State.simplify = simple)
+
 let finished t =
   let simple = Target.state t |> Target.State.simplify in
   match simple with
@@ -51,19 +55,39 @@ let finished t =
   | `In_progress
   | `Activable -> false
 
+let failed_but_not_because_of_dependencies t =
+  let state = Target.state t in
+  Target.State.simplify state = `Failed
+  && not (Target.State.Is.finished_because_dependencies_died state)
+
+let really_running t =
+  let state = Target.state t in
+  let open Target.State in
+  Is.started_running state || Is.still_running state
+  || Is.ran_successfully state
+
+let waiting_on_dependencies t =
+  let state = Target.state t in
+  let open Target.State in
+  Is.building state || Is.still_building state
+
 let filters = [
   filter        (fun _ -> true) ~char:'n' ~log:Log.(s "No-filter, see them all");
   simple_filter `Activable      ~char:'p' ~log:Log.(s "Passive/Activable");
   simple_filter `In_progress    ~char:'r' ~log:Log.(s "Running/In-progress");
+  filter really_running         ~char:'R' ~log:Log.(s "Really running, not waiting");
+  filter waiting_on_dependencies ~char:'d' ~log:Log.(s "Waiting on dependencies");
   simple_filter `Successful     ~char:'s' ~log:Log.(s "Successful");
   simple_filter `Failed         ~char:'f' ~log:Log.(s "Failed");
-  filter        finished        ~char:'n' ~log:Log.(s "Finished (success or failure)");
+  filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
+  filter failed_but_not_because_of_dependencies
+    ~char:'D' ~log:Log.(s "Failed but not because of its depedencies");
 ]
 
 let initial_ask_tags_content =
   "# Enter regular expressions on `tags` of the targets\n\
-    # Lines beginning with '#' are thrown aways\n\
-    # The syntax of the regular expressions is “POSIX”\n\
+   # Lines beginning with '#' are thrown aways\n\
+   # The syntax of the regular expressions is “POSIX”\n\
   "
 
 let get_filter () =
@@ -133,8 +157,10 @@ let explore_single_target ~client (es: exploration_state) target =
   let sentence =
     let build_process_details = es.build_process_details in
     let condition_details = es.condition_details in
+    let metadata_details = es.metadata_details in
     Log.(s "Exploring "
-          % Document.target ~build_process_details ~condition_details target)
+         % Document.target
+           ~build_process_details ~condition_details ~metadata_details target)
   in
   (* Ketrew_client.is_archived client ~id:(Target.id target) *)
   (* >>= fun is_archived -> *)
@@ -160,6 +186,16 @@ let explore_single_target ~client (es: exploration_state) target =
       boolean_item ~value:es.condition_details ~char:'c'
         ~to_false:(Log.(s "Hide condition details"), `Show_condition false)
         ~to_true:(Log.(s "Show condition details"), `Show_condition true) in
+    let metadata_details_item =
+      match Target.metadata target with
+      | None -> []
+      | Some _ ->
+        boolean_item ~value:es.metadata_details ~char:'m'
+          ~to_false:(Log.(s "Hide metadata details"), `Show_metadata false)
+          ~to_true:(Log.(s "Show metadata details"), `Show_metadata true)
+        @ [menu_item ~char:'M'
+             ~log:Log.(s "View Metadata in $EDITOR") `View_metadata]
+    in
     let menu_item_of_id_list ~char ~log ~result ids =
       match ids with
       | [] -> []
@@ -182,6 +218,7 @@ let explore_single_target ~client (es: exploration_state) target =
       [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
       @ build_process_details_item
       @ condition_details_item
+      @ metadata_details_item
       @ follow_deps_item
       @ follow_fbacks_item
       @ follow_success_triggers_item
@@ -194,6 +231,13 @@ let explore_single_target ~client (es: exploration_state) target =
 
 let view_json ~client target =
   let content = Target.Stored_target.(of_target target |> serialize) in
+  Interaction.view_in_dollar_editor ~extension:"json" content
+
+let view_metadata ~client target =
+  let content =
+    match Target.metadata target with
+    | Some (`String s) -> s
+    | None -> "" in
   Interaction.view_in_dollar_editor ~extension:"json" content
 
 let rec target_status
@@ -302,6 +346,8 @@ let rec explore ~client exploration_state_stack =
           explore ~client ({ one with build_process_details }  :: history)
         | `Show_condition condition_details ->
           explore ~client ({ one with condition_details }  :: history)
+        | `Show_metadata metadata_details ->
+          explore ~client ({ one with metadata_details }  :: history)
         | `Status ->
           begin target_status ~client one chosen
             >>= function
@@ -319,6 +365,9 @@ let rec explore ~client exploration_state_stack =
           explore ~client (one :: history)
         | `View_json ->
           view_json ~client chosen >>= fun () ->
+          explore ~client (one :: history)
+        | `View_metadata ->
+          view_metadata ~client chosen >>= fun () ->
           explore ~client (one :: history)
         | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
           as follow ->

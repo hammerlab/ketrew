@@ -85,6 +85,8 @@ type failed_to_start = [
 type running = [
   | Started_running of (starting history * run_bookkeeping)
   | Still_running  of (running history * run_bookkeeping)
+  | Still_running_despite_recoverable_error of
+      (string * running history * run_bookkeeping)
 ]
 
 (*
@@ -94,6 +96,7 @@ that the potential condition has been ensured.
 type successful_run = [
   | Successfully_did_nothing of starting history
   | Ran_successfully of (running history * run_bookkeeping)
+  | Tried_to_reeval_condition of (string * successful_run history)
 ]
 
 

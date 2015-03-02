@@ -36,27 +36,39 @@ include Json.Make_versioned_serialization
 let name = "LSF"
 let create
     ?(host=Host.tmp_on_localhost)
-    ?queue ?name ?wall_limit ?processors
+    ?queue ?name ?wall_limit ?processors ?project
     program =
   `Long_running ("LSF",
-                 `Created {host; program; queue; name; wall_limit; processors}
+                 `Created {host; program; queue; name;
+                           wall_limit; project; processors}
                  |> serialize)
 
 let log =
   let open Log in
+  let created {host; program; queue; name;
+               wall_limit; project; processors} = [
+    "Host", Host.log host;
+    "Program", Program.log program;
+    "Queue", OCaml.option quote queue;
+    "Name", OCaml.option quote name;
+    "Wall-Limit", OCaml.option quote wall_limit;
+    "Project", OCaml.option quote project;
+    "Processors",
+    (match processors with
+     | None -> s "Default"
+     | Some (`Min min) -> s "≥ " % i min
+     | Some (`Min_max (min, max)) ->
+       s "∈ " % brakets (i min % s ", " % i max));
+  ] in
   function
-  | `Created c -> [
-      "Status", s "Created";
-      "Host", Host.log c.host;
-      "Program", Program.log c.program;
+  | `Created c -> ("Status", s "Created") :: created c
+  | `Running rp ->
+    List.concat [
+      ["Status", s "Running";];
+      created rp.created;
+      ["LSF-ID", i rp.lsf_id;
+       "Playground", s (Path.to_string rp.playground);]
     ]
-| `Running rp -> [
-      "Status", s "Running";
-      "Host", Host.log rp.created.host;
-      "Program", Program.log rp.created.program;
-      "LSF-ID", i rp.lsf_id;
-      "Playground", s (Path.to_string rp.playground);
-  ]
 
 let parse_bsub_output s =
   (* Output looks like
@@ -143,12 +155,13 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
         "bsub";
         fmt "-o %s" (Path.to_string out);
         fmt "-e %s" (Path.to_string err);
-        (option created.queue (fmt "-q %s"));
-          (option created.name (fmt "-J %s"));
-        (option created.wall_limit (fmt "-W %s"));
+        (option created.queue (fmt "-q '%s'"));
+          (option created.name (fmt "-J '%s'"));
+        (option created.wall_limit (fmt "-W '%s'"));
+        (option created.project (fmt "-P '%s'"));
         (option created.processors (function
-           | `Min m -> fmt "-n %d" m
-           | `Min_max (mi, ma) -> fmt "-n %d,%d" mi ma));
+           | `Min m -> fmt "-n %d -R 'span[hosts=1]'" m
+           | `Min_max (mi, ma) -> fmt "-n %d,%d -R 'span[hosts=1]'" mi ma));
         fmt "< %s"
           (Path.to_string_quoted monitored_script_path)
       ]

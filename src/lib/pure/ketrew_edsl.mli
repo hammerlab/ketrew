@@ -235,6 +235,7 @@ val lsf :
   ?name:string ->
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
+  ?project:string ->
   Program.t -> Ketrew_target.Build_process.t
 (** Create an “LSF” build process. *)
 
