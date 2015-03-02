@@ -148,7 +148,13 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
   [using the plugin](src/test/dummy_plugin_user.ml).
 
 ### Coverage
-To generate coverage reports `make configure EN="--enable-coverage"` then `make` will build instrumented versions of the executibles that will generate `bisect*.out` files when run. `make report` will take the  latest such file and generate an html file in `_report_dir/index.html`. `make clean_reports` removes the reports and `_report_dir`. Finally, `make configure EN="--disable-coverage"` will return the build process to a non-instrumented state.
+To generate coverage reports `make configure EN="--enable-coverage"` then
+`make` will build instrumented versions of the executibles that will generate
+`bisect*.out` files when run. `make report` will take the  latest such file
+and generate an html file in `_report_dir/index.html`. `make clean_reports`
+removes the reports and `_report_dir`. Finally,
+`make configure EN="--disable-coverage"` will return the build process to a
+non-instrumented state.
 
 
 How to Release
