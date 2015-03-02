@@ -2,6 +2,10 @@
 (* OASIS_STOP *)
 open Ocamlbuild_plugin
 
+(* This file is used by the build system (ocamlbuild specifically) to
+   instrument code when we request code coverage. Otherwise it makes no
+   changes to the code. *)
+
 let has_coverage () =
   let key = "coverage=" in
   let n   = String.length key in
