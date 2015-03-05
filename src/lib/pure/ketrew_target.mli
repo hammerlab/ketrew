@@ -57,7 +57,7 @@ module Command : sig
 module Build_process: sig
   type t = [
     | `No_operation
-    | `Long_running of (string * string) 
+    | `Long_running of (string * string)
     (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
   ]
   (** Specification of how to build a target. {ul
@@ -67,7 +67,7 @@ module Build_process: sig
        produce a value), }
       {li [`Long_running (plugin_name, initial_run_parameters)]:
       Use a long-running plugin. }
-      } 
+      }
   *)
 
   val nop : t
@@ -79,17 +79,18 @@ type id = Unique_id.t
 
 module Condition : sig
   type t = [
-    | `True
-    | `False
+    | `Satisfied
+    | `Never
     | `Volume_exists of Ketrew_artifact.Volume.t
     | `Volume_size_bigger_than of Ketrew_artifact.Volume.t * int
     | `Command_returns of Command.t * int
     | `And of t list
   ]
-  (** A execution anti-condition, the condition defines when a target is
-    (already) ready: {ul
-    {li with [`False] the target always runs (because never “ready”),}
-    {li with [`True] the target never runs (a bit useless),}
+  (**
+    An execution anti-condition; the condition defines when a target is
+    ready and therefore should be run if the condition is {emph not} met: {ul
+    {li with [`Never] the target always runs (because never “ready”),}
+    {li with [`Satisfied] the target never runs (a bit useless),}
     {li with [`Volume_exists v] the target runs if the volume does not exist
     ([make]-like behavior).}
     {li with [`Volume_size_bigger_than (v, sz)] Ketrew will get the total size
@@ -183,7 +184,7 @@ val create :
   ?dependencies:id list ->
   ?if_fails_activate:id list ->
   ?success_triggers:id list ->
-  ?make:Build_process.t -> 
+  ?make:Build_process.t ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
   ?tags: string list ->
@@ -230,7 +231,7 @@ module Automaton : sig
     [ `Successful of bookkeeping | `Still_running of bookkeeping ]
   type process_status_check = (process_check, long_running_failure) Pvem.Result.t
   type condition_evaluation = (bool, severity * string) Pvem.Result.t
-  type dependencies_status = 
+  type dependencies_status =
     [ `All_succeeded | `At_least_one_failed of id list | `Still_processing ]
   type transition = [
     | `Do_nothing of unit transition_callback
@@ -246,11 +247,11 @@ end
 
 val activate_exn :
   ?log:string -> t -> reason:[ `Dependency of id | `User ] -> t
-(** Get an activated target out of a “submitted” one, 
+(** Get an activated target out of a “submitted” one,
     raises [Invalid_argument _] if the target is in a wrong state. *)
 
 val kill : ?log:string -> t -> t option
-(** Get dead target out of a killable one, 
+(** Get dead target out of a killable one,
     or [None] if not killable. *)
 
 val reactivate :
@@ -269,18 +270,18 @@ val log : t -> Log.t
 
 val should_start:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution
          | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target is ready or should start, given its condition.  *)
 
 val did_ensure_condition:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution
          | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target actually did its job, given its condition.  *)
 
 
-(** Get the most recent serialized 
+(** Get the most recent serialized
     [run_parameters] if the target is a “long-running”,
     [None] otherwise. *)
 val latest_run_parameters: t -> string option

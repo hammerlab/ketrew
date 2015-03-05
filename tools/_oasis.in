@@ -16,6 +16,10 @@ Flag test
   Description: Build the Tests
   Default$: flag(all)
 
+Flag coverage
+  Description: Use Bisect to generate coverage data.
+  Default:     false
+
 Library ketrew_data
   Path: gen/
   BuildDepends: cconv

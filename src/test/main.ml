@@ -782,8 +782,8 @@ let make_automaton_graph () =
     (Ketrew.EDSL.target "03" ~dependencies:[dep] |> activate_and_render);
     (Ketrew.EDSL.target "03" ~make:(`Long_running ("", "")) |> activate_and_render);
     (Ketrew.EDSL.target "03" ~make:(`Long_running ("", ""))
-       ~done_when:`False |> activate_and_render);
-    (Ketrew.EDSL.target "04" ~done_when:(`True) |> activate_and_render);
+       ~done_when:`Never |> activate_and_render);
+    (Ketrew.EDSL.target "04" ~done_when:(`Satisfied) |> activate_and_render);
     (Ketrew.EDSL.target "04" |> activate_and_render
      |> Ketrew_target.kill ?log:None |> Option.value_exn ~msg:"not killable?");
     (Ketrew.EDSL.target "TOKILL" ~make:(`Long_running ("", ""))

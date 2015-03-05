@@ -160,8 +160,8 @@ type state = [
 ]
 
 type condition = [
-  | True
-  | False
+  | Satisfied
+  | Never
   | Volume_exists of volume
   | Volume_size_bigger_than of (volume * int)
   | Command_returns of (command * int)

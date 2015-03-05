@@ -62,8 +62,8 @@ module Condition = struct
   type t = Ketrew_gen_target_v0.Condition.t
   let rec log =
     Log.(function
-      | `True -> s "True"
-      | `False -> s "False"
+      | `Satisfied -> s "Satisfied"
+      | `Never -> s "Never"
       | `Volume_exists v -> 
         parens (s "Volume " % Artifact.Volume.log v % s " exists")
       | `Volume_size_bigger_than (v, sz) ->
@@ -78,8 +78,8 @@ module Condition = struct
 
   let rec eval = 
     function
-    | `True -> return true
-    | `False -> return false
+    | `Satisfied -> return true
+    | `Never -> return false
     | `Volume_exists v -> Artifact.Volume.exists v
     | `Volume_size_bigger_than (v, sz) ->
       Artifact.Volume.get_size v
