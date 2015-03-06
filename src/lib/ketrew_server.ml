@@ -306,6 +306,15 @@ let list_cleanable_targets ~server_state ~body req =
     return (`Message (`Json, `List_of_target_ids to_kill))
   )
 
+let api_service ~server_state ~body req =
+  get_post_body req ~body
+  >>= fun body ->
+  message_of_body ~body ~select:(function
+    | `List_of_target_ids t -> Some t
+    | _ -> None)
+  >>= fun target_ids ->
+  wrong_request "Not implemented" "New API"
+
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
@@ -313,6 +322,7 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
        @ verbose);
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
+  | "/api" -> api_service ~server_state ~body req
   | "/targets" -> targets_service ~server_state ~body req
   | "/target-available-queries" ->
     target_available_queries_service ~server_state ~body req
