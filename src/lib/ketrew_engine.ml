@@ -572,9 +572,17 @@ module Run_automaton = struct
     begin match Ketrew_plugin.find_plugin plugin_name with
     | Some m ->
       let module Long_running = (val m : LONG_RUNNING) in
-      let run_parameters =
-        Long_running.deserialize_exn run_parameters in
-      begin Long_running.start run_parameters
+      begin
+        begin
+          try return (Long_running.deserialize_exn run_parameters)
+          with e ->
+            fail (_long_running_action_error t
+                    ~error:(`Fatal (fmt "Deserialize-long-running: %s"
+                                      (Printexc.to_string e))) 
+                    ~bookkeeping)
+        end
+        >>= fun run_parameters ->
+        Long_running.start run_parameters
         >>< function
         | `Ok rp ->
           let run_parameters = Long_running.serialize rp in
