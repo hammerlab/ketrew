@@ -98,14 +98,18 @@ module Http_client = struct
     end
 
 
-  let get_current_targets t =
-    call_json t ~path:"/targets" ~meta_meth:`Get 
+  let get_targets t ~ids ~filter =
+    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Get_targets ids))
     >>= filter_down_message
       ~loc:`Targets
       ~f:(function
         | `List_of_targets tl ->
-          Some (List.map tl ~f:Ketrew_target.of_serializable)
+          filter (List.map tl ~f:Ketrew_target.of_serializable)
         | _ -> None)
+
+  let get_current_targets t = get_targets t ~ids:[] ~filter:(fun s -> Some s)
+  let get_target t ~id =
+    get_targets t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
 
   let add_targets t ~targets =
     let msg =
@@ -114,13 +118,6 @@ module Http_client = struct
     >>= fun (_: Json.t) ->
     return ()
 
-  let get_target t ~id =
-    call_json t ~path:"/targets" ~meta_meth:`Get ~args:["id", id]
-    >>= filter_down_message
-      ~loc:`Targets
-      ~f:(function
-        | `List_of_targets [t] -> Some (Ketrew_target.of_serializable t)
-        | _ -> None)
 
   let kill_or_archive t what =
     let ids, error_loc, path =

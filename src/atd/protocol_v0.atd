@@ -27,7 +27,15 @@ type down_message = [
   | Ok
 ]
 
+type up_message = [
+  | Get_targets of string list (* List of Ids, empty means “all” *)
+]
+
+(* Temporary backwards compatible message, that will be all in `up_message`
+   at some point *)
 type post_message = [
   | List_of_targets of target_v0 list
   | List_of_target_ids of string list
+  | inherit up_message
 ]
+

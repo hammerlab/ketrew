@@ -158,18 +158,9 @@ let get_post_body request ~body =
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
-(** {2 Services} *)
+(** {2 Services; Answering Requests} *)
 
-let targets_service: _ service = fun ~server_state ~body req ->
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `See_targets
-  >>= fun () ->
-  let target_ids =
-    Uri.get_query_param' (Cohttp_lwt_unix.Server.Request.uri req) "id"
-    |> Option.value ~default:[] in
-  format_parameter req
-  >>= fun response_format ->
+let answer_get_targets ~server_state target_ids =
   begin match target_ids  with
   | [] ->
     Ketrew_engine.current_targets server_state.state
@@ -186,7 +177,7 @@ let targets_service: _ service = fun ~server_state ~body req ->
   end
   >>= fun targets ->
   return (`Message
-            (response_format,
+            (`Json,
              `List_of_targets
                (List.map ~f:Ketrew_target.to_serializable targets)))
 
@@ -310,10 +301,16 @@ let api_service ~server_state ~body req =
   get_post_body req ~body
   >>= fun body ->
   message_of_body ~body ~select:(function
-    | `List_of_target_ids t -> Some t
-    | _ -> None)
-  >>= fun target_ids ->
-  wrong_request "Not implemented" "New API"
+    | `List_of_target_ids _ (* We remove the temp. legacy “post-messages” *)
+    | `List_of_targets _ -> None
+    | #Ketrew_gen_protocol_v0.Up_message.t as m -> Some m)
+  >>= begin function
+  | `Get_targets l ->
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token `See_targets
+    >>= fun () ->
+    answer_get_targets ~server_state l
+  end
 
 (** {2 Dispatcher} *)
 
@@ -323,7 +320,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/targets" -> targets_service ~server_state ~body req
   | "/target-available-queries" ->
     target_available_queries_service ~server_state ~body req
   | "/target-call-query" -> target_call_query_service ~server_state ~body req

@@ -1,6 +1,8 @@
 When Ketrew Replies on HTTP
 ===========================
 
+<span style="color: red">Warning: </span>
+This is outdated while we work on the next version.
 
 Examples
 --------
