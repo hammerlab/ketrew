@@ -61,7 +61,7 @@ if the target fails, and
 succeeds.
 
 Any OCaml program can use the EDSL (script, compiled, or even inside the
-toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+toplevel), see the [documentation of the EDSL API](src/lib/pure/ketrew_edsl.mli).
 
 
 ### Example
