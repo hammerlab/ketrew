@@ -181,15 +181,7 @@ let answer_get_targets ~server_state target_ids =
              `List_of_targets
                (List.map ~f:Ketrew_target.to_serializable targets)))
 
-let target_available_queries_service ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `Query_targets
-  >>= fun () ->
-  mandatory_parameter req ~name:"id"
-  >>= fun target_id ->
-  format_parameter req
-  >>= fun response_format ->
+let answer_get_target_available_queries ~server_state target_id =
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
   let msg =
@@ -197,7 +189,7 @@ let target_available_queries_service ~server_state ~body req =
       Ketrew_plugin.additional_queries target
       |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)
     ) in
-  return (`Message (response_format, msg))
+  return (`Message (`Json, msg))
 
 let target_call_query_service ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -310,6 +302,11 @@ let api_service ~server_state ~body req =
     Authentication.ensure_can server_state.authentication ?token `See_targets
     >>= fun () ->
     answer_get_targets ~server_state l
+  | `Get_available_queries target_id ->
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    >>= fun () ->
+    answer_get_target_available_queries ~server_state target_id
   end
 
 (** {2 Dispatcher} *)
@@ -320,8 +317,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/target-available-queries" ->
-    target_available_queries_service ~server_state ~body req
   | "/target-call-query" -> target_call_query_service ~server_state ~body req
   | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
