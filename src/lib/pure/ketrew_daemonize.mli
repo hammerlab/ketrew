@@ -58,7 +58,7 @@ val create:
   ?host:Ketrew_host.t -> Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
-    are already serialized), seeb {!Ketrew_edsl.daemonize} for more
+    are already serialized), see {!Ketrew_edsl.daemonize} for more
     details *)
 
 
