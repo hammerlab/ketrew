@@ -91,29 +91,25 @@ let run_command_with_python_hack ~host cmd =
 The `` `Python_daemon`` way of daemonizing was hacked together because
 MacOSX does not support the `nohup` and `setsid` commands any more.
 
-### Daemonize With “Apache Yarn”
+### Get a Container fron “Apache Yarn”
 
-This function is like `run_command_with_lsf` but uses
-the
+This function is like `run_command_with_lsf` but uses the
+`Ketrew_yarn` backend.
 [Yarn](http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html)
-backend (Yarn comes from the Hadoop ecosystem and is used to request resources).
+comes from the Hadoop ecosystem and is used to request resources.
 
-  The function `yarn` can...
   M*)
 let run_command_with_yarn ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   let make =
-    (* Ketrew_yarn.create ~host (`Yarn_application (Program.sh cmd)) in *)
-    Ketrew_yarn.(
-      create ~host
-        (distributed_shell_program
-           ~container_memory:(`GB 12)
-           ~timeout:(`Seconds 3600)
-           ~application_name:"YarnKetrewExample"
-           (* do not put spaces up there, can break Yarn *)
-           (Program.sh cmd))
-  ) in
+    yarn_distributed_shell 
+      ~host ~container_memory:(`GB 12)
+      ~timeout:(`Seconds 3600)
+      ~application_name:"YarnKetrewExample"
+      (* do not put spaces up there, it can break Yarn *)
+      (Program.sh cmd)
+  in
   Ketrew_client.submit (
     target (sprintf "Yarn: %S" cmd) ~make
   )
