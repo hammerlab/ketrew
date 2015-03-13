@@ -15,7 +15,7 @@
 (**************************************************************************)
 
 (** Implementation of the {!LONG_RUNNING} API asking Aapache Yarn
-    for ressources (and using {!Ketrew_daemonize} to “keep” the
+    for resources and using {!Ketrew_daemonize} to “keep” the
     process group together. *)
 
 (** This module implements {!Ketrew_long_running.LONG_RUNNING} plugin-API.
@@ -36,16 +36,8 @@ val distributed_shell_program :
   Ketrew_program.t ->
   [> `Distributed_shell of
        Distributed_shell_parameters.t * Ketrew_program.t ]
-(** Create a value [`Distributed_shell _] to feed to {!create}.
-
-    Defaults:
-
-    - [hadoop_bin]: ["hadoop"].
-    - [distributed_shell_shell_jar]:
-    ["/opt/cloudera/parcels/CDH/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell.jar"]
-    (which seems to be the default installation path when using Cloudera-manager).
-
-*)
+(** Create a value [`Distributed_shell _] to feed to {!create},
+    see {!Ketrew_edsl.yarn_distributed_shell}. *)
 
 val create :
   ?host:Ketrew_host.t ->
@@ -55,12 +47,4 @@ val create :
   | `Yarn_application of Ketrew_program.t ] ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
-    are already serialized).
-
-    - [?host]: the “login” node of the Yarn cluster (default: localhost).
-    - [?daemonize_using]: how to daemonize the process that calls and
-      waits-for the application-manager (default: [`Python_daemon]).
-    - [?daemon_start_timeout]: 
-
-*)
-
+    are already serialized), see {!Ketrew_edsl.yarn_application}. *)
