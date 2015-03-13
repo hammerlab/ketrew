@@ -17,7 +17,7 @@
 (** Implementation of the {!LONG_RUNNING} API with [nohup setsid] unix
     processes or generated Python scripts. *)
 
-(** This module implements {!Ketrew_long_running.LONG_RUNNING} plugin-API.
+(** This module implements the {!Ketrew_long_running.LONG_RUNNING} plugin-API.
 
     Shell commands are put in a {!Ketrew_monitored_script.t}, and
     run in the background (detached in a new process group).
@@ -29,7 +29,7 @@
     ["nohup setsid bash <script> &"].
     This method is the {i POSIX-ly} portable one; but, sadly,
     it is broken on MacOSX
-    (see people having
+    (c.f. people having
     {{:https://github.com/ChrisJohnsen/tmux-MacOSX-pasteboard}TMux problems}, 
     {{:http://stackoverflow.com/questions/23898623/nohup-cant-detach-from-console}Nohup problems}).
 
@@ -58,7 +58,8 @@ val create:
   ?host:Ketrew_host.t -> Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
-    are already serialized). *)
+    are already serialized), seeb {!Ketrew_edsl.daemonize} for more
+    details *)
 
 
 val default_shell : string

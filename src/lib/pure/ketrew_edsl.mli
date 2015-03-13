@@ -218,7 +218,17 @@ val daemonize :
   ?host:Host.t ->
   Program.t ->
   Ketrew_target.Build_process.t
-(** Create a “daemonize” build process. *)
+(** Create a “daemonize” build process:
+
+    - [?host]: the [Host.t] on whieh the program is to be run.
+    - [?starting_timeout]: how long to wait before considering that a
+      script failed to start (default: [5.] seconds).
+    - [?call_script]: how to call the generated shell script
+    (default: [(fun script -> ["bash"; script])]).
+    - [?using]: which method to use when damonizing on the [host]
+    (see {!Ketrew_daemonize} for more details).
+
+*)
 
 val lsf :
   ?host:Host.t ->
