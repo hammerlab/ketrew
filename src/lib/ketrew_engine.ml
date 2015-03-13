@@ -262,7 +262,7 @@ module Killing_targets = struct
   let proceed_to_mass_killing t =
     get_all_targets_to_kill t
     >>= fun to_kill_list ->
-    Log.(s "Going to actuall kill: "
+    Log.(s "Going to actually kill: "
          % OCaml.list (sf "{%S}") to_kill_list @ verbose);
     List.fold to_kill_list ~init:(return []) ~f:(fun prev id ->
         prev >>= fun prev_list ->
