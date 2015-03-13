@@ -194,12 +194,22 @@ end
 
 let daemonize  = Ketrew_daemonize.create
 
-(*
-let direct_execution ?host cmd =
-  `Direct_command Target.Command.(program ?host cmd)
-let direct_shell_command ?host cmd =
-  direct_execution ?host Program.(sh cmd)
-*)
-
 let lsf = Ketrew_lsf.create
 let pbs = Ketrew_pbs.create
+
+let yarn_application ?host ?daemonize_using ?daemon_start_timeout program =
+  Ketrew_yarn.create
+    ?host ?daemonize_using ?daemon_start_timeout (`Yarn_application program)
+
+let yarn_distributed_shell
+    ?host ?daemonize_using ?daemon_start_timeout 
+    ?hadoop_bin ?distributed_shell_shell_jar
+    ~container_memory ~timeout ~application_name program =
+  Ketrew_yarn.(
+    create
+      ?host ?daemonize_using ?daemon_start_timeout
+      (distributed_shell_program
+         ?hadoop_bin ?distributed_shell_shell_jar
+         ~container_memory ~timeout ~application_name program))
+
+
