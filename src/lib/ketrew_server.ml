@@ -191,26 +191,17 @@ let answer_get_target_available_queries ~server_state target_id =
     ) in
   return (`Message (`Json, msg))
 
-let target_call_query_service ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `Query_targets
-  >>= fun () ->
-  mandatory_parameter req ~name:"id"
-  >>= fun target_id ->
-  format_parameter req
-  >>= fun response_format ->
-  mandatory_parameter req ~name:"query"
-  >>= fun query_name ->
+
+let answer_call_query ~server_state ~target_id ~query =
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
-  Log.(s "Calling query " % quote query_name % s " on "
+  Log.(s "Calling query " % quote query % s " on "
        % Ketrew_target.log target @ very_verbose);
   begin
-    Ketrew_plugin.call_query ~target query_name
+    Ketrew_plugin.call_query ~target query
     >>< function
     | `Ok string -> 
-      return (`Message (response_format, `Query_result string))
+      return (`Message (`Json, `Query_result string))
     | `Error error_log ->
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
@@ -307,6 +298,11 @@ let api_service ~server_state ~body req =
     Authentication.ensure_can server_state.authentication ?token `Query_targets
     >>= fun () ->
     answer_get_target_available_queries ~server_state target_id
+  | `Call_query (target_id, query) ->
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    >>= fun () ->
+    answer_call_query ~server_state ~target_id ~query
   end
 
 (** {2 Dispatcher} *)
@@ -317,7 +313,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/target-call-query" -> target_call_query_service ~server_state ~body req
   | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
     action_on_ids_service `Kill  ~server_state ~body req

@@ -138,11 +138,8 @@ module Http_client = struct
 
   let call_query t ~target query =
     let id = Ketrew_target.id target in
-    let args = [
-      "id", id;
-      "query", query;
-    ] in
-    call_json t ~path:"/target-call-query" ~meta_meth:`Get ~args
+    let message = `Call_query (id, query) in
+    call_json t ~path:"/api" ~meta_meth:(`Post_message message)
     >>= fun json ->
     filter_down_message json ~loc:(`Target_query (id, query))
       ~f:(function `Query_result s -> Some s | _ -> None)
