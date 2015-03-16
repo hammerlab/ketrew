@@ -223,8 +223,9 @@ val daemonize :
     - [?host]: the [Host.t] on which the program is to be run.
     - [?starting_timeout]: how long to wait before considering that a
       script failed to start (default: [5.] seconds).
-    - [?call_script]: how to call the generated shell script
-    (default: [(fun script -> ["bash"; script])]).
+    - [?call_script]: function creating a [Unix.exec]-style command
+      given a shell script path 
+      (default: [(fun script -> ["bash"; script])]).
     - [?using]: which method to use when damonizing on the [host]
     (see {!Ketrew_daemonize} for more details).
 
