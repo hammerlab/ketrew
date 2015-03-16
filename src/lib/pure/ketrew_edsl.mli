@@ -213,22 +213,24 @@ val file_target:
 
 val daemonize :
   ?starting_timeout:float ->
+  ?call_script:(string -> string list) ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Host.t ->
   Program.t ->
   Ketrew_target.Build_process.t
-(** Create a “daemonize” build process. *)
+(** Create a “daemonize” build process:
 
-(*
-val direct_execution :
-  ?host:Host.t -> Program.t -> Ketrew_target.Build_process.t
-(** Create a direct process (not “long-running”). *)
+    - [?host]: the [Host.t] on which the program is to be run.
+    - [?starting_timeout]: how long to wait before considering that a
+      script failed to start (default: [5.] seconds).
+    - [?call_script]: function creating a [Unix.exec]-style command
+      given a shell script path 
+      (default: [(fun script -> ["bash"; script])]).
+    - [?using]: which method to use when damonizing on the [host]
+    (see {!Ketrew_daemonize} for more details).
 
-val direct_shell_command :
-  ?host:Host.t -> string -> Ketrew_target.Build_process.t
-(** Shortcut for [direct_execution ?host Program.(sh cmd)]. *)
 *)
-    
+
 val lsf :
   ?host:Host.t ->
   ?queue:string ->
@@ -251,3 +253,56 @@ val pbs :
   [> `Long_running of string * string ]
 (** Create a “PSB” build process. *)
 
+
+val yarn_application :
+  ?host:Ketrew_host.t ->
+  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
+  ?daemon_start_timeout:float ->
+  Ketrew_program.t -> [> `Long_running of string * string ]
+(** Create a build process that requests resources from Yarn, the
+    command must be an application in the Yarn sense (i.e.
+    a program that is going to contact Yarn by itself to request
+    containers):
+
+    - [?host]: the “login” node of the Yarn cluster (default: localhost).
+    - [?daemonize_using]: how to daemonize the process that calls and
+      waits-for the application-manager (default: [`Python_daemon]).
+    - [?daemon_start_timeout]: the timeout for the daemon.
+
+*)
+
+val yarn_distributed_shell :
+  ?host:Ketrew_host.t ->
+  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
+  ?daemon_start_timeout:float ->
+  ?hadoop_bin:string ->
+  ?distributed_shell_shell_jar:string ->
+  container_memory:[ `GB of int | `Raw of string ] ->
+  timeout:[ `Raw of string | `Seconds of int ] ->
+  application_name:string ->
+  Ketrew_program.t -> [> `Long_running of string * string ]
+(** Create a build process that will use Hadoop's `DistributedShell`  class
+    to request a container to run the given arbitrary program.
+
+    - [?host]: the “login” node of the Yarn cluster (default: localhost).
+    - [?daemonize_using]: how to daemonize the process that calls and
+      waits-for the application-manager (default: [`Python_daemon]).
+    - [?daemon_start_timeout]: the timeout for the daemon.
+    - [hadoop_bin]: the [hdaoop] executable (default: ["hadoop"]).
+    - [distributed_shell_shell_jar]:
+    path to the Jar file containing the
+    [org.apache.hadoop.yarn.applications.distributedshell.Client] class
+    (default: ["/opt/cloudera/parcels/CDH/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell.jar"]
+    which seems to be the default installation path when using Cloudera-manager).
+    - [container_memory]: how much memory to request from Yarn for the container
+    ([`GB 42] for 42 GB; [`Raw some_string] to pass directly [some_string]
+    to the option ["-container_memory"] of [distributedshell.Cllient]).
+    - [timeout]: the “whole application” timeout
+    ([`Seconds (24 * 60 * 60)] for about a day, [`Raw some_string] to
+    pass directly [some_string] to the option ["-timeout"] of
+    [distributedshell.Cllient]).
+    - [application_name]: name of the application for Yarn (it is not
+      sanitized by Ketrew and, at least with some configurations, Yarn
+      can fail if this string contains spaces for example).
+
+*)

@@ -43,10 +43,16 @@ let created =
 
 let name = "daemonize"
 
+let default_shell = "bash"
+let script_placeholder = "<script>"
+let default_shell_command = [default_shell; script_placeholder]
+
 let create 
-  ?(starting_timeout=5.)
+  ?(starting_timeout=5.) ?(call_script=fun s -> [default_shell; s])
   ?(using=`Nohup_setsid) ?(host=Ketrew_host.tmp_on_localhost) program =
-  let c = {host; program; using_hack = using; starting_timeout } in
+  let shell_command = call_script script_placeholder in
+  let c =
+    {host; program; using_hack = using; starting_timeout; shell_command } in
   `Long_running (name, `Created c |> serialize)
 
 let using_hack = function
@@ -64,7 +70,8 @@ let log =
       "Status", s "Created" % sp % parens (s (hack_to_string c.using_hack));
       "Host", Ketrew_host.log c.host;
       "Program", Ketrew_program.log c.program;
-      "Starting-timeout", f c.starting_timeout % s " sec."
+      "Starting-timeout", f c.starting_timeout % s " sec.";
+      "Call-script", OCaml.list quote c.shell_command;
     ]
   | `Running rp -> [
       "Status", s "Running" % sp 
@@ -123,7 +130,7 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
-let make_python_script ~out ~err ~pid_file monitored_script_path =
+let make_python_script ~out ~err ~pid_file ~call_script monitored_script_path =
   fmt "
 import os               # Miscellaneous OS interfaces.
 import sys              # System-specific parameters and functions.
@@ -154,13 +161,16 @@ if __name__ == '__main__':
     except OSError, e: 
         print >>sys.stderr, 'fork #2 failed: %%d (%%s)' %% (e.errno, e.strerror) 
         sys.exit(1) 
-    p = subprocess.Popen(['bash', '%s'],
+    p = subprocess.Popen([%s],
             cwd='/',
             stdout=file('%s', 'w'), 
             stderr=file('%s', 'w'))
 "
     (Ketrew_path.to_string pid_file)
-    (Ketrew_path.to_string monitored_script_path)
+    (call_script
+       (Ketrew_path.to_string monitored_script_path)
+     |> List.map ~f:(fmt "'%s'")
+     |> String.concat ~sep:", ")
     (Ketrew_path.to_string out)
     (Ketrew_path.to_string err)
 
@@ -185,11 +195,18 @@ let start rp =
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
+    let call_script s =
+      List.map created.shell_command ~f:(function
+        | tok when tok = script_placeholder -> s
+        | other -> other) in
     begin match created.using_hack with
     | `Nohup_setsid ->
       let cmd =
-        fmt "nohup setsid bash %s > %s 2> %s &" 
-          (Path.to_string_quoted monitored_script_path)
+        fmt "nohup setsid %s > %s 2> %s &" 
+          (call_script
+             (Ketrew_path.to_string monitored_script_path)
+           |> List.map ~f:Filename.quote
+           |> String.concat ~sep:" ")
           (Path.to_string_quoted out) (Path.to_string_quoted err) in
       Host.run_shell_command created.host cmd
       >>= fun () ->
@@ -198,7 +215,8 @@ let start rp =
     | `Python_daemon ->
       let pid_file = Ketrew_monitored_script.pid_file monitored_script in
       let content =
-        make_python_script ~out ~err ~pid_file monitored_script_path in
+        make_python_script ~out ~err ~pid_file ~call_script
+          monitored_script_path in
       let path = python_hack_path ~playground in
       Host.put_file ~content created.host ~path
       >>= fun () ->
@@ -263,7 +281,10 @@ let update run_parameters =
           get_log_of_monitored_script ~host:run.created.host ~script:run.script
           >>= fun log_opt ->
           begin match Option.bind log_opt List.last with
-          | None -> (* no log at all *)
+          | None when elapsed <= run.created.starting_timeout ->
+            (* no log at all *)
+            return (`Still_running new_run_parameters)
+          | None ->
             return (`Failed (new_run_parameters, "no log file"))
           | Some (`Success  date) ->
             return (`Succeeded new_run_parameters)
