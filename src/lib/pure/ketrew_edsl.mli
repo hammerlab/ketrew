@@ -260,7 +260,7 @@ val yarn_application :
   Ketrew_program.t -> [> `Long_running of string * string ]
 (** Create a build process that requests resources from Yarn, the
     command must be an application in the Yarn sense (i.e.
-    a program that is going to to contact Yarn by itself to request
+    a program that is going to contact Yarn by itself to request
     containers):
 
     - [?host]: the “login” node of the Yarn cluster (default: localhost).
