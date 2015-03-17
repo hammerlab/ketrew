@@ -158,6 +158,19 @@ let get_post_body request ~body =
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
+(** Grab and deserialize a POST body into an up_message. *)
+let message_of_body ~body ~select =
+  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    (fun () -> Ketrew_protocol.Post_message.deserialize_exn body)
+  >>= fun message ->
+  begin match select message with
+  | Some t -> return t
+  | None ->
+    fail (`Failure 
+            (fmt "wrong post-message: %s"
+               (Ketrew_protocol.Post_message.to_string_hum message)))
+  end
+
 (** {2 Services; Answering Requests} *)
 
 let answer_get_targets ~server_state target_ids =
@@ -206,17 +219,6 @@ let answer_call_query ~server_state ~target_id ~query =
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
 
-let message_of_body ~body ~select =
-  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () -> Ketrew_protocol.Post_message.deserialize_exn body)
-  >>= fun message ->
-  begin match select message with
-  | Some t -> return t
-  | None ->
-    fail (`Failure 
-            (fmt "wrong post-message: %s"
-               (Ketrew_protocol.Post_message.to_string_hum message)))
-  end
 
 let add_targets_service  ~server_state ~body req =
   get_post_body req ~body 
@@ -283,24 +285,25 @@ let list_cleanable_targets ~server_state ~body req =
 let api_service ~server_state ~body req =
   get_post_body req ~body
   >>= fun body ->
+  let with_capability cap =
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token cap
+  in
   message_of_body ~body ~select:(function
     | `List_of_target_ids _ (* We remove the temp. legacy “post-messages” *)
     | `List_of_targets _ -> None
     | #Ketrew_gen_protocol_v0.Up_message.t as m -> Some m)
   >>= begin function
   | `Get_targets l ->
-    let token = token_parameter req in
-    Authentication.ensure_can server_state.authentication ?token `See_targets
+    with_capability `See_targets
     >>= fun () ->
     answer_get_targets ~server_state l
   | `Get_available_queries target_id ->
-    let token = token_parameter req in
-    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    with_capability `Query_targets
     >>= fun () ->
     answer_get_target_available_queries ~server_state target_id
   | `Call_query (target_id, query) ->
-    let token = token_parameter req in
-    Authentication.ensure_can server_state.authentication ?token `Query_targets
+    with_capability `Query_targets
     >>= fun () ->
     answer_call_query ~server_state ~target_id ~query
   end
