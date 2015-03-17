@@ -64,6 +64,8 @@ module Authentication = struct
     begin match token, do_stuff with
     | Some tok, `See_targets
     | Some tok, `Query_targets
+    | Some tok, `Kill_targets
+    | Some tok, `Restart_targets
     | Some tok, `Submit_targets -> return (token_is_valid tok)
     | None, _ -> return false
     end
@@ -229,25 +231,18 @@ let answer_add_targets ~server_state ~targets =
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))
 
-let action_on_ids_service: [`Kill  | `Restart] -> _ service = 
-  fun what_to_do ~server_state ~body req ->
-    get_post_body req ~body 
-    >>= fun body ->
-    message_of_body ~body ~select:(function
-      | `List_of_target_ids t -> Some t
-      | _ -> None)
-    >>= fun target_ids ->
-    Deferred_list.while_sequential target_ids (fun id ->
-        begin match what_to_do with
-        | `Kill -> Ketrew_engine.kill server_state.state id
-        | `Restart ->
-          Ketrew_engine.restart_target server_state.state id
-          >>= fun (_ : Ketrew_target.id) ->
-          return ()
-        end)
-    >>= fun (_ : unit list) ->
-    Light.green server_state.loop_traffic_light;
-    return (`Message (`Json, `Ok))
+let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
+  Deferred_list.while_sequential ids (fun id ->
+      begin match what_to_do with
+      | `Kill -> Ketrew_engine.kill server_state.state id
+      | `Restart ->
+        Ketrew_engine.restart_target server_state.state id
+        >>= fun (_ : Ketrew_target.id) ->
+        return ()
+      end)
+  >>= fun (_ : unit list) ->
+  Light.green server_state.loop_traffic_light;
+  return (`Message (`Json, `Ok))
 
 let list_cleanable_targets ~server_state ~body req =
   check_that_it_is_a_get req >>= fun () ->
@@ -296,6 +291,14 @@ let api_service ~server_state ~body req =
     with_capability `Submit_targets
     >>= fun () ->
     answer_add_targets ~server_state ~targets
+  | `Kill_targets ids ->
+    with_capability `Kill_targets
+    >>= fun () ->
+    do_action_on_ids ~server_state ~ids `Kill
+  | `Restart_targets ids ->
+    with_capability `Restart_targets
+    >>= fun () ->
+    do_action_on_ids ~server_state ~ids `Restart
   end
 
 (** {2 Dispatcher} *)
@@ -306,10 +309,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/kill-targets" ->
-    action_on_ids_service `Kill  ~server_state ~body req
-  | "/restart-targets" ->
-    action_on_ids_service `Restart  ~server_state ~body req
   | "/cleanable-targets" ->
     list_cleanable_targets ~server_state ~body req
   | other ->

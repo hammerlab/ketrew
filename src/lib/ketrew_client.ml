@@ -120,20 +120,12 @@ module Http_client = struct
 
 
   let kill_or_archive t what =
-    let ids, error_loc, path =
-      match what with
-      | `Kill_targets i as e -> i, e, "/kill-targets" 
-      | `Archive_targets i as e -> i, e, "/archive-targets"
-      | `Restart_targets i as e -> i, e, "/restart-targets"
-    in
-    let msg = (`List_of_target_ids ids) in
-    call_json t ~path ~meta_meth:(`Post_message msg)
-    >>= filter_down_message
-      ~loc:error_loc
-      ~f:(function `Ok -> Some () | _ -> None)
+    call_json t ~path:"/api" ~meta_meth:(`Post_message what)
+    >>= fun (_: Json.t) ->
+    return ()
 
   let kill t id_list = kill_or_archive t (`Kill_targets id_list)
-  let archive t id_list = kill_or_archive t (`Archive_targets id_list)
+  let archive t id_list = assert false
   let restart t id_list = kill_or_archive t (`Restart_targets id_list)
 
   let call_query t ~target query =
