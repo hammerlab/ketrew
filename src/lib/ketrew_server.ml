@@ -63,7 +63,8 @@ module Authentication = struct
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
     | Some tok, `See_targets
-    | Some tok, `Query_targets -> return (token_is_valid tok)
+    | Some tok, `Query_targets
+    | Some tok, `Submit_targets -> return (token_is_valid tok)
     | None, _ -> return false
     end
 
@@ -220,26 +221,11 @@ let answer_call_query ~server_state ~target_id ~query =
   end
 
 
-let add_targets_service  ~server_state ~body req =
-  get_post_body req ~body 
-  >>= fun body ->
-  message_of_body ~body ~select:(function
-    | `List_of_targets t -> Some (List.map ~f:Ketrew_target.of_serializable t)
-    | _ -> None)
-  >>= fun targets ->
+let answer_add_targets ~server_state ~targets =
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
-  Ketrew_engine.add_targets server_state.state targets
+  Ketrew_engine.add_targets server_state.state
+    (List.map ~f:Ketrew_target.of_serializable targets)
   >>= fun () ->
-  (*
-    Deferred_list.while_sequential targets ~f:(fun t ->
-      let original_id = Ketrew_target.id t in
-      Ketrew_engine.get_target server_state.state original_id
-      >>= fun freshen ->
-      return (Ketrew_protocol.Down_message.added_target
-                ~original_id ~fresh_id:(Ketrew_target.id freshen))
-    )
-  >>= fun added_targets ->
- *)
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))
 
@@ -306,6 +292,10 @@ let api_service ~server_state ~body req =
     with_capability `Query_targets
     >>= fun () ->
     answer_call_query ~server_state ~target_id ~query
+  | `Submit_targets targets ->
+    with_capability `Submit_targets
+    >>= fun () ->
+    answer_add_targets ~server_state ~targets
   end
 
 (** {2 Dispatcher} *)
@@ -316,7 +306,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/add-targets" -> add_targets_service  ~server_state ~body req
   | "/kill-targets" ->
     action_on_ids_service `Kill  ~server_state ~body req
   | "/restart-targets" ->

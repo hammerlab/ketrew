@@ -113,8 +113,8 @@ module Http_client = struct
 
   let add_targets t ~targets =
     let msg =
-      `List_of_targets (List.map targets ~f:Ketrew_target.to_serializable) in
-    call_json t ~path:"/add-targets" ~meta_meth:(`Post_message msg) 
+      `Submit_targets (List.map targets ~f:Ketrew_target.to_serializable) in
+    call_json t ~path:"/api" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
 

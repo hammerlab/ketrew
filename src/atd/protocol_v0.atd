@@ -31,6 +31,7 @@ type up_message = [
   | Get_targets of string list (* List of Ids, empty means “all” *)
   | Get_available_queries of string (* Id of the target *)
   | Call_query of (string * string) (* target-id × query-name *)
+  | Submit_targets of target_v0 list
 ]
 
 (* Temporary backwards compatible message, that will be all in `up_message`
