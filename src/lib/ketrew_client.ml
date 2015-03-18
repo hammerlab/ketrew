@@ -136,16 +136,6 @@ module Http_client = struct
     filter_down_message json ~loc:(`Target_query (id, query))
       ~f:(function `Query_result s -> Some s | _ -> None)
 
-  let call_cleanable_targets ~how_much t =
-    let args = [
-      "howmuch", (match how_much with `Soft -> "soft" | `Hard -> "hard");
-    ] in
-    let loc = (`Cleanable_targets how_much) in
-    call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
-    >>= fun json ->
-    filter_down_message json ~loc
-      ~f:(function `List_of_target_ids s -> Some s | _ -> None)
-
 end
 
 type t = [
@@ -224,18 +214,6 @@ let get_target t ~id =
   | `Http_client c ->
     Http_client.get_target c ~id
 
-
-let targets_to_clean_up t ~how_much =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Ketrew_engine.Target_graph.(
-      get_current s.engine
-      >>= fun graph ->
-      return (targets_to_clean_up graph how_much)
-    )
-  | `Http_client c ->
-    Http_client.call_cleanable_targets ~how_much c
 
 let call_query t ~target query =
   match t with

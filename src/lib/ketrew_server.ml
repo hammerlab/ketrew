@@ -244,25 +244,6 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))
 
-let list_cleanable_targets ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  mandatory_parameter req ~name:"howmuch"
-  >>= fun how_much_str ->
-  begin match how_much_str with
-  | "soft" -> return `Soft
-  | "hard" -> return `Hard
-  | other ->
-    failwith (fmt "wrong-parameter: %S expecting 'soft' or 'hard'" other)
-  end
-  >>= fun how_much ->
-  Log.(s "list_cleanable_targets: getting graph" @ verbose);
-  Ketrew_engine.Target_graph.(
-    get_current server_state.state
-    >>= fun graph ->
-    let  to_kill = targets_to_clean_up graph how_much in
-    return (`Message (`Json, `List_of_target_ids to_kill))
-  )
-
 let api_service ~server_state ~body req =
   get_post_body req ~body
   >>= fun body ->
@@ -309,8 +290,6 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
-  | "/cleanable-targets" ->
-    list_cleanable_targets ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 
