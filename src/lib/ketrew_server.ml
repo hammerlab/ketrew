@@ -236,6 +236,11 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))
 
+let answer_get_target_ids ~server_state query =
+  Ketrew_engine.get_list_of_ids server_state.state query
+  >>= fun list_of_ids ->
+  return (`Message (`Json, `List_of_target_ids list_of_ids))
+
 let api_service ~server_state ~body req =
   get_post_body req ~body
   >>= fun body ->
@@ -269,6 +274,10 @@ let api_service ~server_state ~body req =
     with_capability `Restart_targets
     >>= fun () ->
     do_action_on_ids ~server_state ~ids `Restart
+  | `Get_target_ids query ->
+    with_capability `See_targets
+    >>= fun () ->
+    answer_get_target_ids ~server_state query
   end
 
 (** {2 Dispatcher} *)
