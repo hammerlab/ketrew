@@ -61,7 +61,7 @@ module Http_client = struct
       match meta_meth with
       | `Get -> `GET, `Empty
       | `Post_message m ->
-        `POST, `String (Ketrew_protocol.Post_message.serialize m)
+        `POST, `String (Ketrew_protocol.Up_message.serialize m)
     in
     let where = `Call (meth, uri) in
     wrap_deferred

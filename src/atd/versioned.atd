@@ -50,6 +50,6 @@ type down_message_v0
      <ocaml from="Ketrew_gen_protocol_v0.Down_message" > = abstract
 type down_message = [ V0 of down_message_v0 ]
 
-type post_message_v0 
-     <ocaml from="Ketrew_gen_protocol_v0.Post_message" > = abstract
-type post_message = [ V0 of post_message_v0 ]
+type up_message_v0 
+     <ocaml from="Ketrew_gen_protocol_v0.Up_message" > = abstract
+type up_message = [ V0 of up_message_v0 ]

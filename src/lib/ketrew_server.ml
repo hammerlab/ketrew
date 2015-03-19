@@ -162,17 +162,9 @@ let get_post_body request ~body =
   end
 
 (** Grab and deserialize a POST body into an up_message. *)
-let message_of_body ~body ~select =
+let message_of_body ~body =
   wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () -> Ketrew_protocol.Post_message.deserialize_exn body)
-  >>= fun message ->
-  begin match select message with
-  | Some t -> return t
-  | None ->
-    fail (`Failure 
-            (fmt "wrong post-message: %s"
-               (Ketrew_protocol.Post_message.to_string_hum message)))
-  end
+    (fun () -> Ketrew_protocol.Up_message.deserialize_exn body)
 
 (** {2 Services; Answering Requests} *)
 
@@ -251,10 +243,7 @@ let api_service ~server_state ~body req =
     let token = token_parameter req in
     Authentication.ensure_can server_state.authentication ?token cap
   in
-  message_of_body ~body ~select:(function
-    | `List_of_target_ids _ (* We remove the temp. legacy “post-messages” *)
-    | `List_of_targets _ -> None
-    | #Ketrew_gen_protocol_v0.Up_message.t as m -> Some m)
+  message_of_body ~body 
   >>= begin function
   | `Get_targets l ->
     with_capability `See_targets
