@@ -119,14 +119,13 @@ module Http_client = struct
     return ()
 
 
-  let kill_or_archive t what =
+  let kill_or_restart t what =
     call_json t ~path:"/api" ~meta_meth:(`Post_message what)
     >>= fun (_: Json.t) ->
     return ()
 
-  let kill t id_list = kill_or_archive t (`Kill_targets id_list)
-  let archive t id_list = assert false
-  let restart t id_list = kill_or_archive t (`Restart_targets id_list)
+  let kill t id_list = kill_or_restart t (`Kill_targets id_list)
+  let restart t id_list = kill_or_restart t (`Restart_targets id_list)
 
   let call_query t ~target query =
     let id = Ketrew_target.id target in
