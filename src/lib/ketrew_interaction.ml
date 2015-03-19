@@ -102,7 +102,7 @@ let open_in_dollar_editor file =
 
 let view_in_dollar_editor ?(extension="txt") content =
   let tmp =
-    Filename.(concat temp_dir_name
+    Filename.(concat (get_temp_dir_name ())
                 (fmt "%s.%s" (Unique_id.create ()) extension))
   in
   IO.write_file ~content tmp
