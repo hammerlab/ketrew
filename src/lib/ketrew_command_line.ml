@@ -450,30 +450,30 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let inspect_cmd =
     sub_command
       ~term:Term.(
-        pure (fun config_path in_dollar_editor csv since how ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
-            let in_dollar_editor = in_dollar_editor || csv in
-            let format = if csv then `Csv else `Tsv in
-            Ketrew_client.as_client ~configuration
-              ~f:(inspect ~in_dollar_editor ~format ?since how))
-        $ config_file_argument
-        $ Arg.(value @@ flag
-               @@ info ["e"; "view-in-editor"]
-                 ~doc:"Open stuff in $EDITOR (by default in TSV).")
-        $ Arg.(value @@ flag
-               @@ info ["csv"]
-                 ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
-        $ Arg.(value & opt (some string) None
-               & info ["S"; "since"] ~docv:"TIME-STRING"
-                 ~doc:(fmt
-                         "Get measurements that are younger than $(docv); \
-                          the date-format is (any prefix of) `%s`"
-                         Time.(now () |> to_filename)))
-        $ Arg.(non_empty @@ pos_all string [] @@
-               info [] ~docv:"HOW"
-                 ~doc:"How to do the inspection")
-      )
+          pure (fun config_path in_dollar_editor csv since how ->
+              Configuration.get_configuration ?override_configuration config_path
+              >>= fun configuration ->
+              let in_dollar_editor = in_dollar_editor || csv in
+              let format = if csv then `Csv else `Tsv in
+              Ketrew_client.as_client ~configuration
+                ~f:(inspect ~in_dollar_editor ~format ?since how))
+          $ config_file_argument
+          $ Arg.(value @@ flag
+                 @@ info ["e"; "view-in-editor"]
+                   ~doc:"Open stuff in $EDITOR (by default in TSV).")
+          $ Arg.(value @@ flag
+                 @@ info ["csv"]
+                   ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
+          $ Arg.(value & opt (some string) None
+                 & info ["S"; "since"] ~docv:"TIME-STRING"
+                   ~doc:(fmt
+                           "Get measurements that are younger than $(docv); \
+                            the date-format is (any prefix of) `%s`"
+                           Time.(now () |> to_filename)))
+          $ Arg.(non_empty @@ pos_all string [] @@
+                 info [] ~docv:"HOW"
+                   ~doc:"How to do the inspection")
+        )
       ~info:(
         let man = [
           `S "THE HOW ARGUMENT";
@@ -513,7 +513,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           `I ("`step`", "run one single step"); `Noblank;
           `I ("`fix`", "run  steps until nothing new happens"); `Noblank;
           `I ("`loop`", "loop `fix` until pressing 'q' (there is a \
-                        timed-wait starting at 2 seconds until `--max-sleep`)")
+                         timed-wait starting at 2 seconds until `--max-sleep`)")
         ] in
         info "run-engine" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run steps of the engine."  ~man)
@@ -548,8 +548,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             >>= fun configuration ->
             Log.(s "From " %
                  (match override_configuration with
-                  | None -> sf "%S" config_path
-                  | Some _ -> s "user-overriden")
+                 | None -> sf "%S" config_path
+                 | Some _ -> s "user-overriden")
                  % s ":" % n
                  % Configuration.log configuration
                  @ normal); return ())
