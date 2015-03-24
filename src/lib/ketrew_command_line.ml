@@ -328,7 +328,7 @@ let interact ~client =
       >>= fun () ->
       main_loop ()
     | `Explore ->
-      Explorer.explore ~client []
+      Explorer.(create ~client () |> explore)
       >>= fun () ->
       main_loop ()
   in
@@ -578,7 +578,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             Configuration.get_configuration ?override_configuration config_path
             >>= fun configuration ->
             Ketrew_client.as_client ~configuration
-              ~f:(Explorer.explore []))
+              ~f:Explorer.(fun ~client -> create ~client () |> explore)
+          )
         $ config_file_argument)
       ~info:(
         info "explore" ~version ~sdocs:"COMMON OPTIONS"

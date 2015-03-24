@@ -19,6 +19,16 @@ module Target = Ketrew_target
 module Document = Ketrew_document
 module Interaction = Ketrew_interaction
 
+module Target_cache  = struct
+  type t = {
+    mutable all_ids: string list;
+    targets: (string, Target.t) Hashtbl.t;
+  }
+  let create () = {all_ids = []; targets = Hashtbl.create 42}
+
+
+end
+
 type exploration_state = {
   build_process_details: bool;
   target_filter: (Target.t -> bool) * Log.t;
@@ -27,12 +37,30 @@ type exploration_state = {
   metadata_details: bool;
 }
 
-let create_state () =
-  {build_process_details = false;
-   condition_details = false;
-   metadata_details = false;
-   target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
-   current_target = None}
+let create_state () = {
+  build_process_details = false;
+  condition_details = false;
+  metadata_details = false;
+  target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
+  current_target = None;
+}
+
+type t = {
+  ketrew_client: Ketrew_client.t;
+  mutable target_ids: string list;
+  target_cache: Target_cache.t;
+  mutable state_stack: exploration_state list;
+}
+let create ~client () = {
+  ketrew_client = client;
+  target_ids = [];
+  target_cache = Target_cache.create ();
+  state_stack = [];
+}
+
+let reload explorer =
+  Log.(s "Explorer.reload" @ very_verbose);
+  return ()
 
 let cancel_menu_items =
   Interaction.([
@@ -129,17 +157,17 @@ let get_filter () =
             % OCaml.list (fun (s, _) -> quote s) tag_regs))
   | `Set f  -> return f
 
-let pick_a_target_from_list ~client target_ids =
+let pick_a_target_from_list explorer target_ids =
   Deferred_list.while_sequential target_ids
-    (fun id -> Ketrew_client.get_target client ~id)
+    (fun id -> Ketrew_client.get_target explorer.ketrew_client ~id)
   >>= fun targets ->
   Interaction.(
     menu ~sentence:Log.(s "Pick a target")
       ~always_there:cancel_menu_items
       (make_target_menu ~targets ()))
 
-let pick_a_target ~client (es : exploration_state) =
-  Ketrew_client.current_targets client
+let pick_a_target explorer (es : exploration_state) =
+  Ketrew_client.current_targets explorer.ketrew_client
   >>= fun targets ->
   Interaction.(
     menu ~sentence:Log.(s "Pick a target")
@@ -314,61 +342,65 @@ let rec target_status
     target_status ~client ~viewer exploration_state chosen
   | `Cancel | `Quit as up -> return up
 
-let rec explore ~client exploration_state_stack =
-  let go_back ~client history =
-    match history with
+let rec exploration_loop explorer state =
+  let go_back explorer state =
+    match state with
     | [] -> return ()
-    | some -> explore ~client some in
-  begin match exploration_state_stack with
-  | [] -> explore ~client [create_state ()]
-  | one :: history ->
-    begin match one.current_target with
+    | some -> exploration_loop explorer some in
+  begin match state with
+  | [] -> exploration_loop explorer [create_state ()]
+  | (current :: previous) as history ->
+    begin match current.current_target with
     | None ->
-      begin pick_a_target ~client one
+      begin pick_a_target explorer current
         >>= function
-        | `Cancel -> go_back ~client history (* go back in history *)
+        | `Cancel -> go_back explorer previous
         | `Quit -> return ()
-        | `Reload -> explore ~client exploration_state_stack
+        | `Reload ->
+          reload explorer
+          >>= fun () ->
+          exploration_loop explorer history
         | `Filter ->
           get_filter () >>= fun f ->
-          explore ~client ({one with target_filter = f } :: one :: history)
+          exploration_loop explorer ({current with target_filter = f } :: history)
         | `Go t ->
-          explore ~client ({one with current_target = Some t } :: one :: history)
+          exploration_loop explorer ({current with current_target = Some t } :: history)
       end
     | Some chosen_id ->
-      Ketrew_client.get_target client chosen_id >>= fun chosen ->
-      begin explore_single_target ~client one chosen
+      Ketrew_client.get_target explorer.ketrew_client chosen_id
+      >>= fun chosen ->
+      begin explore_single_target ~client:explorer.ketrew_client current chosen
         >>= function
-        | `Cancel -> go_back ~client history
+        | `Cancel -> go_back explorer previous
         | `Quit -> return ()
-        | `Reload -> explore ~client exploration_state_stack
+        | `Reload -> reload explorer >>= fun () -> exploration_loop explorer history
         | `Show_make build_process_details ->
-          explore ~client ({ one with build_process_details }  :: history)
+          exploration_loop explorer ({ current with build_process_details }  :: history)
         | `Show_condition condition_details ->
-          explore ~client ({ one with condition_details }  :: history)
+          exploration_loop explorer ({ current with condition_details } :: history)
         | `Show_metadata metadata_details ->
-          explore ~client ({ one with metadata_details }  :: history)
+          exploration_loop explorer ({ current with metadata_details } :: history)
         | `Status ->
-          begin target_status ~client one chosen
+          begin target_status ~client:explorer.ketrew_client current chosen
             >>= function
-            | `Cancel -> go_back ~client (one :: history)
+            | `Cancel -> go_back explorer history
             | `Quit -> return ()
           end
         | `Kill ->
           Log.(s "Killing target …" @ warning);
-          Ketrew_client.kill client [Target.id chosen]
+          Ketrew_client.kill explorer.ketrew_client [Target.id chosen]
           >>= fun () ->
-          explore ~client (one :: history)
+          exploration_loop explorer history
         | `Restart ->
-          Ketrew_client.restart_target client [Target.id chosen]
+          Ketrew_client.restart_target explorer.ketrew_client [Target.id chosen]
           >>= fun () ->
-          explore ~client (one :: history)
+          exploration_loop explorer history
         | `View_json ->
-          view_json ~client chosen >>= fun () ->
-          explore ~client (one :: history)
+          view_json explorer.ketrew_client chosen >>= fun () ->
+          exploration_loop explorer history
         | `View_metadata ->
-          view_metadata ~client chosen >>= fun () ->
-          explore ~client (one :: history)
+          view_metadata ~client:explorer.ketrew_client chosen >>= fun () ->
+          exploration_loop explorer history
         | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
           as follow ->
           let target_ids t =
@@ -377,24 +409,28 @@ let rec explore ~client exploration_state_stack =
             | `Follow_success_triggers -> (Target.success_triggers t)
             | `Follow_dependencies -> (Target.dependencies t) in
           let rec next_target ids =
-            begin pick_a_target_from_list ~client ids
+            begin pick_a_target_from_list explorer ids
               >>= function
               | `Cancel -> return `Cancel
               | `Quit -> return `Quit
               | `Reload ->
-                Ketrew_client.get_target client chosen_id >>= fun chosen ->
+                Ketrew_client.get_target explorer.ketrew_client chosen_id
+                >>= fun chosen ->
                 next_target (target_ids chosen)
               | `Go t -> return (`Go t)
             end
           in
           begin next_target (target_ids chosen)
             >>= function
-            | `Cancel -> go_back ~client (one :: history)
+            | `Cancel -> go_back explorer history
             | `Quit -> return ()
             | `Go t ->
-              explore ~client
-                ({one with current_target = Some t} :: one :: history)
+              exploration_loop explorer
+                ({current with current_target = Some t} :: history)
           end
       end
     end
   end
+
+(* The exported function just “starts” the exploration with `[]`: *)
+let explore state = exploration_loop state []

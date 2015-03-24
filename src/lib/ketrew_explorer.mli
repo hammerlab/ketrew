@@ -18,11 +18,11 @@ open Ketrew_pervasives
 
 (** The “Target Explorer™“ *)
 
-type exploration_state
+type t
 
-val explore : client:[< `Http_client of Ketrew_client.Http_client.t
-                     | `Standalone of Ketrew_client.Standalone.t & 'a ] ->
-              exploration_state list ->
+val create : client:Ketrew_client.t -> unit -> t
+
+val explore : t ->
   (unit, [> `Client of
             [> `Http of
               [> `Archive_targets of string list
@@ -45,6 +45,6 @@ val explore : client:[< `Http_client of Ketrew_client.Http_client.t
         | `Missing_data of string
         | `Persistent_state of [> `Deserilization of string ]
         | `System of [> `File_info of string ] * [> `Exn of exn ]
-        | `Target of [> `Deserilization of string ] ]) t
+        | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** [explore ~client exploration_states] runs a read-eval loop to explore and
     interact with targets.*)
