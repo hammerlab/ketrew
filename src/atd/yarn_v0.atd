@@ -26,7 +26,7 @@ type daemonized_run <ocaml from="Ketrew_gen_daemonize_v0.Running"> = abstract
 type distributed_shell_parameters = {
   hadoop_bin: string;
   distributed_shell_shell_jar: string;
-  container_memory: [ GB of int | Raw of string ];
+  container_memory: [ GB of int | MB of int | Raw of string ];
   timeout: [ Seconds of int | Raw of string ];
   application_name: string;
 }

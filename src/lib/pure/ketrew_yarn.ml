@@ -73,6 +73,7 @@ let log =
         "Container Memory",
         (match container_memory with
          | `GB gb -> sf "%d GB" gb
+         | `MB mb -> sf "%d MB" mb
          | `Raw raw -> sf "%S" raw);
         "Timeout",
         (match timeout with
@@ -184,6 +185,7 @@ let start = function
       let container_memory =
         match container_memory with
         | `GB i -> fmt "%d" (i * 1024)
+        | `MB i -> fmt "%d" i
         | `Raw s -> s
       in
       let timeout =
