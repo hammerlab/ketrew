@@ -167,12 +167,7 @@ let get_filter () =
   )
   >>= function
   | `Ask_tags ->
-    let tmpfile = Filename.temp_file "ketrew" "tags.conf" in
-    IO.write_file tmpfile ~content:initial_ask_tags_content
-    >>= fun () ->
-    Interaction.open_in_dollar_editor tmpfile
-    >>= fun () ->
-    IO.read_file tmpfile
+    Interaction.ask_for_edition initial_ask_tags_content
     >>= fun content ->
     let tag_regs =
       String.split ~on:(`Character '\n') content
