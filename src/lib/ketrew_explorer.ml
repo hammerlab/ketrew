@@ -35,6 +35,8 @@ module Target_cache  = struct
     Hashtbl.replace targets id value;
     return ()
 
+  let clear {targets} = Hashtbl.clear targets
+
 end
 
 type exploration_state = {
@@ -76,6 +78,7 @@ let reload_list_of_ids explorer =
   Log.(s "Explorer.reload got " % i (List.length id_list) % s " ids"
        @ verbose);
   explorer.target_ids <- id_list;
+  Target_cache.clear explorer.target_cache;
   return ()
 
 let get_target ?(force_reload=false) explorer ~id =
