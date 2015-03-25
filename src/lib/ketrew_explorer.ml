@@ -63,16 +63,26 @@ type t = {
   mutable target_ids: string list;
   target_cache: Target_cache.t;
   mutable state_stack: exploration_state list;
+  mutable request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
 }
 let create ~client () = {
   ketrew_client = client;
   target_ids = [];
   target_cache = Target_cache.create ();
   state_stack = [];
+  request_targets_ids = `Younger_than (`Days 1.5);
 }
 
 let reload_list_of_ids explorer =
-  Ketrew_client.get_list_of_target_ids explorer.ketrew_client `All
+  let query =
+    match explorer.request_targets_ids with
+    | `All -> `All
+    | `Younger_than (`Days days) ->
+      let now_in_seconds = Time.now () in
+      let limit_in_seconds = 60. *. 60. *. 24. *. days in
+      `Created_after (now_in_seconds -. limit_in_seconds)
+  in
+  Ketrew_client.get_list_of_target_ids explorer.ketrew_client query 
   >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)
   >>= fun id_list ->
   Log.(s "Explorer.reload got " % i (List.length id_list) % s " ids"
@@ -99,12 +109,15 @@ let get_target ?(force_reload=false) explorer ~id =
     return value
   end
 
-
-let cancel_menu_items =
+(*
+   Items that would be in every menu
+*)
+let common_menu_items =
   Interaction.([
       menu_item ~char:'Q' ~log:Log.(s "Quit explorer") `Quit;
       menu_item ~char:'q' ~log:Log.(s "Cancel/Go-back") `Cancel;
       menu_item ~char:'R' ~log:Log.(s "Reload") `Reload;
+      menu_item ~char:'S' ~log:Log.(s "Settings") `Settings;
     ])
 
 let filter ~log ~char f =
@@ -190,19 +203,76 @@ let get_filter () =
             % OCaml.list (fun (s, _) -> quote s) tag_regs))
   | `Set f  -> return f
 
+let rec settings_menu explorer =
+  let current_target_query_log =
+    match explorer.request_targets_ids with
+    | `All -> Log.(s "All")
+    | `Younger_than (`Days days) -> Log.(s "Younger than " % f days % s " days")
+  in
+  Interaction.(
+    menu ~sentence:Log.(s "Pick a target")
+      ~always_there:[
+        menu_item ~char:'q' ~log:Log.(s "Quit") `Quit;
+      ]
+      [
+        menu_item ~char:'d' `Set_age
+          ~log:Log.(s "Set the “listing query”"
+                    %sp %parens (s "current: " % current_target_query_log));
+      ]
+  )
+  >>= function
+  | `Quit -> return ()
+  | `Set_age ->
+    Interaction.ask_for_edition
+      "# '#' lines are ignored\n\
+       # type (or uncomment):\n\
+       #     all\n\
+       # to see ALL targets since the beginning of time, limit with:\n\
+       #     younger than <some-float> days\n\
+      "
+    >>| String.split ~on:(`Character '\n')
+    >>| List.filter_map ~f:(fun line ->
+        let stripped = String.strip line in
+        match String.get ~index:0 stripped with
+        | Some '#' -> None
+        | None -> None
+        | Some other ->
+          begin match String.split ~on:(`Character ' ') stripped
+                      |> List.map ~f:String.strip
+                      |> List.filter ~f:((<>) "") with
+          | ["all"] | ["All"] | ["ALL"] -> Some `All
+          | "younger" :: "than" :: v :: "days" :: [] ->
+            begin match Float.of_string v with
+            | None -> None
+            | Some days -> Some (`Younger_than (`Days days))
+            end
+          | _ ->
+            Log.(s "Can't parse line: " % quote line @ error);
+            None
+          end)
+    >>= fun new_age ->
+    begin match new_age with
+    | [] -> return ()
+    | one :: [] -> explorer.request_targets_ids <- one; return ()
+    | more ->
+      Log.(s "Too many matching lines!" @ error); return ()
+    end
+    >>= fun () ->
+    settings_menu explorer
+
 let pick_a_target_from_list explorer target_ids =
   Deferred_list.while_sequential target_ids (fun id -> get_target explorer ~id)
   >>= fun targets ->
   Interaction.(
     menu ~sentence:Log.(s "Pick a target")
-      ~always_there:cancel_menu_items
+      ~always_there:common_menu_items
       (make_target_menu ~targets ()))
 
 let pick_a_target explorer (es : exploration_state) ~how =
   (* Ketrew_client.current_targets explorer.ketrew_client >>= fun targets -> *)
   let targets_to_display = 13 in
   let max_per_page =
-    targets_to_display + List.length cancel_menu_items
+    targets_to_display + List.length common_menu_items
     + 1 (* = filter *)
     + 3 (* prev, next, and home *)
   in
@@ -231,7 +301,7 @@ let pick_a_target explorer (es : exploration_state) ~how =
   Interaction.(
     menu ~sentence:Log.(s "Pick a target") ~max_per_page
       ~always_there:(
-        cancel_menu_items
+        common_menu_items
         @ [
           menu_item ~char:'f'
             ~log:Log.(s "Change filter "
@@ -243,7 +313,7 @@ let pick_a_target explorer (es : exploration_state) ~how =
             [menu_item ~char:'n' ~log:Log.(s "Next targets") next])
         @ (match how with
           | `From 0 -> []
-          | `From other -> 
+          | `From other ->
             [menu_item ~char:'p' ~log:Log.(s "Previous view") `Cancel;
              menu_item ~char:'h' ~log:Log.(s "Back to top/home")
                (`Pick (`From 0))])
@@ -315,7 +385,7 @@ let explore_single_target ~client (es: exploration_state) target =
       then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
               `Restart]
       else [] in
-    menu ~sentence ~always_there:cancel_menu_items (
+    menu ~sentence ~always_there:common_menu_items (
       [menu_item ~char:'s' ~log:Log.(s "Show status") `Status]
       @ build_process_details_item
       @ condition_details_item
@@ -369,7 +439,7 @@ let rec target_status
         [menu_item ~char ~log:Log.(s "View stuff inline")
            (`Set_viewer `Inline)]
     in
-    cancel_menu_items @  viewer_items  in
+    common_menu_items @  viewer_items  in
   menu ~sentence ~always_there additional
   >>= function
   | `Set_viewer viewer ->
@@ -414,8 +484,12 @@ let rec target_status
     get_target explorer ~force_reload:true ~id:(Target.id target)
     >>= fun chosen ->
     target_status explorer ~viewer exploration_state chosen
+  | `Settings ->
+    settings_menu explorer
+    >>= fun () ->
+    target_status explorer ~viewer exploration_state target
   | `Cancel | `Quit as up -> return up
-  
+
 let rec exploration_loop explorer state =
   let go_back explorer state =
     match state with
@@ -432,6 +506,10 @@ let rec exploration_loop explorer state =
         | `Quit -> return ()
         | `Reload ->
           reload_list_of_ids explorer
+          >>= fun () ->
+          exploration_loop explorer history
+        | `Settings ->
+          settings_menu explorer
           >>= fun () ->
           exploration_loop explorer history
         | `Filter ->
@@ -452,6 +530,10 @@ let rec exploration_loop explorer state =
         | `Reload ->
           get_target explorer ~id:chosen_id ~force_reload:true
           >>= fun reloaded ->
+          exploration_loop explorer history
+        | `Settings ->
+          settings_menu explorer
+          >>= fun () ->
           exploration_loop explorer history
         | `Show_make build_process_details ->
           exploration_loop explorer ({ current with build_process_details }  :: history)
@@ -496,6 +578,10 @@ let rec exploration_loop explorer state =
                 get_target explorer ~id:chosen_id ~force_reload:true
                 >>= fun chosen ->
                 next_target (target_ids chosen)
+              | `Settings ->
+                settings_menu explorer
+                >>= fun () ->
+                next_target ids
               | `Go t -> return (`Go t)
             end
           in
