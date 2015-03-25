@@ -243,7 +243,9 @@ let rec settings_menu explorer =
           | ["all"] | ["All"] | ["ALL"] -> Some `All
           | "younger" :: "than" :: v :: "days" :: [] ->
             begin match Float.of_string v with
-            | None -> None
+            | None ->
+              Log.(s "Can't parse float: " % quote v @ error);
+              None
             | Some days -> Some (`Younger_than (`Days days))
             end
           | _ ->
