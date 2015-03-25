@@ -255,7 +255,9 @@ let rec settings_menu explorer =
     >>= fun new_age ->
     begin match new_age with
     | [] -> return ()
-    | one :: [] -> explorer.request_targets_ids <- one; return ()
+    | one :: [] ->
+      explorer.request_targets_ids <- one;
+      reload_list_of_ids explorer
     | more ->
       Log.(s "Too many matching lines!" @ error); return ()
     end
