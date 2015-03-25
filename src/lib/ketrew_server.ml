@@ -63,7 +63,10 @@ module Authentication = struct
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
     | Some tok, `See_targets
-    | Some tok, `Query_targets -> return (token_is_valid tok)
+    | Some tok, `Query_targets
+    | Some tok, `Kill_targets
+    | Some tok, `Restart_targets
+    | Some tok, `Submit_targets -> return (token_is_valid tok)
     | None, _ -> return false
     end
 
@@ -158,18 +161,14 @@ let get_post_body request ~body =
     wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
-(** {2 Services} *)
+(** Grab and deserialize a POST body into an up_message. *)
+let message_of_body ~body =
+  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    (fun () -> Ketrew_protocol.Up_message.deserialize_exn body)
 
-let targets_service: _ service = fun ~server_state ~body req ->
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `See_targets
-  >>= fun () ->
-  let target_ids =
-    Uri.get_query_param' (Cohttp_lwt_unix.Server.Request.uri req) "id"
-    |> Option.value ~default:[] in
-  format_parameter req
-  >>= fun response_format ->
+(** {2 Services; Answering Requests} *)
+
+let answer_get_targets ~server_state target_ids =
   begin match target_ids  with
   | [] ->
     Ketrew_engine.current_targets server_state.state
@@ -186,19 +185,11 @@ let targets_service: _ service = fun ~server_state ~body req ->
   end
   >>= fun targets ->
   return (`Message
-            (response_format,
+            (`Json,
              `List_of_targets
                (List.map ~f:Ketrew_target.to_serializable targets)))
 
-let target_available_queries_service ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `Query_targets
-  >>= fun () ->
-  mandatory_parameter req ~name:"id"
-  >>= fun target_id ->
-  format_parameter req
-  >>= fun response_format ->
+let answer_get_target_available_queries ~server_state target_id =
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
   let msg =
@@ -206,105 +197,79 @@ let target_available_queries_service ~server_state ~body req =
       Ketrew_plugin.additional_queries target
       |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)
     ) in
-  return (`Message (response_format, msg))
+  return (`Message (`Json, msg))
 
-let target_call_query_service ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `Query_targets
-  >>= fun () ->
-  mandatory_parameter req ~name:"id"
-  >>= fun target_id ->
-  format_parameter req
-  >>= fun response_format ->
-  mandatory_parameter req ~name:"query"
-  >>= fun query_name ->
+
+let answer_call_query ~server_state ~target_id ~query =
   Ketrew_engine.get_target server_state.state target_id
   >>= fun target ->
-  Log.(s "Calling query " % quote query_name % s " on "
+  Log.(s "Calling query " % quote query % s " on "
        % Ketrew_target.log target @ very_verbose);
   begin
-    Ketrew_plugin.call_query ~target query_name
+    Ketrew_plugin.call_query ~target query
     >>< function
     | `Ok string -> 
-      return (`Message (response_format, `Query_result string))
+      return (`Message (`Json, `Query_result string))
     | `Error error_log ->
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
 
-let message_of_body ~body ~select =
-  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () -> Ketrew_protocol.Post_message.deserialize_exn body)
-  >>= fun message ->
-  begin match select message with
-  | Some t -> return t
-  | None ->
-    fail (`Failure 
-            (fmt "wrong post-message: %s"
-               (Ketrew_protocol.Post_message.to_string_hum message)))
-  end
 
-let add_targets_service  ~server_state ~body req =
-  get_post_body req ~body 
-  >>= fun body ->
-  message_of_body ~body ~select:(function
-    | `List_of_targets t -> Some (List.map ~f:Ketrew_target.of_serializable t)
-    | _ -> None)
-  >>= fun targets ->
+let answer_add_targets ~server_state ~targets =
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
-  Ketrew_engine.add_targets server_state.state targets
+  Ketrew_engine.add_targets server_state.state
+    (List.map ~f:Ketrew_target.of_serializable targets)
   >>= fun () ->
-  (*
-    Deferred_list.while_sequential targets ~f:(fun t ->
-      let original_id = Ketrew_target.id t in
-      Ketrew_engine.get_target server_state.state original_id
-      >>= fun freshen ->
-      return (Ketrew_protocol.Down_message.added_target
-                ~original_id ~fresh_id:(Ketrew_target.id freshen))
-    )
-  >>= fun added_targets ->
- *)
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))
 
-let action_on_ids_service: [`Kill  | `Restart] -> _ service = 
-  fun what_to_do ~server_state ~body req ->
-    get_post_body req ~body 
-    >>= fun body ->
-    message_of_body ~body ~select:(function
-      | `List_of_target_ids t -> Some t
-      | _ -> None)
-    >>= fun target_ids ->
-    Deferred_list.while_sequential target_ids (fun id ->
-        begin match what_to_do with
-        | `Kill -> Ketrew_engine.kill server_state.state id
-        | `Restart ->
-          Ketrew_engine.restart_target server_state.state id
-          >>= fun (_ : Ketrew_target.id) ->
-          return ()
-        end)
-    >>= fun (_ : unit list) ->
-    Light.green server_state.loop_traffic_light;
-    return (`Message (`Json, `Ok))
+let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
+  Deferred_list.while_sequential ids (fun id ->
+      begin match what_to_do with
+      | `Kill -> Ketrew_engine.kill server_state.state id
+      | `Restart ->
+        Ketrew_engine.restart_target server_state.state id
+        >>= fun (_ : Ketrew_target.id) ->
+        return ()
+      end)
+  >>= fun (_ : unit list) ->
+  Light.green server_state.loop_traffic_light;
+  return (`Message (`Json, `Ok))
 
-let list_cleanable_targets ~server_state ~body req =
-  check_that_it_is_a_get req >>= fun () ->
-  mandatory_parameter req ~name:"howmuch"
-  >>= fun how_much_str ->
-  begin match how_much_str with
-  | "soft" -> return `Soft
-  | "hard" -> return `Hard
-  | other ->
-    failwith (fmt "wrong-parameter: %S expecting 'soft' or 'hard'" other)
+let api_service ~server_state ~body req =
+  get_post_body req ~body
+  >>= fun body ->
+  let with_capability cap =
+    let token = token_parameter req in
+    Authentication.ensure_can server_state.authentication ?token cap
+  in
+  message_of_body ~body 
+  >>= begin function
+  | `Get_targets l ->
+    with_capability `See_targets
+    >>= fun () ->
+    answer_get_targets ~server_state l
+  | `Get_available_queries target_id ->
+    with_capability `Query_targets
+    >>= fun () ->
+    answer_get_target_available_queries ~server_state target_id
+  | `Call_query (target_id, query) ->
+    with_capability `Query_targets
+    >>= fun () ->
+    answer_call_query ~server_state ~target_id ~query
+  | `Submit_targets targets ->
+    with_capability `Submit_targets
+    >>= fun () ->
+    answer_add_targets ~server_state ~targets
+  | `Kill_targets ids ->
+    with_capability `Kill_targets
+    >>= fun () ->
+    do_action_on_ids ~server_state ~ids `Kill
+  | `Restart_targets ids ->
+    with_capability `Restart_targets
+    >>= fun () ->
+    do_action_on_ids ~server_state ~ids `Restart
   end
-  >>= fun how_much ->
-  Log.(s "list_cleanable_targets: getting graph" @ verbose);
-  Ketrew_engine.Target_graph.(
-    get_current server_state.state
-    >>= fun graph ->
-    let  to_kill = targets_to_clean_up graph how_much in
-    return (`Message (`Json, `List_of_target_ids to_kill))
-  )
 
 (** {2 Dispatcher} *)
 
@@ -313,17 +278,7 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
        @ verbose);
   match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
   | "/hello" -> return `Unit
-  | "/targets" -> targets_service ~server_state ~body req
-  | "/target-available-queries" ->
-    target_available_queries_service ~server_state ~body req
-  | "/target-call-query" -> target_call_query_service ~server_state ~body req
-  | "/add-targets" -> add_targets_service  ~server_state ~body req
-  | "/kill-targets" ->
-    action_on_ids_service `Kill  ~server_state ~body req
-  | "/restart-targets" ->
-    action_on_ids_service `Restart  ~server_state ~body req
-  | "/cleanable-targets" ->
-    list_cleanable_targets ~server_state ~body req
+  | "/api" -> api_service ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 

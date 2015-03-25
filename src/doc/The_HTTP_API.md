@@ -1,7 +1,6 @@
 When Ketrew Replies on HTTP
 ===========================
 
-
 Examples
 --------
 
@@ -20,155 +19,49 @@ You should be able to stop it with
 
 Let's add some targets to the database (c.f. `src/test/Workflow_Examples.ml`):
 
-    kdtest website master
+    kdtest two-py /tmp "du -sh $HOME" "du -sh $PWD"
 
 You can always browse with the client working like in standalone mode:
 
     kdclient interact
 
-Let's see the API itself, we use `curl`, here on the `/targets` service:
+Let's see the API itself, we use `curl`, and we `POST` messages to the `/api`
+service:
 
-    curl -k "$ktest_url/targets"
-
-The option `return-error-messages` is set to true, so the server is nice and
-says what went wrong:
-
-```badresult
-Error: Wrong HTTP Request: Authentication → Insufficient credentials
-```
-
-In `_obuild/test-authorized-tokens` there is an “easy token” `"nekot"`:
-
-    curl -k "$ktest_url/targets?token=nekot"
-
-```badresult
-Error: Wrong HTTP Request: format-mandatory-parameter → Missing mandatory parameter: "format"
-```
-
-Let's try again:
-
-    curl -k "$ktest_url/targets?token=nekot&format=json" | less
-
-Yay we get some Json \o/ i.e. a list of target JSON representations:
+    json='["V0", [ "Get_targets", [] ] ]'
+    curl -d "$json" -k "$ktest_url/api?token=nekot"
 
 ```goodresult
-[[
-  "V0",
-  {
-    "history": [
-      "Successful",
-      [
-        1410886910.433017,
-        [
-          "Running",
-          [
-            {
-              "run_history": [
-  ...
-]
-```
-
-We can use `id` parameters to limit the request to one or more
-targets:
-
-    one_of_them="ketrew_2014-11-21-19h44m24s850ms-UTC_994326685"
-    curl -k "$ktest_url/targets?token=nekot&format=json&id=$one_of_them"
-
-```goodresult
-[
-   [
-      "V0",
-      {
-         "history" : [
-            "Created",
-            1408654128.82403
-         ],
-         "make" : [
-            "Direct_command",
-            {
-               "action" : [
-                  "Shell_command",
-                  "git add api && git ci -a -m 'update website' "
-               ],
-               "host" : {
-                  "playground" : [
-                     "Some",
-                     {
-                        "kind" : "Directory",
-                        "path" : "/tmp"
-                     }
-                  ],
-                  "connection" : "Localhost",
-                  "execution_timeout" : "None",
-                  "default_shell" : {
-                     "command_option" : "-c",
-                     "options" : [],
-                     "binary" : "None",
-                     "command_name" : "sh"
-                  },
-                  "name" : "file://tmp"
-               }
-            }
-         ],
-         "dependencies" : [
-            "ketrew_2014-08-21-21h49m48s823ms-UTC_332180439"
-         ],
-         "persistence" : "Input_data",
-         "name" : "Commit",
-         "if_fails_activate" : [
-            "ketrew_2014-08-21-21h49m48s823ms-UTC_641907500"
-         ],
-         "id" : "ketrew_2014-08-21-21h49m48s823ms-UTC_781944104",
-         "metadata" : "Unit",
-         "equivalence" : "Same_active_condition",
-         "condition" : "None"
-      }
-   ]
-]
-```
-
-By the way, the `/targets` service is
-[nullipotent](http://en.wiktionary.org/wiki/nullipotent), and `GET`-only:
-
-    curl -k --data "something to post" "$ktest_url/targets?token=nekot&format=json"
-
-```badresult
-Error: Wrong HTTP Request: wrong method → POST
-```
-
-What additional queries can we get on the targets?
-
-    curl -k "$ktest_url/target-available-queries?token=nekot&format=json&id=$one_of_them"
-
-
-we get a list of `("name", "description")` pairs; the queries that are
-available for this particular target:
-
-```goodresult
-[
-  "V0",
+[ "V0",
   [
-    "List_of_query_descriptions",
+    "List_of_targets",
     [
-      [ "stdout", "Stardard output" ],
-      [ "stderr", "Stardard error" ],
-      [ "log", "Monitored-script `log` file" ],
-      [ "script", "Monitored-script used" ],
-      [ "check-process", "Check the process-group with `ps`" ]
-    ]
-  ]
-]
+      {
+        "tags": [ "website", "end-of-workflow" ],
+        "log": [],
+        "history": [
+          "Finished",
+...
 ```
 
-    curl -k "$ktest_url/target-call-query?token=nekot&format=json&id=$one_of_them&query=log"
+where:
 
-```goodresult
-[
-   "V0",
-   [
-      "Query_result",
-      "start\t2014-11-21 18:44:27\t\nbefore-cmd\t2014-11-21 18:44:27\tCMD0000\tmkdir -p /tmp/deploy_website_ketrew_2014-11-21-19h44m24s848ms-UTC_089809344\nafter-cmd\t2014-11-21 18:44:27\tCMD0000\treturned 0\nbefore-cmd\t2014-11-21 18:44:27\tCMD0001\tcd /tmp/deploy_website_ketrew_2014-11-21-19h44m24s848ms-UTC_089809344\nafter-cmd\t2014-11-21 18:44:27\tCMD0001\treturned 0\nbefore-cmd\t2014-11-21 18:44:27\tCMD0002\tgit clone /Volumes/Encrypted_zzz/dev/ketrew\nafter-cmd\t2014-11-21 18:44:28\tCMD0002\treturned 0\nsuccess\t2014-11-21 18:44:28\t\n"
-   ]
-]
+- The variable `$ktest_url` is provided in `_test_env/env.env`.
+- The parameter `token` is an authentication token (the server reads the file
+  `_test_env/test-authorized-tokens`, where there is an “easy token” `"nekot"`).
+- The `POST` data (`-d $json`) is the serialized up-message.  The available
+  messages are defined in `src/atd/protocol_v0.atd` and tagged with a version.
+
+To find out how to give the right JSON to to the API, you may just check from
+the top-level:
+
+```ocaml
+utop[0]> #require "ketrew";;
+utop[1]> module K = Ketrew_protocol.Up_message;;
+module K = Ketrew_protocol.Up_message
+utop[2]> K.serialize;;
+- : K.t -> bytes = <fun>
+utop[3]> K.serialize (`Get_targets []);;
+- : bytes = "[ \"V0\", [ \"Get_targets\", [] ] ]"
 ```
 

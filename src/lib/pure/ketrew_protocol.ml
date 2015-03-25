@@ -56,11 +56,11 @@ module Down_message = struct
   *)
 end
 
-module Post_message = struct
-  type t = Ketrew_gen_protocol_v0.Post_message.t
+module Up_message = struct
+  type t = Ketrew_gen_protocol_v0.Up_message.t
   include Json.Make_versioned_serialization
-      (Ketrew_gen_protocol_v0.Post_message)
-      (Ketrew_gen_versioned.Post_message)
+      (Ketrew_gen_protocol_v0.Up_message)
+      (Ketrew_gen_versioned.Up_message)
 
   let log : t -> Log.t =
     fun _ ->

@@ -29,15 +29,15 @@ module Down_message : sig
   val log : t -> Ketrew_pervasives.Log.t
 end
 
-module Post_message : sig
-  type t = Ketrew_gen_protocol_v0.Post_message.t
+module Up_message : sig
+  type t = Ketrew_gen_protocol_v0.Up_message.t
 
-  val to_json : Ketrew_gen_protocol_v0.Post_message.t -> CConvYojson.t
+  val to_json : Ketrew_gen_protocol_v0.Up_message.t -> CConvYojson.t
   val of_json_exn :
-    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Post_message.t
+    Ketrew_pervasives.Json.t -> Ketrew_gen_protocol_v0.Up_message.t
 
-  val serialize : Ketrew_gen_protocol_v0.Post_message.t -> string
-  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Post_message.t
+  val serialize : Ketrew_gen_protocol_v0.Up_message.t -> string
+  val deserialize_exn : string -> Ketrew_gen_protocol_v0.Up_message.t
 
   val log : t -> Ketrew_pervasives.Log.t
   val to_string_hum : t -> string

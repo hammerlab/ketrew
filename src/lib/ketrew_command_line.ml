@@ -173,40 +173,6 @@ let kill ~client ~interactive ids =
       return ()
   end
 
-(** Kill targets that are useless. *)
-let autoclean ~client ~how_much ~interactive () =
-  let module G = Ketrew_engine.Target_graph in
-  Ketrew_client.targets_to_clean_up client ~how_much
-  >>= fun (to_kill) ->
-  let proceed () =
-    kill ~client ~interactive:false to_kill
-  in
-  begin match interactive, to_kill with
-  | _, [] -> Log.(s "Nothing to do" @ normal); return ()
-  | true, _ ->
-    let sentence =
-      let open Log in
-      s "Going to"
-      % (match to_kill with
-        | [] -> empty
-        | more ->
-          s " kill: " % OCaml.list string to_kill)
-      % n % s "Proceed?"
-    in
-    Interaction.(
-      menu ~sentence ~always_there:[
-        menu_item ~char:'n' ~log:Log.(s "No") `No;
-        menu_item ~char:'Y' ~log:Log.(s "Yes") `Yes;
-      ] []
-      >>= function
-      | `Yes -> proceed ()
-      | `No ->
-        Log.(s "Cancelling" @ normal);
-        return ()
-    )
-  | false, _ -> proceed ()
-  end
-
 let inspect
     ~(client:Ketrew_client.t)
     ~(in_dollar_editor: bool)
@@ -340,12 +306,6 @@ let interact ~client =
              ])
           @ [
             menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
-            menu_item ~char:'c'
-              ~log:Log.(s "Auto-clean-up: orphans, successes")
-              (`Autoclean `Soft);
-            menu_item ~char:'C'
-              ~log:Log.(s "Auto-clean-up: orphans, successes, and failures")
-              (`Autoclean `Hard);
             menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
           ]
         )
@@ -365,10 +325,6 @@ let interact ~client =
       main_loop ()
     | `Run how ->
       run_state ~client  ~max_sleep:120. ~how
-      >>= fun () ->
-      main_loop ()
-    | `Autoclean how_much ->
-      autoclean ~client ~how_much ~interactive:true ()
       >>= fun () ->
       main_loop ()
     | `Explore ->
@@ -583,24 +539,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ~doc:"Kill a target."
           ~man:[])
   in
-  let autoclean_command =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun config_path interactive how_much ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
-            Ketrew_client.as_client ~configuration
-              ~f:(autoclean ~interactive ~how_much ()))
-        $ config_file_argument
-        $ interactive_flag "Ask before proceeding."
-        $ (pure (fun hard -> if hard then `Hard else `Soft)
-           $ Arg.(value & flag & info ["H"; "hard"]
-                    ~doc:"Also clean-up failed/killed targets")))
-      ~info:(
-        info "autoclean" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Kill & Archive orphan and finished targets." ~man:[])
-  in
   let print_conf_cmd =
     let open Term in
     sub_command
@@ -715,7 +653,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       inspect_cmd;
       interact_cmd;
       explore_cmd;
-      autoclean_command;
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
     ] in

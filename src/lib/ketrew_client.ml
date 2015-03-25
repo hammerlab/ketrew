@@ -61,7 +61,7 @@ module Http_client = struct
       match meta_meth with
       | `Get -> `GET, `Empty
       | `Post_message m ->
-        `POST, `String (Ketrew_protocol.Post_message.serialize m)
+        `POST, `String (Ketrew_protocol.Up_message.serialize m)
     in
     let where = `Call (meth, uri) in
     wrap_deferred
@@ -98,67 +98,42 @@ module Http_client = struct
     end
 
 
-  let get_current_targets t =
-    call_json t ~path:"/targets" ~meta_meth:`Get 
+  let get_targets t ~ids ~filter =
+    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Get_targets ids))
     >>= filter_down_message
       ~loc:`Targets
       ~f:(function
         | `List_of_targets tl ->
-          Some (List.map tl ~f:Ketrew_target.of_serializable)
+          filter (List.map tl ~f:Ketrew_target.of_serializable)
         | _ -> None)
+
+  let get_current_targets t = get_targets t ~ids:[] ~filter:(fun s -> Some s)
+  let get_target t ~id =
+    get_targets t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
 
   let add_targets t ~targets =
     let msg =
-      `List_of_targets (List.map targets ~f:Ketrew_target.to_serializable) in
-    call_json t ~path:"/add-targets" ~meta_meth:(`Post_message msg) 
+      `Submit_targets (List.map targets ~f:Ketrew_target.to_serializable) in
+    call_json t ~path:"/api" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
 
-  let get_target t ~id =
-    call_json t ~path:"/targets" ~meta_meth:`Get ~args:["id", id]
-    >>= filter_down_message
-      ~loc:`Targets
-      ~f:(function
-        | `List_of_targets [t] -> Some (Ketrew_target.of_serializable t)
-        | _ -> None)
 
-  let kill_or_archive t what =
-    let ids, error_loc, path =
-      match what with
-      | `Kill_targets i as e -> i, e, "/kill-targets" 
-      | `Archive_targets i as e -> i, e, "/archive-targets"
-      | `Restart_targets i as e -> i, e, "/restart-targets"
-    in
-    let msg = (`List_of_target_ids ids) in
-    call_json t ~path ~meta_meth:(`Post_message msg)
-    >>= filter_down_message
-      ~loc:error_loc
-      ~f:(function `Ok -> Some () | _ -> None)
+  let kill_or_restart t what =
+    call_json t ~path:"/api" ~meta_meth:(`Post_message what)
+    >>= fun (_: Json.t) ->
+    return ()
 
-  let kill t id_list = kill_or_archive t (`Kill_targets id_list)
-  let archive t id_list = kill_or_archive t (`Archive_targets id_list)
-  let restart t id_list = kill_or_archive t (`Restart_targets id_list)
+  let kill t id_list = kill_or_restart t (`Kill_targets id_list)
+  let restart t id_list = kill_or_restart t (`Restart_targets id_list)
 
   let call_query t ~target query =
     let id = Ketrew_target.id target in
-    let args = [
-      "id", id;
-      "query", query;
-    ] in
-    call_json t ~path:"/target-call-query" ~meta_meth:`Get ~args
+    let message = `Call_query (id, query) in
+    call_json t ~path:"/api" ~meta_meth:(`Post_message message)
     >>= fun json ->
     filter_down_message json ~loc:(`Target_query (id, query))
       ~f:(function `Query_result s -> Some s | _ -> None)
-
-  let call_cleanable_targets ~how_much t =
-    let args = [
-      "howmuch", (match how_much with `Soft -> "soft" | `Hard -> "hard");
-    ] in
-    let loc = (`Cleanable_targets how_much) in
-    call_json t ~path:"/cleanable-targets" ~meta_meth:`Get ~args
-    >>= fun json ->
-    filter_down_message json ~loc
-      ~f:(function `List_of_target_ids s -> Some s | _ -> None)
 
 end
 
@@ -238,18 +213,6 @@ let get_target t ~id =
   | `Http_client c ->
     Http_client.get_target c ~id
 
-
-let targets_to_clean_up t ~how_much =
-  match t with
-  | `Standalone s ->
-    let open Standalone in
-    Ketrew_engine.Target_graph.(
-      get_current s.engine
-      >>= fun graph ->
-      return (targets_to_clean_up graph how_much)
-    )
-  | `Http_client c ->
-    Http_client.call_cleanable_targets ~how_much c
 
 let call_query t ~target query =
   match t with
