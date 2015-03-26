@@ -30,7 +30,7 @@ open Ketrew_gen_yarn_v0
 val distributed_shell_program :
   ?hadoop_bin:string ->
   ?distributed_shell_shell_jar:string ->
-  container_memory:[ `GB of int | `Raw of string ] ->
+  container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->
   Ketrew_program.t ->
