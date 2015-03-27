@@ -144,31 +144,31 @@ let menu ?(max_per_page=15) ?(always_there=[]) ~sentence items =
         | None, l, v -> (incr n; List.nth available_chars !n, l, v)
         | Some k, l, v -> Some k, l, v)
     in
+    let can_previous, can_next =
+      match number_of_menus, nth with
+      | 1, 0 -> false, false
+      | _, 0 -> false, true
+      | n, t when t = n - 1 -> true, false
+      | _, _ -> true, true
+    in
     Log.(sentence % sp
-          % (if nth = 0 && number_of_menus = 1
+         % (if nth = 0 && number_of_menus = 1
             then empty
             else brakets (i (nth + 1) % s "/" % i number_of_menus)) % n
-          % s (get_key_question ()) % n
-          % concat
-            (List.map filled_items ~f:(function
+         % s (get_key_question ()) % n
+         % concat
+           (List.map filled_items ~f:(function
               | (Some k, l, v) -> sf "* [%c]: " k % l % n
               | None, _, _ -> s "ERROR, wrong usage of `menu`"))
-          % (
-            let previous = sf "* [<]: previous screen" % n in
-            let next = sf "* [>]: next screen" % n in
-            match number_of_menus, nth with
-            | 1, 0 -> empty
-            | _, 0 -> next
-            | n, t when t = n - 1 -> previous
-            | _, _ -> previous % next
-          )
-          @ normal);
+         % (if can_previous then sf "* [<]: previous screen" % n else empty)
+         % (if can_next then sf "* [>]: next screen" % n else empty)
+         @ normal);
     get_key ()
     >>= fun key ->
     pressed key;
     begin match key with
-    | '<' -> menu_loop (nth - 1)
-    | '>' -> menu_loop (nth + 1)
+    | '<' when can_previous -> menu_loop (nth - 1)
+    | '>' when can_next -> menu_loop (nth + 1)
     | other ->
       begin match List.find filled_items (fun (k, _, _) -> k = Some key) with
       | Some (_, _, v) -> return v

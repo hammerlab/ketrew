@@ -803,6 +803,22 @@ let get_status t id =
   get_target t id >>= fun target ->
   return (Target.state target) 
 
+let get_list_of_ids t query =
+  current_targets t
+  >>= fun targets ->
+  let list_of_ids =
+    match query with
+    | `All -> List.map targets ~f:Ketrew_target.id
+    | `Not_finished_before time ->
+      List.filter_map targets ~f:(fun t ->
+          let st = Ketrew_target.state t in
+          match Ketrew_target.State.history st with
+          | `Finished {Ketrew_gen_target_v0.History.log; _}
+            when log.Ketrew_gen_target_v0.Log.time < time -> None
+          | _ -> Some (Ketrew_target.id t))
+  in
+  return list_of_ids
+
 let kill t ~id =
   Killing_targets.add_target_ids_to_kill_list t [id]
 

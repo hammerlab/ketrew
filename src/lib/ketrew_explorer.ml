@@ -19,20 +19,86 @@ module Target = Ketrew_target
 module Document = Ketrew_document
 module Interaction = Ketrew_interaction
 
+module Target_cache  = struct
+  type t = {
+    targets: (string, Target.t) Hashtbl.t;
+  }
+  let create () = {targets = Hashtbl.create 42}
+
+  let get {targets} ~id =
+    try return (Some (Hashtbl.find targets id))
+    with _ ->
+      Log.(s "Target-cache: miss on " % s id @ verbose);
+      return None
+
+  let add {targets} ~id ~value =
+    Hashtbl.replace targets id value;
+    return ()
+
+  let clear {targets} = Hashtbl.clear targets
+
+end
+
 type exploration_state = {
   build_process_details: bool;
   target_filter: (Target.t -> bool) * Log.t;
-  current_target: Target.id option;
   condition_details: bool;
   metadata_details: bool;
+  currently_seeing: [
+    | `Target of Target.id
+    | `Target_menu of [`From of int]
+  ];
 }
 
-let create_state () =
-  {build_process_details = false;
-   condition_details = false;
-   metadata_details = false;
-   target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
-   current_target = None}
+let create_state () = {
+  build_process_details = false;
+  condition_details = false;
+  metadata_details = false;
+  target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
+  currently_seeing = `Target_menu (`From 0);
+}
+
+type t = {
+  ketrew_client: Ketrew_client.t;
+  mutable target_ids: string list;
+  target_cache: Target_cache.t;
+  mutable state_stack: exploration_state list;
+}
+let create ~client () = {
+  ketrew_client = client;
+  target_ids = [];
+  target_cache = Target_cache.create ();
+  state_stack = [];
+}
+
+let reload_list_of_ids explorer =
+  Ketrew_client.get_list_of_target_ids explorer.ketrew_client `All
+  >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)
+  >>= fun id_list ->
+  Log.(s "Explorer.reload got " % i (List.length id_list) % s " ids"
+       @ verbose);
+  explorer.target_ids <- id_list;
+  Target_cache.clear explorer.target_cache;
+  return ()
+
+let get_target ?(force_reload=false) explorer ~id =
+  begin match force_reload with
+  | false -> Target_cache.get explorer.target_cache ~id
+  | true -> return None
+  end
+  >>= begin function
+  | Some e -> return e
+  | None ->
+    Log.(s "Explorer getting target " % s id
+         % (if force_reload then s " (forced)" else s " (cache miss)")
+         @ verbose);
+    Ketrew_client.get_target explorer.ketrew_client ~id
+    >>= fun value ->
+    Target_cache.add explorer.target_cache ~id ~value
+    >>= fun () ->
+    return value
+  end
+
 
 let cancel_menu_items =
   Interaction.([
@@ -129,20 +195,46 @@ let get_filter () =
             % OCaml.list (fun (s, _) -> quote s) tag_regs))
   | `Set f  -> return f
 
-let pick_a_target_from_list ~client target_ids =
-  Deferred_list.while_sequential target_ids
-    (fun id -> Ketrew_client.get_target client ~id)
+let pick_a_target_from_list explorer target_ids =
+  Deferred_list.while_sequential target_ids (fun id -> get_target explorer ~id)
   >>= fun targets ->
   Interaction.(
     menu ~sentence:Log.(s "Pick a target")
       ~always_there:cancel_menu_items
       (make_target_menu ~targets ()))
 
-let pick_a_target ~client (es : exploration_state) =
-  Ketrew_client.current_targets client
-  >>= fun targets ->
+let pick_a_target explorer (es : exploration_state) ~how =
+  (* Ketrew_client.current_targets explorer.ketrew_client >>= fun targets -> *)
+  let targets_to_display = 13 in
+  let max_per_page =
+    targets_to_display + List.length cancel_menu_items
+    + 1 (* = filter *)
+    + 3 (* prev, next, and home *)
+  in
+  begin match how with
+  | `From from ->
+    let rec find_targets in_list acc found_count passed_count =
+      match in_list with
+      | [] -> return (List.rev acc, None)
+      | _  when found_count = targets_to_display ->
+        return (List.rev acc, Some (`Pick (`From passed_count)))
+      | one :: more ->
+        get_target explorer one
+        >>= fun target ->
+        begin match (fst es.target_filter) target with
+        | true ->
+          find_targets more (target :: acc) (found_count + 1) (passed_count + 1)
+        | false -> find_targets more acc found_count (passed_count + 1)
+        end
+    in
+    let init = List.drop explorer.target_ids from in
+    Log.(s "pick_a_target from " % i from % s " among " % i (List.length init)
+         @ verbose);
+    find_targets init [] 0 from
+  end
+  >>= fun (sub_list, next_menu_option) ->
   Interaction.(
-    menu ~sentence:Log.(s "Pick a target")
+    menu ~sentence:Log.(s "Pick a target") ~max_per_page
       ~always_there:(
         cancel_menu_items
         @ [
@@ -150,8 +242,22 @@ let pick_a_target ~client (es : exploration_state) =
             ~log:Log.(s "Change filter "
                       % parens (s "current: " % snd es.target_filter))
             `Filter;
-        ])
-      (make_target_menu ~targets ~filter_target:(fst es.target_filter) ()))
+        ]
+        @ (match next_menu_option with
+          | None -> [] | Some next ->
+            [menu_item ~char:'n' ~log:Log.(s "Next targets") next])
+        @ (match how with
+          | `From 0 -> []
+          | `From other -> 
+            [menu_item ~char:'p' ~log:Log.(s "Previous view") `Cancel;
+             menu_item ~char:'h' ~log:Log.(s "Back to top/home")
+               (`Pick (`From 0))])
+      )
+      (List.map sub_list ~f:(fun target ->
+           menu_item ~log:Log.(Ketrew_document.target_for_menu target)
+             (`Go (Target.id target)))))
+
+      (* (make_target_menu ~targets:sub_list ~filter_target:(fst es.target_filter) ())) *)
 
 let explore_single_target ~client (es: exploration_state) target =
   let sentence =
@@ -241,7 +347,7 @@ let view_metadata ~client target =
   Interaction.view_in_dollar_editor ~extension:"json" content
 
 let rec target_status
-    ~client ?(viewer=`Inline) ?(add_info=Log.empty) exploration_state target =
+    ?(viewer=`Inline) ?(add_info=Log.empty) explorer exploration_state target =
   let sentence =
     let open Log in
     let log_of_status (status: Target.State.t) =
@@ -263,22 +369,22 @@ let rec target_status
       | [], _ -> [] (* No additional → no need for this menu-item. *)
       | _, `Inline ->
         [menu_item ~char ~log:Log.(s "Use $EDITOR as viewer")
-            (`Set_viewer `Dollar_editor)]
+           (`Set_viewer `Dollar_editor)]
       | _, `Dollar_editor ->
         [menu_item ~char ~log:Log.(s "View stuff inline")
-            (`Set_viewer `Inline)]
+           (`Set_viewer `Inline)]
     in
     cancel_menu_items @  viewer_items  in
   menu ~sentence ~always_there additional
   >>= function
   | `Set_viewer viewer ->
-    target_status ~client ~viewer exploration_state target
+    target_status ~viewer explorer exploration_state target
   | `Call (key, log) ->
     Log.(s "Calling query " % sf "%S" key % n
-          % s "Press " % bold_red (s "'K'") % s " for cancelling"
-          @ warning);
+         % s "Press " % bold_red (s "'K'") % s " for cancelling"
+         @ warning);
     begin Deferred_list.pick_and_cancel [
-        Ketrew_client.call_query client ~target key;
+        Ketrew_client.call_query explorer.ketrew_client ~target key;
         begin
           let rec loop () =
             get_key ()
@@ -308,67 +414,77 @@ let rec target_status
         return (Some Log.(log % s ": ERROR -> " % n % e % n))
     end
     >>= fun add_info ->
-    target_status ~client ~viewer ?add_info exploration_state target
+    target_status explorer ~viewer ?add_info exploration_state target
   | `Reload ->
-    Ketrew_client.get_target client (Target.id target) >>= fun chosen ->
-    target_status ~client ~viewer exploration_state chosen
+    get_target explorer ~force_reload:true ~id:(Target.id target)
+    >>= fun chosen ->
+    target_status explorer ~viewer exploration_state chosen
   | `Cancel | `Quit as up -> return up
-
-let rec explore ~client exploration_state_stack =
-  let go_back ~client history =
-    match history with
+  
+let rec exploration_loop explorer state =
+  let go_back explorer state =
+    match state with
     | [] -> return ()
-    | some -> explore ~client some in
-  begin match exploration_state_stack with
-  | [] -> explore ~client [create_state ()]
-  | one :: history ->
-    begin match one.current_target with
-    | None ->
-      begin pick_a_target ~client one
+    | some -> exploration_loop explorer some in
+  begin match state with
+  | [] -> exploration_loop explorer [create_state ()]
+  | (current :: previous) as history ->
+    begin match current.currently_seeing with
+    | `Target_menu how ->
+      begin pick_a_target explorer current ~how
         >>= function
-        | `Cancel -> go_back ~client history (* go back in history *)
+        | `Cancel -> go_back explorer previous
         | `Quit -> return ()
-        | `Reload -> explore ~client exploration_state_stack
+        | `Reload ->
+          reload_list_of_ids explorer
+          >>= fun () ->
+          exploration_loop explorer history
         | `Filter ->
           get_filter () >>= fun f ->
-          explore ~client ({one with target_filter = f } :: one :: history)
+          exploration_loop explorer ({current with target_filter = f } :: history)
         | `Go t ->
-          explore ~client ({one with current_target = Some t } :: one :: history)
+          exploration_loop explorer ({current with currently_seeing = `Target t } :: history)
+        | `Pick how ->
+          exploration_loop explorer ({current with currently_seeing = `Target_menu how } :: history)
       end
-    | Some chosen_id ->
-      Ketrew_client.get_target client chosen_id >>= fun chosen ->
-      begin explore_single_target ~client one chosen
+    | `Target chosen_id ->
+      get_target explorer ~id:chosen_id
+      >>= fun chosen ->
+      begin explore_single_target ~client:explorer.ketrew_client current chosen
         >>= function
-        | `Cancel -> go_back ~client history
+        | `Cancel -> go_back explorer previous
         | `Quit -> return ()
-        | `Reload -> explore ~client exploration_state_stack
+        | `Reload ->
+          get_target explorer ~id:chosen_id ~force_reload:true
+          >>= fun reloaded ->
+          exploration_loop explorer history
         | `Show_make build_process_details ->
-          explore ~client ({ one with build_process_details }  :: history)
+          exploration_loop explorer ({ current with build_process_details }  :: history)
         | `Show_condition condition_details ->
-          explore ~client ({ one with condition_details }  :: history)
+          exploration_loop explorer ({ current with condition_details } :: history)
         | `Show_metadata metadata_details ->
-          explore ~client ({ one with metadata_details }  :: history)
+          exploration_loop explorer ({ current with metadata_details } :: history)
         | `Status ->
-          begin target_status ~client one chosen
+          begin target_status explorer current chosen
             >>= function
-            | `Cancel -> go_back ~client (one :: history)
+            | `Cancel -> go_back explorer history
             | `Quit -> return ()
           end
         | `Kill ->
           Log.(s "Killing target …" @ warning);
-          Ketrew_client.kill client [Target.id chosen]
+          Ketrew_client.kill explorer.ketrew_client [Target.id chosen]
           >>= fun () ->
-          explore ~client (one :: history)
+          exploration_loop explorer history
         | `Restart ->
-          Ketrew_client.restart_target client [Target.id chosen]
+          Ketrew_client.restart_target explorer.ketrew_client [Target.id chosen]
           >>= fun () ->
-          explore ~client (one :: history)
+          exploration_loop explorer history
         | `View_json ->
-          view_json ~client chosen >>= fun () ->
-          explore ~client (one :: history)
+          view_json explorer.ketrew_client chosen >>= fun () ->
+          exploration_loop explorer history
         | `View_metadata ->
-          view_metadata ~client chosen >>= fun () ->
-          explore ~client (one :: history)
+          view_metadata ~client:explorer.ketrew_client chosen >>= fun () ->
+          exploration_loop explorer history
         | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
           as follow ->
           let target_ids t =
@@ -377,24 +493,31 @@ let rec explore ~client exploration_state_stack =
             | `Follow_success_triggers -> (Target.success_triggers t)
             | `Follow_dependencies -> (Target.dependencies t) in
           let rec next_target ids =
-            begin pick_a_target_from_list ~client ids
+            begin pick_a_target_from_list explorer ids
               >>= function
               | `Cancel -> return `Cancel
               | `Quit -> return `Quit
               | `Reload ->
-                Ketrew_client.get_target client chosen_id >>= fun chosen ->
+                get_target explorer ~id:chosen_id ~force_reload:true
+                >>= fun chosen ->
                 next_target (target_ids chosen)
               | `Go t -> return (`Go t)
             end
           in
           begin next_target (target_ids chosen)
             >>= function
-            | `Cancel -> go_back ~client (one :: history)
+            | `Cancel -> go_back explorer history
             | `Quit -> return ()
             | `Go t ->
-              explore ~client
-                ({one with current_target = Some t} :: one :: history)
+              exploration_loop explorer
+                ({current with currently_seeing = `Target t} :: history)
           end
       end
     end
   end
+
+(* The exported function just “starts” the exploration with `[]`: *)
+let explore state =
+  reload_list_of_ids state
+  >>= fun () ->
+  exploration_loop state []

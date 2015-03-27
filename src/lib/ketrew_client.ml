@@ -135,6 +135,13 @@ module Http_client = struct
     filter_down_message json ~loc:(`Target_query (id, query))
       ~f:(function `Query_result s -> Some s | _ -> None)
 
+  let get_list_of_target_ids t query =
+    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Get_target_ids query))
+    >>= filter_down_message ~loc:`Targets ~f:(function
+      | `List_of_target_ids l -> Some l
+      | _ -> None)
+
+
 end
 
 type t = [
@@ -213,6 +220,12 @@ let get_target t ~id =
   | `Http_client c ->
     Http_client.get_target c ~id
 
+let get_list_of_target_ids t ~query =
+  match t with
+  | `Standalone s ->
+    Ketrew_engine.get_list_of_ids s.Standalone.engine query
+  | `Http_client c ->
+    Http_client.get_list_of_target_ids c query
 
 let call_query t ~target query =
   match t with
