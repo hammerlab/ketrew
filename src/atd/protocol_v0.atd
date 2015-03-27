@@ -27,6 +27,12 @@ type down_message = [
   | Ok
 ]
 
+type target_query = [
+  | All
+  | Not_finished_before of float
+  | Created_after of float
+]
+
 type up_message = [
   | Get_targets of string list (* List of Ids, empty means “all” *)
   | Get_available_queries of string (* Id of the target *)
@@ -34,7 +40,7 @@ type up_message = [
   | Submit_targets of target_v0 list
   | Kill_targets of string list (* List of Ids *)
   | Restart_targets of string list (* List of Ids *)
-  | Get_target_ids of [ All | Not_finished_before of float ]
+  | Get_target_ids of target_query
 ]
 
 

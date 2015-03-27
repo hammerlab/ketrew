@@ -810,12 +810,20 @@ let get_list_of_target_ids t query =
     match query with
     | `All -> List.map targets ~f:Ketrew_target.id
     | `Not_finished_before time ->
+      Log.(s "Getting targets not-finished-before: " % Time.log time @ verbose);
       List.filter_map targets ~f:(fun t ->
           let st = Ketrew_target.state t in
           match Ketrew_target.State.history st with
           | `Finished {Ketrew_gen_target_v0.History.log; _}
             when log.Ketrew_gen_target_v0.Log.time < time -> None
           | _ -> Some (Ketrew_target.id t))
+    | `Created_after time ->
+      Log.(s "Getting targets created after: " % Time.log time @ verbose);
+      List.filter_map targets ~f:(fun t ->
+          let pt = Ketrew_target.(state t |> State.passive_time) in
+          match pt < time with
+          | true -> None
+          | false -> Some (Ketrew_target.id t))
   in
   return list_of_ids
 

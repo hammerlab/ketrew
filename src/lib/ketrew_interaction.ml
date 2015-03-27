@@ -109,6 +109,14 @@ let view_in_dollar_editor ?(extension="txt") content =
   >>= fun () ->
   open_in_dollar_editor tmp
 
+let ask_for_edition ?(extension=".conf") content =
+  let tmpfile = Filename.temp_file "ketrew" extension in
+  IO.write_file tmpfile ~content
+  >>= fun () ->
+  open_in_dollar_editor tmpfile
+  >>= fun () ->
+  IO.read_file tmpfile
+
 let interaction_chars =
   List.init 10 (fun i -> Char.chr (48 + i))
   @ List.init 26 (fun i -> Char.chr (97 + i))

@@ -36,12 +36,20 @@ val menu : ?max_per_page:int ->
              ('a, [> `Failure of string ]) t
 (** Display a menu given the specified [menu_items] *)
 
-val open_in_dollar_editor : string -> (unit, 'a) t
-(** Open a file. *)
+val open_in_dollar_editor : string -> (unit, 'a) Deferred_result.t
+(** Open a file in ["$EDITOR"]. *)
 
 val view_in_dollar_editor : ?extension:string -> string ->
-  (unit, [> `IO of [> `Write_file_exn of string * exn ] ]) t
-(** View a file in editor. *)
+  (unit, [> `IO of [> `Write_file_exn of string * exn ] ]) Deferred_result.t
+(** View a string in ["$EDITOR"]. *)
+
+val ask_for_edition : ?extension:string -> string ->
+  (string,
+   [> `IO of
+        [> `Read_file_exn of IO.path * exn
+        | `Write_file_exn of IO.path * exn ] ])
+    Deferred_result.t
+(** Edit content in ["$EDITOR"]. *)
 
 val get_key : unit -> (char, [> `Failure of string ]) t
 (** Get a key from the terminal input. *)

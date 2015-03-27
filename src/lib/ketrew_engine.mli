@@ -89,7 +89,8 @@ val current_targets :
   Deferred_result.t
 (** Get the list of targets currently handled. *)
 
-val get_list_of_target_ids: t -> [ `All | `Not_finished_before of Time.t ] ->
+val get_list_of_target_ids: t ->
+  [ `All | `Not_finished_before of Time.t | `Created_after of Time.t ] ->
   (Ketrew_target.id list,
    [> `Database of Trakeva.Error.t
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t

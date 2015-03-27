@@ -148,6 +148,9 @@ module State : sig
 
   val log: ?depth:int ->  t -> Log.t
 
+  (** The date the target's creation. *)
+  val passive_time: t -> Time.t
+
   module Is : sig
     val building : t -> bool
     val tried_to_start : t -> bool
