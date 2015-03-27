@@ -20,9 +20,15 @@ module Document = Ketrew_document
 module Interaction = Ketrew_interaction
 
 module Target_cache  = struct
+  (**
+     For now we implement the cache with a [Hashtbl.t] but in the
+     future this maybe using a proper DB or cache. Hence the I/O types
+     ([Deferred_result.t]) given to the functions. *)
+
   type t = {
-    targets: (string, Target.t) Hashtbl.t;
+    targets: (Target.id, Target.t) Hashtbl.t;
   }
+
   let create () = {targets = Hashtbl.create 42}
 
   let get {targets} ~id =
