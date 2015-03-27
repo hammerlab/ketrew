@@ -89,10 +89,15 @@ val current_targets :
   Deferred_result.t
 (** Get the list of targets currently handled. *)
 
-val get_list_of_ids: t -> [ `All | `Not_finished_before of Time.t ] ->
+val get_list_of_target_ids: t -> [ `All | `Not_finished_before of Time.t ] ->
   (Ketrew_target.id list,
    [> `Database of Trakeva.Error.t
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+(** Get only the Ids of the targets for a given “query”:
+    
+- [`All] for all the targets visible to the engine.
+- [`Not_finished_before _] for the targets that were not finished at a given date.
+*)
 
 module Run_automaton : sig
   val step :

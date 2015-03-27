@@ -237,7 +237,7 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   return (`Message (`Json, `Ok))
 
 let answer_get_target_ids ~server_state query =
-  Ketrew_engine.get_list_of_ids server_state.state query
+  Ketrew_engine.get_list_of_target_ids server_state.state query
   >>= fun list_of_ids ->
   return (`Message (`Json, `List_of_target_ids list_of_ids))
 

@@ -803,7 +803,7 @@ let get_status t id =
   get_target t id >>= fun target ->
   return (Target.state target) 
 
-let get_list_of_ids t query =
+let get_list_of_target_ids t query =
   current_targets t
   >>= fun targets ->
   let list_of_ids =
