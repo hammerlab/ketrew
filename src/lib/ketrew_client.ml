@@ -223,7 +223,7 @@ let get_target t ~id =
 let get_list_of_target_ids t ~query =
   match t with
   | `Standalone s ->
-    Ketrew_engine.get_list_of_ids s.Standalone.engine query
+    Ketrew_engine.get_list_of_target_ids s.Standalone.engine query
   | `Http_client c ->
     Http_client.get_list_of_target_ids c query
 

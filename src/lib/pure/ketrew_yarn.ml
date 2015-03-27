@@ -73,6 +73,7 @@ let log =
         "Container Memory",
         (match container_memory with
          | `GB gb -> sf "%d GB" gb
+         | `MB mb -> sf "%d MB" mb
          | `Raw raw -> sf "%S" raw);
         "Timeout",
         (match timeout with
@@ -184,6 +185,7 @@ let start = function
       let container_memory =
         match container_memory with
         | `GB i -> fmt "%d" (i * 1024)
+        | `MB i -> fmt "%d" i
         | `Raw s -> s
       in
       let timeout =
@@ -240,6 +242,30 @@ let kill run_parameters =
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
     let daemonize_run_params = `Running run.daemonized_script in
+    let host = run.created.host in
+    begin
+      (* We try to kill with yarn but we just log any potential error
+         without failing. *)
+      get_application_id daemonize_run_params
+      >>< function
+      | `Ok app_id ->
+        shell_command_output_or_log ~host
+          (fmt "yarn application -kill %s" app_id)
+        >>< begin function
+        | `Ok output ->
+          Log.(s "Killing: " % s app_id % s ": SUCCESS" %n
+               % verbatim output @ verbose);
+          return ()
+        | `Error log ->
+          Log.(s "Killing: " % s app_id % s ": FAILED" %n % log @ verbose);
+          return ()
+        end
+      | `Error log ->
+        Log.(s "Error while killing yarn-application: cannot get application-id"
+             %n %s ":" % log @ error);
+        return ()
+    end
+    >>= fun () ->
     Ketrew_daemonize.kill daemonize_run_params
     >>= fun (`Killed rp) ->
     begin match rp with

@@ -97,6 +97,9 @@ ocamlfind list | grep cohttp
 echo "Sqlite version"
 sqlite3 -version
 
+echo "Setting Warn-Error for the Travis test"
+export OCAMLPARAM="warn-error=A,_"
+
 echo "Test-trakeva"
 git clone  git://github.com/smondet/trakeva
 cd trakeva

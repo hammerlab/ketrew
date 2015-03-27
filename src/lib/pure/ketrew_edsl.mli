@@ -277,7 +277,7 @@ val yarn_distributed_shell :
   ?daemon_start_timeout:float ->
   ?hadoop_bin:string ->
   ?distributed_shell_shell_jar:string ->
-  container_memory:[ `GB of int | `Raw of string ] ->
+  container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->
   Ketrew_program.t -> [> `Long_running of string * string ]
