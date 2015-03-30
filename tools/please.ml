@@ -53,7 +53,7 @@ let findlib_packages = [
   "docout"; "pvem"; "pvem_lwt_unix"; "cmdliner"; "atd";
   "cconv.yojson"; "yojson"; "uri"; "toml"; "cohttp.lwt"; "lwt"; "ssl";
   "conduit"; "dynlink"; "findlib"; "ppx_deriving_yojson";
-  "ppx_deriving.show"; "ppx_include"
+  "ppx_deriving.show"; "ppx_include"; "ppx_blob"
 ]
 let homepage = "http://seb.mondet.org/software/ketrew/"
 
