@@ -178,7 +178,7 @@ let initial_ask_tags_content =
 let get_filter () =
   Interaction.(
     menu ~sentence:Log.(s "Pick a filter")
-      (List.map filters (fun (char, log, tag) ->
+      (List.map filters ~f:(fun (char, log, tag) ->
             menu_item ~char ~log tag)
         @ [menu_item ~char:'T'
             ~log:Log.(s "Enter tag regular-expression(s)") `Ask_tags]

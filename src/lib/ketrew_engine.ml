@@ -488,7 +488,7 @@ module Target_graph = struct
       | conns -> 
         let new_available = 
           List.fold conns ~init:available ~f:Target_set.remove in
-        List.map conns (fun conn ->
+        List.map conns ~f:(fun conn ->
             Target_set.add 
               (trans_connections conn new_available acc)
               conn

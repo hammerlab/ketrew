@@ -16,9 +16,10 @@
 
 open Ketrew_pervasives
 
-type t =
-  Ketrew_gen_base_v0.Path.t
-open Ketrew_gen_base_v0.Path
+type t = Ketrew_gen_base_v0.Path.t = {
+  kind : [ `Directory | `File ];
+  path : string;
+} [@@deriving yojson]
 
 let file path :  t =
   {kind = `File; path}

@@ -18,7 +18,6 @@ open Ketrew_pervasives
 
 module Path = Ketrew_path
 module Program = Ketrew_program
-module Host = Ketrew_host
 module Error = Ketrew_error
 
 let fail_fatal msg =
@@ -40,7 +39,7 @@ let classify_and_transform_errors :
     begin match e with
     | `Fatal _ as e -> fail e
     | `Host he as e ->
-      begin match Host.Error.classify he with
+      begin match Ketrew_host_io.Error.classify he with
       | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
       | `Execution -> fail_fatal (Error.to_string e)
       end
@@ -50,15 +49,15 @@ let classify_and_transform_errors :
     end
 
 let fresh_playground_or_fail host =
-  begin match Host.get_fresh_playground host with
+  begin match Ketrew_host_io.get_fresh_playground host with
   | None ->
-    fail_fatal (fmt  "Host %s: Missing playground" (Host.to_string_hum host))
+    fail_fatal (fmt  "Host %s: Missing playground" (Ketrew_host.to_string_hum host))
   | Some playground -> return playground
   end
 
 let get_log_of_monitored_script ~host ~script =
   let log_file = Ketrew_monitored_script.log_file script in
-  begin Host.get_file host ~path:log_file
+  begin Ketrew_host_io.get_file host ~path:log_file
     >>< function
     | `Ok c -> return (Some c)
     | `Error (`Cannot_read_file _) -> return None
@@ -70,7 +69,7 @@ let get_log_of_monitored_script ~host ~script =
 
 let get_pid_of_monitored_script ~host ~script =
   let pid_file = Ketrew_monitored_script.pid_file script in
-  begin Host.get_file host ~path:pid_file
+  begin Ketrew_host_io.get_file host ~path:pid_file
     >>< function
     | `Ok c -> return (Int.of_string (String.strip ~on:`Both c))
     | `Error (`Cannot_read_file _) -> return None
@@ -79,10 +78,10 @@ let get_pid_of_monitored_script ~host ~script =
 
 
 let shell_command_output_or_log ~host cmd =
-  begin Ketrew_host.get_shell_command_output host cmd
+  begin Ketrew_host_io.get_shell_command_output host cmd
     >>< function
     | `Ok (o, _) -> return o
     | `Error e ->
-      fail Log.(s "Command " % quote cmd % s " on " % Host.log host
+      fail Log.(s "Command " % quote cmd % s " on " % Ketrew_host.log host
                 % s " failed: " % s (Ketrew_error.to_string e))
   end

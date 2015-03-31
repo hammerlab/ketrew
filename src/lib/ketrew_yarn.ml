@@ -19,16 +19,38 @@ open Ketrew_pervasives
 
 open Ketrew_long_running_utilities
 
-open Ketrew_gen_yarn_v0.Distributed_shell_parameters
-open Ketrew_gen_yarn_v0.Run_parameters
-open Ketrew_gen_yarn_v0.Running
-open Ketrew_gen_yarn_v0.Created
 
-include Json.Make_versioned_serialization
-    (Ketrew_gen_yarn_v0.Run_parameters)
-    (Ketrew_gen_versioned.Yarn_run_parameters)
+module Run_parameters = struct
+  type distributed_shell_parameters = {
+    hadoop_bin: string;
+    distributed_shell_shell_jar: string;
+    container_memory: [ `GB of int | `MB of int | `Raw of string ];
+    timeout: [ `Seconds of int | `Raw of string ];
+    application_name: string;
+  } [@@deriving yojson]
+  type created = {
+    host: Ketrew_host.t;
+    program: [
+      | `Distributed_shell of (distributed_shell_parameters * Ketrew_program.t)
+      | `Yarn_application of Ketrew_program.t
+    ];
+    daemonize_using: [ `Nohup_setsid | `Python_daemon ];
+    daemon_start_timeout: float;
+  } [@@deriving yojson]
+  type running = {
+    created: created;
+    daemonized_script: Ketrew_daemonize.run_parameters;
+  } [@@deriving yojson]
+  type t = [
+    | `Created of created
+    | `Running of running
+  ] [@@deriving yojson]
+end
+type run_parameters = Run_parameters.t
+type distributed_shell_parameters = Run_parameters.distributed_shell_parameters
+include Json.Versioned.Of_v0(Run_parameters)
+open Run_parameters
 
-type run_parameters = Ketrew_gen_yarn_v0.Run_parameters.t
 
 let name = "yarn-cluster"
 
@@ -92,10 +114,11 @@ let log =
   | `Running rp ->
     List.concat [
       ("Status", s "Running") :: created rp.created;
-      let open Ketrew_gen_daemonize_v0.Running in
-      ["PID", OCaml.option i rp.daemonized_script.pid;
-       "Playground", s (Ketrew_path.to_string rp.daemonized_script.playground);
-       "Start-time", Time.log rp.daemonized_script.start_time;];
+      Ketrew_daemonize.log rp.daemonized_script
+      (* let open Ketrew_gen_daemonize_v0.Running in *)
+      (* ["PID", OCaml.option i rp.daemonized_script.pid; *)
+      (*  "Playground", s (Ketrew_path.to_string rp.daemonized_script.playground); *)
+      (*  "Start-time", Time.log rp.daemonized_script.start_time;]; *)
     ]
 
 
@@ -103,8 +126,7 @@ let additional_queries run_param =
   match run_param with
   | `Created _ -> []
   | `Running rp ->
-    let daemonize_run_param = `Running rp.daemonized_script in
-    begin match Ketrew_daemonize.additional_queries daemonize_run_param with
+    begin match Ketrew_daemonize.additional_queries rp.daemonized_script with
     | [] -> []
     | more ->
       ("status", Log.(s "Get the Yarn application status"))
@@ -147,37 +169,37 @@ let query run_param item =
   | `Created _ -> fail Log.(s "not running")
   | `Running rp ->
     let host = rp.created.host in
-    let daemonize_run_param = `Running rp.daemonized_script in
-    match item with
+    begin match item with
     | "status"  ->
-      get_application_id daemonize_run_param
+      get_application_id rp.daemonized_script
       >>= fun app_id ->
       shell_command_output_or_log ~host (fmt "yarn application -status %s" app_id)
     | "logs" ->
-      get_application_id daemonize_run_param
+      get_application_id rp.daemonized_script
       >>= fun app_id ->
       let tmp_file = Filename.concat "/tmp" (Unique_id.create ()) in
       shell_command_output_or_log ~host
         (fmt "yarn logs -applicationId %s > %s" app_id tmp_file)
       >>= fun (_ : string) ->
-      Ketrew_host.grab_file_or_log host (Ketrew_path.absolute_file_exn tmp_file)
-    | other -> Ketrew_daemonize.query daemonize_run_param other
-
+      Ketrew_host_io.grab_file_or_log host (Ketrew_path.absolute_file_exn tmp_file)
+    | other -> Ketrew_daemonize.query rp.daemonized_script other
+    end
 
 let hadoop_distshell_call
-    ~distshell_jar ~hadoop_bin ~container_memory ~timeout ~application_name =
+    ~distshell_jar ~hadoop_bin ~container_memory ~timeout ~application_name
+    script =
   [hadoop_bin; 
    "org.apache.hadoop.yarn.applications.distributedshell.Client";
    "-jar"; distshell_jar;
    "-num_containers"; "1";
-   "-shell_script"; Ketrew_daemonize.script_placeholder;
+   "-shell_script"; script;
    "-appname"; application_name;
    "-container_memory"; container_memory;
    "-timeout"; timeout]
 
 let start = function
 | `Created ({host; program; daemonize_using; daemon_start_timeout} as created) ->
-  let shell_command, actual_program =
+  let call_script, actual_program =
     match program with
     | `Distributed_shell (params, p) ->
       let {hadoop_bin; distributed_shell_shell_jar;
@@ -193,37 +215,31 @@ let start = function
         | `Raw s -> s
         | `Seconds secs -> fmt "%d" (secs * 1000)
       in
-      (hadoop_distshell_call ~hadoop_bin
-         ~distshell_jar:distributed_shell_shell_jar
-         ~container_memory ~timeout ~application_name, p)
-    | `Yarn_application p -> (Ketrew_daemonize.default_shell_command, p)
+      (Some (
+          hadoop_distshell_call ~hadoop_bin
+            ~distshell_jar:distributed_shell_shell_jar
+            ~container_memory ~timeout ~application_name),
+       p)
+    | `Yarn_application p -> (None, p)
   in
-  let daemonize_run_param =
-    let open Ketrew_gen_daemonize_v0.Created in
-    `Created {host; program = actual_program;
-              using_hack = daemonize_using;
-              starting_timeout = daemon_start_timeout;
-              shell_command } in
-  Ketrew_daemonize.start daemonize_run_param
-  >>= fun daemonize_run_params ->
-  begin match daemonize_run_params with
-  | `Running daemonized_script -> return (`Running {created; daemonized_script})
-  | `Created _ -> fail (`Fatal "Daemonized script did not start")
-  end
+  let `Long_running (_, daemonize_run_param) =
+    Ketrew_daemonize.create
+      ~starting_timeout:daemon_start_timeout
+      ~host actual_program ~using:daemonize_using
+      ?call_script in
+  Ketrew_daemonize.(start (deserialize_exn daemonize_run_param))
+  >>= fun daemonized_script ->
+  return (`Running {created; daemonized_script})
 | `Running _ -> fail (`Fatal "Already running")
 
 let update run_parameters =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
-    let daemonize_run_params = `Running run.daemonized_script in
-    Ketrew_daemonize.update daemonize_run_params
+    Ketrew_daemonize.update run.daemonized_script
     >>= fun daemon_updated ->
     let make_new_rp old_one =
-      match old_one with
-      | `Created rp -> fail_fatal "wrong state from Ketrew_daemonize: Created"
-      | `Running rp -> return (`Running {run with daemonized_script = rp})
-    in
+      return (`Running {run with daemonized_script = old_one}) in
     begin match daemon_updated with
     | `Failed (rp, s) ->
       make_new_rp rp >>= fun new_rp ->
@@ -241,12 +257,11 @@ let kill run_parameters =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
-    let daemonize_run_params = `Running run.daemonized_script in
     let host = run.created.host in
     begin
       (* We try to kill with yarn but we just log any potential error
          without failing. *)
-      get_application_id daemonize_run_params
+      get_application_id run.daemonized_script
       >>< function
       | `Ok app_id ->
         shell_command_output_or_log ~host
@@ -266,10 +281,7 @@ let kill run_parameters =
         return ()
     end
     >>= fun () ->
-    Ketrew_daemonize.kill daemonize_run_params
+    Ketrew_daemonize.kill run.daemonized_script
     >>= fun (`Killed rp) ->
-    begin match rp with
-    | `Created rp -> fail_fatal "wrong state from Ketrew_daemonize: Created"
-    | `Running rp -> return (`Killed (`Running {run with daemonized_script = rp}))
-    end
+    return (`Killed (`Running {run with daemonized_script = rp}))
   end

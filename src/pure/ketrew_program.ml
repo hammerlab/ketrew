@@ -14,28 +14,29 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-type time <ocaml from="Ketrew_gen_base_v0.Time"> = abstract
-type host <ocaml from="Ketrew_gen_base_v0.Host"> = abstract
-type path <ocaml from="Ketrew_gen_base_v0.Path"> = abstract
-type program <ocaml from="Ketrew_gen_base_v0.Program"> = abstract
-type monitored_script <ocaml from="Ketrew_gen_base_v0.Monitored_script"> = abstract
+open Ketrew_pervasives
+
+type t = [
+  | `And of t list
+  | `Exec of string list
+  | `Shell_command of string
+] [@@deriving yojson]
+
+let rec to_shell_commands = function
+| `Shell_command s -> [s]
+| `Exec sl -> 
+  [fmt "%s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")]
+| `And l -> List.concat_map l ~f:to_shell_commands
+
+let to_single_shell_command t = 
+  String.concat ~sep:" && " (to_shell_commands t)
+
+let rec log = function
+| `Shell_command str -> Log.(s "Sh:" % brakets (s str))
+| `Exec sl -> Log.(s "Exec:" % OCaml.list (sf "%S") sl)
+| `And l -> Log.(separate (s " && ") (List.map ~f:log l))
+
+let to_string_hum p = Log.to_long_string (log p)
 
 
-type created = {
-  host: host;
-  program: program;
-  using_hack: [ Nohup_setsid | Python_daemon ];
-  starting_timeout: time;
-  shell_command: string list;
-}
-type running = {
-  pid: int option;
-  playground: path;
-  script: monitored_script;
-  created: created;
-  start_time: time;
-}
-type run_parameters = [
-  | Created of created
-  | Running of running
-]
+

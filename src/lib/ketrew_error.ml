@@ -62,7 +62,7 @@ let log_client_error error_value =
 let to_string = function
 | `Wrong_command_line sl ->
   fmt "Wrong command line: %s" 
-    (String.concat ~sep:", " (List.map sl (fmt "%S")))
+    (String.concat ~sep:", " (List.map sl ~f:(fmt "%S")))
 | `IO _ as io -> IO.error_to_string io
 | `System _ as s -> System.error_to_string s
 | `Configuration (`Parsing e) ->
@@ -74,7 +74,7 @@ let to_string = function
      | `Exn e -> fmt "exception: %S" (Printexc.to_string e))
 | `Database e -> (Trakeva.Error.to_string e)
 | `Host e ->
-  fmt "Host: %s" (Ketrew_host.Error.log e |> Log.to_long_string)
+  fmt "Host: %s" (Ketrew_host_io.Error.log e |> Log.to_long_string)
 | `Persistent_state (`Deserilization s) ->
   fmt "Persistent_state-Deserilization: %S" s
 | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s

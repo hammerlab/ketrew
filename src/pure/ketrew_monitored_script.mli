@@ -25,6 +25,7 @@ open Ketrew_pervasives
 
 type t = Ketrew_gen_base_v0.Monitored_script.t =
   {playground: Ketrew_path.t; program: Ketrew_program.t}
+  [@@deriving yojson]
 (** The definition of a monitored script. *)
 
 val create:  playground:Ketrew_path.t -> Ketrew_program.t -> t

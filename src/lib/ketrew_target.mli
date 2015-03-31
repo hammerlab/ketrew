@@ -41,14 +41,14 @@ module Command : sig
     val get_output :
       t ->
       (string * string,
-       [> `Host of _ Ketrew_host.Error.non_zero_execution ])
+       [> `Host of _ Ketrew_host_io.Error.non_zero_execution ])
       Deferred_result.t
     (** Run the command and get its [(stdout, stderr)] pair. *)
 
     val run :
       t ->
       (unit,
-       [> `Host of _ Ketrew_host.Error.non_zero_execution ])
+       [> `Host of _ Ketrew_host_io.Error.non_zero_execution ])
       Deferred_result.t
     (** Run the command and ignore its [(stdout, stderr)] pair. *)
 
@@ -117,7 +117,7 @@ module Condition : sig
                        | `System of [> `Sleep of float ] * [> `Exn of exn ]
                        | `Timeout of float
                        | `Unix_exec of string ]
-                         Ketrew_host.Error.execution
+                         Ketrew_host_io.Error.execution
                   | `Volume of [> `No_size of Ketrew_pervasives.Log.t ] ]) Deferred_result.t
 
 end
@@ -273,13 +273,13 @@ val log : t -> Log.t
 
 val should_start:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution
+  (bool, [> `Host of _ Ketrew_host_io.Error.non_zero_execution
          | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target is ready or should start, given its condition.  *)
 
 val did_ensure_condition:
   t ->
-  (bool, [> `Host of _ Ketrew_host.Error.non_zero_execution
+  (bool, [> `Host of _ Ketrew_host_io.Error.non_zero_execution
          | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
 (** Check whether a target actually did its job, given its condition.  *)
 

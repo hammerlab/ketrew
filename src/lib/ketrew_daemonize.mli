@@ -47,9 +47,12 @@
 
 *)
 
+type run_parameters
+  [@@deriving yojson]
+
 (** The “standard” plugin-API. *)
 include Ketrew_long_running.LONG_RUNNING
-          with type run_parameters = Ketrew_gen_daemonize_v0.Run_parameters.t
+          with type run_parameters := run_parameters
 
 val create:
   ?starting_timeout:float ->
@@ -61,7 +64,3 @@ val create:
     are already serialized), see {!Ketrew_edsl.daemonize} for more
     details *)
 
-
-val default_shell : string
-val script_placeholder : string
-val default_shell_command : string list

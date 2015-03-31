@@ -64,11 +64,11 @@ module Volume : sig
 
     val exists :
       t ->
-      (bool, [> `Host of _ Ketrew_host.Error.execution ]) Deferred_result.t
+      (bool, [> `Host of _ Ketrew_host_io.Error.execution ]) Deferred_result.t
     (** Check whether the whole structure of the Volume exists on the host. *)
 
     val get_size: t ->
-      (int, [> `Host of _ Ketrew_host.Error.non_zero_execution 
+      (int, [> `Host of _ Ketrew_host_io.Error.non_zero_execution 
             | `Volume of [> `No_size of Log.t]]) Deferred_result.t
     (** Get the total size of a volume in bytes. Returns 0 if the volume does
         not exist (actually calls {!exists}). *)

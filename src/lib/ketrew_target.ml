@@ -44,11 +44,11 @@ module Command = struct
 
   let get_output {host; action} =
     let cmd = Program.to_single_shell_command action in
-    Host.get_shell_command_output host cmd
+    Ketrew_host_io.get_shell_command_output host cmd
 
   let get_return_value {host; action} =
     let cmd = Program.to_single_shell_command action in
-    Host.get_shell_command_return_value host cmd
+    Ketrew_host_io.get_shell_command_return_value host cmd
 
   let run t =
     get_output t (* TODO optimize to not record the output *)

@@ -25,7 +25,8 @@
 (** The “standard” plugin-API. *)
 include Ketrew_long_running.LONG_RUNNING
 
-open Ketrew_gen_yarn_v0
+
+type distributed_shell_parameters
 
 val distributed_shell_program :
   ?hadoop_bin:string ->
@@ -34,8 +35,7 @@ val distributed_shell_program :
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->
   Ketrew_program.t ->
-  [> `Distributed_shell of
-       Distributed_shell_parameters.t * Ketrew_program.t ]
+  [> `Distributed_shell of distributed_shell_parameters * Ketrew_program.t ]
 (** Create a value [`Distributed_shell _] to feed to {!create},
     see {!Ketrew_edsl.yarn_distributed_shell}. *)
 
@@ -43,7 +43,7 @@ val create :
   ?host:Ketrew_host.t ->
   ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
   ?daemon_start_timeout: float ->
-  [ `Distributed_shell of Distributed_shell_parameters.t * Ketrew_program.t
+  [ `Distributed_shell of distributed_shell_parameters * Ketrew_program.t
   | `Yarn_application of Ketrew_program.t ] ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters

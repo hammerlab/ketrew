@@ -18,13 +18,11 @@ open Ketrew_pervasives
 
 module Path = Ketrew_path
 
-module Host = Ketrew_host
-
 module Volume = struct
 
   type structure = Ketrew_gen_base_v0.Volume_structure.t
   type t = Ketrew_gen_base_v0.Volume.t = {
-    host: Host.t;
+    host: Ketrew_host.t;
     root: Path.t;
     structure: structure;
   }
@@ -46,7 +44,7 @@ module Volume = struct
 
   let exists t =
     let paths = all_paths t in
-    Host.do_files_exist t.host paths
+    Ketrew_host_io.do_files_exist t.host paths
 
   let log_structure structure = 
     let all_paths = all_structure_paths structure |> List.map ~f:Path.to_string in
@@ -58,7 +56,7 @@ module Volume = struct
 
   let log {host; root; structure} =
     Log.(braces (
-        parens (Host.log host) % sp
+        parens (Ketrew_host.log host) % sp
         % parens (s "Root: " % s (Path.to_string root)) % sp
         % parens (s "Tree: " % log_structure structure)
       ))
@@ -76,7 +74,7 @@ module Volume = struct
         Deferred_list.while_sequential paths (fun path ->
             let cmd = Path.size_shell_command path in
             Log.(s "while_sequential : " % quote cmd @ warning);
-            Host.get_shell_command_output t.host cmd
+            Ketrew_host_io.get_shell_command_output t.host cmd
             >>= fun (str, _) ->
             match  String.strip str |> Int.of_string with
             | None -> 

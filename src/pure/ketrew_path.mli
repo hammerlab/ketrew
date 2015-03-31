@@ -17,6 +17,7 @@
 (** File-path handling *)
 
 type t = Ketrew_gen_base_v0.Path.t
+  [@@deriving yojson]
 (** General type of file-paths.  *)
 
 val file : string -> t

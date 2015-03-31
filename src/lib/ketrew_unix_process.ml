@@ -63,7 +63,7 @@ let succeed ?(bin="") argl =
   exec ~bin argl
   >>= fun (out, err, status) ->
   let failure fmt =
-    ksprintf (fun s -> fail (`Process (`Exec (bin, argl), `Non_zero s)))
+    Printf.ksprintf (fun s -> fail (`Process (`Exec (bin, argl), `Non_zero s)))
       fmt in
   begin match status with
   | `Exited 0 -> return  (out, err)

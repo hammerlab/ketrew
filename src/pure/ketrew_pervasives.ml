@@ -16,12 +16,22 @@
 
 (** [Pervasives] module for the library. *)
 
-include Nonstd
 module Result = Pvem.Result
 include  Pvem_lwt_unix
 include  Pvem_lwt_unix.Deferred_result
 module String = struct
   include Sosa.Native_string
+end
+
+module Array = Nonstd.Array
+module Option = Nonstd.Option
+module Int = Nonstd.Int
+module Float = Nonstd.Float
+module List = struct
+  (** This is a hack around
+      https://github.com/whitequark/ppx_deriving/issues/28 *)
+  include Nonstd.List
+  let map ~f l = map ~f l
 end
 
 let (//) = Filename.concat
@@ -102,6 +112,29 @@ module Json = struct
 
   end
 
+  module Versioned = struct
+
+    module Of_v0 (T: sig
+        type t
+        val to_yojson : t -> Yojson.Safe.json
+        val of_yojson : Yojson.Safe.json -> [> `Error of bytes | `Ok of t ]
+      end) = struct
+      type 'a versioned = V0 of 'a [@@deriving yojson]
+      let to_json t =
+        versioned_to_yojson T.to_yojson (V0 t)
+      let serialize t =
+        to_json t |> Yojson.Safe.pretty_to_string ~std:true
+      let of_json_exn json : T.t =
+        match versioned_of_yojson T.of_yojson json with
+        | `Ok (V0 t) -> t
+        | `Error str ->
+          failwith (fmt "deserialization error: %s" str)
+            
+      let deserialize_exn s =
+        Yojson.Safe.from_string s |> of_json_exn
+
+    end
+  end
 end
 
 (** Function that have a documented, easy to check contract, can raise
@@ -112,6 +145,7 @@ let invalid_argument_exn ?(where="pervasives") what =
 (** Handle timestamps. *)
 module Time = struct
   type t = float
+    [@@deriving yojson]
 
   let now () : t = Unix.gettimeofday ()
 

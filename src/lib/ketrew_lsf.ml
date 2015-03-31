@@ -20,7 +20,6 @@ open Ketrew_long_running_utilities
 
 module Path = Ketrew_path
 module Program = Ketrew_program
-module Host = Ketrew_host
 module Error = Ketrew_error
 
 open Ketrew_gen_lsf_v0.Run_parameters
@@ -35,7 +34,7 @@ include Json.Make_versioned_serialization
 
 let name = "LSF"
 let create
-    ?(host=Host.tmp_on_localhost)
+    ?(host=Ketrew_host.tmp_on_localhost)
     ?queue ?name ?wall_limit ?processors ?project
     program =
   `Long_running ("LSF",
@@ -47,7 +46,7 @@ let log =
   let open Log in
   let created {host; program; queue; name;
                wall_limit; project; processors} = [
-    "Host", Host.log host;
+    "Host", Ketrew_host.log host;
     "Program", Program.log program;
     "Queue", OCaml.option quote queue;
     "Name", OCaml.option quote name;
@@ -104,18 +103,18 @@ let query run_parameters item =
     begin match item with
     | "log" ->
       let log_file = Ketrew_monitored_script.log_file rp.script in
-      Host.grab_file_or_log rp.created.host log_file
+      Ketrew_host_io.grab_file_or_log rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host out_file
+      Ketrew_host_io.grab_file_or_log rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host err_file
+      Ketrew_host_io.grab_file_or_log rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host monitored_script_path
+      Ketrew_host_io.grab_file_or_log rp.created.host monitored_script_path
     | "bjobs" ->
-      begin Host.get_shell_command_output rp.created.host
+      begin Ketrew_host_io.get_shell_command_output rp.created.host
           (fmt "bjobs -l %d" rp.lsf_id)
         >>< function
         | `Ok (o, _) -> return o
@@ -123,7 +122,7 @@ let query run_parameters item =
           fail Log.(s "Command `bjobs -l <ID>` failed: " % s (Error.to_string e))
       end
     | "bpeek" ->
-      begin Host.get_shell_command_output rp.created.host
+      begin Ketrew_host_io.get_shell_command_output rp.created.host
           (fmt "bpeek %d" rp.lsf_id)
         >>< function
         | `Ok (o, _) -> return o
@@ -142,10 +141,10 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
     >>= fun playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
-    Host.ensure_directory created.host playground
+    Ketrew_host_io.ensure_directory created.host playground
     >>= fun () ->
     let content = Ketrew_monitored_script.to_string script in
-    Host.put_file ~content created.host ~path:monitored_script_path
+    Ketrew_host_io.put_file ~content created.host ~path:monitored_script_path
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
@@ -167,7 +166,7 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
       ]
     in
     Log.(s "Cmd: " % s cmd %n  @ verbose);
-    Host.get_shell_command_output created.host cmd
+    Ketrew_host_io.get_shell_command_output created.host cmd
     >>= fun (stdout, stderr) ->
     Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
          % s "Err: " % s stderr @ verbose);
@@ -182,7 +181,7 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
 
 let get_lsf_job_status host lsf_id =
   let cmd = fmt "bjobs -l %d" lsf_id in
-  Host.get_shell_command_output host cmd
+  Ketrew_host_io.get_shell_command_output host cmd
   >>= fun (stdout, stderr) ->
   Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
        % s "Err: " % s stderr @ verbose);
@@ -257,7 +256,7 @@ let kill run_parameters =
     | `Running run as run_parameters ->
       begin
         let cmd = fmt "bkill %d" run.lsf_id in
-        Host.get_shell_command_output run.created.host cmd
+        Ketrew_host_io.get_shell_command_output run.created.host cmd
         >>= fun (_, _) ->
         return (`Killed run_parameters)
       end

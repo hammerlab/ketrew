@@ -70,7 +70,7 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
     >>= fun playground ->
     let script = Ketrew_monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
-    Host.ensure_directory created.host playground
+    Ketrew_host_io.ensure_directory created.host playground
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
@@ -100,10 +100,10 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
           [fmt "#PBS -l %s" resource_list];
           [Ketrew_monitored_script.to_string script];
         ]) in
-    Host.put_file ~content created.host ~path:monitored_script_path
+    Ketrew_host_io.put_file ~content created.host ~path:monitored_script_path
     >>= fun () ->
     let cmd = fmt "qsub %s" (Path.to_string_quoted monitored_script_path) in
-    Host.get_shell_command_output created.host cmd
+    Ketrew_host_io.get_shell_command_output created.host cmd
     >>= fun (stdout, stderr) ->
     Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
          % s "Err: " % s stderr @ verbose);
@@ -130,18 +130,18 @@ let query run_parameters item =
     begin match item with
     | "log" ->
       let log_file = Ketrew_monitored_script.log_file rp.script in
-      Host.grab_file_or_log rp.created.host log_file
+      Ketrew_host_io.grab_file_or_log rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host out_file
+      Ketrew_host_io.grab_file_or_log rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host err_file
+      Ketrew_host_io.grab_file_or_log rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host.grab_file_or_log rp.created.host monitored_script_path
+      Ketrew_host_io.grab_file_or_log rp.created.host monitored_script_path
     | "qstat" ->
-      begin Host.get_shell_command_output rp.created.host
+      begin Ketrew_host_io.get_shell_command_output rp.created.host
           (fmt "qstat -f1 %s" rp.pbs_job_id)
         >>< function
         | `Ok (o, _) -> return o
@@ -163,7 +163,7 @@ let update = function
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
     | None | Some _->
-      Host.execute run.created.host ["qstat"; "-f1"; run.pbs_job_id]
+      Ketrew_host_io.execute run.created.host ["qstat"; "-f1"; run.pbs_job_id]
       >>= fun return_obj ->
       begin match return_obj#exited with
       | 0 ->
@@ -212,7 +212,7 @@ let kill run_parameters =
   | `Running run as run_parameters ->
     begin
       let cmd = fmt "qdel %s" run.pbs_job_id in
-      Host.get_shell_command_output run.created.host cmd
+      Ketrew_host_io.get_shell_command_output run.created.host cmd
       >>= fun (_, _) ->
       return (`Killed run_parameters)
     end

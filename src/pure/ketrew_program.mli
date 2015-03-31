@@ -14,25 +14,26 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
+(** The “things” to run on a given host. *)
+
 open Ketrew_pervasives
 
-type t = Ketrew_gen_base_v0.Program.t
 
-let rec to_shell_commands = function
-| `Shell_command s -> [s]
-| `Exec sl -> 
-  [fmt "%s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")]
-| `And l -> List.concat_map l ~f:to_shell_commands
+type t = [
+  | `And of t list
+  | `Exec of string list
+  | `Shell_command of string
+] [@@deriving yojson]
+(** A program. *)
 
-let to_single_shell_command t = 
-  String.concat ~sep:" && " (to_shell_commands t)
+val to_shell_commands: t -> string list
+(** Convert a program to a list of shell commands. *)
 
-let rec log = function
-| `Shell_command str -> Log.(s "Sh:" % brakets (s str))
-| `Exec sl -> Log.(s "Exec:" % OCaml.list (sf "%S") sl)
-| `And l -> Log.(separate (s " && ") (List.map ~f:log l))
+val to_single_shell_command: t -> string
+(** Convert a program to a shell command. *)
 
-let to_string_hum p = Log.to_long_string (log p)
+val log: t -> Log.t
+(** Create a {!Log.t} document to display a program. *)
 
-
-
+val to_string_hum: t -> string
+(** Get a display-friendly string of a program. *)

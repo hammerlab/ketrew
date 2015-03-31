@@ -172,11 +172,11 @@ module Program = struct
     | `Localhost, `Localhost ->
       f ?host:None (exec ("cp" :: src @ [dest])) 
     | `Ssh ssh, `Localhost -> 
-      f ?host:None (exec (Host.Ssh.scp_pull ssh ~src ~dest))
+      f ?host:None (exec (Ketrew_host_io.Ssh.scp_pull ssh ~src ~dest))
     | `Localhost, `Ssh ssh -> 
-      f ?host:None (exec (Host.Ssh.scp_push ssh ~src ~dest))
+      f ?host:None (exec (Ketrew_host_io.Ssh.scp_push ssh ~src ~dest))
     | `Ssh _, `Ssh ssh -> 
-      f ~host:s_host (exec (Host.Ssh.scp_push ssh ~src ~dest))
+      f ~host:s_host (exec (Ketrew_host_io.Ssh.scp_push ssh ~src ~dest))
 
 end
 
