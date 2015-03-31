@@ -384,7 +384,7 @@ let make_command_alias cmd ?(options="") name =
 (** The configuration of the command line, using the [Cmdliner] library. *)
 let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let open Cmdliner in
-  let version = Ketrew_metadata.version in
+  let version = Lazy.force Ketrew_metadata.version in
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =

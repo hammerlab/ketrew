@@ -45,10 +45,8 @@ let dynlink path =
       )
 
 let ketrew_deep_ancestors () =
-  Lazy.force (
-    lazy (
-      Findlib.package_deep_ancestors ["native"] Ketrew_metadata.findlib_packages
-    ))
+  Findlib.package_deep_ancestors ["native"]
+    (Lazy.force Ketrew_metadata.findlib_packages)
 
 let load_plugins plugins_to_load =
   wrap_preemptively Findlib.init ~on_exn:(fun e -> `Dyn_plugin (`Findlib e))

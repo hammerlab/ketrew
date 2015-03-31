@@ -53,7 +53,7 @@ let findlib_packages = [
   "docout"; "pvem"; "pvem_lwt_unix"; "cmdliner"; "atd";
   "cconv.yojson"; "yojson"; "uri"; "toml"; "cohttp.lwt"; "lwt"; "ssl";
   "conduit"; "dynlink"; "findlib"; "ppx_deriving_yojson";
-  "ppx_deriving.show"; "ppx_include"; "ppx_blob"
+  "ppx_deriving.show"; "ppx_include"; "ppx_blob";
 ]
 let homepage = "http://seb.mondet.org/software/ketrew/"
 
@@ -95,6 +95,7 @@ let () =
                -o gen/ketrew_gen_%s.ml"
         atd Filename.(basename atd |> (fun f -> chop_suffix f ".atd"))
     end;
+    (*
     let content =
       sprintf "\
         let version = %S\n\
@@ -106,6 +107,13 @@ let () =
         homepage
     in
     write_file "gen/ketrew_metadata.ml" ~content
+      *)
+  | "generate" :: "metadata" :: [] ->
+    cmd_exn "mkdir -p _build/";
+    write_file "_build/VERSION" ~content:(version_string ());
+    write_file "_build/FINDLIB_PACKAGES"
+      ~content:(List.map findlib_packages ~f:(sprintf "%S") |> String.concat ~sep:"; ");
+    ()
   | "make" :: "_oasis" :: [] ->
     cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/' > _oasis"
       oasis_meta_variable_version (version_string ())

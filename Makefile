@@ -16,6 +16,7 @@ configure: myocamlbuild.ml setup.data
 	echo 'Configured'
 
 gen:
+	$(PLEASE) generate metadata && \
 	$(PLEASE) generate ketrew_data
 
 OCAMLBUILD_ANNOYING_LINKS=main.byte main.native Workflow_Examples.native integration.native dummy_plugin_user.native

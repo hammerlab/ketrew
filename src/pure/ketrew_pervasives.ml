@@ -111,7 +111,7 @@ let invalid_argument_exn ?(where="pervasives") what =
 
 (** Handle timestamps. *)
 module Time = struct
-  include Ketrew_gen_base_v0.Time
+  type t = float
 
   let now () : t = Unix.gettimeofday ()
 
@@ -134,7 +134,7 @@ end
 (** Provide pseudo-unique identifiers. *)
 module Unique_id = struct
 
-  include Ketrew_gen_base_v0.Unique_id
+  type t = string
 
   (** Create a fresh filename-compliant identifier. *)
   let create () =

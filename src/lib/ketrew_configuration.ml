@@ -17,6 +17,8 @@
 open Ketrew_pervasives
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
+              [@@deriving yojson, show]
+
 
 type engine = {
   database_parameters: string;

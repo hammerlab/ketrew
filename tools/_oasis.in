@@ -20,9 +20,15 @@ Flag coverage
   Description: Use Bisect to generate coverage data.
   Default:     false
 
+Library ketrew_pure
+  Path: src/pure/
+  BuildDepends:  %%FINDLIB_PACKAGES%%
+  Modules: Ketrew_pervasives, 
+           Ketrew_metadata
+
 Library ketrew_data
   Path: gen/
-  BuildDepends: cconv
+  BuildDepends: ketrew_pure
   Modules: Ketrew_gen_base_v0,
            Ketrew_gen_daemonize_v0,
            Ketrew_gen_lsf_v0,
@@ -30,37 +36,30 @@ Library ketrew_data
            Ketrew_gen_yarn_v0,
            Ketrew_gen_protocol_v0,
            Ketrew_gen_target_v0,
-           Ketrew_gen_versioned,
-           Ketrew_metadata
-
-Library ketrew_pure
-  Path: src/lib/pure
-  BuildDepends: ketrew_data, %%FINDLIB_PACKAGES%%
-  Modules: Ketrew_artifact,
-           Ketrew_daemonize,
-           Ketrew_document,
-           Ketrew_edsl,
-           Ketrew_error,
-           Ketrew_host,
-           Ketrew_long_running,
-           Ketrew_long_running_utilities,
-           Ketrew_lsf,
-           Ketrew_monitored_script,
-           Ketrew_path,
-           Ketrew_pbs,
-           Ketrew_yarn,
-           Ketrew_pervasives,
-           Ketrew_plugin,
-           Ketrew_program,
-           Ketrew_protocol,
-           Ketrew_target,
-           Ketrew_unix_process
+           Ketrew_gen_versioned
 
 Library ketrew
   Path:       src/lib
-  BuildDepends: ketrew_pure, %%FINDLIB_PACKAGES%%
-  Modules:
-    Ketrew,
+  BuildDepends: ketrew_data
+  Modules: Ketrew,
+    Ketrew_path,
+    Ketrew_artifact,
+    Ketrew_daemonize,
+    Ketrew_document,
+    Ketrew_edsl,
+    Ketrew_error,
+    Ketrew_host,
+    Ketrew_long_running,
+    Ketrew_long_running_utilities,
+    Ketrew_lsf,
+    Ketrew_monitored_script,
+    Ketrew_pbs,
+    Ketrew_yarn,
+    Ketrew_plugin,
+    Ketrew_program,
+    Ketrew_protocol,
+    Ketrew_target,
+    Ketrew_unix_process,
     Ketrew_configuration,
     Ketrew_engine,
     Ketrew_interaction,
