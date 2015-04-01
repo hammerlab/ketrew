@@ -249,7 +249,7 @@ val pbs :
   ?processors:int ->
   ?email_user:[ `Always of string | `Never ] ->
   ?shell:string ->
-  Ketrew_gen_pbs_v0.Program.t ->
+  Program.t ->
   [> `Long_running of string * string ]
 (** Create a “PSB” build process. *)
 

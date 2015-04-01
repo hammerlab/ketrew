@@ -23,15 +23,36 @@ module Error = Ketrew_error
 
 open Ketrew_long_running_utilities
 
-open Ketrew_gen_pbs_v0.Run_parameters
-open Ketrew_gen_pbs_v0.Running
-open Ketrew_gen_pbs_v0.Created
-
-type run_parameters = Ketrew_gen_pbs_v0.Run_parameters.t
-
-include Json.Make_versioned_serialization
-    (Ketrew_gen_pbs_v0.Run_parameters)
-    (Ketrew_gen_versioned.Pbs_run_parameters)
+module Run_parameters = struct
+  type created = {
+    host: Host.t;
+    program: Program.t;
+    shell: string;
+    queue: string option;
+    name: string option;
+    email_user: [
+        | `Never
+        | `Always of string
+      ];
+    wall_limit: [
+        | `Hours of float
+      ];
+    processors: int;
+  } [@@deriving yojson]
+  type running = {
+    pbs_job_id: string;
+    playground: Path.t;
+    script: Ketrew_monitored_script.t;
+    created: created;
+  } [@@deriving yojson]
+  type t = [
+    | `Created of created
+    | `Running of running
+  ] [@@deriving yojson]
+end
+type run_parameters = Run_parameters.t
+include Json.Versioned.Of_v0(Run_parameters)
+open Run_parameters
 
 let name = "PBS"
 let create

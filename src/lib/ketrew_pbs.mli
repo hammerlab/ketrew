@@ -46,7 +46,7 @@ val create :
   ?processors:int ->
   ?email_user:[ `Always of string | `Never ] ->
   ?shell:string ->
-  Ketrew_gen_pbs_v0.Program.t ->
+  Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} to run a 
     {!Ketrew_program.t} on a given PBS-enabled host (run parameters

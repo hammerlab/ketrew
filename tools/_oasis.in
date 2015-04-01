@@ -34,7 +34,6 @@ Library ketrew_data
   Path: gen/
   BuildDepends: cconv
   Modules: Ketrew_gen_base_v0,
-           Ketrew_gen_pbs_v0,
            Ketrew_gen_protocol_v0,
            Ketrew_gen_target_v0,
            Ketrew_gen_versioned
