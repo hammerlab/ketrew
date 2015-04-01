@@ -20,16 +20,12 @@ type target_v0
 type stored_target_v0 
   <ocaml from="Ketrew_gen_target_v0.Stored_target" > = abstract
 
-type lsf_run_parameters_v0 
-  <ocaml from="Ketrew_gen_lsf_v0.Run_parameters" > = abstract
-
 type pbs_run_parameters_v0 
   <ocaml from="Ketrew_gen_pbs_v0.Run_parameters" > = abstract
 
 type target = [ V0 of target_v0 ]
 type stored_target = [ V0 of stored_target_v0 ]
 
-type lsf_run_parameters = [ V0 of lsf_run_parameters_v0 ] 
 type pbs_run_parameters = [ V0 of pbs_run_parameters_v0 ] 
 
 type measurement_collection_v0

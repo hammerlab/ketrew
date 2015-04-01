@@ -18,19 +18,40 @@ open Ketrew_pervasives
 
 open Ketrew_long_running_utilities
 
+
 module Path = Ketrew_path
 module Program = Ketrew_program
+module Host = Ketrew_host
 module Error = Ketrew_error
 
-open Ketrew_gen_lsf_v0.Run_parameters
-open Ketrew_gen_lsf_v0.Running
-open Ketrew_gen_lsf_v0.Created
+module Run_parameters = struct
+  type created = {
+    host: Host.t;
+    program: Program.t;
+    queue: string option;
+    name: string option;
+    wall_limit: string option;
+    project: string option;
+    processors: [
+        | `Min of int
+        | `Min_max of (int * int)
+      ] option;
+  } [@@deriving yojson]
+  type running = {
+    lsf_id: int;
+    playground: Path.t;
+    script: Ketrew_monitored_script.t;
+    created: created;
+  } [@@deriving yojson]
+  type t = [
+    | `Created of created
+    | `Running of running
+  ] [@@deriving yojson]
+end
+type run_parameters = Run_parameters.t
+include Json.Versioned.Of_v0(Run_parameters)
+open Run_parameters
 
-type run_parameters = Ketrew_gen_lsf_v0.Run_parameters.t
-
-include Json.Make_versioned_serialization
-    (Ketrew_gen_lsf_v0.Run_parameters)
-    (Ketrew_gen_versioned.Lsf_run_parameters)
 
 let name = "LSF"
 let create
