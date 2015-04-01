@@ -112,7 +112,8 @@ let () =
     cmd_exn "mkdir -p _build/";
     write_file "_build/VERSION" ~content:(version_string ());
     write_file "_build/FINDLIB_PACKAGES"
-      ~content:(List.map findlib_packages ~f:(sprintf "%S") |> String.concat ~sep:"; ");
+      ~content:(List.map findlib_packages ~f:(sprintf "%s")
+                |> String.concat ~sep:" ");
     ()
   | "make" :: "_oasis" :: [] ->
     cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/' > _oasis"
