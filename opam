@@ -20,6 +20,7 @@ depends: [
   "cconv" {= "0.1" }
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "atd" "cconv" "yojson" "uri"
+  "ppx_deriving" "ppx_deriving_yojson" "ppx_include" "ppx_blob"
   "toml" {= "1.0.0" }
   "cohttp" "lwt" "ssl"
   "conduit"
