@@ -58,7 +58,7 @@ let load_plugins plugins_to_load =
       let deps = Findlib.package_deep_ancestors predicates [package] in
       let to_load =
         List.concat_map deps ~f:(fun dep ->
-            if List.mem dep ~set:(ketrew_deep_ancestors ())
+            if dep = "threads" || List.mem dep ~set:(ketrew_deep_ancestors ())
             then []
             else (
               let base = Findlib.package_directory dep in

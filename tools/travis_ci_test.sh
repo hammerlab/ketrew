@@ -15,6 +15,8 @@ travis_install_on_linux () {
         4.01.0,1.2.0) ppa=avsm/ocaml41+opam12; export opam_pin_add="add" ;;
         4.02.0,1.1.0) ppa=avsm/ocaml42+opam11 ;;
         4.02.0,1.2.0) ppa=avsm/ocaml42+opam12; export opam_pin_add="add" ;;
+        4.02.1,1.1.0) ppa=avsm/ocaml42+opam11 ;;
+        4.02.1,1.2.0) ppa=avsm/ocaml42+opam12; export opam_pin_add="add" ;;
       *) echo Unknown $OCAML_VERSION,$OPAM_VERSION; exit 1 ;;
     esac
 
