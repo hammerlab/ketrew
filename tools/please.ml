@@ -119,7 +119,7 @@ let () =
     cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/' > _oasis"
       oasis_meta_variable_version (version_string ())
       oasis_meta_variable_findlib_packages
-      (String.concat ~sep:", " ("ketrew_data" :: findlib_packages))
+      (String.concat ~sep:", " findlib_packages)
   | [] -> printf "Nothing to do"
   | others ->
     printf "Don't know what to do with: %s" (String.concat ~sep:", " others);

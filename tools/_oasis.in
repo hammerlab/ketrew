@@ -22,7 +22,7 @@ Flag coverage
 
 Library ketrew_pure
   Path: src/pure/
-  BuildDepends:  %%FINDLIB_PACKAGES%%
+  BuildDepends: ketrew_data,  %%FINDLIB_PACKAGES%%
   Modules: Ketrew_pervasives, 
     Ketrew_path,
     Ketrew_program,
@@ -32,7 +32,7 @@ Library ketrew_pure
 
 Library ketrew_data
   Path: gen/
-  BuildDepends: ketrew_pure
+  BuildDepends: cconv
   Modules: Ketrew_gen_base_v0,
            Ketrew_gen_lsf_v0,
            Ketrew_gen_pbs_v0,
@@ -42,7 +42,7 @@ Library ketrew_data
 
 Library ketrew
   Path:       src/lib
-  BuildDepends: ketrew_data
+  BuildDepends: ketrew_pure
   Modules: Ketrew,
     Ketrew_artifact,
     Ketrew_daemonize,
