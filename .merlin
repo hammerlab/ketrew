@@ -1,7 +1,8 @@
-S ./src/lib/pure
+S ./src/pure/
+S ./src/lib/
 S ./src/test/
 S ./src/app/
-B _build/src/lib/pure
+B _build/src/pure
 B _build/src/lib
 B _build/src/app
 B _build/src/test
@@ -25,3 +26,4 @@ PKG ssl
 PKG conduit
 PKG dynlink
 PKG findlib
+PKG ppx_deriving_yojson
