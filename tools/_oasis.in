@@ -27,6 +27,7 @@ Library ketrew_pure
     Ketrew_path,
     Ketrew_program,
     Ketrew_host,
+    Ketrew_measurement,
     Ketrew_monitored_script,
     Ketrew_metadata
 

@@ -23,11 +23,6 @@ type stored_target_v0
 type target = [ V0 of target_v0 ]
 type stored_target = [ V0 of stored_target_v0 ]
 
-type measurement_collection_v0
-     <ocaml from="Ketrew_gen_base_v0.Measurement_collection" > = abstract
-
-type measurement_collection = [ V0 of measurement_collection_v0 ]
-
 
 type down_message_v0 
      <ocaml from="Ketrew_gen_protocol_v0.Down_message" > = abstract

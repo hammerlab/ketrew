@@ -179,7 +179,7 @@ let inspect
     ~(format: [ `Tsv | `Csv ])
     ?since (* String representing a date for lexicographic comparison *)
     how (* list of strings: how to inspect *) =
-  let module Mtem = Ketrew_gen_base_v0.Measurement_item in
+  let module Mtem = Ketrew_measurement.Item in
   let get_all () =
     match Ketrew_client.get_local_engine client with
     | None ->
@@ -187,13 +187,13 @@ let inspect
       fail (`Not_implemented "inspect")
     | Some engine ->
       Ketrew_engine.Measurements.get_all engine
+      >>| Ketrew_measurement.Collection.to_list
       >>= fun all ->
-      List.sort
-        ~cmp:(fun ma mb -> Float.compare ma.Mtem.time mb.Mtem.time)
+      List.sort ~cmp:Mtem.compare_by_time
         (match since with
          | None -> all
          | Some stime ->
-           List.filter ~f:(fun m -> Time.to_filename m.Mtem.time >= stime) all)
+           List.filter ~f:(fun m -> Time.to_filename (Mtem.time m) >= stime) all)
       |> return
   in
   let is s ~prefix_of =
@@ -231,51 +231,21 @@ let inspect
                  && is mea ~prefix_of:"measurements" ->
     get_all ()
     >>= fun measurements ->
-    let document =
-      List.map measurements ~f:(fun item ->
-          let date =
-            Time.to_filename item.Ketrew_gen_base_v0.Measurement_item.time in
-          match item.Ketrew_gen_base_v0.Measurement_item.content with
-          | `Creation -> [date; "Creation"]
-            | `Incoming_request hr ->
-              [date; "Incomming HTTP request";
-               hr.Ketrew_gen_base_v0.Http_request.uri]
-            | `End_of_request (hr, rl) ->
-              [date; "End of HTTP request";
-               hr.Ketrew_gen_base_v0.Http_request.uri;
-               Int.to_string rl.Ketrew_gen_base_v0.Response_log.body_length;
-               rl.Ketrew_gen_base_v0.Response_log.response; ]
-            | `Tag t -> [date; "Tag"; t])
-    in
-    display document
+    display (List.map ~f:Mtem.to_strings measurements)
   | [ht; dur] when is ht ~prefix_of:"http-request"
                 && is dur ~prefix_of:"benchmark" ->
     get_all ()
     >>= fun measurements ->
     let all_reqs =
-      let r = ref [] in
-      List.iter measurements ~f:(fun item ->
-          let date = item.Ketrew_gen_base_v0.Measurement_item.time in
-          match item.Ketrew_gen_base_v0.Measurement_item.content with
-          | `Tag _ | `Creation -> ()
-          | `Incoming_request hr ->
-            r := (hr, date, None) :: !r
-          | `End_of_request (hr, rl) ->
-            r := List.map !r ~f:(function
-              | (h, i, None) when h = hr -> (h, i, Some (date, rl))
-              | other -> other)
-        );
-      List.filter_map !r ~f:(function
-        | (hr, t, Some (t2, rl)) -> Some (hr, t, (t2 -. t), rl)
-        | _ -> None)
-      |> List.sort ~cmp:(fun (_, _, a, _) (_, _, b, _) -> Float.compare b a)
+      Mtem.collect_http_requests measurements
+      |> List.sort ~cmp:(fun a b -> Float.compare b#duration a#duration)
     in
     let document =
-      List.map all_reqs ~f:(fun (hr, date, duration, response_log) ->
-          [Time.to_filename date; hr.Ketrew_gen_base_v0.Http_request.uri;
-           Float.to_string duration;
-           Int.to_string
-             response_log.Ketrew_gen_base_v0.Response_log.body_length; ])
+      List.map all_reqs ~f:(fun req ->
+          [Time.to_filename req#date;
+           req#uri;
+           Float.to_string req#duration;
+           Int.to_string req#body_length])
     in
     display document
   | other ->

@@ -203,7 +203,7 @@ module Measurements: sig
       ]) Deferred_result.t
 
   val get_all: t ->
-    (Ketrew_gen_base_v0.Measurement_item.t list,
+    (Ketrew_measurement.Collection.t,
      [> `Database of
           [> `Get_all of string | `Load of string ] * string
      | `Deserialization of exn * string ]) Deferred_result.t

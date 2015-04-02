@@ -30,72 +30,75 @@ module Configuration = Ketrew_configuration
 
 module Daemonize = Ketrew_daemonize
 
-module Measurement_collection = struct
-  type item = Ketrew_gen_base_v0.Measurement_item.t
-  type t = Ketrew_gen_base_v0.Measurement_collection.t ref
-  let item content = 
-    let open Ketrew_gen_base_v0.Measurement_item in
-    { time = Time.(now ()); content}
-  let create () = ref [item `Creation]
-  let add collection log = 
-    collection := item log :: !collection
-
-  include Json.Make_versioned_serialization
-      (struct 
-        type t = Ketrew_gen_base_v0.Measurement_collection.t
-      end)
-      (Ketrew_gen_versioned.Measurement_collection)
-
-  let flush collection db =
-    let action =
-      let key = Unique_id.create () in
-      let value = serialize !collection in
-      Trakeva.Action.(set ~collection:"measurements" ~key value)
-    in
-    begin Database.act db ~action
-      >>= function
-      | `Done ->
-        collection :=  [item `Creation]; 
-        return ()
-      | `Not_done -> fail (`Database_unavailable "measurements")
-    end
-
-  let load_all db =
-    Database.get_all db ~collection:"measurements"
-    >>= fun all_strings ->
-    Deferred_list.while_sequential all_strings (fun s ->
-        try return (deserialize_exn s)
-        with e -> fail (`Deserialization (e, s)))
-    >>| List.concat
-    >>= fun collection ->
-    return collection
-
-  let make_http_request connection_id request =
-    let meth = Cohttp.Request.meth request in
-    let uri = Cohttp.Request.uri request |> Uri.to_string in
-    {Ketrew_gen_base_v0.Http_request. connection_id;  meth; uri}
-
-  let make_reponse_log response body_length =
-    {Ketrew_gen_base_v0.Response_log. response; body_length}
-
-end
 
 
 type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.engine;
-  measurements: Measurement_collection.t;
+  measurements: Ketrew_measurement.Collection.t;
 }
 let create configuration =
   return {
     database_handle = None; configuration;
-    measurements = Measurement_collection.create ();
+    measurements = Ketrew_measurement.Collection.create ();
   }
+
+let database t =
+  match t.database_handle with
+  | Some db -> return db
+  | None -> 
+    let path = Configuration.database_parameters t.configuration in
+    Database.load path
+    >>= fun db ->
+    t.database_handle <- Some db;
+    return db
+
+module Measurements = struct
+  let flush t =
+    database t
+    >>= fun db ->
+    let action =
+      let key = Unique_id.create () in
+      let value = Ketrew_measurement.Collection.serialize t.measurements in
+      Trakeva.Action.(set ~collection:"measurements" ~key value)
+    in
+    begin Database.act db ~action
+      >>= function
+      | `Done ->
+        Ketrew_measurement.Collection.clear t.measurements;
+        return ()
+      | `Not_done -> fail (`Database_unavailable "measurements")
+    end
+  let get_all t =
+    database t
+    >>= fun db ->
+    Database.get_all db ~collection:"measurements"
+    >>= fun all_strings ->
+    Deferred_list.while_sequential all_strings (fun s ->
+        try return (Ketrew_measurement.Collection.deserialize_exn s)
+        with e -> fail (`Deserialization (e, s)))
+    >>| Ketrew_measurement.Collection.concat
+    >>= fun collection ->
+    return collection
+end
+module Measure = struct
+  open Ketrew_measurement
+  let incomming_request t ~connection_id ~request =
+    Collection.add t.measurements 
+      (Item.incoming_request (Item.make_http_request connection_id request))
+  let end_of_request t ~connection_id ~request ~response_log ~body_length =
+    Collection.add t.measurements
+      (Item.end_of_request
+         (Item.make_http_request connection_id request)
+         (Item.make_reponse_log response_log body_length))
+  let tag t s =
+    Collection.add t.measurements (Item.tag s)
+end
 
 let unload t =
   match t.database_handle with
   | Some s ->
-    Measurement_collection.flush t.measurements s
+    Measurements.flush t
     >>= fun () ->
     Database.close s
   | None -> return ()
@@ -127,16 +130,6 @@ let configuration t = t.configuration
 let not_implemented msg = 
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
   fail (`Not_implemented msg)
-
-let database t =
-  match t.database_handle with
-  | Some db -> return db
-  | None -> 
-    let path = Configuration.database_parameters t.configuration in
-    Database.load path
-    >>= fun db ->
-    t.database_handle <- Some db;
-    return db
 
 
 let targets_collection = "targets"
@@ -846,27 +839,3 @@ let restart_target engine target_id =
   return id
 
     
-module Measure = struct
-  open Measurement_collection
-  let incomming_request t ~connection_id ~request =
-    add t.measurements 
-      (`Incoming_request (make_http_request connection_id request))
-  let end_of_request t ~connection_id ~request ~response_log ~body_length =
-    add t.measurements
-      (`End_of_request (make_http_request connection_id request,
-                        make_reponse_log response_log body_length))
-  let tag t s =
-    add t.measurements (`Tag s)
-end
-module Measurements = struct
-
-  let flush t =
-    database t
-    >>= fun db ->
-    Measurement_collection.flush t.measurements db
-
-  let get_all t =
-    database t
-    >>= fun db ->
-    Measurement_collection.load_all db
-end
