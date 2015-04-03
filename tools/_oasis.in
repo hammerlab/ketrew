@@ -22,28 +22,21 @@ Flag coverage
 
 Library ketrew_pure
   Path: src/pure/
-  BuildDepends: ketrew_data,  %%FINDLIB_PACKAGES%%
+  BuildDepends:  %%FINDLIB_PACKAGES%%
   Modules: Ketrew_pervasives, 
     Ketrew_path,
     Ketrew_program,
     Ketrew_host,
     Ketrew_measurement,
     Ketrew_monitored_script,
+    Ketrew_target,
+    Ketrew_protocol,
     Ketrew_metadata
-
-Library ketrew_data
-  Path: gen/
-  BuildDepends: cconv
-  Modules: Ketrew_gen_base_v0,
-           Ketrew_gen_protocol_v0,
-           Ketrew_gen_target_v0,
-           Ketrew_gen_versioned
 
 Library ketrew
   Path:       src/lib
   BuildDepends: ketrew_pure
   Modules: Ketrew,
-    Ketrew_artifact,
     Ketrew_daemonize,
     Ketrew_document,
     Ketrew_edsl,
@@ -55,8 +48,7 @@ Library ketrew
     Ketrew_pbs,
     Ketrew_yarn,
     Ketrew_plugin,
-    Ketrew_protocol,
-    Ketrew_target,
+    Ketrew_target_io,
     Ketrew_unix_process,
     Ketrew_configuration,
     Ketrew_engine,

@@ -96,22 +96,6 @@ module Program: sig
   val chain: t list -> t
   (** Chain a list of programs like with [&&]. *)
 
-  val copy_files :
-    source:Ketrew_host.t * string list ->
-    destination:Ketrew_host.t * string ->
-    f:(?host:Ketrew_host.t -> t -> 'a) -> 'a
-    (** The call 
-      [copy_files ~source:(host, files) ~dest:(dest_host, dest_path) ~f]
-      calls [f] with a program and (potential) host to run a copy 
-      (involving ["cp"] or ["scp"] depending on the source and destination
-      hosts.
-
-      If both source and destination are SSH-based hosts, [copy_files]
-      will try its best, but it's difficult to ensure the correctness
-      of such a command (Ketrew does not know which kind of ssh client is
-      installed on the source host, and the destination host could not be
-      reachable with the same parameters from there).
-    *)
 
 end
 

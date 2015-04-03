@@ -17,8 +17,7 @@
 open Ketrew_pervasives
 module Path = Ketrew_path
 
-type t = Ketrew_gen_base_v0.Monitored_script.t =
-  {playground: Path.t; program: Ketrew_program.t}
+type t = {playground: Path.t; program: Ketrew_program.t}
   [@@deriving yojson]
 
 let create ~playground program = {playground; program}

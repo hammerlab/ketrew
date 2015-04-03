@@ -79,46 +79,26 @@ module Log =  struct
 end
 
 module Json = struct
-  type t = Yojson.Basic.json
-  let to_string t = Yojson.Basic.pretty_to_string ~std:true t
+  type t = Yojson.Safe.json
+  let to_string t = Yojson.Safe.pretty_to_string ~std:true t
   let log t = 
     let str = to_string t in
     Log.(indent (s str))
 
-  module Make_versioned_serialization
-      (T : sig
-         type t
-       end) 
-      (T_VERSIONED : sig
-         type t = [`V0 of T.t]
-         val source: unit -> t CConv.Source.t
-         val sink: unit -> t CConv.Sink.t
-       end) 
-  = struct
-
-    let to_json (t : T.t) =
-      let versioned = `V0 t in
-      CConv.into (T_VERSIONED.source ()) CConvYojson.sink versioned
-
-    let of_json_exn (json : t) =
-      match CConv.from CConvYojson.source (T_VERSIONED.sink ()) json with
-      | `V0 t -> t
-
-    let serialize t =
-      Yojson.Basic.pretty_to_string ~std:true (to_json t)
-
-    let deserialize_exn s =
-      Yojson.Basic.from_string s |> of_json_exn
-
-  end
-
   module Versioned = struct
 
+    module type WITH_VERSIONED_SERIALIZATION = sig
+      type t
+      val to_json : t -> Yojson.Safe.json
+      val of_json_exn : Yojson.Safe.json -> t
+      val serialize : t -> string
+      val deserialize_exn : string -> t
+    end
     module Of_v0 (T: sig
         type t
         val to_yojson : t -> Yojson.Safe.json
         val of_yojson : Yojson.Safe.json -> [ `Error of bytes | `Ok of t ]
-      end) = struct
+      end) : WITH_VERSIONED_SERIALIZATION with type t := T.t = struct
       type 'a versioned = V0 of 'a [@@deriving yojson]
       let to_json t =
         versioned_to_yojson T.to_yojson (V0 t)
@@ -129,7 +109,7 @@ module Json = struct
         | `Ok (V0 t) -> t
         | `Error str ->
           failwith (fmt "deserialization error: %s" str)
-            
+
       let deserialize_exn s =
         Yojson.Safe.from_string s |> of_json_exn
 
@@ -168,7 +148,7 @@ end
 (** Provide pseudo-unique identifiers. *)
 module Unique_id = struct
 
-  type t = string
+  type t = string [@@deriving yojson]
 
   (** Create a fresh filename-compliant identifier. *)
   let create () =

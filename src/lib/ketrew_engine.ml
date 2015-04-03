@@ -19,7 +19,6 @@ open Ketrew_long_running
 
 module Path = Ketrew_path
 module Host = Ketrew_host
-module Artifact = Ketrew_artifact
 module Target = Ketrew_target
 module Database = Trakeva_sqlite
 module Database_action = Trakeva.Action
@@ -718,7 +717,7 @@ module Run_automaton = struct
       return (make_new_target ~log:("Attempt to start") starting_attemp)
     | `Eval_condition (condition, make_new_target) ->
       begin
-        Target.Condition.eval condition
+        Ketrew_target_io.Condition.eval condition
         >>< function
         | `Ok answer ->
           return (make_new_target ?log:None (`Ok answer))
@@ -806,9 +805,8 @@ let get_list_of_target_ids t query =
       Log.(s "Getting targets not-finished-before: " % Time.log time @ verbose);
       List.filter_map targets ~f:(fun t ->
           let st = Ketrew_target.state t in
-          match Ketrew_target.State.history st with
-          | `Finished {Ketrew_gen_target_v0.History.log; _}
-            when log.Ketrew_gen_target_v0.Log.time < time -> None
+          match Ketrew_target.State.finished_time st with
+          | Some t when t < time -> None
           | _ -> Some (Ketrew_target.id t))
     | `Created_after time ->
       Log.(s "Getting targets created after: " % Time.log time @ verbose);

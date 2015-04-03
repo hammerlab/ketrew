@@ -16,7 +16,6 @@
 
 open Ketrew_pervasives
 module Target = Ketrew_target
-module Artifact = Ketrew_artifact
 module Error = Ketrew_error
 module Configuration = Ketrew_configuration
 module Interaction = Ketrew_interaction

@@ -20,13 +20,12 @@ open Ketrew_pervasives
 (** Definitions specific to “SSH” hosts (see {!connection}). *)
 module Ssh : sig
 
-  type t = Ketrew_gen_base_v0.Ssh_host.t = {
+  type t = {
     address: string;
     port: int option;
     user: string option;
     add_ssh_options: string list;
   } [@@deriving yojson]
-    [@@deriving yojson]
   (** The type of SSH-based hosts. *)
 
   val configure_ssh_batch_option :
@@ -48,7 +47,8 @@ end
 type default_shell [@@deriving yojson]
 (** Specification of the default shell of a Host. *)
 
-type t = Ketrew_gen_base_v0.Host.t [@@deriving yojson]
+
+type t [@@deriving yojson]
 (** Host container.
 
   A host is the current machine, or an SSH-accessed distant host.
@@ -63,7 +63,7 @@ val default_shell :
   ?options:string list ->
   ?command_option:string ->
   string ->
-  Ketrew_gen_base_v0.Default_shell.t
+  default_shell
 (** Use
   [default_shell ~binary:"/bin/sh" ~options:["-l"; "--something"; "blah" ]
       ~command_option:"-c" "sh"]
@@ -87,6 +87,8 @@ val ssh :
   ?playground:Ketrew_path.t ->
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
+
+val shell_of_default_shell: t -> string -> string list
 
 val of_uri: Uri.t -> t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});

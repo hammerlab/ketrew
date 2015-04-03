@@ -23,7 +23,7 @@
 
 open Ketrew_pervasives
 
-type t = Ketrew_gen_base_v0.Monitored_script.t =
+type t =
   {playground: Ketrew_path.t; program: Ketrew_program.t}
   [@@deriving yojson]
 (** The definition of a monitored script. *)

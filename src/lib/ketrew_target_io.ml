@@ -15,54 +15,42 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
-
 module Path = Ketrew_path
+
+module Host = Ketrew_host
+
+module Program = Ketrew_program
+
+type id = Unique_id.t
+
+module Command = struct
+
+  open Ketrew_target.Command
+
+  let get_output {host; action} =
+    let cmd = Program.to_single_shell_command action in
+    Ketrew_host_io.get_shell_command_output host cmd
+
+  let get_return_value {host; action} =
+    let cmd = Program.to_single_shell_command action in
+    Ketrew_host_io.get_shell_command_return_value host cmd
+
+  let run t =
+    get_output t (* TODO optimize to not record the output *)
+    >>= fun (_, _) ->
+    return ()
+
+
+end
+
 
 module Volume = struct
 
-  type structure = Ketrew_gen_base_v0.Volume_structure.t
-  type t = Ketrew_gen_base_v0.Volume.t = {
-    host: Ketrew_host.t;
-    root: Path.t;
-    structure: structure;
-  }
-  let create ~host ~root structure = {host; root; structure}
-  let file s = `File s
-  let dir name contents = `Directory (name, contents)
-
-  let rec all_structure_paths = fun s ->
-    match s with
-    | `File s -> [Path.relative_file_exn s ]
-    | `Directory (name, children) ->
-      let children_paths = 
-        List.concat_map ~f:all_structure_paths children in
-      let this_one = Path.relative_directory_exn name in
-      this_one :: List.map ~f:(Path.concat this_one) children_paths
-
-  let all_paths t: Path.t list =
-    List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
+  open Ketrew_target.Volume
 
   let exists t =
     let paths = all_paths t in
     Ketrew_host_io.do_files_exist t.host paths
-
-  let log_structure structure = 
-    let all_paths = all_structure_paths structure |> List.map ~f:Path.to_string in
-    let open Log in
-    match all_paths with
-    | [] -> s "EMPTY"
-    | one :: [] -> s "Single path: " % quote one
-    | more -> i (List.length more) % sp % s "paths"
-
-  let log {host; root; structure} =
-    Log.(braces (
-        parens (Ketrew_host.log host) % sp
-        % parens (s "Root: " % s (Path.to_string root)) % sp
-        % parens (s "Tree: " % log_structure structure)
-      ))
-
-  let to_string_hum v =
-    Log.to_long_string (log v)
 
   let get_size t =
     let paths = all_paths t in
@@ -89,4 +77,50 @@ module Volume = struct
     end
 
 end
+
+
+
+
+
+module Condition = struct
+  open Ketrew_target.Condition
+
+  let rec eval = 
+    function
+    | `Satisfied -> return true
+    | `Never -> return false
+    | `Volume_exists v -> Volume.exists v
+    | `Volume_size_bigger_than (v, sz) ->
+      Volume.get_size v
+      >>= fun size ->
+      return (size >= sz)
+    | `Command_returns (c, ret) ->
+      Command.get_return_value c  
+      >>= fun return_value ->
+      return (ret = return_value)
+    | `And list_of_conditions -> 
+      (* Should start at the first that returns `false` *)
+      let rec go = function
+      | [] -> return true
+      | cond :: rest ->
+        eval cond
+        >>= function
+        | true -> go rest
+        | false -> return false
+      in
+      go list_of_conditions
+
+end
+
+
+let should_start t =
+  match Ketrew_target.condition t with
+  | Some c -> Condition.eval c >>| not
+  | None -> return true
+
+let did_ensure_condition t =
+  match Ketrew_target.condition t with
+  | Some c -> Condition.eval c
+  | None -> return true
+
 

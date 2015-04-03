@@ -32,7 +32,7 @@ module Ssh = struct
 
   let () = configure_ssh_batch_option `Openssh
 
-  type t = Ketrew_gen_base_v0.Ssh_host.t = {
+  type t ={
     address: string;
     port: int option;
     user: string option;
@@ -48,14 +48,14 @@ type connection = [
   | `Localhost
   | `Ssh of Ssh.t
 ] [@@deriving yojson]
-type default_shell = Ketrew_gen_base_v0.Default_shell.t = {
+type default_shell ={
   binary: string option;
   command_name: string;
   options: string list;
   command_option: string;
 } [@@deriving yojson]
 
-type t = Ketrew_gen_base_v0.Host.t = {
+type t = {
   name: string;
   connection: connection;
   playground: Path.t option;
@@ -64,10 +64,14 @@ type t = Ketrew_gen_base_v0.Host.t = {
 } [@@deriving yojson]
 
 let default_shell ?binary ?(options=[]) ?(command_option="-c") command_name =
-  {Ketrew_gen_base_v0.Default_shell.
-    binary; command_name; options; command_option}
+  {binary; command_name; options; command_option}
 
 let shell_sh_minus_c = default_shell "sh"
+
+let shell_of_default_shell t cmd =
+  t.default_shell.command_name ::
+  t.default_shell.options
+  @ [t.default_shell.command_option; cmd]
 
 let create ~connection ?execution_timeout ?(default_shell=shell_sh_minus_c) ?playground name =
   {name; connection; playground; default_shell; execution_timeout}
@@ -128,8 +132,7 @@ let to_uri t =
     | `Localhost -> None, None, None, None
   in
   let query =
-    let {Ketrew_gen_base_v0.Default_shell.
-          binary; command_name; options; command_option} =
+    let {binary; command_name; options; command_option} =
       t.default_shell in
     let shell_spec = [command_name] @ options @ [command_option] in
     ["shell", [String.concat ~sep:"," shell_spec]]
@@ -150,3 +153,5 @@ let to_string_hum t = Log.to_long_string (log t)
 let execution_timeout t = t.execution_timeout
 let connection t = t.connection
 let playground t = t.playground
+
+

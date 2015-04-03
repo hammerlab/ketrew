@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -16,21 +16,66 @@
 
 open Ketrew_pervasives
 module Path = Ketrew_path
-
 module Host = Ketrew_host
-
-module Artifact = Ketrew_artifact
-
 module Program = Ketrew_program
 
+module Volume = struct
+
+  type structure = [
+    | `File of string
+    | `Directory of (string * structure list)
+  ] [@@deriving yojson]
+
+  type t = {
+    host: Host.t;
+    root: Path.t;
+    structure: structure;
+  } [@@deriving yojson]
+  let create ~host ~root structure = {host; root; structure}
+  let file s = `File s
+  let dir name contents = `Directory (name, contents)
+
+  let rec all_structure_paths = fun s ->
+    match s with
+    | `File s -> [Path.relative_file_exn s ]
+    | `Directory (name, children) ->
+      let children_paths = 
+        List.concat_map ~f:all_structure_paths children in
+      let this_one = Path.relative_directory_exn name in
+      this_one :: List.map ~f:(Path.concat this_one) children_paths
+
+  let all_paths t: Path.t list =
+    List.map ~f:(Path.concat t.root) (all_structure_paths t.structure)
+
+  let log_structure structure = 
+    let all_paths = all_structure_paths structure |> List.map ~f:Path.to_string in
+    let open Log in
+    match all_paths with
+    | [] -> s "EMPTY"
+    | one :: [] -> s "Single path: " % quote one
+    | more -> i (List.length more) % sp % s "paths"
+
+  let log {host; root; structure} =
+    Log.(braces (
+        parens (Ketrew_host.log host) % sp
+        % parens (s "Root: " % s (Path.to_string root)) % sp
+        % parens (s "Tree: " % log_structure structure)
+      ))
+
+  let to_string_hum v =
+    Log.to_long_string (log v)
+
+end
+
 type id = Unique_id.t
+[@@deriving yojson]
 
 module Command = struct
 
-  type t = Ketrew_gen_target_v0.Command.t = {
+  type t = {
     host: Host.t;
     action: Program.t;
-  }
+  } [@@deriving yojson]
   let shell ?(host=Host.tmp_on_localhost) s = { host; action = `Shell_command s}
   let program ?(host=Host.tmp_on_localhost) action = { host; action}
 
@@ -42,32 +87,25 @@ module Command = struct
 
   let to_string_hum c = Log.to_long_string (log c)
 
-  let get_output {host; action} =
-    let cmd = Program.to_single_shell_command action in
-    Ketrew_host_io.get_shell_command_output host cmd
-
-  let get_return_value {host; action} =
-    let cmd = Program.to_single_shell_command action in
-    Ketrew_host_io.get_shell_command_return_value host cmd
-
-  let run t =
-    get_output t (* TODO optimize to not record the output *)
-    >>= fun (_, _) ->
-    return ()
-
-
 end
 
 module Condition = struct
-  type t = Ketrew_gen_target_v0.Condition.t
+  type t = [
+    | `Satisfied
+    | `Never
+    | `Volume_exists of Volume.t
+    | `Volume_size_bigger_than of (Volume.t * int)
+    | `Command_returns of (Command.t * int)
+    | `And of t list
+  ] [@@deriving yojson]
   let rec log =
     Log.(function
       | `Satisfied -> s "Satisfied"
       | `Never -> s "Never"
       | `Volume_exists v -> 
-        parens (s "Volume " % Artifact.Volume.log v % s " exists")
+        parens (s "Volume " % Volume.log v % s " exists")
       | `Volume_size_bigger_than (v, sz) ->
-        parens (s "Volume " % Artifact.Volume.log v % s " ≥ " 
+        parens (s "Volume " % Volume.log v % s " ≥ " 
                 % i sz % nbsp % s "B")
       | `Command_returns (c, ret) ->
         parens (s "Command " % Command.log c % s " returns " % i ret)
@@ -75,64 +113,148 @@ module Condition = struct
         parens (separate (s " && ") (List.map l ~f:log))
       )
   let to_string_hum c = Log.to_long_string (log c)
-
-  let rec eval = 
-    function
-    | `Satisfied -> return true
-    | `Never -> return false
-    | `Volume_exists v -> Artifact.Volume.exists v
-    | `Volume_size_bigger_than (v, sz) ->
-      Artifact.Volume.get_size v
-      >>= fun size ->
-      return (size >= sz)
-    | `Command_returns (c, ret) ->
-      Command.get_return_value c  
-      >>= fun return_value ->
-      return (ret = return_value)
-    | `And list_of_conditions -> 
-      (* Should start at the first that returns `false` *)
-      let rec go = function
-      | [] -> return true
-      | cond :: rest ->
-        eval cond
-        >>= function
-        | true -> go rest
-        | false -> return false
-      in
-      go list_of_conditions
-
-end
-
-module Equivalence = struct
-  type t = Ketrew_gen_target_v0.Equivalence.t
 end
 
 module Build_process = struct
-  include Ketrew_gen_target_v0.Build_process
+  type t = [
+    | `No_operation
+    | `Long_running of (string * string)
+  ] [@@deriving yojson]
 
   let nop : t = `No_operation
 end
 
-module Metadata = struct
-
-  type t = [ `None | `String of string ]
-
-end
-
-
-let make_log ?message () = 
-  let open Ketrew_gen_target_v0.Log in
-  {time = Time.now (); message}
-let to_history ?log previous_state =
-  let open Ketrew_gen_target_v0.History in
-  {log = make_log ?message:log (); previous_state}
 
 module State = struct
+(**
+Encoding of the state of a target:
+   
+- `run_bookkeeping` keeps the information for the `Long_running` plugin.
+- `log` is a time stamped optional log message
 
-  type t = Ketrew_gen_target_v0.State.t
-  type history = Ketrew_gen_target_v0.State.t
+Every state point to its previous state through a `'a hitory`. 
 
-  let history t = t
+We use the subtyping of  polymorphic variants to encode the
+state-machine; a given state can come only from certain previous
+states, those are enforced with the type-parameter of the `history`
+value.
+
+*)
+  type run_bookkeeping = 
+    { plugin_name: string; run_parameters: string } [@@deriving yojson]
+  type log = {
+    (* time: Time.t; *)
+    time: float;
+    message: string option;
+  } [@@deriving yojson]
+  type 'a history = {
+    log: log;
+    previous_state: 'a;
+  } [@@deriving yojson]
+  type id = string
+      [@@deriving yojson]
+  type passive = [ `Passive of log ] [@@deriving yojson]
+  type active = [
+    | `Active of (passive history * [ `User | `Dependency of id ])
+  ] [@@deriving yojson]
+  type evaluating_condition = [
+    | active
+    | `Tried_to_eval_condition of evaluating_condition history
+  ] [@@deriving yojson]
+  type already_done = [
+    | `Already_done of evaluating_condition history
+  ] [@@deriving yojson]
+  type building = [
+    | `Building of evaluating_condition history
+    | `Still_building of building history
+  ] [@@deriving yojson]
+  type dependency_failure = [
+    | `Dependencies_failed of (building history * id list)
+  ] [@@deriving yojson]
+  type starting = [
+    | `Starting of building history
+    | `Tried_to_start of (starting history * run_bookkeeping)
+  ] [@@deriving yojson]
+  (* let starting_of_yojson yj : ([< starting ], _) Result.t = starting_of_yojson yj *)
+  type failed_to_start = [
+    | `Failed_to_eval_condition of evaluating_condition history
+    | `Failed_to_start of (starting history * run_bookkeeping)
+  ] [@@deriving yojson]
+  type running = [
+    | `Started_running of (starting history * run_bookkeeping)
+    | `Still_running  of (running history * run_bookkeeping)
+    | `Still_running_despite_recoverable_error of
+        (string * running history * run_bookkeeping)
+  ] [@@deriving yojson]
+(*
+Successful run is the success of the process, we still have to verify
+that the potential condition has been ensured.
+*)
+  type successful_run = [
+    | `Successfully_did_nothing of starting history
+    | `Ran_successfully of (running history * run_bookkeeping)
+    | `Tried_to_reeval_condition of (string * successful_run history)
+  ] [@@deriving yojson]
+  type process_failure_reason = [
+    (* | Did_not_ensure_condition of string *)
+    | `Long_running_failure of string
+  ] [@@deriving yojson]
+  type failed_run = [
+    | `Failed_running of
+        (running history * process_failure_reason * run_bookkeeping)
+  ] [@@deriving yojson]
+  type verified_run = [
+    | `Verified_success of successful_run history
+  ] [@@deriving yojson]
+  type failed_to_verify_success = [
+    | `Did_not_ensure_condition of successful_run history
+  ] [@@deriving yojson]
+  type killable_state = [
+    | passive
+    | evaluating_condition
+    | building
+    | starting
+    | running
+  ] [@@deriving yojson]
+  type killing = [
+    | `Killing of killable_state history
+    | `Tried_to_kill of killing history
+  ] [@@deriving yojson]
+  type killed = [
+    | `Killed of killing history
+  ] [@@deriving yojson]
+  type failed_to_kill = [
+    | `Failed_to_kill of killing history
+  ] [@@deriving yojson]
+  type finishing_state = [
+    | failed_run
+    | verified_run
+    | already_done
+    | dependency_failure
+    | failed_to_start
+    | killed
+    | failed_to_kill
+    | failed_to_verify_success
+  ] [@@deriving yojson]
+  type finished = [
+    | `Finished of finishing_state history
+  ] [@@deriving yojson]
+  type t = [
+    | killing
+    | killed
+    | killable_state
+    | successful_run
+    | finishing_state
+    | finished
+  ] [@@deriving yojson]
+
+  let of_yojson yj : (t, _) Result.t = of_yojson yj
+
+
+  let make_log ?message () = 
+    {time = Time.now (); message}
+  let to_history ?log previous_state =
+    {log = make_log ?message:log (); previous_state}
 
   let rec simplify (t: t) =
     match t with
@@ -160,12 +282,12 @@ module State = struct
     | `Did_not_ensure_condition _
     | `Killed _ -> `Failed
     | `Finished s ->
-      simplify (s.Ketrew_gen_target_v0.History.previous_state :> t)
+      simplify (s.previous_state :> t)
     | `Passive _ -> `Activable
 
   let rec passive_time (t: t) =
     let continue history =
-      passive_time (history.Ketrew_gen_target_v0.History.previous_state :> t)
+      passive_time (history.previous_state :> t)
     in
     match t with
     | `Building history -> continue history
@@ -192,10 +314,13 @@ module State = struct
     | `Did_not_ensure_condition history -> continue history
     | `Killed history -> continue history
     | `Finished history -> continue history
-    | `Passive log -> log.Ketrew_gen_target_v0.Log.time
+    | `Passive log -> log.time
+
+  let finished_time = function
+  | `Finished {log; _} -> Some log.time
+  | _ -> None
 
   let name (t: t) =
-    let open Ketrew_gen_target_v0.State in
     match t with
     | `Building _ -> "Building"
     | `Tried_to_start _ -> "Tried_to_start"
@@ -226,9 +351,7 @@ module State = struct
 
   let rec latest_run_bookkeeping (t: t) =
     let continue history =
-      latest_run_bookkeeping
-        (history.Ketrew_gen_target_v0.History.previous_state :> t)
-    in
+      latest_run_bookkeeping (history.previous_state :> t) in
     match t with
     | `Building history -> None
     | `Tried_to_start (hist, book) -> (Some book)
@@ -257,7 +380,7 @@ module State = struct
     | `Passive log -> (None)
 
   let contents (t: t) =
-    let some h = Some (h :> t Ketrew_gen_target_v0.History.t) in
+    let some h = Some (h :> t history) in
     match t with
     | `Building history -> (some history, None)
     | `Tried_to_start (hist, book) -> (some hist, Some book)
@@ -287,15 +410,12 @@ module State = struct
     | `Passive log -> (None, None)
 
   let summary t =
-    let open Ketrew_gen_target_v0 in
-    let rec count_start_attempts : Starting.t History.t -> int = fun h ->
-      let open History in
+    let rec count_start_attempts : starting history -> int = fun h ->
       match h.previous_state with 
       | `Starting _ -> 1
       | `Tried_to_start (hh, _) -> 1 + (count_start_attempts hh)
     in
-    let rec count_kill_attempts : Killing.t History.t -> int = fun h ->
-      let open History in
+    let rec count_kill_attempts : killing history -> int = fun h ->
       match h.previous_state with 
       | `Killing _ -> 1
       | `Tried_to_kill hh -> 1 + (count_kill_attempts hh)
@@ -307,7 +427,7 @@ module State = struct
       | _, 1 ->  ""
       | _, _ -> "s" in
     let rec dive (t: t) =
-      let continue history = dive (history.History.previous_state :> t) in
+      let continue history = dive (history.previous_state :> t) in
       match t with
       | `Building history -> continue history
       | `Tried_to_start (history, book) ->
@@ -341,7 +461,7 @@ module State = struct
       | `Failed_to_start (history, book) ->
         continue history
       | `Killing history ->
-        fmt "killed from %s" (name (history.History.previous_state :> t))
+        fmt "killed from %s" (name (history.previous_state :> t))
         :: continue history
       | `Tried_to_kill history ->
         fmt "%d killing-attempts" (count_kill_attempts history)
@@ -356,8 +476,6 @@ module State = struct
     let history_opt, bookkeeping_opt = contents t in
     let time, message =
       Option.map history_opt ~f:(fun history ->
-        let open Ketrew_gen_target_v0.History in
-        let open Ketrew_gen_target_v0.Log in
         let { log = {time; message}; previous_state } = history in
         (time, message))
       |> function
@@ -366,10 +484,6 @@ module State = struct
     (`Time time, `Log message, `Info (dive t))
 
   let rec to_flat_list (t : t) =
-    let open Ketrew_gen_target_v0.History in
-    let open Ketrew_gen_target_v0.Log in
-    let open Ketrew_gen_target_v0.Run_bookkeeping in
-    let open Ketrew_gen_target_v0.State in
     let make_item ?bookkeeping ~history name = 
         let { log; previous_state } = history in
         let bookkeeping_msg =
@@ -428,20 +542,40 @@ module State = struct
     let passive = function `Passive _ -> true | _ -> false
   
     let killable = function
-    | #Ketrew_gen_target_v0.Killable_state.t -> true
+    | #killable_state -> true
     | _ -> false
 
     let finished_because_dependencies_died =
-      let open Ketrew_gen_target_v0.History in
       function
       | `Finished {previous_state = (`Dependencies_failed _); _ } -> true
       | other -> false
 
   end
+
+end
+  
+
+module Equivalence = struct
+  type t = [
+    | `None
+    | `Same_active_condition
+  ] [@@deriving yojson]
 end
 
-open Ketrew_gen_target_v0.Target
-type t = Ketrew_gen_target_v0.Target.t
+type t = {
+  id: id;
+  name: string;
+  metadata: [`String of string] option;
+  dependencies: id list;
+  if_fails_activate: id list;
+  success_triggers: id list;
+  make: Build_process.t;
+  condition: Condition.t option;
+  equivalence: Equivalence.t;
+  history: State.t;
+  log: (Time.t * string) list;
+  tags: string list;
+} [@@deriving yojson]
 
 let create
     ?id ?name ?metadata
@@ -449,7 +583,7 @@ let create
     ?(make=Build_process.nop)
     ?condition ?(equivalence=`Same_active_condition) ?(tags=[])
     () = 
-  let history = `Passive (make_log ()) in
+  let history = `Passive (State.make_log ()) in
   let id = Option.value id ~default:(Unique_id.create ()) in
   { id; name = Option.value name ~default:id; metadata; tags; 
     log = []; dependencies; make; condition; history; equivalence;
@@ -480,18 +614,27 @@ let is_equivalent t ext =
     | Some other -> Some other = ext.condition
     end
 
+
+let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
+
 let with_history t h = {t with history = h}
+
+
+let latest_run_parameters target =
+  state target |> State.latest_run_bookkeeping
+  |> Option.map 
+    ~f:(fun rb -> rb.State.run_parameters)
 
 let activate_exn ?log t ~reason =
   match t.history with 
   | `Passive _ as c ->
-    with_history t (`Active (to_history ?log c, reason))
+    with_history t (`Active (State.to_history ?log c, reason))
   | _ -> raise (Invalid_argument "activate_exn")
 
 let kill ?log t =
   match state t with
-  | #Ketrew_gen_target_v0.Killable_state.t as c ->
-    Some (with_history t (`Killing (to_history ?log c)))
+  | #State.killable_state as c ->
+    Some (with_history t (`Killing (State.to_history ?log c)))
   | other ->
     None
 
@@ -500,19 +643,20 @@ let reactivate
   (* It's [`Passive] so there won't be any [exn]. *)
   activate_exn ~reason:`User
     {t with
-     history = `Passive (make_log ?message:log ());
+     history = `Passive (State.make_log ?message:log ());
      id = Option.value with_id ~default:(Unique_id.create ());
      name = Option.value with_name ~default:t.name;
      metadata = Option.value with_metadata ~default:t.metadata}
 
+
 module Automaton = struct
 
-  type failure_reason = Ketrew_gen_target_v0.Process_failure_reason.t
+  type failure_reason = State.process_failure_reason
   type progress = [ `Changed_state | `No_change ]
   type 'a transition_callback = ?log:string -> 'a -> t * progress
   type severity = [ `Try_again | `Fatal ]
-  type bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t =
-    { plugin_name: string; run_parameters: string}
+  type bookkeeping = State.run_bookkeeping  =
+    { plugin_name: string; run_parameters: string }
   type long_running_failure = severity * string * bookkeeping
   type long_running_action =  (bookkeeping, long_running_failure) Pvem.Result.t
   type process_check =
@@ -531,6 +675,8 @@ module Automaton = struct
     | `Kill of bookkeeping * long_running_action transition_callback
   ]
 
+  open State
+
   let transition t : transition =
     let return_with_history ?(no_change=false) t h =
       with_history t h, (if no_change then `No_change else `Changed_state) in
@@ -541,8 +687,7 @@ module Automaton = struct
       `Activate (t.success_triggers, (fun ?log () ->
           return_with_history t (`Finished (to_history ?log c)))) in
     let from_killing_state killable_history current_state =
-      let{ Ketrew_gen_target_v0.History. log; previous_state } =
-        killable_history in
+      let{ log; previous_state } = killable_history in
       begin match previous_state with
       | `Building _
       | `Starting _
@@ -669,7 +814,7 @@ module Automaton = struct
         let rec go =
           function
           | `Killing h -> h
-          | `Tried_to_kill {Ketrew_gen_target_v0.History. previous_state; _} ->
+          | `Tried_to_kill {previous_state; _} ->
             go previous_state in
         (go c)
       in
@@ -686,57 +831,48 @@ module Automaton = struct
 
 end
 
+
+
 module Target_pointer = struct
-  type t = Ketrew_gen_target_v0.Target_pointer.t
+  type target = t [@@deriving yojson]
+  type t = {
+    original: target;
+    pointer: id;
+  } [@@deriving yojson]
+
 end
 
 module Stored_target = struct
-  type target = t
-  type t = Ketrew_gen_target_v0.Stored_target.t
-  include
-    Json.Make_versioned_serialization
-      (Ketrew_gen_target_v0.Stored_target)
-      (Ketrew_gen_versioned.Stored_target)
+  type target = t [@@deriving yojson]
+
+  module V0 = struct
+    type t = [
+      | `Target of target
+      | `Pointer of Target_pointer.t
+    ] [@@deriving yojson]
+  end
+  include Json.Versioned.Of_v0(V0)
+  type t = V0.t
+
   let deserialize s : (t, _) Result.t =
     let open Result in
-    try return (deserialize_exn s)
+    begin
+      try return (deserialize_exn s)
     with e -> fail (`Target (`Deserilization (Printexc.to_string e)))
+    end
 
   let get_target = function
   | `Target t -> `Target t
-  | `Pointer { Ketrew_gen_target_v0.Target_pointer. pointer; _} -> `Pointer pointer
+  | `Pointer { Target_pointer. pointer; _} -> `Pointer pointer
 
   let of_target t = `Target t
 
   let id = function
   | `Target t -> t.id
-  | `Pointer { Ketrew_gen_target_v0.Target_pointer. original } -> original.id
+  | `Pointer { Target_pointer. original } -> original.id
 
   let make_pointer ~from ~pointing_to =
-    `Pointer { Ketrew_gen_target_v0.Target_pointer.
+    `Pointer { Target_pointer.
                original = from;
                pointer = pointing_to.id }
-
 end
-
-  
-
-
-let log t = Log.(brakets (sf "Target: %s (%s)" t.name t.id))
-
-let should_start t =
-  match t.condition with
-  | Some c -> Condition.eval c >>| not
-  | None -> return true
-
-let did_ensure_condition t =
-  match t.condition with
-  | Some c -> Condition.eval c
-  | None -> return true
-
-
-let latest_run_parameters target =
-  let open Ketrew_gen_target_v0.Run_bookkeeping in
-  state target |> State.latest_run_bookkeeping
-  |> Option.map 
-    ~f:(fun rb -> rb.run_parameters)

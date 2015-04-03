@@ -19,7 +19,6 @@ open Ketrew_pervasives
 
 module Path = Ketrew_path
 module Target = Ketrew_target
-module Artifact = Ketrew_artifact
 
  
 module Host = struct
@@ -73,7 +72,7 @@ let file ?(host= Host.tmp_on_localhost) path  =
   let basename = Filename.basename path in
   object
     val vol =
-      Artifact.Volume.(
+      Target.Volume.(
         create ~host
           ~root:(Path.absolute_directory_exn (Filename.dirname path))
           (file basename))
@@ -164,19 +163,6 @@ module Program = struct
   let shf fmt = Printf.ksprintf sh fmt
   let exec l = `Exec l
   let chain l = `And l
-
-  let copy_files ~source:(s_host, src) ~destination:(d_host, dest) 
-      ~(f : ?host:Host.t -> t -> 'a) =
-    let open Ketrew_gen_base_v0.Host in
-    match s_host.connection, d_host.connection with
-    | `Localhost, `Localhost ->
-      f ?host:None (exec ("cp" :: src @ [dest])) 
-    | `Ssh ssh, `Localhost -> 
-      f ?host:None (exec (Ketrew_host_io.Ssh.scp_pull ssh ~src ~dest))
-    | `Localhost, `Ssh ssh -> 
-      f ?host:None (exec (Ketrew_host_io.Ssh.scp_push ssh ~src ~dest))
-    | `Ssh _, `Ssh ssh -> 
-      f ~host:s_host (exec (Ketrew_host_io.Ssh.scp_push ssh ~src ~dest))
 
 end
 

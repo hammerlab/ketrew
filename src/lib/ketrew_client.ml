@@ -76,7 +76,7 @@ module Http_client = struct
     begin match Cohttp_lwt_unix.Client.Response.status response with
     | `OK ->
       begin try
-        return (Yojson.Basic.from_string body_str)
+        return (Yojson.Safe.from_string body_str)
       with e ->
         fail (`Client (`Http (where, `Json_parsing (body_str, `Exn e))))
       end
@@ -103,8 +103,7 @@ module Http_client = struct
     >>= filter_down_message
       ~loc:`Targets
       ~f:(function
-        | `List_of_targets tl ->
-          filter (List.map tl ~f:Ketrew_target.of_serializable)
+        | `List_of_targets tl -> filter tl
         | _ -> None)
 
   let get_current_targets t = get_targets t ~ids:[] ~filter:(fun s -> Some s)
@@ -112,8 +111,7 @@ module Http_client = struct
     get_targets t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
 
   let add_targets t ~targets =
-    let msg =
-      `Submit_targets (List.map targets ~f:Ketrew_target.to_serializable) in
+    let msg = `Submit_targets targets in
     call_json t ~path:"/api" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()

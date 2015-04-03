@@ -17,10 +17,17 @@
 open Ketrew_pervasives
 
 module Down_message = struct
-  type t = Ketrew_gen_protocol_v0.Down_message.t
-  include Json.Make_versioned_serialization
-      (Ketrew_gen_protocol_v0.Down_message)
-      (Ketrew_gen_versioned.Down_message)
+  module V0 = struct
+    type t = [
+      | `List_of_targets of Ketrew_target.t list
+      | `List_of_target_ids of string list
+      | `List_of_query_descriptions of (string * string) list
+      | `Query_result of string
+      | `Ok
+    ] [@@deriving yojson]
+  end
+  include Json.Versioned.Of_v0(V0)
+  type t = V0.t
 
   (*
     let added_target ~original_id ~fresh_id =
@@ -57,10 +64,25 @@ module Down_message = struct
 end
 
 module Up_message = struct
-  type t = Ketrew_gen_protocol_v0.Up_message.t
-  include Json.Make_versioned_serialization
-      (Ketrew_gen_protocol_v0.Up_message)
-      (Ketrew_gen_versioned.Up_message)
+  module V0 = struct
+    type target_query = [
+      | `All
+      | `Not_finished_before of float
+      | `Created_after of float
+    ] [@@deriving yojson]
+    type t = [
+      | `Get_targets of string list (* List of Ids, empty means “all” *)
+      | `Get_available_queries of string (* Id of the target *)
+      | `Call_query of (string * string) (* target-id × query-name *)
+      | `Submit_targets of Ketrew_target.t list
+      | `Kill_targets of string list (* List of Ids *)
+      | `Restart_targets of string list (* List of Ids *)
+      | `Get_target_ids of target_query
+    ] [@@deriving yojson]
+  end
+  include Json.Versioned.Of_v0(V0)
+  include V0
+
 
   let log : t -> Log.t =
     fun _ ->

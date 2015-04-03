@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -20,39 +20,47 @@ open Ketrew_pervasives
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig
 
-    type t
-    (** The type of commands. *)
+  type t = {
+    host: Ketrew_host.t;
+    action: Ketrew_program.t;
+  }
+  (** The type of commands. *)
 
-    val shell : ?host:Ketrew_host.t -> string -> t
-    (** Create a “shell” command for a given [Host.t]. *)
+  val shell : ?host:Ketrew_host.t -> string -> t
+  (** Create a “shell” command for a given [Host.t]. *)
 
-    val program: ?host:Ketrew_host.t -> Ketrew_program.t -> t
-    (** Create a [Command.t] that runs a {!Ketrew_program.t}. *)
+  val program: ?host:Ketrew_host.t -> Ketrew_program.t -> t
+  (** Create a [Command.t] that runs a {!Ketrew_program.t}. *)
 
-    val get_host : t -> Ketrew_host.t
-    (** Get the host. *)
+  val get_host : t -> Ketrew_host.t
+  (** Get the host. *)
 
-    val log: t -> Log.t
-    (** Get a display document. *)
+  val log: t -> Log.t
+  (** Get a display document. *)
 
-    val to_string_hum : t -> string
-    (** Get a Human-readable string. *)
+  val to_string_hum : t -> string
+  (** Get a Human-readable string. *)
 
-    val get_output :
-      t ->
-      (string * string,
-       [> `Host of _ Ketrew_host_io.Error.non_zero_execution ])
-      Deferred_result.t
-    (** Run the command and get its [(stdout, stderr)] pair. *)
+end
 
-    val run :
-      t ->
-      (unit,
-       [> `Host of _ Ketrew_host_io.Error.non_zero_execution ])
-      Deferred_result.t
-    (** Run the command and ignore its [(stdout, stderr)] pair. *)
+module Volume : sig
+  type structure =
+      [ `Directory of string * structure list | `File of string ]
+  type t = { host : Ketrew_host.t; root : Ketrew_path.t; structure : structure; }
 
-  end
+  val create : host:Ketrew_host.t -> root:Ketrew_path.t -> structure -> t
+
+  val file : string -> structure
+  val dir : string -> structure list -> structure
+
+  val all_paths : t -> Ketrew_path.t list
+
+  val log_structure : structure -> Log.t
+
+  val log : t -> Log.t
+
+  val to_string_hum : t -> string
+end
 
 module Build_process: sig
   type t = [
@@ -81,8 +89,8 @@ module Condition : sig
   type t = [
     | `Satisfied
     | `Never
-    | `Volume_exists of Ketrew_artifact.Volume.t
-    | `Volume_size_bigger_than of Ketrew_artifact.Volume.t * int
+    | `Volume_exists of Volume.t
+    | `Volume_size_bigger_than of Volume.t * int
     | `Command_returns of Command.t * int
     | `And of t list
   ]
@@ -104,22 +112,6 @@ module Condition : sig
   val log: t -> Log.t
   val to_string_hum: t -> string
 
-  val eval: t -> (bool,
-                  [> `Host of
-                       [> `Execution of
-                            < host : string; message : string;
-                              stderr : string option; stdout : string option >
-                       | `Non_zero of string * int
-                       | `Ssh_failure of
-                            [> `Wrong_log of string
-                            | `Wrong_status of Ketrew_unix_process.Exit_code.t ] *
-                            string
-                       | `System of [> `Sleep of float ] * [> `Exn of exn ]
-                       | `Timeout of float
-                       | `Unix_exec of string ]
-                         Ketrew_host_io.Error.execution
-                  | `Volume of [> `No_size of Ketrew_pervasives.Log.t ] ]) Deferred_result.t
-
 end
 
 module Equivalence: sig
@@ -131,14 +123,12 @@ end
 
 module State : sig
   type t
-  type history = Ketrew_gen_target_v0.State.t
   val simplify: t -> [
       | `Activable
       | `In_progress
       | `Successful
       | `Failed
     ]
-  val history: t -> history
 
   val name: t -> string
 
@@ -150,6 +140,8 @@ module State : sig
 
   (** The date the target's creation. *)
   val passive_time: t -> Time.t
+
+  val finished_time: t -> Time.t option
 
   module Is : sig
     val building : t -> bool
@@ -179,6 +171,7 @@ module State : sig
 end
 
 type t
+  [@@deriving yojson]
 (** The thing holding targets. *)
 
 val create :
@@ -195,8 +188,6 @@ val create :
   t
 (** Create a target value (not stored in the DB yet). *)
 
-val to_serializable: t -> Ketrew_gen_target_v0.Target.t
-val of_serializable: Ketrew_gen_target_v0.Target.t -> t
 
 
 val id : t -> Unique_id.t
@@ -221,12 +212,12 @@ module Automaton : sig
 
   (** A {i pure} automaton *)
 
-  type failure_reason = Ketrew_gen_target_v0.Process_failure_reason.t
+  type failure_reason
   type progress = [ `Changed_state | `No_change ]
   type 'a transition_callback = ?log:string -> 'a -> t * progress
   type severity = [ `Try_again | `Fatal ]
   (* type 'a io_action = [ `Succeeded of 'a | `Failed of 'a ] *)
-  type bookkeeping = Ketrew_gen_target_v0.Run_bookkeeping.t =
+  type bookkeeping =
     { plugin_name: string; run_parameters: string}
   type long_running_failure = severity * string * bookkeeping
   type long_running_action =  (bookkeeping, long_running_failure) Pvem.Result.t
@@ -271,23 +262,10 @@ val is_equivalent: t -> t -> bool
 val log : t -> Log.t
 (** Get a [Log.t] “document” to display the target. *)
 
-val should_start:
-  t ->
-  (bool, [> `Host of _ Ketrew_host_io.Error.non_zero_execution
-         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
-(** Check whether a target is ready or should start, given its condition.  *)
-
-val did_ensure_condition:
-  t ->
-  (bool, [> `Host of _ Ketrew_host_io.Error.non_zero_execution
-         | `Volume of [> `No_size of Log.t] ]) Deferred_result.t
-(** Check whether a target actually did its job, given its condition.  *)
-
-
+val latest_run_parameters: t -> string option
 (** Get the most recent serialized
     [run_parameters] if the target is a “long-running”,
     [None] otherwise. *)
-val latest_run_parameters: t -> string option
 
 
 module Stored_target : sig
@@ -312,5 +290,4 @@ module Stored_target : sig
 
   val make_pointer: from:target -> pointing_to:target -> t
 end
-
 

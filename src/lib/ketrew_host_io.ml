@@ -251,12 +251,6 @@ type shell = string -> string list
 
 let shell_sh ~sh cmd = [sh; "-c"; cmd]
 
-let shell_of_default_shell t cmd =
-  let open Ketrew_gen_base_v0.Default_shell in
-  let open Ketrew_gen_base_v0.Host in
-  t.default_shell.command_name ::
-  t.default_shell.options
-  @ [t.default_shell.command_option; cmd]
 
 let override_shell ?with_shell t =
   let shell = Option.value ~default:(shell_of_default_shell t) with_shell in

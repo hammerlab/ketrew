@@ -14,33 +14,39 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
+open Ketrew_pervasives
 
-type target_v0 
-  <ocaml from="Ketrew_gen_target_v0.Target" > = abstract
+module Down_message : sig
 
+  type t = [
+    | `List_of_targets of Ketrew_target.t list
+    | `List_of_target_ids of string list
+    | `List_of_query_descriptions of (string * string) list
+    | `Query_result of string
+    | `Ok
+  ]
+  include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
-type down_message = [
-  | List_of_targets of target_v0 list
-  | List_of_target_ids of string list
-  | List_of_query_descriptions of (string * string) list
-  | Query_result of string
-  | Ok
-]
+  val log : t -> Ketrew_pervasives.Log.t
+end
 
-type target_query = [
-  | All
-  | Not_finished_before of float
-  | Created_after of float
-]
+module Up_message : sig
+  type target_query = [
+    | `All
+    | `Not_finished_before of float
+    | `Created_after of float
+  ]
+  type t = [
+    | `Get_targets of string list (* List of Ids, empty means “all” *)
+    | `Get_available_queries of string (* Id of the target *)
+    | `Call_query of (string * string) (* target-id × query-name *)
+    | `Submit_targets of Ketrew_target.t list
+    | `Kill_targets of string list (* List of Ids *)
+    | `Restart_targets of string list (* List of Ids *)
+    | `Get_target_ids of target_query
+  ]
+  include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
-type up_message = [
-  | Get_targets of string list (* List of Ids, empty means “all” *)
-  | Get_available_queries of string (* Id of the target *)
-  | Call_query of (string * string) (* target-id × query-name *)
-  | Submit_targets of target_v0 list
-  | Kill_targets of string list (* List of Ids *)
-  | Restart_targets of string list (* List of Ids *)
-  | Get_target_ids of target_query
-]
-
-
+  val log : t -> Log.t
+  val to_string_hum : t -> string
+end

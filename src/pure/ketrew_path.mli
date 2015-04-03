@@ -16,7 +16,7 @@
 
 (** File-path handling *)
 
-type t = Ketrew_gen_base_v0.Path.t
+type t
   [@@deriving yojson]
 (** General type of file-paths.  *)
 
