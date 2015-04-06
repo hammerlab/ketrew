@@ -82,9 +82,7 @@ end
 
 
 
-
-module Condition = struct
-  open Ketrew_target.Condition
+open Ketrew_target.Condition
 
   let rec eval = 
     function
@@ -111,8 +109,10 @@ module Condition = struct
       in
       go list_of_conditions
 
-end
+let bool = eval
+  
 
+(*
 
 let should_start t =
   match Ketrew_target.condition t with
@@ -125,3 +125,4 @@ let did_ensure_condition t =
   | None -> return true
 
 
+*)

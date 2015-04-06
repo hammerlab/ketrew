@@ -718,7 +718,7 @@ module Run_automaton = struct
       return (make_new_target ~log:("Attempt to start") starting_attemp)
     | `Eval_condition (condition, make_new_target) ->
       begin
-        Ketrew_target_io.Condition.eval condition
+        Ketrew_eval_condition.bool condition
         >>< function
         | `Ok answer ->
           return (make_new_target ?log:None (`Ok answer))

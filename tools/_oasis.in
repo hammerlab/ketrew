@@ -49,7 +49,7 @@ Library ketrew
     Ketrew_pbs,
     Ketrew_yarn,
     Ketrew_plugin,
-    Ketrew_target_io,
+    Ketrew_eval_condition,
     Ketrew_unix_process,
     Ketrew_configuration,
     Ketrew_engine,
