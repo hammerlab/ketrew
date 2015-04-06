@@ -87,6 +87,10 @@ opam update
 # We add the react dependency for lwt.react in the tests
 opam install react
 
+# We need a not-yet released bug in ppx_deriving_yojson
+opam pin add ppx_deriving_yojson --yes -k git https://github.com/whitequark/ppx_deriving_yojson.git
+
+
 opam pin $opam_pin_add ketrew .
 
 opam install --yes ketrew
@@ -138,4 +142,8 @@ kscli run loop > kscli_01.out
 
 echo "Output file kscli_01.out"
 tail -n 50 kscli_01.out
+
+echo "Try to compile Biokepi"
+opam pin add biokepi -k git --yes https://github.com/hammerlab/biokepi.git
+opam install --yes biokepi
 
