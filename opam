@@ -2,16 +2,15 @@ opam-version: "1"
 maintainer: "seb@mondet.org"
 ocaml-version: [ >= "4.01.0" ]
 build: [
-  [make "gen"]
   [make "_oasis"]
   ["oasis" "setup" ]
   ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
+  ["ocaml" "tools/please.ml" "generate" "metadata"]
   ["ocaml" "setup.ml" "-build" ]
   ["ocaml" "setup.ml" "-install" ]
 ]
 remove: [
   ["ocamlfind" "remove" "ketrew"]
-  ["ocamlfind" "remove" "ketrew_data"]
   ["ocamlfind" "remove" "ketrew_pure"]
   ["rm" "-f" "%{bin}%/ketrew"]
 ]
