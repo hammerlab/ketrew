@@ -16,12 +16,10 @@ remove: [
   ["rm" "-f" "%{bin}%/ketrew"]
 ]
 depends: [
-  "oasis" "atd2cconv" "ocamlfind"
-  "cconv" {= "0.1" }
+  "oasis" "ocamlfind"
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
-  "cmdliner" "atd" "cconv" "yojson" "uri"
+  "cmdliner" "yojson" "uri"
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.2"} "ppx_include" "ppx_blob"
-  "toml" {= "1.0.0" }
   "cohttp" "lwt" "ssl"
   "conduit"
   ]
