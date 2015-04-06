@@ -17,6 +17,7 @@
 (** Deal with error values common across the library. *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 let log_client_error error_value = 
   let open Log in

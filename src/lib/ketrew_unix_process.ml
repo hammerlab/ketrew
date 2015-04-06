@@ -17,6 +17,7 @@
 (** Manage external processes. *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 module Exit_code = struct
   type t = [

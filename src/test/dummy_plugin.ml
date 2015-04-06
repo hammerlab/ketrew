@@ -10,6 +10,7 @@ useless).
 
 M*)
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 (*M
 

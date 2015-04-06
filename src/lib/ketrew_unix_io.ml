@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -14,28 +14,18 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** Command line interface to the engine. *)
+include  Pvem_lwt_unix
+include  Pvem_lwt_unix.Deferred_result
+let wrap_preemptively ~on_exn f =
+  wrap_deferred (fun () -> 
+      Lwt_preemptive.detach f ())
+    ~on_exn
 
-open Ketrew_pervasives
-
-open Ketrew_unix_io
-
-val run_main :
-  ?argv:string array ->
-  ?override_configuration:Ketrew_configuration.t ->
-  ?additional_commands: ((unit, string) Deferred_result.t Cmdliner.Term.t * Cmdliner.Term.info) list ->
-  unit ->
-  [ `Never_returns ]
-(** The “main” function for the application, it will [exit n] with [n = 0] if
-    succeed or [n > 0] if an error occurs.
-
-    - [argv]: one can provide an array of arguments to be used instead of
-    {!Sys.argv}.
-    - [override_configuration]: providing a custom configuration will prevent
-    Ketrew from looking up a configuration file.
-    - [additional_commands]: a list of {!Cmdliner} commands to add to the
-    interface.
-
-*)
-
-
+let lwt_stream_to_string lwt_stream =
+  let buf = Buffer.create 42 in
+  wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    Lwt.(fun () ->
+        Lwt_stream.iter_s 
+          (fun s -> Buffer.add_string buf s; return ()) lwt_stream)
+  >>= fun () ->
+  return (Buffer.contents buf)

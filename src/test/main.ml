@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 module Test = struct
   exception Tests_failed

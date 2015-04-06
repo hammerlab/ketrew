@@ -17,6 +17,7 @@
 (** Manage calls to Unix processes *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 (** Higher-level representation of Unix exit codes. *)
 module Exit_code: sig

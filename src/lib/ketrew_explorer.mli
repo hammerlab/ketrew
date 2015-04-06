@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 (** The “Target Explorer™“ *)
 

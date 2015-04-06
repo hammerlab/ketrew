@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson, show]

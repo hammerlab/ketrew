@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 module Target = Ketrew_target
 module Document = Ketrew_document
 

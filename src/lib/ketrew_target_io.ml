@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 module Path = Ketrew_path
 
 module Host = Ketrew_host

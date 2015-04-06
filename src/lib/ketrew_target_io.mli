@@ -17,6 +17,7 @@
 (** Definition of the basic building bloc of a workflow. *)
 open Ketrew_pervasives
 
+open Ketrew_unix_io
 (*
 (** Definition of command-lines to run on a given {!Ketrew_host.t}. *)
 module Command : sig

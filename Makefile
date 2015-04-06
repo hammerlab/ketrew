@@ -18,14 +18,10 @@ configure: myocamlbuild.ml setup.data
 _build/VERSION:
 	$(PLEASE) generate metadata
 
-gen:
-	$(PLEASE) generate metadata && \
-	$(PLEASE) generate ketrew_data
-
 OCAMLBUILD_ANNOYING_LINKS=main.byte main.native Workflow_Examples.native integration.native dummy_plugin_user.native
 OWN_BINARIES= ketrew-test ketrew ketrew-pure ketrew-workflow-examples-test ketrew-integration-test
 
-build: gen _build/VERSION
+build: _build/VERSION
 	ocaml setup.ml -build && \
 	    rm -f $(OCAMLBUILD_ANNOYING_LINKS) && \
 	    cp _build/src/app/main.native ketrew && \

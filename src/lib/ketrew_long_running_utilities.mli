@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 val fail_fatal : string -> ('b, [> `Fatal of string ]) Deferred_result.t
 (** Call {!Deferred_result.fail} with a “fatal error” (Mandatory in the
@@ -70,7 +71,7 @@ val classify_and_transform_errors :
             | `Wrong_path of string ]
         | `Not_a_directory of string
         | `Wrong_access_rights of int
-        | `Wrong_file_kind of string * Ketrew_pervasives.System.file_info
+        | `Wrong_file_kind of string * System.file_info
         | `Wrong_path of string ]
    | `Timeout of 'b ]) Result.t ->
   ('a, [ `Fatal of string | `Recoverable of string ]) Deferred_result.t

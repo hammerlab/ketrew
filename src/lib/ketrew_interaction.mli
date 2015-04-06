@@ -14,8 +14,12 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-open Ketrew_pervasives
 (** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
+
+
+open Ketrew_pervasives
+open Ketrew_unix_io
+
 
 val init : unit -> unit
 (** Initialize the module. *)

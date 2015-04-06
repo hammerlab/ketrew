@@ -16,6 +16,7 @@
 
 (** Definition of a host; a place to run commands or handle files. *)
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 open Ketrew_host
 
@@ -174,7 +175,7 @@ val put_file :
   content:string ->
   (unit,
    [> `Host of _ Error.execution
-    | `IO of [> `Write_file_exn of Ketrew_pervasives.IO.path * exn ] ])
+    | `IO of [> `Write_file_exn of IO.path * exn ] ])
   Deferred_result.t
 (** Write a file on the host at [path] containing [contents]. *)
 

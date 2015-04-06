@@ -17,8 +17,6 @@
 (** [Pervasives] module for the library. *)
 
 module Result = Pvem.Result
-include  Pvem_lwt_unix
-include  Pvem_lwt_unix.Deferred_result
 module String = struct
   include Sosa.Native_string
 end
@@ -156,17 +154,4 @@ module Unique_id = struct
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
 
-let wrap_preemptively ~on_exn f =
-  wrap_deferred (fun () -> 
-      Lwt_preemptive.detach f ())
-    ~on_exn
-
-let lwt_stream_to_string lwt_stream =
-  let buf = Buffer.create 42 in
-  wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    Lwt.(fun () ->
-        Lwt_stream.iter_s 
-          (fun s -> Buffer.add_string buf s; return ()) lwt_stream)
-  >>= fun () ->
-  return (Buffer.contents buf)
-
+                  

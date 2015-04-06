@@ -17,6 +17,7 @@
 
 open Ketrew_pervasives
 
+open Ketrew_unix_io
 
 
 (** A common error that simply means “invalid argument”. *)

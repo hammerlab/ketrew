@@ -22,7 +22,7 @@ make_doc () {
         mkdir -p $apidoc
         ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
                   -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
-                  -I _build/src/lib/  -I _build/src/lib/pure -I _build/gen/ \
+                  -I _build/src/lib/  -I _build/src/pure \
                   $lib_mli_files $lib_ml_files 
     fi
 

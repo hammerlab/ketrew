@@ -16,6 +16,7 @@
 
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 open Ketrew_long_running_utilities
 

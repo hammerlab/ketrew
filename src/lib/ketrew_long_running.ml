@@ -17,6 +17,7 @@
 (** Definition of the interface required from “long-running task” plugins. *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 type error = [
   | `Fatal of string

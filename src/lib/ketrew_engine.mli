@@ -17,6 +17,7 @@
 (** The engine of the actual Workflow Engine. *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 type t
 (** The contents of the application engine. *)
