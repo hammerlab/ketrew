@@ -20,6 +20,7 @@ depends: [
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.2"} "ppx_include" "ppx_blob"
+  "toml" {= "1.0.0" }
   "cohttp" "lwt" "ssl"
   "conduit"
   ]
