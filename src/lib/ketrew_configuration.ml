@@ -18,7 +18,7 @@ open Ketrew_pervasives
 open Ketrew_unix_io
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
-              [@@deriving yojson, show]
+              [@@deriving yojson]
 
 
 type engine = {
@@ -26,10 +26,10 @@ type engine = {
   persistent_state_key: string;
   turn_unix_ssh_failure_into_target_failure: bool;
   host_timeout_upper_bound: float option;
-}
+} [@@deriving yojson]
 type ui = {
   with_color: bool;
-}
+} [@@deriving yojson]
 type server = {
   authorized_tokens_path: string option; 
   listen_to: [ `Tls of (string * string * int) ];
@@ -39,28 +39,28 @@ type server = {
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
-}
+} [@@deriving yojson]
 type client = {
   (* client_engine: engine; *)
   connection: string;
   token: string;
   client_ui: ui;
-}
+} [@@deriving yojson]
 type standalone = {
   standalone_engine: engine;
   standalone_ui: ui;
-}
+} [@@deriving yojson]
 type mode = [
   | `Standalone of standalone
   | `Client of client
   | `Server of server
-]
+] [@@deriving yojson]
 
 type t = {
   debug_level: int;
   plugins: plugin list;
   mode: mode;
-}
+} [@@deriving yojson]
 
 let log t =
   let open Log in
