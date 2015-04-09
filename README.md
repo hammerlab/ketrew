@@ -31,7 +31,7 @@ If you have `opam` up and running:
 
 Then you need at runtime `ssh` in the `$PATH`.
 
-This gets you the `ketrew` executable and the `ketrew_data` and `ketrew`
+This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
 libraries.
 
 ### Without Opam
