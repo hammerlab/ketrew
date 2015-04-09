@@ -51,9 +51,8 @@ let version_string () =
 let pure_findlib_packages = [
   "sosa"; "nonstd";
   "docout"; "pvem"; "yojson"; "uri"; "toml";
-  "ppx_deriving_yojson";
-  "cohttp"; (* → measurements prefer to cohttp “pure” lib *)
-  "ppx_deriving.show"; "ppx_include"; "ppx_blob";
+  "cohttp"; (* → measurements refer to cohttp “pure” lib *)
+  "ppx_deriving_yojson"; "ppx_deriving.show"; "ppx_blob";
 ]
 let unix_findlib_packages = [
   "threads"; "trakeva_sqlite";
