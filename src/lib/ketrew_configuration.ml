@@ -354,7 +354,12 @@ let load_exn ?(and_apply=true) ?profile how =
 
 
 type profile = File.profile
+
 let profile name configuration =
   File.({name; configuration})
+
 let output l =
   File.(`Ketrew_configuration l |> to_string |> print_string)
+
+let to_json l =
+  File.(`Ketrew_configuration l |> to_string)

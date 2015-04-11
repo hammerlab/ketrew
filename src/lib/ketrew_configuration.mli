@@ -143,18 +143,6 @@ val token: client -> string
 
 val standalone_of_server: server -> standalone
 
-(** Check environment variable KETREW_CONFIGURATION before returning
-    [default_configuration_path]. *)
-
-(** The call [get_configuration file] reads and parses the file [f], unless
-    [override_configuration] is provided.
-    if [and_apply] is [true] (the default), then global settings are applied
-    and plugins are loaded.
-*)
-
-(** Do like {!get_configuration} but in a dirty Lwt-less way and
-    return only partial information: whether to daemonize or not (the [string
-    option] is the potential log-file path). *)
 
 val load_exn:
   ?and_apply:bool ->
@@ -193,4 +181,8 @@ val profile: string -> t -> profile
 (** Create a profile value. *)
 
 val output: profile list -> unit
-(** Output a configuration file containing a list of profile to [stdout]. *)
+(** Output a configuration file containing a list of profiles to [stdout]. *)
+
+val to_json: profile list -> string
+(** Create the contents of a configuration file containing a list of
+    profiles. *)
