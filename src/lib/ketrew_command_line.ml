@@ -358,13 +358,26 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
-    let default = Configuration.get_path () in
     let docv = "FILE" in
     let doc = "Use $(docv) as configuration file (can be overriden also \
                with `$KETREW_CONFIGURATION`)." in
-    Arg.(value & opt string default
-         & info ["C"; "configuration-file"]
-           ~docs:common_options_section ~docv ~doc)
+    Term.(
+      pure (fun profile path_opt ->
+          let how =
+            match path_opt, override_configuration with
+            | Some path, _ -> `From_path path
+            | None, Some conf -> `Override conf
+            | None, None -> `Guess
+          in
+          Ketrew_configuration.load_exn ?profile how)
+      $ Arg.(value & opt (some string) None
+             & info ["P"; "configuration-profile"]
+               ~docs:common_options_section ~docv:"NAME"
+               ~doc:"Use the profile $(docv) within the configuration file")
+      $ Arg.(value & opt (some string) None
+             & info ["C"; "configuration-file"]
+               ~docs:common_options_section ~docv ~doc)
+    )
   in
   let init_cmd =
     sub_command
@@ -379,19 +392,18 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                     \  path = %S\n" database_path
               in
               IO.write_file ~content config_path)
-          $ config_file_argument
           $ Arg.(value & opt string Configuration.default_database_path
                  & info ["database"] ~docv:"FILE"
                    ~doc:"Use $(docv) as database.")
+          $ Arg.(required & pos 0 (some string) None
+                 & info [] ~docv:"PATH" ~doc:"Path of the generated config file")
         ) in
   let status_cmd =
     sub_command
       ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
-          pure (fun config_path loop  ->
-              Configuration.get_configuration ?override_configuration config_path
-              >>= fun configuration ->
+          pure (fun configuration loop  ->
               match Configuration.mode configuration  with
               | `Client _ | `Standalone _ ->
                 let loop = if loop then Some 2. else None in
@@ -420,9 +432,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let inspect_cmd =
     sub_command
       ~term:Term.(
-          pure (fun config_path in_dollar_editor csv since how ->
-              Configuration.get_configuration ?override_configuration config_path
-              >>= fun configuration ->
+          pure (fun configuration in_dollar_editor csv since how ->
               let in_dollar_editor = in_dollar_editor || csv in
               let format = if csv then `Csv else `Tsv in
               Ketrew_client.as_client ~configuration
@@ -463,9 +473,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path max_sleep how ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration max_sleep how ->
             Ketrew_client.as_client ~configuration
               ~f:(run_state ~max_sleep ~how))
         $ config_file_argument
@@ -494,9 +502,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path interactive ids ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration interactive ids ->
             Ketrew_client.as_client ~configuration
               ~f:(kill ~interactive ids))
         $ config_file_argument
@@ -513,15 +519,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
-            Log.(s "From " %
-                 (match override_configuration with
-                 | None -> sf "%S" config_path
-                 | Some _ -> s "user-overriden")
-                 % s ":" % n
-                 % Configuration.log configuration
+        pure (fun configuration ->
+            Log.(Configuration.log configuration
                  @ normal); return ())
         $ config_file_argument)
       ~info:(info "print-configuration" ~version
@@ -531,9 +530,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration ->
             Ketrew_client.as_client ~configuration ~f:interact)
         $ config_file_argument)
       ~info:(
@@ -544,9 +541,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration ->
             Ketrew_client.as_client ~configuration
               ~f:Explorer.(fun ~client -> create ~client () |> explore)
           )
@@ -559,17 +554,16 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path ->
-            (* We need a Lwt-less processing until the potential
-               daemonization: *)
-            let configuration_extract =
-              Configuration.get_configuration_for_daemon_exn
-                ?override_configuration config_path in
-            daemonize_if_applicable configuration_extract;
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration ->
             match Configuration.mode configuration with
-            | `Server srv -> Ketrew_server.start srv
+            | `Server srv ->
+              daemonize_if_applicable
+                Ketrew_configuration.(
+                  match daemon srv, log_path srv  with
+                  | true, popt -> `Daemonize_with popt
+                  | false, _ -> `Do_not_daemonize
+                );
+              Ketrew_server.start srv
             | other -> fail (`Failure "not a server")
           )
         $ config_file_argument)
@@ -581,9 +575,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun config_path ->
-            Configuration.get_configuration ?override_configuration config_path
-            >>= fun configuration ->
+        pure (fun configuration ->
             begin match Configuration.mode configuration with
             | `Server srv -> Ketrew_server.stop srv
             | other -> fail (`Failure "not a server")

@@ -93,9 +93,6 @@ val create : ?debug_level:int -> ?plugins: plugin list -> mode  -> t
     the parameters.
 *)
 
-val default_configuration_path: string
-(** Default path to the configuration file. *)
-
 val default_database_path: string
 (** Default path to the database (used when generating custom configuration
     files). *)
@@ -108,41 +105,6 @@ val persistent_state_key: engine -> string
 
 val is_unix_ssh_failure_fatal: engine -> bool
 (** Should we kill targets on ssh/unix errors. *)
-
-val parse :
-  string ->
-  (t, [> `Configuration of [> `Parsing of string ] ]) Result.t
-(** Parse the contents of a configuration file. *)
-
-(* val apply_globals: t -> unit *)
-(** Apply options that have global impact. *)
-
-val get_path : unit -> string
-(** Check environment variable KETREW_CONFIGURATION before returning
-    [default_configuration_path]. *)
-
-val get_configuration :
-  ?and_apply:bool ->
-  ?override_configuration:t ->
-  string ->
-  (t,
-   [> `Configuration of [> `Parsing of string ]
-   | `Dyn_plugin of
-        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
-   | `Failure of string
-   | `IO of [> `Read_file_exn of string * exn ] ]) Deferred_result.t
-(** The call [get_configuration file] reads and parses the file [f], unless
-    [override_configuration] is provided.
-    if [and_apply] is [true] (the default), then global settings are applied
-    and plugins are loaded.
-*)
-
-val get_configuration_for_daemon_exn :
-  ?override_configuration:t -> string ->
-  [ `Daemonize_with of string option | `Do_not_daemonize ]
-(** Do like {!get_configuration} but in a dirty Lwt-less way and
-    return only partial information: whether to daemonize or not (the [string
-    option] is the potential log-file path). *)
 
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
@@ -180,3 +142,55 @@ val connection: client -> string
 val token: client -> string
 
 val standalone_of_server: server -> standalone
+
+(** Check environment variable KETREW_CONFIGURATION before returning
+    [default_configuration_path]. *)
+
+(** The call [get_configuration file] reads and parses the file [f], unless
+    [override_configuration] is provided.
+    if [and_apply] is [true] (the default), then global settings are applied
+    and plugins are loaded.
+*)
+
+(** Do like {!get_configuration} but in a dirty Lwt-less way and
+    return only partial information: whether to daemonize or not (the [string
+    option] is the potential log-file path). *)
+
+val load_exn:
+  ?and_apply:bool ->
+  ?profile:string ->
+  [ `From_path of string
+  | `Guess
+  | `In_directory of string
+  | `Override of t ] ->
+  t
+(** Load a configuration.
+
+    If [and_apply] is [true] (the default), then global settings are applied
+    and plugins are loaded.
+
+    When the configuration comes from a file, the argument [profile]
+    allows to load a given profile. If [None] then the loading process
+    will try the ["KETREW_PROFILE"] environment variable, or use the name
+    ["default"].
+    
+    The last argument tells the functions how to load the configuration:
+    
+    - [`Override c]: use [c] as configuration
+    - [`From_path path]: parse the file [path]
+    - [`In_directory root]: look for configuration files in the [root]
+      directory
+    - [`Guess]: use environment variables and/or default values to
+      find the configuration file.
+
+   *)
+
+
+type profile
+(** A profile is a name associated with a configuraton. *)
+
+val profile: string -> t -> profile
+(** Create a profile value. *)
+
+val output: profile list -> unit
+(** Output a configuration file containing a list of profile to [stdout]. *)

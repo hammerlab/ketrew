@@ -278,13 +278,14 @@ let user_command_list t =
 
 let submit ?override_configuration t =
   let active, dependencies = user_command_list t in
-  let config_path = Ketrew_configuration.get_path () in
+  let configuration =
+    Ketrew_configuration.load_exn
+      (match override_configuration with
+      | Some c -> `Override c | None -> `Guess) in
   match Lwt_main.run (
-    Ketrew_configuration.get_configuration ?override_configuration config_path
-    >>= fun configuration ->
-          as_client ~configuration ~f:(fun ~client ->
-              add_targets client (active :: dependencies))
-  ) with
+      as_client ~configuration ~f:(fun ~client ->
+          add_targets client (active :: dependencies))
+    ) with
   | `Ok () -> ()
   | `Error e ->
     Log.(s "Run-error: " % s (Ketrew_error.to_string e) @ error);
