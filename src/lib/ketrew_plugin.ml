@@ -33,12 +33,13 @@ let global_list_of_plugins: (string * (module LONG_RUNNING)) list ref =
 let register_long_running_plugin ~name m =
   global_list_of_plugins := (name, m) :: !global_list_of_plugins
 
+let dynlink_no_lwt_exn path =
+  let adapted = Dynlink.adapt_filename path in
+  Log.(s "Loading: " % quote adapted @ verbose);
+  Dynlink.loadfile adapted
+
 let dynlink path =
-  wrap_preemptively (fun () ->
-      let adapted = Dynlink.adapt_filename path in
-      Log.(s "Loading: " % quote adapted @ verbose);
-      Dynlink.loadfile adapted
-    )
+  wrap_preemptively (fun () -> dynlink_no_lwt_exn path)
     ~on_exn:(function
       | Dynlink.Error e -> `Dyn_plugin (`Dynlink_error e)
       | other ->
@@ -49,31 +50,32 @@ let ketrew_deep_ancestors () =
   Findlib.package_deep_ancestors ["native"]
     (Lazy.force Ketrew_metadata.findlib_packages)
 
+let package_to_files_to_load package =
+  let predicates = ["native"; "plugin"; "mt"] in
+  let deps = Findlib.package_deep_ancestors predicates [package] in
+  List.concat_map deps ~f:(fun dep ->
+      if dep = "threads" || List.mem dep ~set:(ketrew_deep_ancestors ())
+      then []
+      else (
+        let base = Findlib.package_directory dep in
+        let archives =
+          try
+            Findlib.package_property predicates dep "archive"
+            |> String.split ~on:(`Character ' ')
+            |> List.filter ~f:((<>) "")
+            |> List.map ~f:(Findlib.resolve_path ~base)
+          with _ ->  []
+        in
+        archives
+      ))
+
 let load_plugins plugins_to_load =
   wrap_preemptively Findlib.init ~on_exn:(fun e -> `Dyn_plugin (`Findlib e))
   >>= fun () ->
   Deferred_list.while_sequential plugins_to_load ~f:(function
     | `Compiled path -> dynlink path
     | `OCamlfind package ->
-      let predicates = ["native"; "plugin"; "mt"] in
-      let deps = Findlib.package_deep_ancestors predicates [package] in
-      let to_load =
-        List.concat_map deps ~f:(fun dep ->
-            if dep = "threads" || List.mem dep ~set:(ketrew_deep_ancestors ())
-            then []
-            else (
-              let base = Findlib.package_directory dep in
-              let archives =
-                try
-                  Findlib.package_property predicates dep "archive"
-                  |> String.split ~on:(`Character ' ')
-                  |> List.filter ~f:((<>) "")
-                  |> List.map ~f:(Findlib.resolve_path ~base)
-                with _ ->  []
-              in
-              archives
-            ))
-      in
+      let to_load = package_to_files_to_load package in
       Log.(s "Going to load: " % OCaml.list quote to_load @ verbose);
       Deferred_list.while_sequential to_load ~f:dynlink
       >>= fun (_ : unit list) ->
@@ -81,6 +83,15 @@ let load_plugins plugins_to_load =
     )
   >>= fun (_ : unit list) ->
   return ()
+
+let load_plugins_no_lwt_exn plugins_to_load =
+  Findlib.init ();
+  List.iter plugins_to_load ~f:(function
+    | `Compiled path -> dynlink_no_lwt_exn path
+    | `OCamlfind package ->
+      let to_load = package_to_files_to_load package in
+      Log.(s "Going to load: " % OCaml.list quote to_load @ verbose);
+      List.iter to_load ~f:dynlink_no_lwt_exn)
 
 let find_plugin plugin_name =
   List.find !global_list_of_plugins (fun (n, _) -> n = plugin_name)
