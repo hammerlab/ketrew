@@ -82,6 +82,8 @@ let say_stuff =
     printf "%s"
       (List.map ~f:(sprintf "-package %s") all_findlib_packages
        |> String.concat ~sep:" ")
+  | "ocamlfind-package-list-for-require" :: [] ->
+    printf "%s" (String.concat ~sep:"," all_findlib_packages)
   | "lib-mli-files" :: [] ->
     find_all "src/lib" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!");
     find_all "src/pure" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!")
