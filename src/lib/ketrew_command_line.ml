@@ -358,9 +358,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let config_file_argument =
-    let docv = "FILE" in
-    let doc = "Use $(docv) as configuration file (can be overriden also \
-               with `$KETREW_CONFIGURATION`)." in
     Term.(
       pure (fun profile path_opt ->
           let how =
@@ -373,28 +370,37 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       $ Arg.(value & opt (some string) None
              & info ["P"; "configuration-profile"]
                ~docs:common_options_section ~docv:"NAME"
-               ~doc:"Use the profile $(docv) within the configuration file")
+               ~doc:"Use the profile $(docv) within the configuration file \
+                     (can be overriden also with `$KETREW_PROFILE`).")
       $ Arg.(value & opt (some string) None
              & info ["C"; "configuration-file"]
-               ~docs:common_options_section ~docv ~doc)
+               ~docs:common_options_section ~docv:"FILE"
+               ~doc:"Use $(docv) as configuration file (can be overriden also \
+                     with `$KETREW_CONFIGURATION`)." )
     )
   in
   let init_cmd =
     sub_command
-      ~info:(Term.info "init" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
-               ~doc:"Initialize the client (create config-file)")
+      ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
+               ~doc:"Initialize the client (create a config-file)")
       ~term:Term.(
-          pure (fun config_path database_path ->
+          pure (fun db_path debug_level config_path ->
               System.ensure_directory_path (Filename.dirname config_path)
               >>= fun () ->
-              let content =
-                fmt "# Ketrew configuration file\n\n[database]\n\
-                    \  path = %S\n" database_path
-              in
-              IO.write_file ~content config_path)
+              let open Ketrew_configuration in
+              let config = [
+                profile "default"
+                  (create ~debug_level
+                     (standalone ()
+                        ~engine:(engine ~database_parameters:db_path ())));
+              ] in
+              IO.write_file ~content:(config |> to_json) config_path)
           $ Arg.(value & opt string Configuration.default_database_path
                  & info ["database"] ~docv:"FILE"
                    ~doc:"Use $(docv) as database.")
+          $ Arg.(value & opt int 1
+                 & info ["debug-level"] ~docv:"INT"
+                   ~doc:"Set the debug-level $(docv).")
           $ Arg.(required & pos 0 (some string) None
                  & info [] ~docv:"PATH" ~doc:"Path of the generated config file")
         ) in
