@@ -17,15 +17,17 @@
 open Ketrew_pervasives
 open Ketrew_unix_io
 
+let default_persistent_state_key = "ketrew_persistent_state"
+
 type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson]
 
 
 type engine = {
   database_parameters: string;
-  persistent_state_key: string;
-  turn_unix_ssh_failure_into_target_failure: bool;
-  host_timeout_upper_bound: float option;
+  persistent_state_key: string [@default default_persistent_state_key];
+  turn_unix_ssh_failure_into_target_failure: bool [@default false];
+  host_timeout_upper_bound: float option [@default None];
 } [@@deriving yojson]
 type ui = {
   with_color: bool;
@@ -41,14 +43,13 @@ type server = {
   server_ui: ui;
 } [@@deriving yojson]
 type client = {
-  (* client_engine: engine; *)
   connection: string;
   token: string;
-  client_ui: ui;
+  client_ui [@key "ui"]: ui;
 } [@@deriving yojson]
 type standalone = {
-  standalone_engine: engine;
-  standalone_ui: ui;
+  standalone_engine [@key "engine"]: engine;
+  standalone_ui [@key "ui"]: ui;
 } [@@deriving yojson]
 type mode = [
   | `Standalone of standalone
@@ -58,7 +59,7 @@ type mode = [
 
 type t = {
   debug_level: int;
-  plugins: plugin list;
+  plugins: plugin list [@default []];
   mode: mode;
 } [@@deriving yojson]
 
@@ -121,7 +122,6 @@ let log t =
       ])
     % item "Misc" common
 
-let default_persistent_state_key = "ketrew_persistent_state"
 
 let default_database_path =
   Sys.getenv "HOME" ^ "/.ketrew/database"
@@ -195,7 +195,7 @@ module File = struct
     configuration: configuration;
   } [@@deriving yojson]
   type t = [
-    | `Ketrew_configuration of profile list
+    | `Ketrew_configuration [@name "Ketrew"] of profile list
   ] [@@deriving yojson]
 
   let parse_string_exn s =
