@@ -50,7 +50,7 @@ let version_string () =
 
 let pure_findlib_packages = [
   "sosa"; "nonstd";
-  "docout"; "pvem"; "yojson"; "uri"; "toml";
+  "docout"; "pvem"; "yojson"; "uri";
   "cohttp"; (* → measurements refer to cohttp “pure” lib *)
   "ppx_deriving_yojson"; "ppx_deriving.show"; "ppx_blob";
 ]
