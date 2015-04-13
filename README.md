@@ -61,7 +61,7 @@ if the target fails, and
 succeeds.
 
 Any OCaml program can use the EDSL (script, compiled, or even inside the
-toplevel), see the [documentation of the EDSL API](src/lib/pure/ketrew_edsl.mli).
+toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 
 
 ### Example
@@ -158,7 +158,7 @@ Let's go back to the beginning; to create a configuration file, run:
 
     ketrew init
 
-This creates `$HOME/.ketrew/configuration.toml` (see `ketrew init --help` to
+This creates `$HOME/.ketrew/configuration.json` (see `ketrew init --help` to
 choose another path).
 
 By default this configures Ketrew in **Standalone** mode;

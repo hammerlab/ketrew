@@ -1,147 +1,184 @@
 Configuration File
 ==================
 
+Ketrew, the application, uses a configuration file based on the Json format (it
+is possible to avoid configuration files by using the library and/or creating
+your own
+[ad-hoc command-line application](./Alternative_CLI_Application.md)).
+
+The configuration file can contain one or more configurations, called
+“profiles,” accessed through their name.
+
 Location
 --------
-Environment variables `KETREW_CONFIGURATION` and `KETREW_CONFIG` are checked
-before defaulting to `$HOME/.ketrew/configuration.toml`.
 
-Format
-----------
+Here is the process followed by Ketrew to find it's configuration, it tries
+these options successively:
 
-The general format used by the configuration file is
-[Toml](https://github.com/toml-lang/toml).
+- the command line option `--configuration-file` (alias: `-C`)
+- the environment variables `KETREW_CONFIGURATION` and `KETREW_CONFIG`,
+- given a “root” directory (either the variable `KETREW_ROOT` or the default
+`$HOME/.ketrew/`), Ketrew will try to access the files:
+    - `configuration.json`,
+    - `configuration.ml`, and
+    - `configuration.sh`
 
-Top-level options:
+Given the extension of the filename Ketrew will read the configuration
+differently:
 
-- `debug-level`: integer specifying the amount of verbose messages: `0`: none,
-`1`: verbose, `2`: very verbose.
+- `.json` → will read and parse the file;
+- `.ml` → will execute `ocaml <file>`, collect `stdout`, and parse it;
+- `.sh` → will execute `./<file>`, collect `stdout`, and parse it.
 
-Then the configuration is divided into sections:
-`engine`, `client`, `ui`, and `server`.
-The presence of the `client` or `server` sections, defines the running mode. If
-neither is defined Ketrew will be in standalone mode. If both are defined an
-error is raised.
+Other file extension are considered undefined behavior for future use.
 
+After parsing a configuration file, Ketrew will select a profile by name:
 
-### The `engine` Section
+- using the command line option `-P`/`--configuration-profile`,
+- checking the environment variable `KETREW_PROFILE`,
+- using `"default"`.
 
-In standalone and server modes, the `engine` section configures how to run the
-workflows (ignored in `client` mode).
+Generating From Command Line
+----------------------------
 
-- `database-path`: the path to the database directory; currently a
-Git-repository that one can inspect with usual `git` commands (the
-default is `~/.ketrew/database/`).
-- `turn-unix-ssh-failure-into-target-failure`: boolean;
-when an SSH or system call fails it may not mean that the command in your
-workflow is wrong (could be an SSH configuration or tunneling problem). By
-default (i.e. `false`), Ketrew tries to be clever and does not make targets
-fail. To change this behavior set the option to `true`.
-- `host-timeout-upper-bound`: float (seconds, default is `60.`); every
-connection/command time-out will be `≤ upper-bound`.
-- `state-key`: the name of a key to the “root of the tree”; if more than one
-application is using the same database, this can be useful to avoid conflicts
-(“normal” users should *never* need to set this).
-
-### The `ui` Section
-
-This section configures the behavior of the User Interface.
-
-- `color`: boolean (default `true`); tell Ketrew to display *f-ANSI* colors.
-
-### The `plugins` Section
-
-This optional section asks Ketrew to dynamically load plugins:
-
-- `ocamlfind`: a package name or a list of package names to find and load
-with `Findlib`.
-- `compiled`: a path or a list of paths to load.
-
-### The `client` Section
-
-This table configures Ketrew in client-mode:
-
-- `connection`: URL for connecting to the server (e.g. `"https://example.com:8443"`).
-- `token`: API authentication token.
-
-### The `server` Section
-
-This section configures the HTTP server:
-
-- `certificate`: path to the SSL certificate (*mandatory*).
-- `private-key`: path to the SSL private-key (*mandatory*).
-- `port`: port to listen on (*mandatory*).
-- `authorized-tokens-path`: path to the file of the authentication tokens
-that the server accepts (*mandatory-ish* since
-authentication-less server-side is not implemented so far). This file is in the
-SSH [`authorized_keys`](http://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#.7E.2F.ssh.2Fauthorized_keys)
-format.
-- `command-pipe-path`: if set this asks the server to listen on a named pipe
-for control commands (*highly recommended*).
-- `daemonize`: if `true`, ask the server to detach from current terminal.
-- `log-path`: if set together with `daemonize`, ask the server to redirect logs
-to this path (if not set logs go to `/dev/null`).
-- `return-error-messages`: if `true`, the server will return real error
-messages (in the *body* of the response) to the client; if `false` (the
-default), any kind of error will result in the same uninformative message.
+The command `ketrew initialize` can generate a configuration file (limited to
+standalone for now); see `ketrew init --help`.
 
 
 Examples
 --------
 
-Note the `please.sh` script can generate configuration files for testing
-(`please.sh test-env`).
+A configuration file `config.ml` (hence that Ketrew will execute by itself)
+would look like:
 
-### Standalone
+```ocaml
+#use "topfind"
+#thread
+#use "ketrew"
 
-```toml
-# How much noise do you want on your terminal:
-debug-level = 2
+open Ketrew_configuration
 
-[plugins]
-  ocamlfind =["lwt.unix", "findlib"]
-  compiled = "/path/to/some_plugin.cmxs"
+let debug_level = 2
+(* `debug-level`: integer specifying the amount of verbose messages: `0`: none,
+   `1`: verbose, `2`: very verbose.*)
 
-[engine]
-  database-path = "/path/to/database-standalone"
-  host-timeout-upper-bound = 120
+(* Plugins to load: *)
+let plugins = [
+  `OCamlfind "lwt.react";
+  `Compiled "/path/to/some/ketrew_plugin.cmxs";
+]
 
-[ui]
-  color = true
+(* User-Interface preferences: *)
+let ui = ui ~with_color:true ()
+
+(* A function that given a boolean value creates a “server
+  configuration” that detaches or not from the shell. *)
+let my_servers daemon =
+  server ~ui
+    ~engine:(engine ~database_parameters:"/path/to/database-client-server" ())
+    ~authorized_tokens_path:"/path/to/authorized-tokens"
+    ~return_error_messages:true
+    ~log_path:"/path/to/logs-of-server.txt"
+    ~daemon
+    ~command_pipe:"/path/to/command.pipe"
+    (`Tls ("/path/to/cert.pem", "/path/to/key.pem", 8443))
+
+(* We put together 4 profiles in this configuration and “output” them
+   (literally, as Json, to `stdout`).
+
+   `debug_level`, `plugins`, and `ui` are shared between configurations.
+*)
+let () =
+  output [
+    profile "standalone"
+      (create ~debug_level ~plugins
+         (standalone ~ui ()
+            ~engine:(engine ~database_parameters:"/path/to/database-standalone" ())));
+    profile "daemon"
+      (create ~debug_level ~plugins (my_servers true));
+    profile "server"
+      (create ~debug_level ~plugins (my_servers false));
+    profile "client"
+      (create ~debug_level ~plugins (
+          client ~ui ~token:"nekot" "https://127.0.0.1:8443"
+          ));
+  ]
 ```
 
-### Server
+You may run `ocaml config.json` to see the equivalent Json.
 
-```toml
-debug-level = 1
+Creating a test environment (`make test-env`, cf. developer
+[docs](./Developer_Documentation.md)) generates a very similar configuration
+file.
 
-[engine]
-  database-path = "/path/to/database-client-server"
-  turn-unix-ssh-failure-into-target-failure = false
+Explanation of the Options
+--------------------------
 
-[ui]
-  color = true
+To build configuration refere to the [API](src/lib/ketrew_configuration.mli) of
+the `Ketrew_configuration` module.
 
-[server]
-  port = 8443
-  certificate = "/path/to/test-cert.pem"
-  private-key = "/path/to/test-key.pem"
-  authorized-tokens-path = "/path/to/ketrew-authorized-tokens"
-  return-error-messages = true
-  log-path = "/var/log/logs-of-ketrew-server.txt"
-  daemonize = true
-  command-pipe-path = "/var/run/ketrew-command.pipe"
-```
+### The `engine` Options
 
-### Client
+In standalone and server modes, the `engine` configures how to run the
+workflows.
 
-```toml
-debug-level = 2
+- `database_path`: the path to the database file/directory (the
+default is `~/.ketrew/database`).
+- `turn_unix_ssh_failure_into_target_failure`: boolean;
+when an SSH or system call fails it may not mean that the command in your
+workflow is wrong (could be an SSH configuration or tunneling problem). By
+default (i.e. `false`), Ketrew tries to be clever and does not make targets
+fail. To change this behavior set the option to `true`.
+- `host_timeout_upper_bound`: float (seconds, default is `60.`); every
+connection/command time-out will be `≤ upper-bound`.
+- `persistent_state_key`: the name of a key to the “root of the tree”; if more
+than one application is using the same database, this can be useful to avoid
+conflicts (“normal” users should *never* need to set this).
 
-[client]
-  connection = "https://example.com:8443"
-  token = "aldskfjdalksjfiilfldksaj"
-```
+### The `ui` Options
+
+The `ui` function configures the behavior of the User Interface.
+
+- `color`: boolean (default `true`); tell Ketrew to display *f-ANSI* colors.
+
+### The `plugins` Option
+
+This optional argument asks Ketrew to dynamically load plugins:
+
+- `` `Ocamlfind``: a package name or a list of package names to find and load
+with `Findlib`.
+- `` `Compiled``: a path or a list of paths to load.
+
+### The `client` Options
+
+The `client` function configures Ketrew in client-mode:
+
+- the `connection`: URL for connecting to the server
+  (e.g. `"https://example.com:8443"`).
+- `token`: API authentication token.
+
+### The `server` Options
+
+The `server` function configures the HTTP server:
+
+- The value `` `Tls (certificate, private_key, port)` configures the connection
+  settings:
+    - `certificate`: path to the SSL certificate (*mandatory*).
+    - `private_key`: path to the SSL private-key (*mandatory*).
+    - `port`: port to listen on (*mandatory*).
+- `authorized_tokens_path`: path to the file of the authentication tokens that
+  the server accepts (*mandatory-ish* since authentication-less server-side is
+  not implemented so far). This file is in the SSH
+  [`authorized_keys`](http://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#.7E.2F.ssh.2Fauthorized_keys)
+  format.
+- `command_pipe`: if set this asks the server to listen on a named pipe for
+  control commands (*highly recommended*).
+- `daemonize`: if `true`, ask the server to detach from current terminal.
+- `log_path`: if set together with `daemonize`, ask the server to redirect logs
+  to this path (if not set logs go to `/dev/null`).
+- `return_error_messages`: if `true`, the server will return real error messages
+  (in the *body* of the response) to the client; if `false` (the default), any
+  kind of error will result in the same uninformative message.
 
 Print The Configuration
 -----------------------
