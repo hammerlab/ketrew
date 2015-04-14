@@ -19,7 +19,7 @@ for a stable version, see the documentation for the
 Build & Install
 ---------------
 
-Ketrew requires at least OCaml **4.01.0** and should be able to build & work on
+Ketrew requires at least OCaml **4.02.0** and should be able to build & work on
 any Unix platform.
 
 ### From Opam
