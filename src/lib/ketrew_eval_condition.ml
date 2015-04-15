@@ -84,30 +84,30 @@ end
 
 open Ketrew_target.Condition
 
-  let rec eval = 
-    function
-    | `Satisfied -> return true
-    | `Never -> return false
-    | `Volume_exists v -> Volume.exists v
-    | `Volume_size_bigger_than (v, sz) ->
-      Volume.get_size v
-      >>= fun size ->
-      return (size >= sz)
-    | `Command_returns (c, ret) ->
-      Command.get_return_value c  
-      >>= fun return_value ->
-      return (ret = return_value)
-    | `And list_of_conditions -> 
-      (* Should start at the first that returns `false` *)
-      let rec go = function
-      | [] -> return true
-      | cond :: rest ->
-        eval cond
-        >>= function
-        | true -> go rest
-        | false -> return false
-      in
-      go list_of_conditions
+let rec eval = 
+  function
+  | `Satisfied -> return true
+  | `Never -> return false
+  | `Volume_exists v -> Volume.exists v
+  | `Volume_size_bigger_than (v, sz) ->
+    Volume.get_size v
+    >>= fun size ->
+    return (size >= sz)
+  | `Command_returns (c, ret) ->
+    Command.get_return_value c  
+    >>= fun return_value ->
+    return (ret = return_value)
+  | `And list_of_conditions -> 
+    (* Should start at the first that returns `false` *)
+    let rec go = function
+    | [] -> return true
+    | cond :: rest ->
+      eval cond
+      >>= function
+      | true -> go rest
+      | false -> return false
+    in
+    go list_of_conditions
 
 let bool = eval
   
