@@ -106,3 +106,10 @@ Executable ketrew
   Install: true
   MainIs:  main.ml
 
+Executable clientjoo
+  Path: src/client-joo/
+  CompiledObject: byte
+  BuildDepends: ketrew_pure, js_of_ocaml, js_of_ocaml.syntax
+  Install: false
+  MainIs:  main.ml
+

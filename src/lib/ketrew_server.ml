@@ -92,6 +92,7 @@ module Authentication = struct
     let token_is_valid tok =
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
+    | Some tok, `Browse_gui
     | Some tok, `See_targets
     | Some tok, `Query_targets
     | Some tok, `Kill_targets
@@ -135,6 +136,7 @@ open Server_state
 type answer = [
   | `Unit
   | `Message of [ `Json ] * Ketrew_protocol.Down_message.t
+  | `Page of string
 ]
 (** A service can replay one of those cases; or an error. *)
 
@@ -212,7 +214,7 @@ let answer_get_targets ~server_state target_ids =
     >>| List.filter_opt
   end
   >>= fun targets ->
-  return (`Message (`Json, `List_of_targets targets))
+  return (`List_of_targets targets)
 
 let answer_get_target_available_queries ~server_state target_id =
   Ketrew_engine.get_target server_state.state target_id
@@ -222,7 +224,7 @@ let answer_get_target_available_queries ~server_state target_id =
       Ketrew_plugin.additional_queries target
       |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)
     ) in
-  return (`Message (`Json, msg))
+  return (msg)
 
 
 let answer_call_query ~server_state ~target_id ~query =
@@ -234,7 +236,7 @@ let answer_call_query ~server_state ~target_id ~query =
     Ketrew_plugin.call_query ~target query
     >>< function
     | `Ok string -> 
-      return (`Message (`Json, `Query_result string))
+      return (`Query_result string)
     | `Error error_log ->
       wrong_request "Failed Query" (Log.to_long_string error_log)
   end
@@ -245,7 +247,7 @@ let answer_add_targets ~server_state ~targets =
   Ketrew_engine.add_targets server_state.state targets
   >>= fun () ->
   Light.green server_state.loop_traffic_light;
-  return (`Message (`Json, `Ok))
+  return (`Ok)
 
 let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   Deferred_list.while_sequential ids (fun id ->
@@ -258,22 +260,18 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
       end)
   >>= fun (_ : unit list) ->
   Light.green server_state.loop_traffic_light;
-  return (`Message (`Json, `Ok))
+  return (`Ok)
 
 let answer_get_target_ids ~server_state query =
   Ketrew_engine.get_list_of_target_ids server_state.state query
   >>= fun list_of_ids ->
-  return (`Message (`Json, `List_of_target_ids list_of_ids))
+  return (`List_of_target_ids list_of_ids)
 
-let api_service ~server_state ~body req =
-  get_post_body req ~body
-  >>= fun body ->
+let answer_message ~server_state ?token msg =
   let with_capability cap =
-    let token = token_parameter req in
     Authentication.ensure_can server_state.authentication ?token cap
   in
-  message_of_body ~body 
-  >>= begin function
+  match msg with
   | `Get_targets l ->
     with_capability `See_targets
     >>= fun () ->
@@ -302,7 +300,43 @@ let api_service ~server_state ~body req =
     with_capability `See_targets
     >>= fun () ->
     answer_get_target_ids ~server_state query
-  end
+
+let api_service ~server_state ~body req =
+  get_post_body req ~body
+  >>= fun body ->
+    let token = token_parameter req in
+  message_of_body ~body 
+  >>= answer_message ~server_state ?token
+  >>= fun msg ->
+  return (`Message (`Json, msg))
+
+(* let compiled_script = [%blob "client.js"] *)
+let html_page script =
+    {html|<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Ketrew's Mighty GUI</title>
+<style type="text/css">
+<!--
+body {background-color: white; color:black}
+-->
+</style>
+<script >
+|html} ^ script ^ {html|
+</script>
+</head>
+<body><div id="ketrew-gui"/></body>
+</html>      
+|html}
+
+let gui_service ~server_state ~body req =
+  let token = token_parameter req in
+  Authentication.ensure_can server_state.authentication ?token `Browse_gui
+  >>= fun () ->
+  IO.read_file (try Sys.getenv "KETREW_CLIENT_JS" with _ -> "_build/client.js")
+  >>= fun script ->
+  return (`Page (html_page script))
 
 (** {2 Dispatcher} *)
 
@@ -312,6 +346,31 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   match Uri.path (Cohttp.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
+  | "/apijsonp" ->
+    (* api_service ~server_state ~body req *)
+    let token =
+      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "token" in
+    let body = 
+      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "message" in
+    begin match body with
+    | Some s -> return s
+    | None -> wrong_request "missing jsonp-message" ""
+    end
+    >>= fun body ->
+    message_of_body body
+    >>= fun up_msg ->
+    answer_message ~server_state ?token up_msg
+    >>= fun down_msg ->
+    let callback =
+      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "callback" in
+    let page =
+      fmt "window.%s({ \"message\" : %S })"
+        Option.(value callback ~default:"missing_callback")
+        (Ketrew_protocol.Down_message.serialize down_msg |> Uri.pct_encode)
+    in
+    Log.(s "Returning " %n % verbatim page %n @ verbose);
+    return (`Page page)
+  | "/gui" -> gui_service ~server_state ~body req
   | other ->
     wrong_request "Wrong path" other
 
@@ -487,6 +546,8 @@ let start_listening_on_connections ~server_state =
               respond_string ~status:`OK  ~body:"" ()
             | `Ok (`Message (`Json, msg)) ->
               let body = Ketrew_protocol.Down_message.serialize msg in
+              respond_string ~status:`OK  ~body ()
+            | `Ok (`Page body) ->
               respond_string ~status:`OK  ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "
