@@ -56,7 +56,7 @@ let run_command_with_lsf ~host ~queue cmd =
 ### Daemonize With Nohup/Setsid
 
 This function is like `run_command_with_lsf` but uses
-`daemonize` with the “nohup-setsid hack” instead of the batch scheduler.
+`daemonize` with the “nohup-setsid” method instead of the batch scheduler.
 
 M*)
 let run_command_with_nohup ~host cmd =
@@ -74,10 +74,10 @@ This kind of “daemonized” job should work on any decent Unix system.
 ### Daemonize With “The Python Hack”
 
 This function is like `run_command_with_nohup` but uses
-the “python daemon hack” instead.
+the “python daemon” method instead.
 
 M*)
-let run_command_with_python_hack ~host cmd =
+let run_command_with_python_method ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   Ketrew_client.submit (
@@ -127,7 +127,7 @@ This function runs a workflow with no less than 2 nodes!
 - `target1` will run and if it succeeds `target2` will run.
 
 M*)
-let run_2_commands_with_python_hack ~host cmd1 cmd2 =
+let run_2_commands_with_python_method ~host cmd1 cmd2 =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   let target1 =
@@ -548,7 +548,7 @@ let () =
   | "python-daemon" :: more
   | "pyd" :: more ->
     begin match more with
-    | host :: cmd :: [] -> run_command_with_python_hack ~host cmd
+    | host :: cmd :: [] -> run_command_with_python_method ~host cmd
     | other ->
       say "usage: %s pyd <host> <cmd>" Sys.argv.(0);
       failwith "Wrong command line" end
@@ -562,7 +562,7 @@ let () =
   | "two-py" :: more ->
     begin match more with
     | host :: cmd1 :: cmd2 :: [] -> 
-      run_2_commands_with_python_hack ~host cmd1 cmd2
+      run_2_commands_with_python_method ~host cmd1 cmd2
     | other ->
       say "usage: %s two-py <host> <cmd1> <cmd2>" Sys.argv.(0);
       failwith "Wrong command line"
