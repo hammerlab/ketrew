@@ -15,12 +15,15 @@ configure: myocamlbuild.ml setup.data
 	ocaml setup.ml -configure --enable-all $(EN) && \
 	echo 'Configured'
 
+# This call also generates "_build/FINDLIB_PACKAGES"
 _build/VERSION:
 	$(PLEASE) generate metadata
 
 OCAMLBUILD_ANNOYING_LINKS=main.byte main.native Workflow_Examples.native integration.native dummy_plugin_user.native
 OWN_BINARIES= ketrew-test ketrew ketrew-pure ketrew-workflow-examples-test ketrew-integration-test
 
+# Files "_build/VERSION" and "_build/FINDLIB_PACKAGES" are imported as strings into 
+# Ketrew via ppx_blob during compilation.
 build: _build/VERSION
 	ocaml setup.ml -build && \
 	    rm -f $(OCAMLBUILD_ANNOYING_LINKS) && \
