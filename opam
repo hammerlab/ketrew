@@ -6,6 +6,7 @@ build: [
   ["oasis" "setup" ]
   ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
   ["ocaml" "tools/please.ml" "generate" "metadata"]
+  [make "_build/client.js"]
   ["ocaml" "setup.ml" "-build" ]
   ["ocaml" "setup.ml" "-install" ]
 ]
@@ -21,5 +22,6 @@ depends: [
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.2"} "ppx_include" "ppx_blob"
   "cohttp" "lwt" "ssl"
   "conduit"
+  "js_of_ocaml"
   ]
 
