@@ -15,6 +15,7 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 module Test = struct
   exception Tests_failed
@@ -35,7 +36,7 @@ module Test = struct
     try Sys.getenv "KETREW_TEST_VERBOSE" = "true" with _ -> false
 
   let checkf b fmt =
-    ksprintf (function
+    Printf.ksprintf (function
       | name when not b -> fail name
       | name when over_verbose ->
         Log.(s "Testing " % quote name % s ": SUCCESS" @ warning);
@@ -117,7 +118,7 @@ module Test = struct
 
     module Target = struct
       let check_history t ~matches fmt =
-        ksprintf (fun msg ->
+        Printf.ksprintf (fun msg ->
             let state = Ketrew_target.(state t) in
             let b = state |> matches in
             if not b && over_verbose then
@@ -689,7 +690,7 @@ let tree_to_dot ?(style=`Action_boxes) t =
         List.concat_map ~f:continue trees
       | `Node (state, action, trees) ->
         let arrows =
-          List.map trees (function
+          List.map trees ~f:(function
             | response, `Leaf (statei)
             | response, `Node (statei, _, _) ->
               transition state.name action response statei.name)
@@ -721,7 +722,7 @@ let make_automaton_graph () =
          information in `Target.Automaton.transition`. *)
       try f ()
       with Stack_overflow ->
-        eprintf "Test error! Stack_overflow: %d, %s\n%!" depth log;
+        Printf.eprintf "Test error! Stack_overflow: %d, %s\n%!" depth log;
         raise Stack_overflow
     in
     let node_map action l : tree =

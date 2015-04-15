@@ -19,8 +19,8 @@ precise error types.
 parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
-- `yojson`: JSON parsing/printing
-- `atd2cconv`: definition of serialization formats (used with `Yojson`).
+- `ppx_blob`, `ppx_deriving_yojson`, `ppx_deriving`, `yojson`: JSON
+  parsing/printing and other code generation
 - `toml`: config-file parsing
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
@@ -36,7 +36,6 @@ calls are quite configurable).
 
 Then you may setup and build everything:
 
-     make gen       # Generates the code of the `ketrew_data` library
      make configure # Generate the `_oasis`, call `oasis` and `configure`
      make           # The actual compilation of the library
 

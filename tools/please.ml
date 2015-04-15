@@ -48,16 +48,24 @@ let version_string () =
     |> (function "" -> default | s -> s)
   with _ -> default
 
-let findlib_packages = [
-  "threads"; "trakeva_sqlite"; "sosa"; "nonstd";
-  "docout"; "pvem"; "pvem_lwt_unix"; "cmdliner"; "atd";
-  "cconv.yojson"; "yojson"; "uri"; "toml"; "cohttp.lwt"; "lwt"; "ssl";
-  "conduit"; "dynlink"; "findlib"
+let pure_findlib_packages = [
+  "sosa"; "nonstd";
+  "docout"; "pvem"; "yojson"; "uri"; "toml";
+  "cohttp"; (* → measurements refer to cohttp “pure” lib *)
+  "ppx_deriving_yojson"; "ppx_deriving.show"; "ppx_blob";
 ]
+let unix_findlib_packages = [
+  "threads"; "trakeva_sqlite";
+  "pvem_lwt_unix"; "cmdliner"; "cohttp.lwt"; "lwt"; "ssl";
+  "conduit"; "dynlink"; "findlib";
+]
+let all_findlib_packages = pure_findlib_packages @ unix_findlib_packages
+
 let homepage = "http://seb.mondet.org/software/ketrew/"
 
 let oasis_meta_variable_version = "%%VERSION%%"
-let oasis_meta_variable_findlib_packages = "%%FINDLIB_PACKAGES%%"
+let oasis_meta_variable_pure_findlib_packages = "%%PURE_FINDLIB_PACKAGES%%"
+let oasis_meta_variable_unix_findlib_packages = "%%UNIX_FINDLIB_PACKAGES%%"
 
 
 let find_all ?(name="*") dir =
@@ -69,15 +77,17 @@ let say_stuff =
   function
   | ["something"] ->
     printf "Version: %S\nPackages:%s\n%!"
-      (version_string ()) (String.concat ~sep:", " findlib_packages)
+      (version_string ()) (String.concat ~sep:", " all_findlib_packages)
   | "ocamlfind-package-options" :: [] ->
     printf "%s"
-      (List.map ~f:(sprintf "-package %s") findlib_packages
+      (List.map ~f:(sprintf "-package %s") all_findlib_packages
        |> String.concat ~sep:" ")
   | "lib-mli-files" :: [] ->
-    find_all "src/lib" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!")
+    find_all "src/lib" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!");
+    find_all "src/pure" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!")
   | "lib-ml-files" :: [] ->
-    find_all "src/lib" ~name:"*.ml" |> List.iter ~f:(printf "%s\n%!")
+    find_all "src/lib" ~name:"*.ml" |> List.iter ~f:(printf "%s\n%!");
+    find_all "src/pure" ~name:"*.ml" |> List.iter ~f:(printf "%s\n%!")
   | other ->
     ksprintf failwith "don't know what to say: %S" (String.concat ~sep:"; " other)
 
@@ -85,31 +95,20 @@ let () =
   match Array.to_list Sys.argv |> List.tl_exn with
   | "say" :: stuff ->
     say_stuff stuff
-  | "generate" :: "ketrew_data" :: [] ->
-    let files = find_all "src/atd/" ~name:"*.atd" in
-    cmd_exn "mkdir -p gen/";
-    List.iter files ~f:begin fun atd ->
-      printf "ATD: %s\n%!" atd;
-      cmd_exn "atd2cconv -sort false -inline-inherit-variants true -i %s \
-               -o gen/ketrew_gen_%s.ml"
-        atd Filename.(basename atd |> (fun f -> chop_suffix f ".atd"))
-    end;
-    let content =
-      sprintf "\
-        let version = %S\n\
-        let findlib_packages = [%s]\n\
-        let homepage = %S\n\
-      "
-        (version_string ())
-        (List.map findlib_packages ~f:(sprintf "%S") |> String.concat ~sep:"; ")
-        homepage
-    in
-    write_file "gen/ketrew_metadata.ml" ~content
+  | "generate" :: "metadata" :: [] ->
+    cmd_exn "mkdir -p _build/";
+    write_file "_build/VERSION" ~content:(version_string ());
+    write_file "_build/FINDLIB_PACKAGES"
+      ~content:(List.map all_findlib_packages ~f:(sprintf "%s")
+                |> String.concat ~sep:" ");
+    ()
   | "make" :: "_oasis" :: [] ->
-    cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/' > _oasis"
+    cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/'  | sed 's/%s/%s/' > _oasis"
       oasis_meta_variable_version (version_string ())
-      oasis_meta_variable_findlib_packages
-      (String.concat ~sep:", " ("ketrew_data" :: findlib_packages))
+      oasis_meta_variable_pure_findlib_packages
+      (String.concat ~sep:", " pure_findlib_packages)
+      oasis_meta_variable_unix_findlib_packages
+      (String.concat ~sep:", " unix_findlib_packages)
   | [] -> printf "Nothing to do"
   | others ->
     printf "Don't know what to do with: %s" (String.concat ~sep:", " others);

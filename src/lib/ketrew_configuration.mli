@@ -18,6 +18,7 @@
     config-file). *)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 type t
 (** The contents of the configuration. *)

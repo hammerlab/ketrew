@@ -17,6 +17,7 @@
 
 open Ketrew_pervasives
 
+open Ketrew_unix_io
 
 
 (** A common error that simply means “invalid argument”. *)
@@ -184,10 +185,7 @@ let answer_get_targets ~server_state target_ids =
     >>| List.filter_opt
   end
   >>= fun targets ->
-  return (`Message
-            (`Json,
-             `List_of_targets
-               (List.map ~f:Ketrew_target.to_serializable targets)))
+  return (`Message (`Json, `List_of_targets targets))
 
 let answer_get_target_available_queries ~server_state target_id =
   Ketrew_engine.get_target server_state.state target_id
@@ -217,8 +215,7 @@ let answer_call_query ~server_state ~target_id ~query =
 
 let answer_add_targets ~server_state ~targets =
   Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
-  Ketrew_engine.add_targets server_state.state
-    (List.map ~f:Ketrew_target.of_serializable targets)
+  Ketrew_engine.add_targets server_state.state targets
   >>= fun () ->
   Light.green server_state.loop_traffic_light;
   return (`Message (`Json, `Ok))

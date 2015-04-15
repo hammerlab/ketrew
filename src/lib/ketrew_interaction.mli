@@ -14,8 +14,12 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-open Ketrew_pervasives
 (** Keyboard interaction functions (build “menus”, ask questions, etc.) *)
+
+
+open Ketrew_pervasives
+open Ketrew_unix_io
+
 
 val init : unit -> unit
 (** Initialize the module. *)
@@ -67,7 +71,7 @@ val build_sublist_of_targets :
                [> `Call of [> `GET | `POST ] * Uri.t | `Targets ] *
                [> `Exn of exn
                 | `Json_parsing of string * [> `Exn of exn ]
-                | `Unexpected_message of Ketrew_gen_protocol_v0.Down_message.t
+                | `Unexpected_message of Ketrew_protocol.Down_message.t
                 | `Wrong_json of Ketrew_pervasives.Json.t
                 | `Wrong_response of Cohttp.Response.t * string ]
            | `Server_error_response of [> `Call of [> `GET | `POST ] * Uri.t ] * string ]

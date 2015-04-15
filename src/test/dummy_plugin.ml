@@ -10,6 +10,7 @@ useless).
 
 M*)
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 (*M
 
@@ -45,8 +46,8 @@ module Another_long_running : Ketrew_long_running.LONG_RUNNING = struct
 
   let query run_param item =
     if item = "date" then
-      begin Ketrew_host.(get_shell_command_output (of_string "/tmp")
-                           (fmt "date"))
+      begin Ketrew_host_io.get_shell_command_output
+          (Ketrew_host.of_string "/tmp") "date"
         >>< function
         | `Ok (o, _) -> return o
         | `Error e ->

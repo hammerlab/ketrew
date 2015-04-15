@@ -18,6 +18,8 @@
 
 open Ketrew_pervasives
 
+open Ketrew_unix_io
+
 val run_main :
   ?argv:string array ->
   ?override_configuration:Ketrew_configuration.t ->

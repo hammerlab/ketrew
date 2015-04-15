@@ -15,8 +15,11 @@
 (**************************************************************************)
 
 open Ketrew_pervasives
+open Ketrew_unix_io
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
+              [@@deriving yojson, show]
+
 
 type engine = {
   database_parameters: string;
@@ -273,7 +276,7 @@ let apply_globals t =
          % s "timeout upper bound: " % OCaml.(option float host_timeout)
        ) @ very_verbose);
   begin match host_timeout with
-  | Some ht -> Ketrew_host.default_timeout_upper_bound := ht
+  | Some ht -> Ketrew_host_io.default_timeout_upper_bound := ht
   | None -> ()
   end
 
