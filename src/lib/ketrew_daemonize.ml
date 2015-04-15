@@ -71,11 +71,7 @@ let create
     {host; program; using; starting_timeout; shell_command } in
   `Long_running (name, `Created c |> serialize)
 
-let using_hack = function
-| `Created c -> c.using
-| `Running r -> r.created.using
-
-let hack_to_string = function
+let using_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
 | `Python_daemon -> "Python-script"
 
@@ -83,7 +79,7 @@ let log =
   let open Log in
   function
   | `Created c -> [
-      "Status", s "Created" % sp % parens (s (hack_to_string c.using));
+      "Status", s "Created" % sp % parens (s (using_to_string c.using));
       "Host", Ketrew_host.log c.host;
       "Program", Ketrew_program.log c.program;
       "Starting-timeout", f c.starting_timeout % s " sec.";
@@ -91,14 +87,14 @@ let log =
     ]
   | `Running rp -> [
       "Status", s "Running" % sp 
-                % parens (s (hack_to_string rp.created.using));
+                % parens (s (using_to_string rp.created.using));
       "Host", Ketrew_host.log rp.created.host;
       "PID", OCaml.option i rp.pid;
       "Playground", s (Ketrew_path.to_string rp.playground);
       "Start-time", Time.log rp.start_time;
     ]
 
-let python_hack_path ~playground =
+let python_using_path ~playground =
   Ketrew_path.(concat playground (relative_file_exn "daemonizator.py"))
 
 
@@ -233,7 +229,7 @@ let start rp =
       let content =
         make_python_script ~out ~err ~pid_file ~call_script
           monitored_script_path in
-      let path = python_hack_path ~playground in
+      let path = python_using_path ~playground in
       Ketrew_host_io.put_file ~content created.host ~path
       >>= fun () ->
       Ketrew_host_io.run_shell_command created.host 

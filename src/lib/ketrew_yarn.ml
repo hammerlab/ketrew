@@ -78,7 +78,7 @@ let create
   `Long_running (name, `Created created |> serialize)
 
 
-let hack_to_string = function
+let using_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
 | `Python_daemon -> "Python-script"
 
@@ -106,7 +106,7 @@ let log =
       ] in
   let created c =
     List.append
-      [ "Method", s (hack_to_string c.daemonize_using);
+      [ "Method", s (using_to_string c.daemonize_using);
         "Host", Ketrew_host.log c.host; ]
       (prog c.program)
   in
