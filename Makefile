@@ -33,7 +33,7 @@ build-with-oasis: _build/VERSION
 	    cp _build/src/test/integration.native ketrew-integration-test && \
             echo "Done"
 
-_build/client.js: _build/src/client-joo/main.byte
+_build/client.js:
 	js_of_ocaml +weak.js +toplevel.js  _build/src/client-joo/main.byte -o $@
 
 build: build-with-oasis _build/client.js
