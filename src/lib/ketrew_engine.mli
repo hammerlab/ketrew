@@ -94,6 +94,7 @@ val get_list_of_target_ids: t ->
   [ `All | `Not_finished_before of Time.t | `Created_after of Time.t ] ->
   (Ketrew_target.id list,
    [> `Database of Trakeva.Error.t
+   | `Missing_data of string
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Get only the Ids of the targets for a given “query”:
     
@@ -205,8 +206,8 @@ module Measurements: sig
 
   val get_all: t ->
     (Ketrew_measurement.Collection.t,
-     [> `Database of
-          [> `Get_all of string | `Load of string ] * string
-     | `Deserialization of exn * string ]) Deferred_result.t
+     [> `Database of Trakeva.Error.t
+     | `Deserialization of exn * string
+     | `Missing_data of string]) Deferred_result.t
 
 end

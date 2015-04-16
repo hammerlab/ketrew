@@ -70,17 +70,25 @@ module Measurements = struct
       | `Not_done -> fail (`Database_unavailable "measurements")
     end
   let get_all t =
+    let collection = "measurements" in
     database t
     >>= fun db ->
-    Database.get_all db ~collection:"measurements"
-    >>= fun all_strings ->
-    Deferred_list.while_sequential all_strings (fun s ->
-        try return (Ketrew_measurement.Collection.deserialize_exn s)
-        with e -> fail (`Deserialization (e, s)))
+    Database.get_all db ~collection
+    >>= fun all_keys  ->
+    Deferred_list.while_sequential all_keys (fun key ->
+        Database.get db ~collection ~key
+        >>= function
+        | Some s ->
+          begin try
+            return (Ketrew_measurement.Collection.deserialize_exn s)
+          with e -> fail (`Deserialization (e, s))
+          end
+        | None -> fail (`Missing_data (fmt "Missing measurement (from %s)" key)))
     >>| Ketrew_measurement.Collection.concat
     >>= fun collection ->
     return collection
 end
+
 module Measure = struct
   open Ketrew_measurement
   let incomming_request t ~connection_id ~request =
@@ -171,13 +179,19 @@ let add_stored_targets t st_list =
             (List.map st_list ~f:Target.Stored_target.id
              |> String.concat ~sep:", "))
 
-let get_target t id =
+let get_stored_target t key =
   database t >>= fun db ->
-  let rec get_following_pointers ~key ~count =
-    Database.get db ~collection:targets_collection ~key
-    >>= begin function
-    | Some serialized_stored ->
+  Database.get db ~collection:targets_collection ~key
+  >>= begin function
+  | Some serialized_stored ->
     of_result (Target.Stored_target.deserialize serialized_stored)
+  | None ->
+    fail (`Missing_data (fmt "get_stored_target %S" key))
+  end
+
+let get_target t id =
+  let rec get_following_pointers ~key ~count =
+    get_stored_target t key
     >>= fun stored ->
     begin match Target.Stored_target.get_target stored with
     | `Pointer _ when count >= 30 ->
@@ -185,9 +199,6 @@ let get_target t id =
     | `Pointer key ->
       get_following_pointers ~count:(count + 1) ~key
     | `Target t -> return t
-    end
-    | None ->
-      fail (`Missing_data (fmt "get_target %S" id))
     end
   in
   get_following_pointers ~key:id ~count:0
@@ -198,10 +209,9 @@ let fold_targets t ~init ~f =
   let target_stream = Database.iterator db ~collection:"targets" in
   let rec iter_stream previous =
     target_stream ()
-    >>= fun stored_target ->
-    begin match stored_target with
-    | Some stored ->
-      of_result Target.Stored_target.(deserialize stored)
+    >>= begin function
+    | Some key ->
+      get_stored_target t key
       >>| Target.Stored_target.get_target
       >>= fun topt ->
       begin match topt with
@@ -232,6 +242,7 @@ let all_targets t =
   end
 
 let current_targets = all_targets
+
 module Killing_targets = struct
   let targets_to_kill_collection = "targets-to-kill"
   let add_target_ids_to_kill_list t id_list =
@@ -248,6 +259,9 @@ module Killing_targets = struct
     database t
     >>= fun db ->
     Database.get_all db ~collection:targets_to_kill_collection
+    >>= fun all_keys ->
+    (* Keys are equal to values, so we can take short cut *)
+    return all_keys
 
   let remove_from_kill_list_action id =
     Database_action.(unset ~collection:targets_to_kill_collection id)
@@ -311,9 +325,15 @@ module Adding_targets = struct
     database t
     >>= fun db ->
     Database.get_all db ~collection:targets_to_add_collection
-    >>= fun l ->
-    Deferred_list.while_sequential l ~f:(fun blob ->
-        of_result (Target.Stored_target.deserialize blob)
+    >>= fun keys ->
+    Deferred_list.while_sequential keys ~f:(fun key ->
+        Database.get db ~collection:targets_to_add_collection ~key
+        >>= begin function
+        | Some blob ->
+          of_result (Target.Stored_target.deserialize blob)
+        | None ->
+          fail (`Missing_data (fmt "target to add: %s" key))
+        end
         >>= fun st ->
         begin match Target.Stored_target.get_target st with
         | `Target t -> return t
