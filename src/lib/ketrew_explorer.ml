@@ -106,18 +106,31 @@ let rec get_target ?(force_reload=false) ?prefetching explorer ~id =
   >>= begin function
   | Some e -> return e
   | None ->
-    Log.(s "Explorer getting target " % s id
-         % (if force_reload then s " (forced)" else s " (cache miss)")
-         @ verbose);
     begin match prefetching with
     | None  ->
+      Log.(s "Explorer getting target " % s id
+           % (if force_reload then s " (forced)" else s " (cache miss)")
+           @ verbose);
       Ketrew_client.get_target explorer.ketrew_client ~id
       >>= fun value ->
       Target_cache.add explorer.target_cache ~id ~value
       >>= fun () ->
       return value
     | Some (`Take_from (nb, ids)) ->
-      let id_list = List.take ids nb in
+      let rec find_cache_misses cache_misses = function
+      | (zero, _) when zero <= 0 -> return cache_misses
+      | (_, []) -> return cache_misses
+      | (more, next :: ids) ->
+        Target_cache.get explorer.target_cache ~id:next
+        >>= fun opt ->
+        begin match opt with
+        | None -> find_cache_misses (next :: cache_misses) (more - 1, ids)
+        | Some _ -> find_cache_misses cache_misses (more, ids)
+        end
+      in
+      find_cache_misses [] (nb, id :: ids)
+      >>= fun id_list ->
+      Log.(s "Explorer getting targets " % OCaml.list s id_list @ verbose);
       Ketrew_client.get_targets explorer.ketrew_client ~id_list
       >>= fun targets ->
       Deferred_list.while_sequential targets ~f:(fun value ->
