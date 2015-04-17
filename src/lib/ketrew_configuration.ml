@@ -29,8 +29,14 @@ type engine = {
   turn_unix_ssh_failure_into_target_failure: bool [@default false];
   host_timeout_upper_bound: float option [@default None];
 } [@@deriving yojson]
+type explorer_defaults = {
+  request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
+  targets_per_page: int;
+  targets_to_prefetch: int;
+} [@@deriving yojson]
 type ui = {
   with_color: bool;
+  explorer: explorer_defaults;
 } [@@deriving yojson]
 type server = {
   authorized_tokens_path: string option;
@@ -130,7 +136,16 @@ let create ?(debug_level=0) ?(plugins=[]) mode =
   {debug_level; plugins; mode;}
 
 
-let ui ?(with_color=true) () = {with_color}
+let explorer
+  ?(request_targets_ids = `Younger_than (`Days 1.5))
+  ?(targets_per_page = 6)
+  ?(targets_to_prefetch = 6) () =
+  {request_targets_ids; targets_to_prefetch; targets_per_page }
+
+let default_explorer_defaults : explorer_defaults = explorer ()
+
+let ui ?(with_color=true) ?(explorer=default_explorer_defaults) () =
+  {with_color; explorer}
 let default_ui = ui ()
 
 let engine
@@ -186,6 +201,17 @@ let token c = c.token
 let standalone_of_server s =
   {standalone_ui = s.server_ui;
    standalone_engine = s.server_engine;}
+
+let get_ui (t: t) =
+  match t.mode with
+  | `Server { server_ui; _ } -> server_ui
+  | `Standalone { standalone_ui; _ } -> standalone_ui
+  | `Client { client_ui; _ } -> client_ui
+
+let with_color t = get_ui t |> fun ui -> ui.with_color
+let request_targets_ids t = get_ui t |> fun ui -> ui.explorer.request_targets_ids
+let targets_per_page t = get_ui t |> fun ui -> ui.explorer.targets_per_page
+let targets_to_prefetch t = get_ui t |> fun ui -> ui.explorer.targets_to_prefetch
 
 module File = struct
   type configuration = t

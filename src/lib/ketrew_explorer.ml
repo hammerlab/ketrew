@@ -74,14 +74,16 @@ type t = {
   mutable targets_per_page: int;
   mutable targets_to_prefetch: int;
 }
-let create ~client () = {
+let create ~client () =
+  let conf = Ketrew_client.configuration client in
+  {
   ketrew_client = client;
   target_ids = [];
   target_cache = Target_cache.create ();
   state_stack = [];
-  request_targets_ids = `Younger_than (`Days 1.5);
-  targets_per_page = 6;
-  targets_to_prefetch = 6;
+  request_targets_ids = Ketrew_configuration.request_targets_ids conf;
+  targets_per_page = Ketrew_configuration.targets_per_page conf;
+  targets_to_prefetch = Ketrew_configuration.targets_to_prefetch conf;
 }
 
 let reload_list_of_ids explorer =
