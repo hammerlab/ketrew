@@ -265,6 +265,12 @@ let get_local_engine = function
 | `Standalone s -> (Some s.Standalone.engine)
 | `Http_client _ -> None
 
+let configuration = function
+| `Standalone s ->
+  Ketrew_configuration.create (`Standalone s.Standalone.configuration)
+| `Http_client h ->
+  Ketrew_configuration.create (`Client h.Http_client.configuration)
+
 (*
   Submit a workflow:
 
