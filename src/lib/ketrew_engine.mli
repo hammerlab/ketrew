@@ -49,10 +49,6 @@ val unload: t ->
       | `Database of  Trakeva.Error.t
     ]) Deferred_result.t
 
-val database: t -> (Trakeva_sqlite.t,
-                    [> `Database of [> `Load of string ] * string ]) Deferred_result.t
-(** Get the database handle managed by the engine. *)
-
 val configuration: t -> Ketrew_configuration.engine
 (** Retrieve the configuration. *)
 
