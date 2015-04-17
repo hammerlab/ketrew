@@ -69,7 +69,12 @@ let plugins = [
 ]
 
 (* User-Interface preferences: *)
-let ui = ui ~with_color:true ()
+let explorer =
+  explorer
+    ~request_targets_ids:(`Younger_than (`Days 1.5))
+    ~targets_per_page:5
+    ~targets_to_prefetch:10 ()
+let ui = ui ~with_color:true ~explorer ()
 
 (* A function that given a boolean value creates a “server
   configuration” that detaches or not from the shell. *)
@@ -140,6 +145,12 @@ conflicts (“normal” users should *never* need to set this).
 The `ui` function configures the behavior of the User Interface.
 
 - `color`: boolean (default `true`); tell Ketrew to display *f-ANSI* colors.
+- The Interactive Explorer's configuration:
+    - `request_targets_ids` how to request target IDs from the server.
+    - `targets_per_page`: the number of targets to display in a single “page.”
+    - `targets_to_prefetch`: how many targets to download at once while
+      prefetching (the client-side cache fetches targets in advance to improve
+      latency).
 
 ### The `plugins` Option
 
