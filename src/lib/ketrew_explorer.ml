@@ -71,6 +71,8 @@ type t = {
   target_cache: Target_cache.t;
   mutable state_stack: exploration_state list;
   mutable request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
+  mutable targets_per_page: int;
+  mutable targets_to_prefetch: int;
 }
 let create ~client () = {
   ketrew_client = client;
@@ -78,6 +80,8 @@ let create ~client () = {
   target_cache = Target_cache.create ();
   state_stack = [];
   request_targets_ids = `Younger_than (`Days 1.5);
+  targets_per_page = 6;
+  targets_to_prefetch = 6;
 }
 
 let reload_list_of_ids explorer =
@@ -236,63 +240,76 @@ let get_filter () =
   | `Set f  -> return f
 
 let rec settings_menu explorer =
-  let current_target_query_log =
-    match explorer.request_targets_ids with
-    | `All -> Log.(s "All")
-    | `Younger_than (`Days days) -> Log.(s "Younger than " % f days % s " days")
-  in
   Interaction.(
-    menu ~sentence:Log.(s "Pick a target")
+    menu ~sentence:Log.(s "Pick an action")
       ~always_there:[
         menu_item ~char:'q' ~log:Log.(s "Quit") `Quit;
       ]
       [
-        menu_item ~char:'d' `Set_age
-          ~log:Log.(s "Set the “listing query”"
-                    %sp %parens (s "current: " % current_target_query_log));
+        menu_item ~char:'d' `Edit ~log:Log.(s "Edit settings with a DSL");
       ]
   )
   >>= function
   | `Quit -> return ()
-  | `Set_age ->
+  | `Edit ->
     Interaction.ask_for_edition
-      "# '#' lines are ignored\n\
-       # type (or uncomment):\n\
-       #     all\n\
-       # to see ALL targets since the beginning of time, limit with:\n\
-       #     younger than <some-float> days\n\
-      "
+      (fmt
+         "# Edit/Uncomment the lines you're interested\n\
+          # (lines starting with '#' are ignored)\n\
+          \n\
+          # Set the “listing query”:\n\
+          # type (or uncomment):\n\
+          #   listing-query = all\n\
+          # to see ALL targets since the beginning of time, or limit with:\n\
+          #   listing-query = younger than <some-float> days\n\
+          # Current value: %s\n\
+          \n\
+          # Set the number of targets per page:\n\
+          #   targets-per-page = %d\n\
+          \n\
+          # Set the number of targets that the client requests at once (for prefetching/speed)):\n\
+          #   prefetch-targets = %d\n\
+         "
+         (match explorer.request_targets_ids with
+         | `All -> "all"
+         | `Younger_than (`Days days) -> fmt "younger than %F days" days)
+         explorer.targets_per_page
+         explorer.targets_to_prefetch)
     >>| String.split ~on:(`Character '\n')
-    >>| List.filter_map ~f:(fun line ->
+    >>= fun lines ->
+    List.iter lines ~f:(fun line ->
         let stripped = String.strip line in
         match String.get ~index:0 stripped with
-        | Some '#' -> None
-        | None -> None
+        | Some '#' | None -> ()
         | Some other ->
           begin match String.split ~on:(`Character ' ') stripped
                       |> List.map ~f:String.strip
                       |> List.filter ~f:((<>) "") with
-          | ["all"] | ["All"] | ["ALL"] -> Some `All
-          | "younger" :: "than" :: v :: "days" :: [] ->
-            begin match Float.of_string v with
-            | None ->
-              Log.(s "Can't parse float: " % quote v @ error);
-              None
-            | Some days -> Some (`Younger_than (`Days days))
+          | "listing-query" :: "=" :: listing_query ->
+            begin match listing_query with
+            | ["all"] | ["All"] | ["ALL"] ->
+              explorer.request_targets_ids <- `All;
+            | "younger" :: "than" :: v :: "days" :: [] ->
+              begin match Float.of_string v with
+              | None -> Log.(s "Can't parse float: " % quote v @ error);
+              | Some days ->
+                explorer.request_targets_ids <- (`Younger_than (`Days days))
+              end
+            | _ -> Log.(s "Can't parse listing query: " % quote line @ error);
             end
-          | _ ->
-            Log.(s "Can't parse line: " % quote line @ error);
-            None
-          end)
-    >>= fun new_age ->
-    begin match new_age with
-    | [] -> return ()
-    | one :: [] ->
-      explorer.request_targets_ids <- one;
-      reload_list_of_ids explorer
-    | more ->
-      Log.(s "Too many matching lines!" @ error); return ()
-    end
+          | "targets-per-page" :: "=" :: v :: [] ->
+            begin match Int.of_string v with
+            | None -> Log.(s "Can't parse int: " % quote v @ error);
+            | Some nb -> explorer.targets_per_page <- nb
+            end
+          | "prefetch-targets" :: "=" :: v :: [] ->
+            begin match Int.of_string v with
+            | None -> Log.(s "Can't parse int: " % quote v @ error);
+            | Some nb -> explorer.targets_to_prefetch <- nb
+            end
+          | _ -> Log.(s "Can't parse line: " % quote line @ error);
+          end);
+    reload_list_of_ids explorer
     >>= fun () ->
     settings_menu explorer
 
@@ -306,7 +323,7 @@ let pick_a_target_from_list explorer target_ids =
 
 let pick_a_target explorer (es : exploration_state) ~how =
   (* Ketrew_client.current_targets explorer.ketrew_client >>= fun targets -> *)
-  let targets_to_display = 13 in
+  let targets_to_display = explorer.targets_per_page in
   let max_per_page =
     targets_to_display + List.length common_menu_items
     + 1 (* = filter *)
@@ -320,7 +337,7 @@ let pick_a_target explorer (es : exploration_state) ~how =
       | _  when found_count = targets_to_display ->
         return (List.rev acc, Some (`Pick (`From passed_count)))
       | one :: more ->
-        let prefetching = `Take_from (6, one :: more) in
+        let prefetching = `Take_from (explorer.targets_to_prefetch, more) in
         get_target explorer ~id:one ~prefetching
         >>= fun target ->
         begin match (fst es.target_filter) target with
