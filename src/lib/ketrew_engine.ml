@@ -21,7 +21,7 @@ open Ketrew_long_running
 module Path = Ketrew_path
 module Host = Ketrew_host
 module Target = Ketrew_target
-module Database = Trakeva_sqlite
+module Database = Trakeva_cache.Add(Trakeva_sqlite)
 module Database_action = Trakeva.Action
 module Database_error = Trakeva.Error
 
