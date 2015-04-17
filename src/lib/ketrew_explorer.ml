@@ -98,7 +98,7 @@ let reload_list_of_ids explorer =
   Target_cache.clear explorer.target_cache;
   return ()
 
-let get_target ?(force_reload=false) explorer ~id =
+let rec get_target ?(force_reload=false) ?prefetching explorer ~id =
   begin match force_reload with
   | false -> Target_cache.get explorer.target_cache ~id
   | true -> return None
@@ -109,11 +109,23 @@ let get_target ?(force_reload=false) explorer ~id =
     Log.(s "Explorer getting target " % s id
          % (if force_reload then s " (forced)" else s " (cache miss)")
          @ verbose);
-    Ketrew_client.get_target explorer.ketrew_client ~id
-    >>= fun value ->
-    Target_cache.add explorer.target_cache ~id ~value
-    >>= fun () ->
-    return value
+    begin match prefetching with
+    | None  ->
+      Ketrew_client.get_target explorer.ketrew_client ~id
+      >>= fun value ->
+      Target_cache.add explorer.target_cache ~id ~value
+      >>= fun () ->
+      return value
+    | Some (`Take_from (nb, ids)) ->
+      let id_list = List.take ids nb in
+      Ketrew_client.get_targets explorer.ketrew_client ~id_list
+      >>= fun targets ->
+      Deferred_list.while_sequential targets ~f:(fun value ->
+          let id = Ketrew_target.id value in
+          Target_cache.add explorer.target_cache ~id ~value)
+      >>= fun (_ : unit list) ->
+      get_target ~force_reload:false ?prefetching:None explorer ~id
+    end
   end
 
 (*
@@ -295,7 +307,8 @@ let pick_a_target explorer (es : exploration_state) ~how =
       | _  when found_count = targets_to_display ->
         return (List.rev acc, Some (`Pick (`From passed_count)))
       | one :: more ->
-        get_target explorer one
+        let prefetching = `Take_from (6, one :: more) in
+        get_target explorer ~id:one ~prefetching
         >>= fun target ->
         begin match (fst es.target_filter) target with
         | true ->
