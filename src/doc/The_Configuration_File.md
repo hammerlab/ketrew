@@ -1,23 +1,21 @@
 Configuration File
 ==================
 
-Ketrew, the application, uses a configuration file based on the Json format (it
-is possible to avoid configuration files by using the library and/or creating
-your own
+Ketrew applications (ie. server or client), use a JSON format
+configuration file (it is possible to avoid configuration files by using
+the library and/or creating your own
 [ad-hoc command-line application](./Alternative_CLI_Application.md)).
 
-The configuration file can contain one or more configurations, called
-“profiles,” accessed through their name.
+The configuration file can contain one or more named "profiles".
 
 Location
 --------
 
-Here is the process followed by Ketrew to find it's configuration, it tries
-these options successively:
+Ketrew finds it's configuration file by successively checking:
 
-- the command line option `--configuration-file` (alias: `-C`)
-- the environment variables `KETREW_CONFIGURATION` and `KETREW_CONFIG`,
-- given a “root” directory (either the variable `KETREW_ROOT` or the default
+1. the command line option `--configuration-file` (alias: `-C`)
+2. the environment variables `KETREW_CONFIGURATION` and `KETREW_CONFIG`,
+3. given a “root” directory (either by the variable `KETREW_ROOT` or the default
 `$HOME/.ketrew/`), Ketrew will try to access the files:
     - `configuration.json`,
     - `configuration.ml`, and
@@ -27,16 +25,16 @@ Given the extension of the filename Ketrew will read the configuration
 differently:
 
 - `.json` → will read and parse the file;
-- `.ml` → will execute `ocaml <file>`, collect `stdout`, and parse it;
-- `.sh` → will execute `./<file>`, collect `stdout`, and parse it.
+- `.ml` → will execute `ocaml <file>`, collect `stdout`, and parse it (as JSON);
+- `.sh` → will execute `./<file>`, collect `stdout`, and parse it (as JSON).
 
 Other file extension are considered undefined behavior for future use.
 
-After parsing a configuration file, Ketrew will select a profile by name:
+After parsing the configuration file, Ketrew will select a profile by name:
 
-- using the command line option `-P`/`--configuration-profile`,
-- checking the environment variable `KETREW_PROFILE`,
-- using `"default"`.
+1. using the command line option `-P`/`--configuration-profile`,
+2. checking the environment variable `KETREW_PROFILE`,
+3. using `"default"`.
 
 Generating From Command Line
 ----------------------------
@@ -48,19 +46,22 @@ standalone for now); see `ketrew init --help`.
 Examples
 --------
 
-A configuration file `config.ml` (hence that Ketrew will execute by itself)
+A configuration file `config.ml` (that Ketrew will execute through `OCaml`)
 would look like:
 
 ```ocaml
 #use "topfind"
 #thread
-#use "ketrew"
+#require "ketrew"
 
 open Ketrew_configuration
 
 let debug_level = 2
-(* `debug-level`: integer specifying the amount of verbose messages: `0`: none,
-   `1`: verbose, `2`: very verbose.*)
+(* `debug-level`: integer specifying the amount of verbose messages:
+    `0`: none,
+    `1`: verbose,
+    `2`: very verbose.
+*)
 
 (* Plugins to load: *)
 let plugins = [
@@ -105,7 +106,7 @@ let () =
   ]
 ```
 
-You may run `ocaml config.json` to see the equivalent Json.
+You may run `ocaml config.ml` to see the equivalent Json.
 
 Creating a test environment (`make test-env`, cf. developer
 [docs](./Developer_Documentation.md)) generates a very similar configuration
@@ -114,7 +115,7 @@ file.
 Explanation of the Options
 --------------------------
 
-To build configuration refere to the [API](src/lib/ketrew_configuration.mli) of
+To build configurations refer to the [API](src/lib/ketrew_configuration.mli) of
 the `Ketrew_configuration` module.
 
 ### The `engine` Options
@@ -122,8 +123,11 @@ the `Ketrew_configuration` module.
 In standalone and server modes, the `engine` configures how to run the
 workflows.
 
-- `database_path`: the path to the database file/directory (the
+- `database_parameters`: the path to the database file/directory (the
 default is `~/.ketrew/database`).
+- `persistent_state_key`: the name of a key to the “root of the tree”; if more
+than one application is using the same database, this can be useful to avoid
+conflicts (“normal” users should *never* need to set this).
 - `turn_unix_ssh_failure_into_target_failure`: boolean;
 when an SSH or system call fails it may not mean that the command in your
 workflow is wrong (could be an SSH configuration or tunneling problem). By
@@ -131,10 +135,6 @@ default (i.e. `false`), Ketrew tries to be clever and does not make targets
 fail. To change this behavior set the option to `true`.
 - `host_timeout_upper_bound`: float (seconds, default is `60.`); every
 connection/command time-out will be `≤ upper-bound`.
-- `persistent_state_key`: the name of a key to the “root of the tree”; if more
-than one application is using the same database, this can be useful to avoid
-conflicts (“normal” users should *never* need to set this).
-
 ### The `ui` Options
 
 The `ui` function configures the behavior of the User Interface.
@@ -161,7 +161,7 @@ The `client` function configures Ketrew in client-mode:
 
 The `server` function configures the HTTP server:
 
-- The value `` `Tls (certificate, private_key, port)` configures the connection
+- The value `Tls (certificate, private_key, port)` configures the connection
   settings:
     - `certificate`: path to the SSL certificate (*mandatory*).
     - `private_key`: path to the SSL private-key (*mandatory*).
