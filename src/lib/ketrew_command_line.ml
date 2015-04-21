@@ -55,19 +55,28 @@ let get_status ~client =
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
 let rec display_status ~client ~loop  =
-  get_status ~client
-  >>= fun (`In_progress inp) ->
-  Log.(s "Current targets “in-progress”: " % i inp @ normal);
-  begin match loop, inp with
-  | Some _, 0 ->
-    Log.(s "Nothing left to do" @ verbose);
-    return ()
-  | Some seconds, _ ->
-    (System.sleep seconds >>< fun _ -> return ())
-    >>= fun () ->
-    display_status ~client ~loop
-  | None, _ ->
-    return ()
+  let display () =
+    get_status ~client
+    >>= fun (`In_progress inp) ->
+    Log.(s "Current targets “in-progress”: " % i inp @ normal);
+    return (inp = 0)
+  in
+  begin match loop with
+  | None -> display () >>= fun _ -> return ()
+  | Some seconds ->
+    let keep_going = ref true in
+    let rec loop () = 
+      display ()
+      >>= fun nothing_left_to_do ->
+      (System.sleep seconds >>< fun _ -> return ())
+      >>= fun () ->
+      (if !keep_going && not nothing_left_to_do then loop () else return ())
+    in
+    Interaction.run_with_quit_key
+      (object
+        method start = loop ()
+        method stop = keep_going := false
+      end)
   end
 
 (** The function behind the [ketrew run <how>] sub-command (and the equivalent
@@ -126,21 +135,8 @@ let run_state ~client ~max_sleep ~how =
           end
         end
       in
-      Deferred_list.pick_and_cancel [
-        begin loop 2. end;
-        begin
-          let rec kbd_loop () =
-            Log.(s "Press the 'q' key to stop looping." @ normal);
-            Interaction.get_key ()
-            >>= function
-            | 'q' | 'Q' ->
-              stop_it ();
-              return ()
-            | _ -> kbd_loop ()
-          in
-          kbd_loop ()
-        end;
-      ]
+      Interaction.run_with_quit_key
+        (object method start = loop 2. method stop = stop_it () end)
     | sl ->
       Log.(s "Unknown client-running command: " % OCaml.list (sf "%S") sl
            @ error);
