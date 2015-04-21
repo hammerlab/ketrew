@@ -50,7 +50,7 @@ let ketrew_deep_ancestors () =
   Findlib.package_deep_ancestors ["native"]
     (Lazy.force Ketrew_metadata.findlib_packages)
 
-let package_to_files_to_load package =
+let files_to_load_from_package package =
   let predicates = ["native"; "plugin"; "mt"] in
   let deps = Findlib.package_deep_ancestors predicates [package] in
   List.concat_map deps ~f:(fun dep ->
@@ -75,7 +75,7 @@ let load_plugins plugins_to_load =
   Deferred_list.while_sequential plugins_to_load ~f:(function
     | `Compiled path -> dynlink path
     | `OCamlfind package ->
-      let to_load = package_to_files_to_load package in
+      let to_load = files_to_load_from_package package in
       Log.(s "Going to load: " % OCaml.list quote to_load @ verbose);
       Deferred_list.while_sequential to_load ~f:dynlink
       >>= fun (_ : unit list) ->
@@ -89,7 +89,7 @@ let load_plugins_no_lwt_exn plugins_to_load =
   List.iter plugins_to_load ~f:(function
     | `Compiled path -> dynlink_no_lwt_exn path
     | `OCamlfind package ->
-      let to_load = package_to_files_to_load package in
+      let to_load = files_to_load_from_package package in
       Log.(s "Going to load: " % OCaml.list quote to_load @ verbose);
       List.iter to_load ~f:dynlink_no_lwt_exn)
 
