@@ -17,21 +17,23 @@
 open Ketrew_pervasives
 open Ketrew_unix_io
 
+let default_persistent_state_key = "ketrew_persistent_state"
+
 type plugin = [ `Compiled of string | `OCamlfind of string ]
-              [@@deriving yojson, show]
+              [@@deriving yojson]
 
 
 type engine = {
   database_parameters: string;
-  persistent_state_key: string;
-  turn_unix_ssh_failure_into_target_failure: bool;
-  host_timeout_upper_bound: float option;
-}
+  persistent_state_key: string [@default default_persistent_state_key];
+  turn_unix_ssh_failure_into_target_failure: bool [@default false];
+  host_timeout_upper_bound: float option [@default None];
+} [@@deriving yojson]
 type ui = {
   with_color: bool;
-}
+} [@@deriving yojson]
 type server = {
-  authorized_tokens_path: string option; 
+  authorized_tokens_path: string option;
   listen_to: [ `Tls of (string * string * int) ];
   return_error_messages: bool;
   command_pipe: string option;
@@ -39,34 +41,33 @@ type server = {
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
-}
+} [@@deriving yojson]
 type client = {
-  (* client_engine: engine; *)
   connection: string;
   token: string;
-  client_ui: ui;
-}
+  client_ui [@key "ui"]: ui;
+} [@@deriving yojson]
 type standalone = {
-  standalone_engine: engine;
-  standalone_ui: ui;
-}
+  standalone_engine [@key "engine"]: engine;
+  standalone_ui [@key "ui"]: ui;
+} [@@deriving yojson]
 type mode = [
   | `Standalone of standalone
   | `Client of client
   | `Server of server
-]
+] [@@deriving yojson]
 
 type t = {
   debug_level: int;
-  plugins: plugin list;
+  plugins: plugin list [@default []];
   mode: mode;
-}
+} [@@deriving yojson]
 
 let log t =
   let open Log in
   let item name l = s name % s ": " % l % n in
   let sublist l = n % indent (separate empty l) in
-  let common = 
+  let common =
     sublist [
       item "Debug-level" (i t.debug_level);
       item "Plugins" (match t.plugins with
@@ -79,7 +80,7 @@ let log t =
     item "Colors"
       (s (if t.with_color then "with" else "without") % s " colors")
   in
-  let engine t = 
+  let engine t =
     sublist [
       item "Database" (quote t.database_parameters);
       item "State-key" (quote t.persistent_state_key);
@@ -105,7 +106,7 @@ let log t =
     % item "Engine" (engine srv.server_engine)
     % item "UI" (ui srv.server_ui)
     % item "HTTP-server" (sublist [
-        item "Authorized tokens" 
+        item "Authorized tokens"
           OCaml.(option string srv.authorized_tokens_path);
         item "Daemonize" (OCaml.bool srv.daemon);
         item "Command Pipe" (OCaml.option quote srv.command_pipe);
@@ -116,17 +117,13 @@ let log t =
            sublist [
              item "Port" (i port);
              item "Certificate" (quote cert);
-             item "Key" (quote key); 
+             item "Key" (quote key);
            ])
       ])
     % item "Misc" common
 
-let default_persistent_state_key = "ketrew_persistent_state"
 
-let default_configuration_path = 
-  Sys.getenv "HOME" ^ "/.ketrew/configuration.toml"
-
-let default_database_path = 
+let default_database_path =
   Sys.getenv "HOME" ^ "/.ketrew/database"
 
 let create ?(debug_level=0) ?(plugins=[]) mode =
@@ -136,7 +133,7 @@ let create ?(debug_level=0) ?(plugins=[]) mode =
 let ui ?(with_color=true) () = {with_color}
 let default_ui = ui ()
 
-let engine 
+let engine
     ?(database_parameters=default_database_path)
     ?(persistent_state_key=default_persistent_state_key)
     ?(turn_unix_ssh_failure_into_target_failure=false)
@@ -150,7 +147,7 @@ let default_engine = engine ()
 
 let standalone ?(ui=default_ui) ?engine () =
   let standalone_engine = Option.value engine ~default:default_engine in
-  (`Standalone {standalone_engine; standalone_ui = ui}) 
+  (`Standalone {standalone_engine; standalone_ui = ui})
 
 let client ?(ui=default_ui) ~token connection =
   (`Client {client_ui = ui; connection; token})
@@ -165,98 +162,156 @@ let server
             return_error_messages; command_pipe; daemon; log_path; })
 
 
+let plugins t = t.plugins
 
-let parse_exn str =
-  let toml = Toml.from_string str in
-  let toml_option ?(table=toml) get name =
-    try Some (get table name) with _ -> None in
-  let toml_mandatory ?(table=toml) get name =
-    try get table name
-    with _ -> failwith (fmt "Mandatory field %S missing" name) in
-  let debug_level = toml_option Toml.get_int "debug-level" in
-  let plugins =
-    toml_option Toml.get_table "plugins"
-    |> Option.value_map ~default:[] ~f:Toml.toml_to_list
-    (* Toml.toml_to_list seems to reverse the order of the table, so 
-       we reverse back: *)
-    |> List.rev_map ~f:(function
-      | ("compiled", TomlType.TString path) -> [`Compiled path]
-      | ("ocamlfind", TomlType.TString pack) -> [`OCamlfind pack]
-      | ("compiled", TomlType.TArray (TomlType.NodeString paths)) ->
-        List.map paths ~f:(fun p -> `Compiled p)
-      | ("ocamlfind", TomlType.TArray (TomlType.NodeString packs)) ->
-        List.map packs ~f:(fun p -> `OCamlfind p)
-      | (other, _) ->
-        failwith (fmt "Expecting “compiled” plugins only")
-      )
-    |> List.concat
-  in
-  let engine =
-    Option.(
-      toml_option Toml.get_table "engine"
-      >>= fun table ->
-      let database_parameters =
-        toml_option ~table Toml.get_string "database-path" in
-      let persistent_state_key =
-        toml_option ~table Toml.get_string "state-key" in
-      let turn_unix_ssh_failure_into_target_failure =
-        toml_option ~table Toml.get_bool "turn-unix-ssh-failure-into-target-failure" in
-      let host_timeout_upper_bound =
-        toml_option ~table Toml.get_float "host-timeout-upper-bound" in
-      return (engine ?database_parameters ?persistent_state_key
-                ?turn_unix_ssh_failure_into_target_failure
-                ?host_timeout_upper_bound ()))
-  in
-  let ui =
-    Option.(
-      toml_option Toml.get_table "ui"
-      >>= fun table ->
-      let with_color = toml_option ~table Toml.get_bool "color" in
-      return (ui ?with_color ())
-    ) in
-  let server =
-    let open Option in
-    toml_option Toml.get_table "server"
-    >>= fun table ->
-    let return_error_messages =
-      toml_option ~table Toml.get_bool "return-error-messages" in
-    let authorized_tokens_path =
-      toml_option ~table Toml.get_string "authorized-tokens-path" in
-    let command_pipe =
-      toml_option ~table Toml.get_string "command-pipe-path" in
-    let daemon =
-      toml_option ~table Toml.get_bool "daemonize" in
-    let log_path =
-      toml_option ~table Toml.get_string "log-path" in
-    let listen_to =
-      let cert = toml_mandatory ~table Toml.get_string "certificate" in
-      let key = toml_mandatory ~table Toml.get_string "private-key" in
-      let port = toml_mandatory ~table Toml.get_int "port" in
-      `Tls (cert, key, port) in
-    return (server ?return_error_messages ?command_pipe ?engine ?daemon
-              ?ui ?log_path ?authorized_tokens_path listen_to)
-  in
-  let client =
-    Option.(
-      toml_option Toml.get_table "client"
-      >>= fun table ->
-      let connection = toml_mandatory ~table Toml.get_string "connection" in
-      let token = toml_mandatory ~table Toml.get_string "token" in
-      return (client ?ui ~token connection)
-    ) in
-  let mode =
-    match client, server with
-    | Some s, None | None, Some s -> s
-    | None, None ->  standalone ?engine ?ui ()
-    | _, _ -> failwith "Cannot handle multiple configurations in the same file"
-  in
-  create ?debug_level ~plugins mode
+let server_configuration t =
+  match t.mode with
+  | `Server s -> Some s
+  | other -> None
+let listen_to s = s.listen_to
+let return_error_messages s = s.return_error_messages
+let authorized_tokens_path s = s.authorized_tokens_path
+let command_pipe s = s.command_pipe
+let daemon       s = s.daemon
+let log_path     s = s.log_path
+let database_parameters e = e.database_parameters
+let persistent_state_key e = e.persistent_state_key
+let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
+let mode t = t.mode
+let standalone_engine st = st.standalone_engine
+let server_engine s = s.server_engine
+let connection c = c.connection
+let token c = c.token
+
+let standalone_of_server s =
+  {standalone_ui = s.server_ui;
+   standalone_engine = s.server_engine;}
+
+module File = struct
+  type configuration = t
+   [@@deriving yojson]
+  type profile = {
+    name: string;
+    configuration: configuration;
+  } [@@deriving yojson]
+  type t = [
+    | `Ketrew_configuration [@name "Ketrew"] of profile list
+  ] [@@deriving yojson]
+
+  let parse_string_exn s =
+    match Yojson.Safe.from_string s |> of_yojson with
+    | `Ok o -> o
+    | `Error e -> failwith (fmt "Configuration parsing error: %s" e)
+
+  let to_string s = to_yojson s |> Yojson.Safe.pretty_to_string ~std:true
+
+  let get_profile t the_name =
+    match t with
+    | `Ketrew_configuration profiles ->
+      List.find_map profiles ~f:(fun {name; configuration} ->
+          if name = the_name then Some configuration else None)
+
+  let pick_profile_exn ?name t =
+    let name =
+      match name with
+      | Some n -> n
+      | None ->
+        try Sys.getenv "KETREW_PROFILE" with
+        | _ -> "default"
+    in
+    get_profile t name
+    |> Option.value_exn ~msg:(fmt "profile %S not found" name)
+
+  let default_ketrew_path =
+    Sys.getenv "HOME" ^ "/.ketrew/"
+
+  let default_configuration_filenames = [
+    "configuration.json";
+    "configuration.ml";
+    "configuration.sh";
+    "configuration.url";
+  ]
+
+  let get_path ?root () =
+    let env n () = try Some (Sys.getenv n) with | _ -> None in
+    let try_options l last_resort =
+      match List.find_map l ~f:(fun f -> f ()) with
+      | Some s -> s
+      | None -> last_resort () in
+    let findout_path () =
+      try_options [
+        (fun () -> root);
+        env "KETREW_ROOT";
+      ] (fun () -> default_ketrew_path) in
+    let find_in_path () =
+      let ketrew_path = findout_path () in
+      try_options
+        (List.map default_configuration_filenames
+           ~f:(fun path ->
+               fun () -> if Sys.file_exists path then Some path else None))
+        (fun () -> ketrew_path ^ "configuration.json")
+    in
+    try_options [
+      env "KETREW_CONFIGURATION";
+      env "KETREW_CONFIG";
+    ]
+      find_in_path
+
+  let read_file_no_lwt path =
+    let i = open_in path in
+    begin try
+      let content =
+        let buf = Buffer.create 1023 in
+        let rec get_all () =
+          begin try
+            let line = input_line i in
+            Buffer.add_string buf (line ^ "\n");
+            get_all ()
+          with e -> ()
+          end;
+        in
+        get_all ();
+        Buffer.contents buf in
+      close_in i;
+      content
+    with e -> close_in i; raise e
+    end
+
+  let read_command_output_no_lwt_exn cmd =
+    let ic = Unix.open_process_in cmd in
+    let buf = Buffer.create 24 in
+    begin try
+      while true do
+        Buffer.add_char buf (input_char ic)
+      done
+    with End_of_file -> ()
+    end;
+    begin match Unix.close_process_in ic with
+    | Unix.WEXITED 0 -> Buffer.contents buf
+    | _ -> failwith (fmt "failed command: %S" cmd)
+    end
 
 
-let parse s =
-  let open Result in
-  try parse_exn s |> return 
-  with e -> fail (`Configuration (`Parsing (Printexc.to_string e)))
+  let load_exn path =
+    match (String.split ~on:(`Character '.') path |> List.last) with
+    | Some "json" | None ->
+      read_file_no_lwt path |> parse_string_exn
+    | Some "ml" ->
+      read_command_output_no_lwt_exn
+        (fmt "ocaml %s" Filename.(quote path))
+      |> parse_string_exn
+    | Some "sh" ->
+      read_command_output_no_lwt_exn path
+      |> parse_string_exn
+    | Some "url" ->
+      failwith "Getting config from URL: not implemented"
+    | Some other ->
+      Log.(s "Config file should a discriminatory extension, not "
+           % quote other % s " pretending it is `.json`" @ warning);
+      read_file_no_lwt path |> parse_string_exn
+
+end
+
 
 let apply_globals t =
   global_debug_level := t.debug_level;
@@ -280,82 +335,31 @@ let apply_globals t =
   | None -> ()
   end
 
-let get_path () =
-  try Sys.getenv "KETREW_CONFIGURATION" with _ ->
-    (try Sys.getenv "KETREW_CONFIG" with _ ->
-      default_configuration_path)
-
-let get_configuration ?(and_apply=true) ?override_configuration path =
-  begin match override_configuration with
-  | Some c -> 
-    return c
-  | None ->
-    IO.read_file path
-    >>= fun content ->
-    of_result (parse content)
-  end
-  >>= fun conf ->
-  begin if and_apply then (
-    apply_globals conf;
-    Ketrew_plugin.load_plugins conf.plugins
-  ) else
-    return ()
-  end
-  >>= fun () ->
-  return conf
-
-let plugins t = t.plugins
-
-let server_configuration t =
-  match t.mode with
-  | `Server s -> Some s
-  | other -> None
-let listen_to s = s.listen_to
-let return_error_messages s = s.return_error_messages
-let authorized_tokens_path s = s.authorized_tokens_path
-let command_pipe s = s.command_pipe
-let daemon       s = s.daemon
-let log_path     s = s.log_path
-let database_parameters e = e.database_parameters
-let persistent_state_key e = e.persistent_state_key
-let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
-let mode t = t.mode
-let standalone_engine st = st.standalone_engine
-let server_engine s = s.server_engine
-let connection c = c.connection
-let token c = c.token
-
-let standalone_of_server s = 
-  {standalone_ui = s.server_ui;
-   standalone_engine = s.server_engine;}
-
-let get_configuration_for_daemon_exn
-    ?override_configuration path =
+let load_exn ?(and_apply=true) ?profile how =
   let conf =
-    begin match override_configuration with
-    | Some c -> c
-    | None ->
-      begin
-        let i = open_in path in
-        let content =
-          let buf = Buffer.create 1023 in
-          let rec get_all () =
-            begin try
-              let line = input_line i in
-              Buffer.add_string buf (line ^ "\n");
-              get_all ()
-            with e -> ()
-            end;
-          in
-          get_all ();
-          Buffer.contents buf in
-        close_in i;
-        let conf = parse_exn content in
-        conf
-      end
-    end
+    match how with
+    | `Override c -> c
+    | `From_path path ->
+      File.(load_exn path |> pick_profile_exn ?name:profile)
+    | `In_directory root ->
+      File.(get_path ~root () |> load_exn |> pick_profile_exn ?name:profile)
+    | `Guess ->
+      File.(get_path () |> load_exn |> pick_profile_exn ?name:profile)
   in
-  match server_configuration conf with
-  | Some server_config when daemon server_config ->
-    `Daemonize_with (log_path server_config)
-  | _ -> `Do_not_daemonize
+  if and_apply then (
+    apply_globals conf;
+    Ketrew_plugin.load_plugins_no_lwt_exn conf.plugins
+  );
+  conf
+
+
+type profile = File.profile
+
+let profile name configuration =
+  File.({name; configuration})
+
+let output l =
+  File.(`Ketrew_configuration l |> to_string |> print_string)
+
+let to_json l =
+  File.(`Ketrew_configuration l |> to_string)

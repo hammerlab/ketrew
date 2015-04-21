@@ -19,7 +19,6 @@ PKG atd
 PKG cconv.yojson
 PKG yojson
 PKG uri
-PKG toml
 PKG cohttp.lwt
 PKG lwt
 PKG ssl

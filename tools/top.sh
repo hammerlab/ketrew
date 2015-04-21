@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 findlib_packages="sosa nonstd docout pvem pvem_lwt_unix cmdliner \
-  atd cconv.yojson \
-  yojson uri toml cohttp.lwt lwt ssl conduit dynlink findlib trakeva trakeva_sqlite"
+  ppx_deriving_yojson \
+  yojson uri cohttp.lwt lwt ssl conduit dynlink findlib trakeva trakeva_sqlite"
 
 run_top () {
   local toplevel="ocaml"
@@ -18,9 +18,7 @@ run_top () {
 #use "topfind"
 #thread
 #require "nonstd$ocamlfind_packages"
-#directory "_build/gen"
-#load "ketrew_data.cma"
-#directory "_build/src/lib/pure"
+#directory "_build/src/pure"
 #load "ketrew_pure.cma"
 #directory "_build/src/lib"
 #load "ketrew.cma"

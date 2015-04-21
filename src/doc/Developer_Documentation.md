@@ -21,7 +21,6 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 - `cmdliner`: command line parsing
 - `ppx_blob`, `ppx_deriving_yojson`, `ppx_deriving`, `yojson`: JSON
   parsing/printing and other code generation
-- `toml`: config-file parsing
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
 - `trakeva` with the `sqlite` backend
@@ -120,16 +119,14 @@ use:
 ```goodresult
 Using package lwt.react as findlin-plugin
 Creating cert-key pair: _test_env/test-cert.pem, _test_env/test-key.pem
-Creating _test_env/standalone-config-file.toml
-Creating _test_env/server-config-file.toml
-Creating _test_env/client-config-file.toml
+Creating _test_env/configuration.ml
 Creating _test_env/test-authorized-tokens
 Creating _test_env/env.env
 ```
 
 The command creates the directory `_test_env/` with a preconfigured
 test-environment (a self-signed SSL certificate/key pair,
-client/server/standalone configuration files, an “authorization-tokens”
+client/server/standalone configuration file, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
 Sourcing `_test_env/env.env` will give a few aliases to run the tests.
@@ -147,6 +144,7 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
   [using the plugin](src/test/dummy_plugin_user.ml).
 
 ### Coverage
+
 To generate coverage reports `make configure EN="--enable-coverage"` then
 `make` will build instrumented versions of the executibles that will generate
 `bisect*.out` files when run. `make report` will take the  latest such file

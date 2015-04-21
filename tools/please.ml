@@ -50,7 +50,7 @@ let version_string () =
 
 let pure_findlib_packages = [
   "sosa"; "nonstd";
-  "docout"; "pvem"; "yojson"; "uri"; "toml";
+  "docout"; "pvem"; "yojson"; "uri";
   "cohttp"; (* → measurements refer to cohttp “pure” lib *)
   "ppx_deriving_yojson"; "ppx_deriving.show"; "ppx_blob";
 ]
@@ -82,6 +82,8 @@ let say_stuff =
     printf "%s"
       (List.map ~f:(sprintf "-package %s") all_findlib_packages
        |> String.concat ~sep:" ")
+  | "ocamlfind-package-list-for-require" :: [] ->
+    printf "%s" (String.concat ~sep:"," all_findlib_packages)
   | "lib-mli-files" :: [] ->
     find_all "src/lib" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!");
     find_all "src/pure" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!")

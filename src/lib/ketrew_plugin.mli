@@ -47,3 +47,12 @@ val load_plugins :
    [> `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
    | `Failure of string ]) Deferred_result.t
+
+val load_plugins_no_lwt_exn :
+  [ `Compiled of string | `OCamlfind of string ] list -> unit
+(** Dynamically load a list of plugins, this function is not
+    cooperative (with Lwt) and may raise [Failure].
+
+    The specification is (structurally) the same type as
+    {!Ketrew_configuration.plugin}.
+*)
