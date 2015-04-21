@@ -38,8 +38,12 @@ type ui = {
   with_color: bool;
   explorer: explorer_defaults;
 } [@@deriving yojson]
+type authorized_tokens = [
+  | `Path of string
+  | `Inline of string * string
+] [@@deriving yojson]
 type server = {
-  authorized_tokens_path: string option;
+  authorized_tokens: authorized_tokens list;
   listen_to: [ `Tls of (string * string * int) ];
   return_error_messages: bool;
   command_pipe: string option;
@@ -95,6 +99,11 @@ let log t =
           then s "turns"
           else s "does not turn") % s " into target failure");
     ] in
+  let authorized_tokens = function
+  | `Path path -> s "Path: " % quote path
+  | `Inline (name, value) ->
+    s "Inline " % parens (s "Name: " % s name % s ", Value:" % s value)
+  in
   match t.mode with
   | `Standalone {standalone_engine; standalone_ui} ->
     item "Mode" (s "Standalone")
@@ -113,7 +122,7 @@ let log t =
     % item "UI" (ui srv.server_ui)
     % item "HTTP-server" (sublist [
         item "Authorized tokens"
-          OCaml.(option string srv.authorized_tokens_path);
+          OCaml.(list authorized_tokens srv.authorized_tokens);
         item "Daemonize" (OCaml.bool srv.daemon);
         item "Command Pipe" (OCaml.option quote srv.command_pipe);
         item "Log-path" (OCaml.option quote srv.log_path);
@@ -167,13 +176,16 @@ let standalone ?(ui=default_ui) ?engine () =
 let client ?(ui=default_ui) ~token connection =
   (`Client {client_ui = ui; connection; token})
 
+let authorized_token ~name value = `Inline (name, value)
+let authorized_tokens_path p = `Path p
+
 let server
     ?ui ?engine
-    ?authorized_tokens_path ?(return_error_messages=false)
+    ?(authorized_tokens=[]) ?(return_error_messages=false)
     ?command_pipe ?(daemon=false) ?log_path listen_to =
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
-  (`Server {server_engine; authorized_tokens_path; listen_to; server_ui;
+  (`Server {server_engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path; })
 
 
@@ -185,7 +197,7 @@ let server_configuration t =
   | other -> None
 let listen_to s = s.listen_to
 let return_error_messages s = s.return_error_messages
-let authorized_tokens_path s = s.authorized_tokens_path
+let authorized_tokens s = s.authorized_tokens
 let command_pipe s = s.command_pipe
 let daemon       s = s.daemon
 let log_path     s = s.log_path

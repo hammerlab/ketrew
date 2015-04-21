@@ -51,11 +51,15 @@ val engine:
   ?host_timeout_upper_bound: float ->
   unit -> engine
 
+type authorized_tokens 
+val authorized_token: name: string -> string -> authorized_tokens
+val authorized_tokens_path: string -> authorized_tokens
+
 type server
 val server: 
   ?ui:ui ->
   ?engine:engine ->
-  ?authorized_tokens_path: string ->
+  ?authorized_tokens: authorized_tokens list ->
   ?return_error_messages: bool ->
   ?command_pipe: string ->
   ?daemon: bool ->
@@ -65,8 +69,9 @@ val server:
 (** Create a server configuration (to pass as optional argument to the
     {!create} function).
 
-    - [authorized_tokens_path] is a path to a file similar to an SSH
-    [authorized_keys] file.
+    - [authorized_tokens] is a list of either [authorized_token ~name "value"] or
+    [authorized_tokens_path "/path/to/file"] (i.e. a path to a file
+    similar to an SSH [authorized_keys] file).
     - [return_error_messages]: whether the server should return explicit error
     messages to clients (default [false]).
     - [command_pipe]: path to a named-piped for the server to listen to
@@ -127,7 +132,8 @@ val server_engine: server -> engine
 val server_configuration: t -> server option
 (** Get the potentiel server configuration. *)
 
-val authorized_tokens_path: server -> string option 
+val authorized_tokens: server ->
+  [ `Path of string | `Inline of (string * string)] list
 (** The path to the [authorized_tokens] file. *)
 
 val listen_to: server -> [ `Tls of (string * string * int) ]

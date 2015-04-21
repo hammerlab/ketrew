@@ -32,7 +32,21 @@ let wrong_request short long = fail (`Wrong_http_request (short, long))
 module Authentication = struct
 
   type token = {name: string; value: string; comments : string list}
-  type t = { valid_tokens: token list }
+  type t = {
+    valid_tokens: token list;
+    authentication_input: [`Path of string | `Inline of (string * string)] list;
+  }
+
+  let log {valid_tokens; authentication_input} =
+    let paths =
+      List.filter_map authentication_input ~f:(function
+        | `Path p -> Some p | `Inline _ -> None) in
+    let inlines =
+      List.filter_map authentication_input ~f:(function
+        | `Path _ -> None | `Inline (name, _) -> Some name) in
+    Log.(
+      s "From paths: " % OCaml.list quote paths
+      % s "; inline: " % OCaml.list string inlines)
 
   let load_file file =
     IO.read_file file
@@ -57,7 +71,17 @@ module Authentication = struct
                                       String.concat ~sep:" "  t.comments])
            valid_tokens
          @ verbose);
-    return {valid_tokens}
+    return valid_tokens
+
+  let load meta_tokens =
+    Deferred_list.while_sequential meta_tokens ~f:(function
+      | `Path p -> load_file p
+      | `Inline (name, value) -> return [{name; value; comments = []}])
+    >>| List.concat
+    >>= fun valid_tokens ->
+    return {valid_tokens; authentication_input = meta_tokens}
+
+  let reload {authentication_input; _} = load authentication_input
 
   let can t ?token do_stuff =
     let token_is_valid tok =
@@ -85,7 +109,6 @@ module Server_state = struct
   type t = {
     state: Ketrew_engine.t;
     server_configuration: Ketrew_configuration.server;
-    authentication_file: string;
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
   }
@@ -96,10 +119,9 @@ can set it to `Green to wake-up it earlier and do things.
 For example, after adding targets, the server will be woken-up to start running
 the targets and not wait for the next “loop timeout.”
 M*)
-  let create ~state ~authentication ~authentication_file server_configuration =
+  let create ~state ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
-    {state; authentication; authentication_file;
-     server_configuration; loop_traffic_light;}
+    {state; authentication; server_configuration; loop_traffic_light;}
 
 
 end
@@ -297,8 +319,8 @@ let mandatory_for_starting opt ~msg =
 let die_command = "die"
 let reload_authorized_tokens = "reload-auth"
 
-let reload_authentication_file ~server_state =
-  Authentication.load_file server_state.authentication_file
+let reload_authentication ~server_state =
+  Authentication.reload server_state.authentication
   >>= fun authentication ->
   server_state.authentication <- authentication;
   return ()
@@ -339,12 +361,12 @@ let start_listening_on_command_pipe ~server_state =
                   exit 10
               end
             | reload_auth when reload_auth = reload_authorized_tokens ->
-              begin reload_authentication_file ~server_state
+              begin reload_authentication ~server_state
                 >>= function
                 | `Ok () -> return ()
                 | `Error e ->
-                  Log.(s "Could not reload " 
-                       % quote server_state.authentication_file
+                  Log.(s "Could not reload Authentication:" 
+                       % Authentication.log server_state.authentication
                        % s": " % s (Ketrew_error.to_string e) @ error);
                   return ()
               end
@@ -426,23 +448,17 @@ let start_engine_loop ~server_state =
 
 let start ~configuration  =
   Log.(s "Starting server!" @ very_verbose);
-  mandatory_for_starting
-    (Ketrew_configuration.authorized_tokens_path configuration)
-    ~msg:"Authentication-less server not implemented"
-  >>= fun authentication_file ->
   let return_error_messages, how =
     Ketrew_configuration.return_error_messages configuration,
     Ketrew_configuration.listen_to configuration in
   begin match how with
   | `Tls (certfile, keyfile, port) ->
-    Authentication.load_file authentication_file
+    Authentication.load (Ketrew_configuration.authorized_tokens configuration)
     >>= fun authentication ->
     Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
     >>= fun engine ->
     let server_state =
-      Server_state.create ~authentication ~state:engine
-        ~authentication_file configuration
-    in
+      Server_state.create ~authentication ~state:engine configuration in
     start_engine_loop ~server_state;
     start_listening_on_command_pipe ~server_state
     >>= fun () ->
