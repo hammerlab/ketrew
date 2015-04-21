@@ -88,6 +88,11 @@ let get_key_question () =
   | true -> "Press a single key:"
   | false -> "Enter a character and <enter>:"
 
+let quit_key_information () =
+  match use_cbreak () with
+  | true -> "Press the 'q' key to stop."
+  | false -> "Use the 'q' and then <return> to stop."
+
 let open_in_dollar_editor file =
   let editor =
     try Sys.getenv "EDITOR"
@@ -246,3 +251,20 @@ let make_target_menu ~targets ?(filter_target=fun _ -> true) () =
       menu_item ~log:Log.(Document.target_for_menu target)
         (`Go (Target.id target)))
 
+
+let run_with_quit_key action =
+  Deferred_list.pick_and_cancel [
+    action#start;
+    begin
+      let rec kbd_loop () =
+        Log.(s (quit_key_information ()) @ normal);
+        get_key ()
+        >>= function
+        | 'q' | 'Q' ->
+          action#stop;
+          return ()
+        | _ -> kbd_loop ()
+      in
+      kbd_loop ()
+    end;
+  ]
