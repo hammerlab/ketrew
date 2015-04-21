@@ -161,7 +161,7 @@ The `client` function configures Ketrew in client-mode:
 
 The `server` function configures the HTTP server:
 
-- The value `Tls (certificate, private_key, port)` configures the connection
+- The value `` `Tls (certificate, private_key, port)`` configures the connection
   settings:
     - `certificate`: path to the SSL certificate (*mandatory*).
     - `private_key`: path to the SSL private-key (*mandatory*).
