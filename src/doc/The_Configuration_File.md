@@ -82,7 +82,10 @@ let ui = ui ~with_color:true ~explorer ()
 let my_servers daemon =
   server ~ui
     ~engine:(engine ~database_parameters:"/path/to/database-client-server" ())
-    ~authorized_tokens_path:"/path/to/authorized-tokens"
+    ~authorized_tokens:[
+       authorized_tokens_path "/path/to/authorized-tokens";
+       authorized_token ~name:"The-inline-one" "inlinetoken";
+     ]
     ~return_error_messages:true
     ~log_path:"/path/to/logs-of-server.txt"
     ~daemon
@@ -177,11 +180,13 @@ The `server` function configures the HTTP server:
     - `certificate`: path to the SSL certificate (*mandatory*).
     - `private_key`: path to the SSL private-key (*mandatory*).
     - `port`: port to listen on (*mandatory*).
-- `authorized_tokens_path`: path to the file of the authentication tokens that
-  the server accepts (*mandatory-ish* since authentication-less server-side is
-  not implemented so far). This file is in the SSH
-  [`authorized_keys`](http://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#.7E.2F.ssh.2Fauthorized_keys)
-  format.
+- `authorized_tokens`: list of values representing authorized tokens, either:
+    - `authorized_token ~name value`: an *inline* token definition, or
+    - `authorized_token_path path`: a path to a file containing authentication
+      tokens; it uses the SSH
+      [`authorized_keys`](http://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#.7E.2F.ssh.2Fauthorized_keys)
+      format (whitespace-separated lines of the form:
+      `<name> <token> <optional comments ...>`).
 - `command_pipe`: if set this asks the server to listen on a named pipe for
   control commands (*highly recommended*).
 - `daemonize`: if `true`, ask the server to detach from current terminal.
