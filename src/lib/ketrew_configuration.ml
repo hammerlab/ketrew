@@ -297,23 +297,20 @@ module File = struct
 
   let read_file_no_lwt path =
     let i = open_in path in
-    begin try
-      let content =
-        let buf = Buffer.create 1023 in
-        let rec get_all () =
-          begin try
-            let line = input_line i in
-            Buffer.add_string buf (line ^ "\n");
-            get_all ()
-          with e -> ()
-          end;
-        in
-        get_all ();
-        Buffer.contents buf in
-      close_in i;
-      content
-    with e -> close_in i; raise e
-    end
+    let content =
+      let buf = Buffer.create 1023 in
+      let rec get_all () =
+        begin try
+          let line = input_line i in
+          Buffer.add_string buf (line ^ "\n");
+          get_all ()
+        with e -> ()
+        end;
+      in
+      get_all ();
+      Buffer.contents buf in
+    close_in i;
+    content
 
   let read_command_output_no_lwt_exn cmd =
     let ic = Unix.open_process_in cmd in
