@@ -89,3 +89,11 @@ val make_target_menu : targets:Ketrew_target.t list ->
     unit ->
       ([> `Go of string ] menu_item) list
 (** Create a menu with the targets. *)
+
+val run_with_quit_key :
+  < start : (unit, [> `Failure of string ] as 'start_error) Deferred_result.t;
+    stop : unit > ->
+  (unit, 'start_error) Deferred_result.t
+(** Start and run an action until it finishes or unitl the key
+    ["q"] is pressed. *)
+
