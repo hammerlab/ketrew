@@ -272,28 +272,32 @@ module File = struct
 
   let get_path ?root () =
     let env n () = try Some (Sys.getenv n) with | _ -> None in
-    let try_options l last_resort =
+    let try_options l ~and_then =
       match List.find_map l ~f:(fun f -> f ()) with
       | Some s -> s
-      | None -> last_resort () in
+      | None -> and_then () in
     let findout_path () =
       try_options [
         (fun () -> root);
         env "KETREW_ROOT";
-      ] (fun () -> default_ketrew_path) in
-    let find_in_path () =
-      let ketrew_path = findout_path () in
+      ]
+        ~and_then:(fun () -> default_ketrew_path) in
+    let find_in_path ketrew_path =
       try_options
         (List.map default_configuration_filenames
-           ~f:(fun path ->
-               fun () -> if Sys.file_exists path then Some path else None))
-        (fun () -> ketrew_path ^ "configuration.json")
+           ~f:(fun name ->
+               fun () ->
+                 let path = Filename.concat ketrew_path name in
+                 if Sys.file_exists path then Some path else None))
+        ~and_then:(fun () -> Filename.concat ketrew_path "configuration.json")
     in
     try_options [
       env "KETREW_CONFIGURATION";
       env "KETREW_CONFIG";
     ]
-      find_in_path
+      ~and_then:(fun () ->
+          let ketrew_path = findout_path () in
+          find_in_path ketrew_path)
 
   let read_file_no_lwt path =
     let i = open_in path in
