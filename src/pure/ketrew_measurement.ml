@@ -19,8 +19,7 @@ open Ketrew_pervasives
 module Measurement_collection = struct
   type http_request = {
     connection_id: string;
-    meth: [ `DELETE | `GET | `HEAD | `OPTIONS | `PATCH | `POST | `PUT
-          | `Other of string ];
+    meth: string;
     uri: string;
   } [@@deriving yojson]
   type response_log = {
@@ -48,7 +47,7 @@ module Item = struct
     { time = Time.(now ()); content}
 
   let make_http_request connection_id request =
-    let meth = Cohttp.Request.meth request in
+    let meth = Cohttp.Request.meth request |> Cohttp.Code.string_of_method in
     let uri = Cohttp.Request.uri request |> Uri.to_string in
     {connection_id;  meth; uri}
 
