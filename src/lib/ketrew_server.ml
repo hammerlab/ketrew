@@ -439,10 +439,6 @@ let start ~configuration  =
     >>= fun authentication ->
     Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
     >>= fun engine ->
-    Log.(s "Getting database" @ very_verbose);
-    Ketrew_engine.database engine
-    >>= fun _ ->
-    Log.(s "Got database" @ very_verbose);
     let server_state =
       Server_state.create ~authentication ~state:engine
         ~authentication_file configuration
