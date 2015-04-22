@@ -99,7 +99,7 @@ module Http_client = struct
     end
 
 
-  let get_targets t ~ids ~filter =
+  let get_targets_and_filter t ~ids ~filter =
     call_json t ~path:"/api" ~meta_meth:(`Post_message (`Get_targets ids))
     >>= filter_down_message
       ~loc:`Targets
@@ -107,9 +107,12 @@ module Http_client = struct
         | `List_of_targets tl -> filter tl
         | _ -> None)
 
-  let get_current_targets t = get_targets t ~ids:[] ~filter:(fun s -> Some s)
+  let get_current_targets t =
+    get_targets_and_filter t ~ids:[] ~filter:(fun s -> Some s)
   let get_target t ~id =
-    get_targets t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
+    get_targets_and_filter t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
+  let get_targets t ~id_list =
+    get_targets_and_filter t ~ids:id_list ~filter:(fun s -> Some s)
 
   let add_targets t ~targets =
     let msg = `Submit_targets targets in
@@ -219,6 +222,15 @@ let get_target t ~id =
   | `Http_client c ->
     Http_client.get_target c ~id
 
+let get_targets t ~id_list =
+  match t with
+  | `Standalone s ->
+    let open Standalone in
+    Deferred_list.while_sequential id_list ~f:(fun id ->
+        Ketrew_engine.get_target s.engine id)
+  | `Http_client c ->
+    Http_client.get_targets c ~id_list
+
 let get_list_of_target_ids t ~query =
   match t with
   | `Standalone s ->
@@ -252,6 +264,12 @@ let restart_target t ids =
 let get_local_engine = function
 | `Standalone s -> (Some s.Standalone.engine)
 | `Http_client _ -> None
+
+let configuration = function
+| `Standalone s ->
+  Ketrew_configuration.create (`Standalone s.Standalone.configuration)
+| `Http_client h ->
+  Ketrew_configuration.create (`Client h.Http_client.configuration)
 
 (*
   Submit a workflow:

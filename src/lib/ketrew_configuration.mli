@@ -30,8 +30,18 @@ type plugin = [ `Compiled of string | `OCamlfind of string ]
     - [`OCamlfind package]: name of a Findlib package.
 
 *)
+
+
+
+type explorer_defaults
+val default_explorer_defaults : explorer_defaults
+val explorer :
+  ?request_targets_ids:[ `All | `Younger_than of [ `Days of float ] ] ->
+  ?targets_per_page:int ->
+  ?targets_to_prefetch:int -> unit -> explorer_defaults
+
 type ui
-val ui: ?with_color:bool -> unit -> ui
+val ui: ?with_color:bool -> ?explorer:explorer_defaults -> unit -> ui
 
 type engine
 val engine: 
@@ -142,6 +152,11 @@ val connection: client -> string
 val token: client -> string
 
 val standalone_of_server: server -> standalone
+
+val with_color: t -> bool
+val request_targets_ids: t -> [ `All | `Younger_than of [ `Days of float ] ]
+val targets_per_page: t -> int
+val targets_to_prefetch: t -> int
 
 
 val load_exn:
