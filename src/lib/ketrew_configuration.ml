@@ -76,8 +76,9 @@ type t = {
 
 let log t =
   let open Log in
-  let item name l = s name % s ": " % l % n in
-  let sublist l = n % indent (separate empty l) in
+  let item name l = s name % s ": " % l in
+  let toplevel l = separate n l in
+  let sublist l = n % indent (separate n l) in
   let common =
     sublist [
       item "Debug-level" (i t.debug_level);
@@ -88,9 +89,24 @@ let log t =
           | `OCamlfind pack -> item "OCamlfind package" (quote pack))))
     ] in
   let ui t =
-    item "Colors"
-      (s (if t.with_color then "with" else "without") % s " colors")
-  in
+    sublist [
+      item "Colors"
+        (if t.with_color then s "with colors" else s "without colors");
+      item "Get-key"
+        (if t.with_cbreak then s "uses `cbreak`" else s "classic readline");
+      item "Explorer"
+        (let { request_targets_ids; targets_per_page; targets_to_prefetch } =
+           t.explorer in
+         sublist [
+           item "Default request"
+             (match request_targets_ids with
+             | `Younger_than (`Days days) ->
+               s "Targets younger than " % f days % s " days"
+             | `All -> s "All targets");
+           item "Targets-per-page" (i targets_per_page);
+           item "Targets-to-prefectch" (i targets_to_prefetch);
+         ]);
+    ] in
   let engine t =
     sublist [
       item "Database" (quote t.database_parameters);
@@ -103,40 +119,46 @@ let log t =
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
   | `Inline (name, value) ->
-    s "Inline " % parens (s "Name: " % s name % s ", Value:" % s value)
+    s "Inline " % parens (s "Name: " % s name % s ", Value: " % quote value)
   in
   match t.mode with
   | `Standalone {standalone_engine; standalone_ui} ->
-    item "Mode" (s "Standalone")
-    % item "Engine" (engine standalone_engine)
-    % item "UI" (ui standalone_ui)
-    % item "Misc" common
+    toplevel [
+      item "Mode" (s "Standalone");
+      item "Engine" (engine standalone_engine);
+      item "UI" (ui standalone_ui);
+      item "Misc" common;
+    ]
   | `Client client ->
-    item "Mode" (s "Client")
-    % item "Connection" (quote client.connection)
-    % item "Auth-token" (quote client.token)
-    % item "UI" (ui client.client_ui)
-    % item "Misc" common
+    toplevel [
+      item "Mode" (s "Client");
+      item "Connection" (quote client.connection);
+      item "Auth-token" (quote client.token);
+      item "UI" (ui client.client_ui);
+      item "Misc" common;
+    ]
   | `Server srv ->
-    item "Mode" (s "Server")
-    % item "Engine" (engine srv.server_engine)
-    % item "UI" (ui srv.server_ui)
-    % item "HTTP-server" (sublist [
-        item "Authorized tokens"
-          OCaml.(list authorized_tokens srv.authorized_tokens);
-        item "Daemonize" (OCaml.bool srv.daemon);
-        item "Command Pipe" (OCaml.option quote srv.command_pipe);
-        item "Log-path" (OCaml.option quote srv.log_path);
-        item "Return-error-messages" (OCaml.bool srv.return_error_messages);
-        item "Listen"
-          (let `Tls (cert, key, port) = srv.listen_to in
-           sublist [
-             item "Port" (i port);
-             item "Certificate" (quote cert);
-             item "Key" (quote key);
-           ])
-      ])
-    % item "Misc" common
+    toplevel [
+      item "Mode" (s "Server");
+      item "Engine" (engine srv.server_engine);
+      item "UI" (ui srv.server_ui);
+      item "HTTP-server" (sublist [
+          item "Authorized tokens"
+            (sublist (List.map ~f:authorized_tokens srv.authorized_tokens));
+          item "Daemonize" (OCaml.bool srv.daemon);
+          item "Command Pipe" (OCaml.option quote srv.command_pipe);
+          item "Log-path" (OCaml.option quote srv.log_path);
+          item "Return-error-messages" (OCaml.bool srv.return_error_messages);
+          item "Listen"
+            (let `Tls (cert, key, port) = srv.listen_to in
+             sublist [
+               item "Port" (i port);
+               item "Certificate" (quote cert);
+               item "Key" (quote key);
+             ])
+        ]);
+      item "Misc" common;
+    ]
 
 
 let default_database_path =
