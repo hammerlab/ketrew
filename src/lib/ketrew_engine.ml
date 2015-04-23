@@ -285,9 +285,6 @@ module Killing_targets = struct
           return [remove_from_kill_list_action id;]
         end
         >>= fun actions ->
-        Log.(s "Going to add: "
-             % OCaml.list (fun act -> s (Database_action.to_string act))
-               actions @ verbose);
         return (prev_list @ actions)
       )
     >>= begin function
