@@ -49,6 +49,7 @@ module Authentication = struct
       % s "; inline: " % OCaml.list string inlines)
 
   let load_file file =
+    Log.(s "Authentication: loading " % quote file @ verbose);
     IO.read_file file
     >>= fun content ->
     let valid_tokens =
@@ -445,23 +446,12 @@ let start_engine_loop ~server_state =
   in
   Lwt.ignore_result (loop time_step)
 
-
-let start ~configuration  =
-  Log.(s "Starting server!" @ very_verbose);
+let start_listening_on_connections ~server_state =
   let return_error_messages, how =
-    Ketrew_configuration.return_error_messages configuration,
-    Ketrew_configuration.listen_to configuration in
+    Ketrew_configuration.return_error_messages server_state.server_configuration,
+    Ketrew_configuration.listen_to server_state.server_configuration in
   begin match how with
   | `Tls (certfile, keyfile, port) ->
-    Authentication.load (Ketrew_configuration.authorized_tokens configuration)
-    >>= fun authentication ->
-    Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
-    >>= fun engine ->
-    let server_state =
-      Server_state.create ~authentication ~state:engine configuration in
-    start_engine_loop ~server_state;
-    start_listening_on_command_pipe ~server_state
-    >>= fun () ->
     Deferred_result.wrap_deferred
       ~on_exn:(function
         | e -> `Start_server_error (Printexc.to_string e))
@@ -527,6 +517,24 @@ let start ~configuration  =
             create ~mode (make ~callback:request_callback ~conn_closed ()))
         )
   end
+
+
+let start ~configuration  =
+  Log.(s "Start-Server: Loading the Engine" @ verbose);
+  Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
+  >>= fun engine ->
+  Log.(s "Start-Server: Loading authentication config" @ verbose);
+  Authentication.load (Ketrew_configuration.authorized_tokens configuration)
+  >>= fun authentication ->
+  let server_state =
+    Server_state.create ~authentication ~state:engine configuration in
+  Log.(s "Start-Server: Starting the Engine loop" @ verbose);
+  start_engine_loop ~server_state;
+  Log.(s "Start-Server: Starting listening on command-pipe" @ verbose);
+  start_listening_on_command_pipe ~server_state
+  >>= fun () ->
+  Log.(s "Start-Server: Starting listening on connections" @ verbose);
+  start_listening_on_connections ~server_state
 
 let stop ~configuration =
   Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")

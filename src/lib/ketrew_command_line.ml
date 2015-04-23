@@ -301,36 +301,47 @@ let interact ~client =
   main_loop ()
 
 let daemonize_if_applicable config =
+  let exit_parent () =
+    Lwt_sequence.iter_node_l Lwt_sequence.remove Lwt_main.exit_hooks;
+    exit 0
+  in
   match config with
-  | `Daemonize_with log_path_opt ->
-    let syslog = false in
-    let stdin = `Dev_null in
-    let (stdout, stderr) = (`Dev_null, `Dev_null) in
-    let directory = Sys.getcwd () in
-    let umask = None in (* we keep the default *)
-    Log.(s "Going to the background, now!" @ normal);
-    begin match log_path_opt with
-    | None -> ()
-    | Some file_name ->
-      let unix_fd =
-        UnixLabels.(
-          openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY])
-      in
-      let channel =
-        Lwt_io.of_unix_fd unix_fd ~buffer_size:1024 ~mode:Lwt_io.output in
-      Lwt_main.at_exit (fun () -> Lwt_io.close channel);
-      global_with_color := false;
-      global_log_print_string := Lwt.(fun s ->
-          async (fun () ->
-              Lwt_io.fprint channel s
-              >>= fun () ->
-              Lwt_io.flush channel)
-        );
-    end;
-    Lwt_daemon.daemonize ~syslog ~stdin ~stdout ~stderr ~directory ?umask ();
-    Log.(s "Daemonized!" @ very_verbose);
-    ()
   | `Do_not_daemonize -> ()
+  | `Daemonize_with log_path_opt ->
+    (* Cf. http://stackoverflow.com/questions/3095566/linux-daemonize *)
+    begin match Unix.fork () with
+    | 0 ->
+      let retsetsid = Unix.setsid () in
+      Log.(s "Daemonizing: setsid → " % i retsetsid @ verbose);
+      begin match Unix.fork () with
+      | 0 ->
+        begin match log_path_opt with
+        | None -> ()
+        | Some file_name ->
+          let out = open_out file_name in
+          global_with_color := false;
+          Log.(s "Daemonizing: Logging to " % quote file_name @ verbose);
+          global_log_print_string := begin fun s ->
+            Printf.fprintf out "####### %s\n%s%!" Time.(now () |> to_filename) s
+          end;
+        end;
+        (* Unix.chdir "/"; *)
+        ignore (Unix.umask 0);
+        Unix.close Unix.stdin;
+        Unix.close Unix.stdout;
+        Unix.close Unix.stderr;
+        let dev_null = Unix.openfile "/dev/null" [Unix.O_RDWR] 0o666 in
+        Unix.dup2 dev_null Unix.stdin;
+        Unix.dup2 dev_null Unix.stdout;
+        Unix.dup2 dev_null Unix.stderr;
+      | pid ->
+        Log.(s "Child of session-leader goes to the background as " % i pid @ verbose);
+        exit_parent ();
+      end;
+    | pid ->
+      Log.(s "Session leader goes to the background as " % i pid @ verbose);
+      exit_parent ();
+    end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
