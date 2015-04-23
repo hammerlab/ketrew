@@ -154,10 +154,11 @@ The `ui` function configures the behavior of the User Interface.
     - `targets_to_prefetch`: how many targets to download at once while
       prefetching (the client-side cache fetches targets in advance to improve
       latency).
-- `with_cbreak`: should the interactive UI use “`cbreak`” or not
-    - when `false`: it reads from `stdin` classically (i.e. it wait for the
+- `with_cbreak`: should the interactive UI use “`cbreak`” or not:
+    - when `false`: it reads from `stdin` classically (i.e. it waits for the
       `return` key to be pressed),
-    - when `true`: it gets the key-presses directly (the default).
+    - when `true`: it gets the key-presses directly (it's the default but
+      requires a compliant terminal).
 
 ### The `plugins` Option
 
