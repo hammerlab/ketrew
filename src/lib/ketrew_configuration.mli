@@ -169,10 +169,7 @@ val targets_per_page: t -> int
 val targets_to_prefetch: t -> int
 
 val use_cbreak: unit -> bool
-(** Get the value of the global parameter: should the interactive UI
-    use “[cbreak]” or not; i.e. to read from
-    `stdin` classically ([= false]) or just getting the key-press even
-    ([= true]). *)
+(** See the documentation of [with_cbreak]. *)
 
 val load_exn:
   ?and_apply:bool ->

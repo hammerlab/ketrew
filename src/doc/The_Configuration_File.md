@@ -75,7 +75,7 @@ let explorer =
     ~request_targets_ids:(`Younger_than (`Days 1.5))
     ~targets_per_page:5
     ~targets_to_prefetch:10 ()
-let ui = ui ~with_color:true ~explorer ()
+let ui = ui ~with_color:true ~explorer ~with_cbreak:true ()
 
 (* A function that given a boolean value creates a “server
   configuration” that detaches or not from the shell. *)
@@ -154,6 +154,10 @@ The `ui` function configures the behavior of the User Interface.
     - `targets_to_prefetch`: how many targets to download at once while
       prefetching (the client-side cache fetches targets in advance to improve
       latency).
+- `with_cbreak`: should the interactive UI use “`cbreak`” or not
+    - when `false`: it reads from `stdin` classically (i.e. it wait for the
+      `return` key to be pressed),
+    - when `true`: it gets the key-presses directly (the default).
 
 ### The `plugins` Option
 
