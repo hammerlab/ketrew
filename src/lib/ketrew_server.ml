@@ -518,24 +518,6 @@ let start_listening_on_connections ~server_state =
         )
   end
 
-
-let start ~configuration  =
-  Log.(s "Start-Server: Loading the Engine" @ verbose);
-  Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
-  >>= fun engine ->
-  Log.(s "Start-Server: Loading authentication config" @ verbose);
-  Authentication.load (Ketrew_configuration.authorized_tokens configuration)
-  >>= fun authentication ->
-  let server_state =
-    Server_state.create ~authentication ~state:engine configuration in
-  Log.(s "Start-Server: Starting the Engine loop" @ verbose);
-  start_engine_loop ~server_state;
-  Log.(s "Start-Server: Starting listening on command-pipe" @ verbose);
-  start_listening_on_command_pipe ~server_state
-  >>= fun () ->
-  Log.(s "Start-Server: Starting listening on connections" @ verbose);
-  start_listening_on_connections ~server_state
-
 let stop ~configuration =
   Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")
     (Ketrew_configuration.command_pipe configuration)
@@ -589,3 +571,36 @@ let status ~configuration =
     |  `Error (`Get_exn other_exn) ->
       fail (`Server_status_error (Printexc.to_string other_exn))
   end
+
+
+let start ~configuration  =
+  Log.(s "Start-Server: Checking status" @ verbose);
+  begin
+    status ~configuration
+    >>= function
+    | `Running -> fail (`Start_server_error "Server seems to be already running")
+    | `Wrong_response c ->
+      fail (`Start_server_error
+              (fmt "An unrecognized HTTPS Server seems to be already there; \
+                    response: %s"
+                 (Cohttp.Response.sexp_of_t c |> Sexplib.Sexp.to_string_hum)))
+    | `Not_responding _ ->
+      Log.(s "Status answers `Not_responding`" @ verbose);
+      return ()
+  end
+  >>= fun () ->
+  Log.(s "Start-Server: Loading the Engine" @ verbose);
+  Ketrew_engine.load (Ketrew_configuration.server_engine configuration) 
+  >>= fun engine ->
+  Log.(s "Start-Server: Loading authentication config" @ verbose);
+  Authentication.load (Ketrew_configuration.authorized_tokens configuration)
+  >>= fun authentication ->
+  let server_state =
+    Server_state.create ~authentication ~state:engine configuration in
+  Log.(s "Start-Server: Starting the Engine loop" @ verbose);
+  start_engine_loop ~server_state;
+  Log.(s "Start-Server: Starting listening on command-pipe" @ verbose);
+  start_listening_on_command_pipe ~server_state
+  >>= fun () ->
+  Log.(s "Start-Server: Starting listening on connections" @ verbose);
+  start_listening_on_connections ~server_state
