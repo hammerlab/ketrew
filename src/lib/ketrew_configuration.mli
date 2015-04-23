@@ -41,7 +41,11 @@ val explorer :
   ?targets_to_prefetch:int -> unit -> explorer_defaults
 
 type ui
-val ui: ?with_color:bool -> ?explorer:explorer_defaults -> unit -> ui
+val ui:
+  ?with_color:bool ->
+  ?explorer:explorer_defaults ->
+  ?with_cbreak:bool ->
+  unit -> ui
 
 type engine
 val engine: 
@@ -164,6 +168,11 @@ val request_targets_ids: t -> [ `All | `Younger_than of [ `Days of float ] ]
 val targets_per_page: t -> int
 val targets_to_prefetch: t -> int
 
+val use_cbreak: unit -> bool
+(** Get the value of the global parameter: should the interactive UI
+    use “[cbreak]” or not; i.e. to read from
+    `stdin` classically ([= false]) or just getting the key-press even
+    ([= true]). *)
 
 val load_exn:
   ?and_apply:bool ->

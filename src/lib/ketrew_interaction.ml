@@ -61,11 +61,8 @@ let with_cbreak (f: unit -> (_, _) t) =
         >>= fun () ->
         return res)
 
-let use_cbreak () =
-  try Sys.getenv "WITH_CBREAK" <> "no" with _ -> true
-
 let get_key () =
-  match use_cbreak () with
+  match Ketrew_configuration.use_cbreak () with
   | true ->
     with_cbreak (fun () ->
         wrap_deferred (fun () -> Lwt_io.read_char Lwt_io.stdin)
@@ -84,12 +81,12 @@ let get_key () =
       end
 
 let get_key_question () =
-  match use_cbreak () with
+  match Ketrew_configuration.use_cbreak () with
   | true -> "Press a single key:"
   | false -> "Enter a character and <enter>:"
 
 let quit_key_information () =
-  match use_cbreak () with
+  match Ketrew_configuration.use_cbreak () with
   | true -> "Press the 'q' key to stop."
   | false -> "Use the 'q' and then <return> to stop."
 

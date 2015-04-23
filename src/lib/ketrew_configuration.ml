@@ -37,6 +37,7 @@ type explorer_defaults = {
 type ui = {
   with_color: bool;
   explorer: explorer_defaults;
+  with_cbreak: bool;
 } [@@deriving yojson]
 type authorized_tokens = [
   | `Path of string
@@ -153,8 +154,11 @@ let explorer
 
 let default_explorer_defaults : explorer_defaults = explorer ()
 
-let ui ?(with_color=true) ?(explorer=default_explorer_defaults) () =
-  {with_color; explorer}
+let ui
+    ?(with_color=true)
+    ?(explorer=default_explorer_defaults)
+    ?(with_cbreak=true) () =
+  {with_color; explorer; with_cbreak}
 let default_ui = ui ()
 
 let engine
@@ -351,18 +355,33 @@ module File = struct
 
 end
 
+let using_cbreak = ref true
+let use_cbreak () =
+  !using_cbreak
+let set_using_cbreak from_config =
+  using_cbreak :=
+    (try
+      match Sys.getenv "WITH_CBREAK" with
+      | "no" | "false" -> false
+      | "yes" | "true" -> true
+      | other -> from_config
+    with _ -> from_config)
 
 let apply_globals t =
   global_debug_level := t.debug_level;
-  let color, host_timeout =
+  let color, host_timeout, cbreak =
     match t.mode with
-    | `Client {client_ui; connection} -> (client_ui.with_color, None)
+    | `Client {client_ui; connection} ->
+      (client_ui.with_color, None, client_ui.with_cbreak)
     | `Standalone {standalone_ui; standalone_engine} ->
-      (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound)
+      (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound,
+       standalone_ui.with_cbreak)
     | `Server {server_engine; server_ui; _} ->
-      (server_ui.with_color, server_engine.host_timeout_upper_bound)
+      (server_ui.with_color, server_engine.host_timeout_upper_bound,
+       server_ui.with_cbreak)
   in
   global_with_color := color;
+  set_using_cbreak cbreak;
   Log.(s "Configuration: setting globals: "
        % indent (n
          % s "debug_level: " % i !global_debug_level % n
