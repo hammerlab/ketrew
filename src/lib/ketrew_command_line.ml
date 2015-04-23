@@ -318,11 +318,17 @@ let daemonize_if_applicable config =
         begin match log_path_opt with
         | None -> ()
         | Some file_name ->
-          let out = open_out file_name in
+          let out =
+            UnixLabels.(
+              openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
+              |> out_channel_of_descr)
+          in
           global_with_color := false;
           Log.(s "Daemonizing: Logging to " % quote file_name @ verbose);
+          let pid = Unix.getpid () in
           global_log_print_string := begin fun s ->
-            Printf.fprintf out "####### %s\n%s%!" Time.(now () |> to_filename) s
+            Printf.fprintf out "####### %s (PID: %d)\n%s%!"
+              Time.(now () |> to_filename) pid s
           end;
         end;
         (* Unix.chdir "/"; *)
