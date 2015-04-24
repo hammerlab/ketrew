@@ -17,7 +17,8 @@ You should be able to stop it with
 
     kdserver stop
 
-Let's add some targets to the database (c.f. `src/test/Workflow_Examples.ml`):
+Let's add some targets to the database (cf. the
+[workflow examples](src/test/Workflow_Examples.ml)):
 
     kdtest two-py /tmp "du -sh $HOME" "du -sh $PWD"
 
