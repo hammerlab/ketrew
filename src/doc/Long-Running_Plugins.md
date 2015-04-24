@@ -17,8 +17,9 @@ The long-running plugins *must*:
 Examples
 --------
 
-There are (for now) three long-running methods in the library, see
+There are (for now) four long-running methods in the library, see
 [`Ketrew_lsf`](../lib/ketrew_lsf.mli),
+[`Ketrew_yarn`](../lib/ketrew_yarn.mli),
 [`Ketrew_pbs`](../lib/ketrew_pbs.mli), and
 [`Ketrew_daemonize`](../lib/ketrew_daemonize.mli).
 They all use the module `Ketrew_long_running_utilities` which provides a few
@@ -38,7 +39,7 @@ Alternative To Dyn-link
 Dynamic linking can be annoying: for instance, some libraries do not install
 `.cmxs` files, and some architectures do not support native dynlink, …
 
-Hopefully there is an **alternative**, one can link plugins statically with
+Luckily, there is an **alternative**, one can link plugins statically with
 `src/app/main.ml` (or another
 version of that), see the [documentation](./Alternative_CLI_Application.md).
 
