@@ -143,6 +143,7 @@ default (i.e. `false`), Ketrew tries to be clever and does not make targets
 fail. To change this behavior set the option to `true`.
 - `host_timeout_upper_bound`: float (seconds, default is `60.`); every
 connection/command time-out will be `≤ upper-bound`.
+
 ### The `ui` Options
 
 The `ui` function configures the behavior of the User Interface.
@@ -194,7 +195,10 @@ The `server` function configures the HTTP server:
       `<name> <token> <optional comments ...>`).
 - `command_pipe`: if set this asks the server to listen on a named pipe for
   control commands (*highly recommended*).
-- `daemonize`: if `true`, ask the server to detach from current terminal.
+- `daemonize`: if `true`, ask the server to detach from the current terminal; if
+  you use this option it is required to provide absolute paths for all other
+  parameters requiring paths (daemonization changes theprocess directory to
+  `/`).
 - `log_path`: if set together with `daemonize`, ask the server to redirect logs
   to this path (if not set logs go to `/dev/null`).
 - `return_error_messages`: if `true`, the server will return real error messages

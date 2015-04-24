@@ -340,7 +340,7 @@ let daemonize_if_applicable config =
               Time.(now () |> to_filename) pid s
           end;
         end;
-        (* Unix.chdir "/" *)
+        Unix.chdir "/";
         ignore (Unix.umask 0);
         Unix.close Unix.stdin;
         Unix.close Unix.stdout;
