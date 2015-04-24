@@ -50,7 +50,8 @@ where:
 - The parameter `token` is an authentication token (the server reads the file
   `_test_env/test-authorized-tokens`, where there is an “easy token” `"nekot"`).
 - The `POST` data (`-d $json`) is the serialized up-message.  The available
-  messages are defined in `src/atd/protocol_v0.atd` and tagged with a version.
+  messages are defined in `src/pure/ketrew_protocol.mli` and tagged with a
+  version.
 
 To find out how to give the right JSON to to the API, you may just check from
 the top-level:

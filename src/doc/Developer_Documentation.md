@@ -163,7 +163,7 @@ documentation, issues that went into the “next release”
 release workflow:
 
 - Release dependencies for which we are using unreleased features
-(e.g. [`adt2cconv`](https://github.com/smondet/atd2cconv),
+(e.g. [`trakeva`](https://github.com/smondet/trakeva),
 [`sosa`](https://github.com/smondet/sosa), etc.).
 - Set version string in `tools/please.ml`.
 - Update the introductory paragraph of the `README.md` file for the particular

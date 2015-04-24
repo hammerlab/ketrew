@@ -78,11 +78,6 @@ git config --global user.name "Your Name"
 opam remote add smondet git://github.com/smondet/dev-opam-repo
 
 opam update
-#git clone  git://github.com/smondet/atd2cconv
-#cd atd2cconv 
-#git checkout -t origin/assembled
-#opam pin $opam_pin_add atd2cconv .
-#cd ..
 
 # We add the react dependency for lwt.react in the tests
 opam install react
