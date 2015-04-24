@@ -302,6 +302,9 @@ let interact ~client =
 
 let daemonize_if_applicable config =
   let exit_parent () =
+    (* in case some library add at-exit hooks:
+       cf. https://github.com/ocsigen/lwt/blob/master/src/unix/lwt_daemon.ml#L60
+    *)
     Lwt_sequence.iter_node_l Lwt_sequence.remove Lwt_main.exit_hooks;
     exit 0
   in
@@ -310,11 +313,17 @@ let daemonize_if_applicable config =
   | `Daemonize_with log_path_opt ->
     (* Cf. http://stackoverflow.com/questions/3095566/linux-daemonize *)
     begin match Unix.fork () with
-    | 0 ->
+    | pid when pid <> 0 ->
+      Log.(s "Session leader goes to the background as " % i pid @ verbose);
+      exit_parent ();
+    | _ ->
       let retsetsid = Unix.setsid () in
       Log.(s "Daemonizing: setsid → " % i retsetsid @ verbose);
       begin match Unix.fork () with
-      | 0 ->
+      | pid when pid <> 0 ->
+        Log.(s "Child of session-leader goes to the background as " % i pid @ verbose);
+        exit_parent ();
+      | _ ->
         begin match log_path_opt with
         | None -> ()
         | Some file_name ->
@@ -331,7 +340,7 @@ let daemonize_if_applicable config =
               Time.(now () |> to_filename) pid s
           end;
         end;
-        (* Unix.chdir "/"; *)
+        (* Unix.chdir "/" *)
         ignore (Unix.umask 0);
         Unix.close Unix.stdin;
         Unix.close Unix.stdout;
@@ -340,13 +349,7 @@ let daemonize_if_applicable config =
         Unix.dup2 dev_null Unix.stdin;
         Unix.dup2 dev_null Unix.stdout;
         Unix.dup2 dev_null Unix.stderr;
-      | pid ->
-        Log.(s "Child of session-leader goes to the background as " % i pid @ verbose);
-        exit_parent ();
       end;
-    | pid ->
-      Log.(s "Session leader goes to the background as " % i pid @ verbose);
-      exit_parent ();
     end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
