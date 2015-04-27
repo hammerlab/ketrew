@@ -708,8 +708,8 @@ module Automaton = struct
           | `Error (`Try_again, reason, bookeeping) ->
             return_with_history ~no_change:true t
               (`Tried_to_kill (to_history ?log current_state))
-          | `Error (`Fatal, reason, bookeeping) ->
-            return_with_history t (`Failed_to_kill (to_history ?log current_state))
+          | `Error (`Fatal, log, bookeeping) ->
+            return_with_history t (`Failed_to_kill (to_history ~log current_state))
           end)
       end
     in
@@ -727,8 +727,8 @@ module Automaton = struct
           | `Error (`Try_again, log)  ->
             return_with_history t ~no_change:true
               (`Tried_to_eval_condition (to_history ~log c))
-          | `Error (`Fatal, reason)  ->
-            return_with_history t (`Failed_to_eval_condition (to_history ?log c))
+          | `Error (`Fatal, log)  ->
+            return_with_history t (`Failed_to_eval_condition (to_history ~log c))
           end)
       | None ->
         `Do_nothing (fun ?log () ->
@@ -761,8 +761,8 @@ module Automaton = struct
           | `Error (`Try_again, log, bookkeeping)  ->
             return_with_history t ~no_change:true
               (`Tried_to_start (to_history ~log c, bookkeeping))
-          | `Error (`Fatal, reason, bookkeeping)  ->
-            return_with_history t (`Failed_to_start (to_history ?log c, bookkeeping))
+          | `Error (`Fatal, log, bookkeeping)  ->
+            return_with_history t (`Failed_to_start (to_history ~log c, bookkeeping))
           end)
       | `No_operation ->
         `Do_nothing (fun ?log () ->
@@ -781,10 +781,10 @@ module Automaton = struct
           return_with_history t ~no_change:true
             (`Still_running_despite_recoverable_error
                (how, to_history ?log c, bookkeeping))
-        | `Error (`Fatal, how, bookkeeping) -> 
+        | `Error (`Fatal, log, bookkeeping) -> 
           return_with_history t
-            (`Failed_running (to_history ?log c,
-                              `Long_running_failure how, bookkeeping))
+            (`Failed_running (to_history ~log c,
+                              `Long_running_failure log, bookkeeping))
         end)
     | `Successfully_did_nothing _
     | `Tried_to_reeval_condition _
@@ -798,7 +798,7 @@ module Automaton = struct
           | `Error (`Try_again, how) ->
             return_with_history t ~no_change:true
               (`Tried_to_reeval_condition (how, to_history ?log c))
-          | `Error (`Fatal,log)  ->
+          | `Error (`Fatal, log)  ->
             return_with_history t (`Did_not_ensure_condition (to_history ~log c))
           end)
       | None ->
