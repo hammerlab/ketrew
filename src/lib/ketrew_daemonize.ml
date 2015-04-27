@@ -143,41 +143,41 @@ let query run_parameters item =
     end
 
 let make_python_script ~out ~err ~pid_file ~call_script monitored_script_path =
-  fmt "
+  fmt {python|
 import os               # Miscellaneous OS interfaces.
 import sys              # System-specific parameters and functions.
 import subprocess
 if __name__ == '__main__':
-    try: 
-        pid = os.fork() 
+    try:
+        pid = os.fork()
         if pid > 0:
             # exit first parent
-            sys.exit(0) 
-    except OSError, e: 
-        print >>sys.stderr, 'fork #1 failed: %%d (%%s)' %% (e.errno, e.strerror) 
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write('fork #1 failed: %%d (%%s)' %% (e.errno, e.strerror))
         sys.exit(1)
     # decouple from parent environment
-    os.chdir('/') 
-    os.setsid() 
-    os.umask(0) 
-    pid_file = file('%s', 'w')
+    os.chdir('/')
+    os.setsid()
+    os.umask(0)
+    pid_file = open('%s', 'w')
     pid_file.write('%%d\\n' %% os.getpid())
     pid_file.close()
     # do second fork
-    try: 
-        pid = os.fork() 
+    try:
+        pid = os.fork()
         if pid > 0:
             # exit from second parent, print eventual PID before
-            print 'Daemon PID %%d' %% pid 
-            sys.exit(0) 
-    except OSError, e: 
-        print >>sys.stderr, 'fork #2 failed: %%d (%%s)' %% (e.errno, e.strerror) 
-        sys.exit(1) 
+            print('Daemon PID %%d' %% pid)
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write('fork #2 failed: %%d (%%s)' %% (e.errno, e.strerror))
+        sys.exit(1)
     p = subprocess.Popen([%s],
             cwd='/',
-            stdout=file('%s', 'w'), 
-            stderr=file('%s', 'w'))
-"
+            stdout=open('%s', 'w'),
+            stderr=open('%s', 'w'))
+|python}
     (Ketrew_path.to_string pid_file)
     (call_script
        (Ketrew_path.to_string monitored_script_path)
