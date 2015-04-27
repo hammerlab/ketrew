@@ -52,9 +52,9 @@ open Run_parameters
 
 
 let running =
-  function `Running r -> r 
+  function `Running r -> r
          | _ -> invalid_argument_exn ~where:"daemonize" "running"
-let created = 
+let created =
   function `Created c -> c
          | _ -> invalid_argument_exn ~where:"daemonize" "created"
 
@@ -63,7 +63,7 @@ let name = "daemonize"
 let default_shell = "bash"
 let script_placeholder = "<script>"
 
-let create 
+let create
   ?(starting_timeout=5.) ?(call_script=fun s -> [default_shell; s])
   ?(using=`Nohup_setsid) ?(host=Ketrew_host.tmp_on_localhost) program =
   let shell_command = call_script script_placeholder in
@@ -75,7 +75,7 @@ let using_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
 | `Python_daemon -> "Python-script"
 
-let log = 
+let log =
   let open Log in
   function
   | `Created c -> [
@@ -86,7 +86,7 @@ let log =
       "Call-script", OCaml.list quote c.shell_command;
     ]
   | `Running rp -> [
-      "Status", s "Running" % sp 
+      "Status", s "Running" % sp
                 % parens (s (using_to_string rp.created.using));
       "Host", Ketrew_host.log rp.created.host;
       "PID", OCaml.option i rp.pid;
@@ -114,7 +114,7 @@ let query run_parameters item =
   | `Created _ -> fail Log.(s "not running")
   | `Running rp ->
     begin match item with
-    | "log" -> 
+    | "log" ->
       let log_file = Ketrew_monitored_script.log_file rp.script in
       Ketrew_host_io.grab_file_or_log rp.created.host log_file
     | "stdout" ->
@@ -190,7 +190,7 @@ let start rp =
   let created = created rp in
   begin match Ketrew_host_io.get_fresh_playground created.host with
   | None ->
-    fail_fatal (fmt  "Host %s: Missing playground" 
+    fail_fatal (fmt  "Host %s: Missing playground"
                   (Host.to_string_hum created.host))
   | Some playground ->
     let monitored_script =
@@ -214,7 +214,7 @@ let start rp =
     begin match created.using with
     | `Nohup_setsid ->
       let cmd =
-        fmt "nohup setsid %s > %s 2> %s &" 
+        fmt "nohup setsid %s > %s 2> %s &"
           (call_script
              (Ketrew_path.to_string monitored_script_path)
            |> List.map ~f:Filename.quote
@@ -232,7 +232,7 @@ let start rp =
       let path = python_using_path ~playground in
       Ketrew_host_io.put_file ~content created.host ~path
       >>= fun () ->
-      Ketrew_host_io.run_shell_command created.host 
+      Ketrew_host_io.run_shell_command created.host
         (fmt "python %s" (Path.to_string_quoted path))
     end
     >>= fun () ->
@@ -249,7 +249,7 @@ let start rp =
       | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
       | `Execution -> fail_fatal (Error.to_string e)
       end
-    | `IO _ | `System _ as e -> 
+    | `IO _ | `System _ as e ->
       fail_fatal (Error.to_string e)
     end
   end
@@ -266,7 +266,7 @@ let update run_parameters =
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
     | None | Some _->
-      get_pid_of_monitored_script ~host:run.created.host ~script:run.script 
+      get_pid_of_monitored_script ~host:run.created.host ~script:run.script
       >>= fun pid ->
       let elapsed = Time.(now ()) -. run.start_time in
       begin match pid with
@@ -312,7 +312,7 @@ let kill run_parameters =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run as run_parameters ->
-    get_pid_of_monitored_script ~host:run.created.host ~script:run.script 
+    get_pid_of_monitored_script ~host:run.created.host ~script:run.script
     >>= fun pid ->
     begin match pid with
     | None ->
@@ -329,4 +329,3 @@ let kill run_parameters =
     end
   end
   >>< classify_and_transform_errors
-
