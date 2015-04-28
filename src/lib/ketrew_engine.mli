@@ -151,30 +151,6 @@ val restart_target: t -> Ketrew_target.id ->
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
 
-(** A module to manipulate the graph of dependencies. *)
-module Target_graph: sig
-
-  type engine = t
-  (** An alias for {!t}, the engine. *)
-
-  type t
-  (** The actual representation of the Graph. *)
-
-  val get_current: engine:engine -> 
-    (t,
-     [> `Database of Trakeva.Error.t
-     | `Missing_data of Ketrew_target.id
-     | `Persistent_state of [> `Deserilization of string ]
-     | `Target of [> `Deserilization of string ] ]) Deferred_result.t
-  (** Do like {!current_targets} as a graph, hence this may also pull
-      “archived” targets, through dependencies. *)
-
-  val log: t -> Log.t
-  (** Get a displayable {!Log.t} for the graph. *)
-
-  val targets_to_clean_up: t -> [`Hard | `Soft] -> Ketrew_target.id list
-
-end
 
 module Measure: sig
 
