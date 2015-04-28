@@ -141,11 +141,13 @@ let not_implemented msg =
 
 
 let targets_collection = "targets"
+let finished_targets_collection = "finished-targets"
 
 let set_target_db_action target =
   let key = Target.id target in
   Database_action.(set ~collection:targets_collection ~key
                      Target.Stored_target.(of_target target |> serialize))
+
 
 let run_database_action ?(msg="NO INFO") t action =
   database t
@@ -159,6 +161,17 @@ let run_database_action ?(msg="NO INFO") t action =
       (* TODO: try again a few times instead of error *)
       fail (`Database_unavailable (fmt "running DB action: %s" msg))
   end
+
+let move_target_to_finished_collection t ~target =
+  let key = Target.id target in
+  run_database_action ~msg:(fmt "move-%s-to-finished-collection" key) t
+    Database_action.(
+      seq [
+        unset ~collection:targets_collection key;
+        set ~collection:finished_targets_collection ~key
+          Target.Stored_target.(of_target target |> serialize)
+      ])
+
 
 let add_or_update_targets t target_list =
   run_database_action t
@@ -186,7 +199,13 @@ let get_stored_target t key =
   | Some serialized_stored ->
     of_result (Target.Stored_target.deserialize serialized_stored)
   | None ->
-    fail (`Missing_data (fmt "get_stored_target %S" key))
+    Database.get db ~collection:finished_targets_collection ~key
+    >>= begin function
+    | Some serialized_stored ->
+      of_result (Target.Stored_target.deserialize serialized_stored)
+    | None ->
+      fail (`Missing_data (fmt "get_stored_target %S" key))
+    end
   end
 
 let get_target t id =
@@ -203,10 +222,10 @@ let get_target t id =
   in
   get_following_pointers ~key:id ~count:0
 
-let fold_targets t ~init ~f =
+let fold_active_targets t ~init ~f =
   database t
   >>= fun db ->
-  let target_stream = Database.iterator db ~collection:"targets" in
+  let target_stream = Database.iterator db ~collection:targets_collection in
   let rec iter_stream previous =
     target_stream ()
     >>= begin function
@@ -228,7 +247,7 @@ let fold_targets t ~init ~f =
 
 
 let alive_targets t =
-  fold_targets t ~init:[] ~f:begin fun previous ~target ->
+  fold_active_targets t ~init:[] ~f:begin fun previous ~target ->
     match Target.State.simplify (Target.state target) with
     | `Failed
     | `Successful -> return previous
@@ -237,9 +256,26 @@ let alive_targets t =
   end
 
 let all_targets t =
-  fold_targets t ~init:[] ~f:begin fun previous ~target ->
-    return (target :: previous)
-  end
+  database t
+  >>= fun db ->
+  Database.get_all db ~collection:targets_collection
+  >>= fun active_ones ->
+  Database.get_all db ~collection:finished_targets_collection
+  >>= fun finished_ones ->
+  Log.(s "Getting : "
+       % i (List.length active_ones) % s " active + "
+       % i (List.length finished_ones) % s " finished "
+       % s " targets" @verbose);
+  Deferred_list.while_sequential (active_ones @ finished_ones) ~f:(fun key ->
+      get_stored_target t key
+      >>| Target.Stored_target.get_target
+      >>= fun topt ->
+      begin match topt with
+      | `Pointer _ ->
+        return None
+      | `Target target -> return (Some target)
+      end)
+  >>| List.filter_opt
 
 let current_targets = all_targets
 
@@ -346,7 +382,7 @@ module Adding_targets = struct
     | [] -> return false
     | _ :: _ ->
       alive_targets t
-      >>= fun current_targets ->
+      >>= fun current_living_targets ->
       (* current targets are alive, so activable or in_progress *)
       let stuff_to_actually_add =
         List.fold ~init:[] tlist ~f:begin fun to_store_targets target ->
@@ -357,7 +393,7 @@ module Adding_targets = struct
                     match Target.Stored_target.get_target st with
                     | `Target t -> Some t
                     | `Pointer _ -> None) in
-            List.filter (current_targets @ we_kept_so_far)
+            List.filter (current_living_targets @ we_kept_so_far)
               ~f:(fun t -> Target.is_equivalent target t) in
           Log.(Target.log target % s " is "
                % (match equivalences with
@@ -382,8 +418,11 @@ module Adding_targets = struct
             unset ~collection:targets_to_add_collection key)
         @ List.map stuff_to_actually_add ~f:(fun st ->
             let key = Target.Stored_target.id st in
-            set ~collection:targets_collection ~key
-              (Target.Stored_target.serialize st))
+            let collection =
+              match Target.Stored_target.get_target st with
+              | `Pointer _ -> finished_targets_collection
+              | `Target _ -> targets_collection in
+            set ~collection ~key (Target.Stored_target.serialize st))
         |> seq in
       run_database_action t action
         ~msg:(fmt "check_and_really_add_targets [%s]"
@@ -767,8 +806,13 @@ module Run_automaton = struct
     - Process Archival to-do list (?)
     - Process to-add list
   *)
-    fold_targets t ~init:[] ~f:begin fun previous_happenings ~target ->
-      begin
+    fold_active_targets t ~init:[] ~f:begin fun previous_happenings ~target ->
+      begin match Target.state target with
+      | s when Target.State.Is.finished s ->
+        move_target_to_finished_collection t ~target
+        >>= fun () ->
+        return [] (* moving to the finsihed-set is not a worthy “change” *)
+      | other ->
         _process_automaton_transition t target
         >>< function
         | `Ok (new_target, progress) ->
@@ -814,7 +858,7 @@ let get_status t id =
   return (Target.state target)
 
 let get_list_of_target_ids t query =
-  current_targets t
+  all_targets t
   >>= fun targets ->
   let list_of_ids =
     match query with
