@@ -179,19 +179,6 @@ let add_or_update_targets t target_list =
     ~msg:(fmt "add_or_update_targets [%s]"
             (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
-let add_stored_targets t st_list =
-  let action =
-    let open Database_action in
-    List.map st_list ~f:(fun st ->
-        let key = Target.Stored_target.id st in
-        set ~collection:targets_collection ~key
-          (Target.Stored_target.serialize st))
-    |> seq in
-  run_database_action t action
-    ~msg:(fmt "add_or_update_targets [%s]"
-            (List.map st_list ~f:Target.Stored_target.id
-             |> String.concat ~sep:", "))
-
 let get_stored_target t key =
   database t >>= fun db ->
   Database.get db ~collection:targets_collection ~key
@@ -430,7 +417,6 @@ module Adding_targets = struct
       >>= fun () ->
       return true
     end
-    (* add_stored_targets t stuff_to_actually_add *)
 
 
 end
