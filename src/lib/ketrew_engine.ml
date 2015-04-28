@@ -46,7 +46,7 @@ let create configuration =
 let database t =
   match t.database_handle with
   | Some db -> return db
-  | None -> 
+  | None ->
     let path = Configuration.database_parameters t.configuration in
     Database.load path
     >>= fun db ->
@@ -92,7 +92,7 @@ end
 module Measure = struct
   open Ketrew_measurement
   let incomming_request t ~connection_id ~request =
-    Collection.add t.measurements 
+    Collection.add t.measurements
       (Item.incoming_request (Item.make_http_request connection_id request))
   let end_of_request t ~connection_id ~request ~response_log ~body_length =
     Collection.add t.measurements
@@ -118,10 +118,10 @@ let with_engine ~configuration f =
   create configuration
   >>= fun engine ->
   begin try f ~engine with
-  | e -> 
+  | e ->
     unload engine
     >>= fun () ->
-    fail (`Failure (fmt "with_state: client function threw exception: %s" 
+    fail (`Failure (fmt "with_state: client function threw exception: %s"
                       (Printexc.to_string e)))
   end
   >>< begin function
@@ -135,13 +135,13 @@ let with_engine ~configuration f =
 let configuration t = t.configuration
 
 
-let not_implemented msg = 
+let not_implemented msg =
   Log.(s "Going through not implemented stuff: " % s msg @ verbose);
   fail (`Not_implemented msg)
 
 
 let targets_collection = "targets"
-  
+
 let set_target_db_action target =
   let key = Target.id target in
   Database_action.(set ~collection:targets_collection ~key
@@ -153,7 +153,7 @@ let run_database_action ?(msg="NO INFO") t action =
   Log.(s "Going to to run DB action: " % s msg @ very_verbose);
   begin Database.(act db  action)
     >>= function
-    | `Done -> 
+    | `Done ->
       return ()
     | `Not_done ->
       (* TODO: try again a few times instead of error *)
@@ -366,9 +366,9 @@ module Adding_targets = struct
                    s " equivalent to " % OCaml.list Target.log equivalences)
                @ very_verbose);
           match equivalences with
-          | [] -> 
+          | [] ->
             (Target.Stored_target.of_target target :: to_store_targets)
-          | at_least_one :: _ -> 
+          | at_least_one :: _ ->
             (Target.Stored_target.make_pointer
                ~from:target ~pointing_to:at_least_one :: to_store_targets)
         end
@@ -393,7 +393,7 @@ module Adding_targets = struct
     end
     (* add_stored_targets t stuff_to_actually_add *)
 
-  
+
 end
 let add_targets = Adding_targets.store_targets_to_add
 
@@ -419,7 +419,7 @@ module Target_graph = struct
     let remove set v = remove v set
     let find t v = try Some (find v t) with _ -> None
     let exists t ~f = exists f t
-    let fold t ~f ~init = 
+    let fold t ~f ~init =
       fold (fun elt a -> f a elt) t init
 
   end
@@ -438,7 +438,7 @@ module Target_graph = struct
           let actual_id = Persistent_state.follow_pointers persistent ~id in
           match List.find targets ~f:(fun t -> Target.id t = actual_id) with
           | Some t -> return (edgify t)
-          | None -> 
+          | None ->
             get_target engine actual_id
             >>= fun t ->
             archived_but_there := t :: !archived_but_there;
@@ -458,8 +458,8 @@ module Target_graph = struct
         return (dep_edges @ fb_edges @ st_edges))
     >>| List.concat
     >>= fun edges ->
-    let vertices = 
-      List.fold ~init:Target_set.empty (targets @ !archived_but_there) 
+    let vertices =
+      List.fold ~init:Target_set.empty (targets @ !archived_but_there)
         ~f:Target_set.add in
     return {vertices; edges}
 *)
@@ -480,7 +480,7 @@ module Target_graph = struct
 
   let vertices g = g.vertices
 
-  let transitive_sub_graph g ~target = 
+  let transitive_sub_graph g ~target =
     let connections t ~available =
       List.filter_map g.edges ~f:(function
         | `Dependency (t1, t2)
@@ -488,25 +488,25 @@ module Target_graph = struct
         | `Success_triggers (t1, t2) ->
           if Target.id t1 = Target.id t && Target_set.mem available t2
           then Some t2
-          else if Target.id t2 = Target.id t && Target_set.mem available t1 
+          else if Target.id t2 = Target.id t && Target_set.mem available t1
           then Some t1
           else None
         ) in
     let rec trans_connections t available acc =
       match connections t available with
       | [] ->  acc
-      | conns -> 
-        let new_available = 
+      | conns ->
+        let new_available =
           List.fold conns ~init:available ~f:Target_set.remove in
         List.map conns ~f:(fun conn ->
-            Target_set.add 
+            Target_set.add
               (trans_connections conn new_available acc)
               conn
           )
         |> List.reduce ~f:Target_set.union
         |> Option.value ~default:Target_set.empty
     in
-    trans_connections target (Target_set.remove g.vertices target) 
+    trans_connections target (Target_set.remove g.vertices target)
       Target_set.empty
 
   let targets_to_clean_up graph how_much =
@@ -525,7 +525,7 @@ module Target_graph = struct
          It's so complicated that for now we take a simpler but
          conservative approach:
 
-         - grab the whole transitive sub-graph, 
+         - grab the whole transitive sub-graph,
          - check that no-one is activated or running in there.
 
          This is not “exact” (some “unreachable” targets may remain).
@@ -538,7 +538,7 @@ module Target_graph = struct
                  % (Target_set.fold ~init:[] sub_graph ~f:(fun l e -> e :: l)
                     |> OCaml.list Target.log)
                  @ very_verbose);
-            if Target_set.for_all 
+            if Target_set.for_all
                 (fun trgt ->
                    not (Ketrew_target.Is.activated trgt)
                    && not (Ketrew_target.Is.running trgt))
@@ -561,13 +561,13 @@ module Target_graph = struct
     (`To_kill to_kill, `To_archive to_archive)
   *)
 
-end 
+end
 
 
 
 
 module Run_automaton = struct
-  
+
   let _long_running_action_error t ~error ~bookkeeping =
     let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
     match error, should_kill with
@@ -588,7 +588,7 @@ module Run_automaton = struct
           with e ->
             fail (_long_running_action_error t
                     ~error:(`Fatal (fmt "Deserialize-long-running: %s"
-                                      (Printexc.to_string e))) 
+                                      (Printexc.to_string e)))
                     ~bookkeeping)
         end
         >>= fun run_parameters ->
@@ -811,7 +811,7 @@ end
 
 let get_status t id =
   get_target t id >>= fun target ->
-  return (Target.state target) 
+  return (Target.state target)
 
 let get_list_of_target_ids t query =
   current_targets t
@@ -853,5 +853,3 @@ let restart_target engine target_id =
   >>= fun () ->
   let id = Target.id this_new_target in
   return id
-
-    
