@@ -29,38 +29,6 @@ module Down_message = struct
   include Json.Versioned.Of_v0(V0)
   type t = V0.t
 
-  (*
-    let added_target ~original_id ~fresh_id =
-    let open Ketrew_gen_protocol_v0.Added_target in
-    {original_id; fresh_id}
- *)
-
-  let log : t -> Log.t =
-    fun _ ->
-    assert false
-      (*
-    function
-  | `List_of_targets ts -> 
-    Log.(s "List_of_targets: " % OCaml.list Ketrew_target.log ts)
-  | `List_of_query_descriptions tsl ->
-    Log.(s "List_of_query_descriptions: "
-         % OCaml.list (fun (a, b) -> sf "%s: %s" a b) tsl)
-  | `Query_result str ->
-    Log.(s "Query_result: " % quote str)
-  | `Targets_added tl ->
-    let open Ketrew_gen_protocol_v0.Added_target in
-    Log.(s "Targets_added: "
-         % OCaml.list (fun {original_id; fresh_id} ->
-             s original_id % sp % s fresh_id) tl)
-  | `Happens _ as hl ->
-    Log.(s "Happening-list: " 
-         % s (serialize hl))
-  | `Clean_up todo ->
-    let open Ketrew_gen_protocol_v0.Clean_up_todo_list in
-    Log.(s "Clean_up_todo_list: " % n
-         % s "to-kill: " % OCaml.list string todo.to_kill 
-         % s "to-archive: " % OCaml.list string todo.to_archive) 
-  *)
 end
 
 module Up_message = struct
@@ -83,18 +51,5 @@ module Up_message = struct
   include Json.Versioned.Of_v0(V0)
   include V0
 
-
-  let log : t -> Log.t =
-    fun _ ->
-    assert false
-      (*
-    function
-  | `List_of_targets ts -> 
-    Log.(s "List_of_targets: " % OCaml.list Ketrew_target.log ts)
-  | `List_of_target_ids ts ->
-    Log.(s "List_of_target_ids: " % OCaml.list string ts)
-  *)
-
-  let to_string_hum t = log t |> Log.to_long_string
 end
 

@@ -54,7 +54,7 @@ let log_client_error error_value =
       | `Wrong_json j ->
         s "Wrong Json: " % indent (Json.log j)
       | `Unexpected_message m ->
-        s "Wrong Json: " % indent (Ketrew_protocol.Down_message.log m)
+        s "Wrong Json: " % string (Ketrew_protocol.Down_message.serialize m)
     in
     s "HTTP Call" % sp % parens (act % s " → " % error_log)
 

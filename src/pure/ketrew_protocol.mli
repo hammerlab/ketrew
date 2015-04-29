@@ -27,7 +27,6 @@ module Down_message : sig
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
-  val log : t -> Ketrew_pervasives.Log.t
 end
 
 module Up_message : sig
@@ -47,6 +46,4 @@ module Up_message : sig
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
-  val log : t -> Log.t
-  val to_string_hum : t -> string
 end
