@@ -18,13 +18,15 @@ workflow, a target has many components:
       options.
     - A **playground** is a directory on a host where the Ketrew engine and its
       plugins can (and will) write log files, temporary scripts, etc.
+      Most features which use hosts require playgrounds and will fail if not
+      provided.
     - A **program** (`Ketrew_edsl.Program.t`) is a datastructure representing
       shell scripts on steroids, Ketrew provides high-level combinators to build
       programs.
 - A **condition** (`Ketrew_edsl.Condition.t`) defines how to tell if a target
   should be run or not (the argument `?done_when` of `Ketrew_edsl.target`).
 - Links to other targets:
-    - **dependencies** are targets that need to be ensured or run before a
+    - **dependencies** are targets that need to be satisfied or run before a
       target can start,
     - **fallbacks** targets that will be activated if the target fails, and
     - **success-triggers** targets that will be activated only *after* a target
