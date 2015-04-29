@@ -177,14 +177,9 @@ first: `ketrew --help`; then:
 - To kill running jobs use `ketrew kill` + the target Identifier,<br/>
 or do an interactive murder: `ketrew kill --interactive`
 (see `ketrew kill --help`).
-- Once targets are dead, one can “archive” them, i.e. put them in a
-less-visible list: `ketrew archive --help`.
 
 See also `ketrew interact --help` or `ketrew explore --help` for fun
 *one-key-based* navigation.
-
-Ketrew can try to be clever about killing an archiving;
-see `ketrew autoclean --help`.
 
 ### Client-Server Mode
 

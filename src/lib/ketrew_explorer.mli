@@ -26,8 +26,7 @@ val create : client:Ketrew_client.t -> unit -> t
 val explore : t ->
   (unit, [> `Client of
             [> `Http of
-              [> `Archive_targets of string list
-              | `Call of [> `GET | `POST ] * Uri.t
+              [> `Call of [> `GET | `POST ] * Uri.t
               | `Kill_targets of string list
               | `Restart_targets of string list
               | `Targets ] *

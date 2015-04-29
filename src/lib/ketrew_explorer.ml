@@ -378,8 +378,6 @@ let pick_a_target explorer (es : exploration_state) ~how =
            menu_item ~log:Log.(Ketrew_document.target_for_menu target)
              (`Go (Target.id target)))))
 
-      (* (make_target_menu ~targets:sub_list ~filter_target:(fst es.target_filter) ())) *)
-
 let explore_single_target ~client (es: exploration_state) target =
   let sentence =
     let build_process_details = es.build_process_details in
@@ -389,17 +387,11 @@ let explore_single_target ~client (es: exploration_state) target =
          % Document.target
            ~build_process_details ~condition_details ~metadata_details target)
   in
-  (* Ketrew_client.is_archived client ~id:(Target.id target) *)
-  (* >>= fun is_archived -> *)
   Interaction.(
     let kill_item =
       if Target.state target |> Target.State.Is.killable
       then [menu_item ~char:'k' ~log:Log.(s "Kill") `Kill]
       else [] in
-    (* let archive_item = *)
-    (*   if not is_archived && Target.Is.finished target *)
-    (*   then [menu_item ~char:'a' ~log:Log.(s "Archive") `Archive] *)
-    (*   else [] in *)
     let boolean_item ~value ~char ~to_false ~to_true =
       match value with
       | true -> [menu_item ~char ~log:(fst to_false) (snd to_false)]
@@ -450,7 +442,6 @@ let explore_single_target ~client (es: exploration_state) target =
       @ follow_fbacks_item
       @ follow_success_triggers_item
       @ kill_item
-      (* @ archive_item *)
       @ restart_item
       @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
     ))
