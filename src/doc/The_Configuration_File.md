@@ -197,7 +197,7 @@ The `server` function configures the HTTP server:
   control commands (*highly recommended*).
 - `daemonize`: if `true`, ask the server to detach from the current terminal; if
   you use this option it is required to provide absolute paths for all other
-  parameters requiring paths (daemonization changes theprocess directory to
+  parameters requiring paths (daemonization changes the process directory to
   `/`).
 - `log_path`: if set together with `daemonize`, ask the server to redirect logs
   to this path (if not set logs go to `/dev/null`).
