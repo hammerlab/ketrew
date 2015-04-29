@@ -140,12 +140,13 @@ let not_implemented msg =
   fail (`Not_implemented msg)
 
 
-let targets_collection = "targets"
+let passive_targets_collection = "passive-targets"
+let active_targets_collection = "active-targets"
 let finished_targets_collection = "finished-targets"
 
 let set_target_db_action target =
   let key = Target.id target in
-  Database_action.(set ~collection:targets_collection ~key
+  Database_action.(set ~collection:active_targets_collection ~key
                      Target.Stored_target.(of_target target |> serialize))
 
 
@@ -162,16 +163,26 @@ let run_database_action ?(msg="NO INFO") t action =
       fail (`Database_unavailable (fmt "running DB action: %s" msg))
   end
 
-let move_target_to_finished_collection t ~target =
+let move_target t ~target ~src ~dest =
+  (* Caller will assume `target` is the new value; it may have changed *)
   let key = Target.id target in
-  run_database_action ~msg:(fmt "move-%s-to-finished-collection" key) t
+  run_database_action ~msg:(fmt "move-%s-from-%s-to-%s" key src dest) t
     Database_action.(
       seq [
-        unset ~collection:targets_collection key;
-        set ~collection:finished_targets_collection ~key
+        unset ~collection:src key;
+        set ~collection:dest ~key
           Target.Stored_target.(of_target target |> serialize)
       ])
 
+let move_target_to_finished_collection t ~target =
+  move_target t ~target
+    ~src:active_targets_collection
+    ~dest:finished_targets_collection
+
+let activate_target t ~target ~reason =
+  let newone = Target.(activate_exn target ~reason) in
+  move_target t ~target:newone ~src:passive_targets_collection
+    ~dest:active_targets_collection
 
 let add_or_update_targets t target_list =
   run_database_action t
@@ -181,7 +192,7 @@ let add_or_update_targets t target_list =
 
 let get_stored_target t key =
   database t >>= fun db ->
-  Database.get db ~collection:targets_collection ~key
+  Database.get db ~collection:active_targets_collection ~key
   >>= begin function
   | Some serialized_stored ->
     of_result (Target.Stored_target.deserialize serialized_stored)
@@ -191,7 +202,13 @@ let get_stored_target t key =
     | Some serialized_stored ->
       of_result (Target.Stored_target.deserialize serialized_stored)
     | None ->
-      fail (`Missing_data (fmt "get_stored_target %S" key))
+      Database.get db ~collection:passive_targets_collection ~key
+      >>= begin function
+      | Some serialized_stored ->
+        of_result (Target.Stored_target.deserialize serialized_stored)
+      | None ->
+        fail (`Missing_data (fmt "get_stored_target %S" key))
+      end
     end
   end
 
@@ -212,7 +229,8 @@ let get_target t id =
 let fold_active_targets t ~init ~f =
   database t
   >>= fun db ->
-  let target_stream = Database.iterator db ~collection:targets_collection in
+  let target_stream =
+    Database.iterator db ~collection:active_targets_collection in
   let rec iter_stream previous =
     target_stream ()
     >>= begin function
@@ -232,37 +250,53 @@ let fold_active_targets t ~init ~f =
   in
   iter_stream init
 
-
-let alive_targets t =
-  fold_active_targets t ~init:[] ~f:begin fun previous ~target ->
-    match Target.State.simplify (Target.state target) with
-    | `Failed
-    | `Successful -> return previous
-    | `In_progress
-    | `Activable -> return (target :: previous)
-  end
-
-let all_targets t =
+let all_targets t ~from =
   database t
   >>= fun db ->
-  Database.get_all db ~collection:targets_collection
-  >>= fun active_ones ->
-  Database.get_all db ~collection:finished_targets_collection
-  >>= fun finished_ones ->
+  Deferred_list.while_sequential from ~f:(fun collection ->
+      Database.get_all db ~collection
+      >>= fun ids ->
+      return (collection, ids))
+  >>= fun col_ids ->
   Log.(s "Getting : "
-       % i (List.length active_ones) % s " active + "
-       % i (List.length finished_ones) % s " finished "
+       % separate (s " + ")
+         (List.map col_ids ~f:(fun (col, ids) ->
+              i (List.length ids) % sp % parens (quote col)
+            ))
        % s " targets" @verbose);
-  Deferred_list.while_sequential (active_ones @ finished_ones) ~f:(fun key ->
-      get_stored_target t key
-      >>| Target.Stored_target.get_target
-      >>= fun topt ->
-      begin match topt with
-      | `Pointer _ ->
-        return None
-      | `Target target -> return (Some target)
-      end)
-  >>| List.filter_opt
+  Deferred_list.while_sequential col_ids ~f:(fun (_, ids) ->
+      Deferred_list.while_sequential ids ~f:(fun key ->
+          get_stored_target t key
+          >>| Target.Stored_target.get_target
+          >>= fun topt ->
+          begin match topt with
+          | `Pointer _ ->
+            return None
+          | `Target target -> return (Some target)
+          end)
+      >>| List.filter_opt)
+  >>| List.concat
+
+(* Alive should mean In-progess or activable *)
+let alive_targets t =
+  all_targets t ~from:[passive_targets_collection; active_targets_collection]
+  >>= fun targets ->
+  let filtered =
+    List.filter_map targets ~f:(fun target ->
+        match Target.State.simplify (Target.state target) with
+        | `Failed
+        | `Successful -> None
+        | `In_progress
+        | `Activable -> Some target)
+  in
+  return filtered
+
+let all_targets t =
+  all_targets t ~from:[
+    passive_targets_collection;
+    active_targets_collection;
+    finished_targets_collection;
+  ]
 
 let current_targets = all_targets
 
@@ -298,14 +332,18 @@ module Killing_targets = struct
         prev >>= fun prev_list ->
         get_target t id
         >>= fun target ->
+        let pull_out_from_passiveness =
+          if Target.state target |> Target.State.Is.passive then
+            [Database_action.unset ~collection:passive_targets_collection id]
+          else [] in
         begin match Target.kill target with
         | Some t ->
-          return [
+          return (pull_out_from_passiveness @ [
             remove_from_kill_list_action id;
             set_target_db_action t;
-          ]
+          ])
         | None ->
-          return [remove_from_kill_list_action id;]
+          return (pull_out_from_passiveness @ [remove_from_kill_list_action id])
         end
         >>= fun actions ->
         return (prev_list @ actions)
@@ -408,7 +446,10 @@ module Adding_targets = struct
             let collection =
               match Target.Stored_target.get_target st with
               | `Pointer _ -> finished_targets_collection
-              | `Target _ -> targets_collection in
+              | `Target t when Target.state t |> Target.State.Is.passive ->
+                passive_targets_collection
+              | `Target t -> active_targets_collection
+            in
             set ~collection ~key (Target.Stored_target.serialize st))
         |> seq in
       run_database_action t action
@@ -470,10 +511,8 @@ module Run_automaton = struct
         | `Ok dependency ->
           begin match Target.state dependency |> Target.State.simplify with
           | `Activable ->
-            let newdep =
-              Target.(activate_exn dependency ~reason:(`Dependency dependency_of))
-            in
-            add_or_update_targets t [newdep]
+            activate_target t ~target:dependency
+              ~reason:(`Dependency dependency_of)
             >>= fun () ->
             return (dep, `In_progress)
           | `In_progress
