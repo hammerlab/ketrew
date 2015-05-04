@@ -273,7 +273,7 @@ let update run_parameters =
       | None when  elapsed > run.created.starting_timeout ->
         (* no pid after timeout => fail! *)
         return (`Failed (run_parameters,
-                         fmt "starting timeouted: %.2f > %.2f"
+                         fmt "starting timed out: %.2f > %.2f"
                            elapsed run.created.starting_timeout))
       | None ->
         (* we consider it didn't start yet *)
