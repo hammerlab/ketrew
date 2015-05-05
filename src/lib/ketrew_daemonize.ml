@@ -161,7 +161,7 @@ if __name__ == '__main__':
     os.setsid()
     os.umask(0)
     pid_file = open('%s', 'w')
-    pid_file.write('%%d\\n' %% os.getpid())
+    pid_file.write('%%d' %% os.getpid())
     pid_file.close()
     # do second fork
     try:
