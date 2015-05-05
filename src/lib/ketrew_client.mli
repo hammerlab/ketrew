@@ -79,7 +79,6 @@ val current_targets: t ->
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
    | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -101,7 +100,6 @@ val get_target: t ->
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
    | `Missing_data of string
-   | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
    Deferred_result.t
 (** The latest contents of a given target.  *)
@@ -112,7 +110,6 @@ val get_targets: t ->
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
    | `Missing_data of string
-   | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
    Deferred_result.t
 (** Same as {!get_target} but “in bulk.” *)
@@ -128,7 +125,6 @@ val kill: t ->
    | `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Kill a set of targets. *)
@@ -140,7 +136,6 @@ val restart: t ->
    | `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Restart a set of targets. *)

@@ -530,7 +530,6 @@ module Run_automaton = struct
           Log.(s "Error while activating dependencies: " % errlog @ error);
           Log.(s "return (dep, `Failed)" @ verbose);
           return (dep, `Failed)
-        | `Error (`Persistent_state _ as e)
         | `Error (`Target _ as e) -> fail e)
     >>= begin
       let is a b =

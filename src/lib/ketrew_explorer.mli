@@ -31,7 +31,6 @@ val explore : t ->
          | `IO of [> `Read_file_exn of string * exn
                   | `Write_file_exn of string * exn ]
          | `Missing_data of string
-         | `Persistent_state of [> `Deserilization of string ]
          | `System of [> `File_info of string ] * [> `Exn of exn ]
          | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** [explore ~client exploration_states] runs a read-eval loop to explore and

@@ -74,8 +74,6 @@ let to_string = function
 | `Database e -> (Trakeva.Error.to_string e)
 | `Host e ->
   fmt "Host: %s" (Ketrew_host_io.Error.log e |> Log.to_long_string)
-| `Persistent_state (`Deserilization s) ->
-  fmt "Persistent_state-Deserilization: %S" s
 | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
 | `Database_unavailable s -> fmt "DB %s" s
 | `Not_implemented s -> fmt "Not-impl %S" s

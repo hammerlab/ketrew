@@ -70,7 +70,6 @@ val build_sublist_of_targets :
       | `Failure of string
       | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
       | `Missing_data of string
-      | `Persistent_state of [> `Deserilization of string ]
       | `System of [> `File_info of string ] * [> `Exn of exn ]
       | `Target of [> `Deserilization of string ] ]) t
 (** Figure out the targets to be displayed. *)

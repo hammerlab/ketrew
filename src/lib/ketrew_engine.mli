@@ -60,14 +60,12 @@ val add_targets :
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
    | `Target of [> `Deserilization of string ]
-   | `Persistent_state of [> `Deserilization of string ] ])
-    Deferred_result.t
+   ]) Deferred_result.t
 (** Add a list of targets to the engine. *)
 
 val get_target: t -> Unique_id.t ->
   (Ketrew_target.t,
    [> `Database of Trakeva.Error.t
-   | `Persistent_state of [> `Deserilization of string ]
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -80,7 +78,6 @@ val current_targets :
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of Ketrew_target.id
-    | `Persistent_state of [> `Deserilization of string ]
     | `System of [> `File_info of string ] * [> `Exn of exn ]
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
@@ -125,7 +122,6 @@ val get_status : t -> Ketrew_target.id ->
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
    | `Missing_data of string
-   | `Persistent_state of [> `Deserilization of string ]
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -146,7 +142,6 @@ val restart_target: t -> Ketrew_target.id ->
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_target.id
    | `Missing_data of Ketrew_target.id
-   | `Persistent_state of [> `Deserilization of string ]
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
