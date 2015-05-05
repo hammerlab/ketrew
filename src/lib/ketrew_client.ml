@@ -273,7 +273,7 @@ let call_query t ~target query =
     | `Error (`Client e) -> fail (Error.log e)
     end
 
-let restart_target t ids =
+let restart t ids =
   match t with
   | `Standalone s ->
     let open Standalone in

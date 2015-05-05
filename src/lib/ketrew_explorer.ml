@@ -600,7 +600,7 @@ let rec exploration_loop explorer state =
           >>= fun () ->
           exploration_loop explorer history
         | `Restart ->
-          Ketrew_client.restart_target explorer.ketrew_client [Target.id chosen]
+          Ketrew_client.restart explorer.ketrew_client [Target.id chosen]
           >>= fun () ->
           exploration_loop explorer history
         | `View_json ->

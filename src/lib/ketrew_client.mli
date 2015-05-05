@@ -133,7 +133,7 @@ val kill: t ->
     Deferred_result.t
 (** Kill a set of targets. *)
     
-val restart_target: t ->
+val restart: t ->
   Ketrew_target.id list ->
   (unit,
    [> `Client of Error.t
