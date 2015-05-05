@@ -252,7 +252,7 @@ let fold_active_targets t ~init ~f =
   in
   iter_stream init
 
-let all_targets t ~from =
+let get_collections_of_targets t ~from =
   database t
   >>= fun db ->
   Deferred_list.while_sequential from ~f:(fun collection ->
@@ -281,7 +281,7 @@ let all_targets t ~from =
 
 (* Alive should mean In-progess or activable *)
 let alive_targets t =
-  all_targets t ~from:[passive_targets_collection; active_targets_collection]
+  get_collections_of_targets t ~from:[passive_targets_collection; active_targets_collection]
   >>= fun targets ->
   let filtered =
     List.filter_map targets ~f:(fun target ->
@@ -294,7 +294,7 @@ let alive_targets t =
   return filtered
 
 let all_targets t =
-  all_targets t ~from:[
+  get_collections_of_targets t ~from:[
     passive_targets_collection;
     active_targets_collection;
     finished_targets_collection;
