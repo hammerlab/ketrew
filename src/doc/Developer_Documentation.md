@@ -71,26 +71,20 @@ Tests
 Run the tests like this:
 
 ```bash
-    ketrew_test_ssh=<Host> ./ketrew-test [-no-color] ALL
+    ./ketrew-test [-no-color] <Test-names>
 ```
 
-where `<Host>` is often an entry in your `.ssh/config` file and `TestName` is one of
+where a `Test-names` is one or more of
 
 - `ALL` all of the following.
-- `db-test`
 - `basic-test`
 - `nohup-test`
-- `ssh-failure`
 
-The tests will look for the environment variable `ketrew_test_ssh` (defaulting to
- `"localhost"`). But for the tests to succeed the user running a test should be
-able to login int `<Host>` without a password. The test will run some commands
-on that host and create files and directories in its `/tmp` directory.
 
 ### The `cli` Test
 
 The workflow [examples](../test/Workflow_Examples.ml) in the documentation
-are actually interactive tests (`./ketrew-workflow-examples-test`).
+are actually interactive tests (cf. `./ketrew-workflow-examples-test`).
 
 ### The `integration` Test
 
@@ -135,9 +129,13 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
 
 - `kscli`: the standalone `ketrew` application.
 - `kdserver`: the server `ketrew` application.
-- `kdclient`: the client `ketrew` application.
+- `kddaemon`: the same as `kdserver` but quiting the current terminal (`daemon`
+  option).
+- `kdclient`: the client `ketrew` application (talking to a `kdserver` or
+  `kddaemon` instance).
 - `kstest`: the [`cli` test](../test/Workflow_Examples.ml) with a “standalone-mode” configuration file.
-- `kdtest`: the same `cli` test but as a client.
+- `kdtest`: the same `cli` test but as a client (again, talking to a `kdserver`
+  or `kddaemon` instance).
 - `ksintegration`, and `kdintegration`: the
   [integration](../test/integration.ml) test in standalone and client modes.
 - `ksplugin_user`, and `kdplugin_user`: the mini-workflow
