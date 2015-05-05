@@ -97,6 +97,12 @@ let log =
 let python_using_path ~playground =
   Ketrew_path.(concat playground (relative_file_exn "daemonizator.py"))
 
+let get_pid run =
+  match run.pid with
+  | Some p -> return (Some p)
+  | None ->
+    get_pid_of_monitored_script ~host:run.created.host ~script:run.script
+
 
 let additional_queries = function
 | `Created _ -> []
@@ -127,17 +133,22 @@ let query run_parameters item =
       let monitored_script_path = script_path ~playground:rp.playground in
       Ketrew_host_io.grab_file_or_log rp.created.host monitored_script_path
     | "check-process" ->
-      begin match rp.pid with
-      | Some pid ->
-        begin Ketrew_host_io.get_shell_command_output rp.created.host
+      begin
+        get_pid rp
+        >>= begin function
+        | Some pid ->
+          Ketrew_host_io.get_shell_command_output rp.created.host
             (fmt "ps -g %d" pid)
-          >>< function
-          | `Ok (o, _) -> return o
-          | `Error e ->
-            fail Log.(s "Command `ps -g PID` failed: " % s (Error.to_string e))
-        end
-      | None ->
-        fail Log.(s "Cannot get the processes status, PID not known (yet)")
+        | None ->
+          fail `No_pid
+        end >>< function
+        | `Ok (o, _) -> return o
+        | `Error (`Timeout t) ->
+          fail Log.(s "Getting PID failed: time-out " % sf "%f" t)
+        | `Error `No_pid ->
+          fail Log.(s "Cannot get the processes status, PID not known (yet)")
+        | `Error (`Host _ as e) ->
+          fail Log.(s "Command `ps -g PID` failed: " % s (Error.to_string e))
       end
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
@@ -266,15 +277,19 @@ let update run_parameters =
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
     | None | Some _->
-      get_pid_of_monitored_script ~host:run.created.host ~script:run.script
+      get_pid run
       >>= fun pid ->
       let elapsed = Time.(now ()) -. run.start_time in
       begin match pid with
       | None when  elapsed > run.created.starting_timeout ->
         (* no pid after timeout => fail! *)
         return (`Failed (run_parameters,
-                         fmt "starting timed out: %.2f > %.2f"
-                           elapsed run.created.starting_timeout))
+                         fmt "Can't the PID after %.2f seconds \
+                              (> configured time-out: %.2f, \
+                              file: %s)"
+                           elapsed run.created.starting_timeout
+                           (Ketrew_monitored_script.pid_file run.script
+                            |> Ketrew_path.to_string)))
       | None ->
         (* we consider it didn't start yet *)
         return (`Still_running run_parameters)
@@ -285,7 +300,6 @@ let update run_parameters =
         >>= fun ps_return ->
         begin match ps_return with
         | 0 -> (* most likely still running *)
-          (* TOOD save pid + find other way of checking *)
           return (`Still_running new_run_parameters)
         | n -> (* not running, for “sure” *)
           (* we fetch the log file again, because the process could have
@@ -312,7 +326,7 @@ let kill run_parameters =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run as run_parameters ->
-    get_pid_of_monitored_script ~host:run.created.host ~script:run.script
+    get_pid run
     >>= fun pid ->
     begin match pid with
     | None ->

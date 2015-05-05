@@ -72,8 +72,13 @@ let get_pid_of_monitored_script ~host ~script =
   let pid_file = Ketrew_monitored_script.pid_file script in
   begin Ketrew_host_io.get_file host ~path:pid_file
     >>< function
-    | `Ok c -> return (Int.of_string (String.strip ~on:`Both c))
-    | `Error (`Cannot_read_file _) -> return None
+    | `Ok c ->
+      Log.(s "get_pid_of_monitored_script, got: " % quote c @ verbose);
+      return (Int.of_string (String.strip ~on:`Both c))
+    | `Error (`Cannot_read_file (s1, s2)) ->
+      Log.(s "get_pid_of_monitored_script: cannot-read-file: "
+             % quote s1 % s ", " % quote s2 @ verbose);
+      return None
     | `Error (`Timeout _ as e) -> fail e
   end
 
