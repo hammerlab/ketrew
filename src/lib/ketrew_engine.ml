@@ -140,6 +140,8 @@ let not_implemented msg =
   fail (`Not_implemented msg)
 
 
+(* These are the names of the collections used for storing targets
+   with Trakeva: *)
 let passive_targets_collection = "passive-targets"
 let active_targets_collection = "active-targets"
 let finished_targets_collection = "finished-targets"
