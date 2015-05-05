@@ -195,7 +195,7 @@ let message_of_body ~body =
 let answer_get_targets ~server_state target_ids =
   begin match target_ids  with
   | [] ->
-    Ketrew_engine.current_targets server_state.state
+    Ketrew_engine.all_targets server_state.state
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
         Ketrew_engine.get_target server_state.state id

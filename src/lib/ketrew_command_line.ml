@@ -39,7 +39,7 @@ module Return_code = struct
 end
 
 let get_status ~client =
-  Ketrew_client.current_targets client
+  Ketrew_client.all_targets client
   >>= fun targets ->
   let in_progress =
     List.fold targets ~init:0 ~f:(fun prev t ->

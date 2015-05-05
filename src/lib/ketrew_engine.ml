@@ -300,8 +300,6 @@ let all_targets t =
     finished_targets_collection;
   ]
 
-let current_targets = all_targets
-
 module Killing_targets = struct
   let targets_to_kill_collection = "targets-to-kill"
   let add_target_ids_to_kill_list t id_list =
