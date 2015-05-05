@@ -42,15 +42,6 @@ module Test = struct
         Log.(s "Testing " % quote name % s ": SUCCESS" @ warning);
       | _ -> ()) fmt
 
-  let test_ssh_host =
-    let open Ketrew in
-    try
-      Host.ssh ~playground:Path.(absolute_directory_exn "/tmp")
-        (Unix.getenv "ketrew_test_ssh")
-    with Not_found -> Host.ssh "localhost"
-
-  let wrong_ssh_host =
-    Ketrew.EDSL.Host.parse "ssh://SomelongNameThatIHopeDoesNotExist:42/tmp/bouh"
 
   let new_db_file () =
     let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
