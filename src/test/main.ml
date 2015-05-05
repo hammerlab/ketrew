@@ -337,13 +337,28 @@ let make_automaton_graph () =
     Log.(s "Trrreeees: " % n % tree_to_log result_tree @ normal);
   ()
 
+
+let run_all_tests () =
+  Log.(s "Starting ALL Tests" @ normal);
+  Log.(s "Basic test:" @ normal);
+  test_0 ();
+  Log.(s "Automaton graph test:" @ normal);
+  make_automaton_graph ();
+  Log.(s "End of ALL Tests" @ normal);
+  ()
+
 let () =
   let argl = Sys.argv |> Array.to_list in
   global_with_color := not (List.mem ~set:argl "-no-color");
   global_debug_level := 3;
   let all = List.mem ~set:argl "ALL" in
-  if List.mem ~set:argl "basic-test" || all then test_0 ();
-  if List.mem ~set:argl "automaton-graph" || all then make_automaton_graph ();
+  begin if all
+    then run_all_tests ()
+    else begin
+      if List.mem ~set:argl "basic-test" then test_0 ();
+      if List.mem ~set:argl "automaton-graph" then make_automaton_graph ();
+    end
+  end;
   begin match !Test.failed_tests with
   | [] ->
     Log.(s "No tests failed \\o/ (arg-list: "
