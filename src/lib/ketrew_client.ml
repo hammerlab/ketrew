@@ -17,6 +17,26 @@
 open Ketrew_pervasives
 open Ketrew_unix_io
 
+module Error = struct
+  type t =
+    [ `Http of
+        [ `Call of [ `GET | `POST ] * Uri.t
+        | `Targets
+        | `Target_query of Ketrew_pervasives.Unique_id.t * string
+        ] *
+        [ `Exn of exn
+        | `Json_parsing of string * [ `Exn of exn ]
+        | `Unexpected_message of Ketrew_protocol.Down_message.t
+        | `Wrong_json of Yojson.Safe.json
+        | `Wrong_response of Cohttp_lwt_unix.Client.Response.t * string ]
+    | `Server_error_response of
+        [ `Call of [ `GET | `POST ] * Uri.t ] * string ]
+
+  let log error_value = 
+    Ketrew_error.log_client_error error_value
+
+end
+
 module Standalone = struct
   type t = {
     configuration: Ketrew_configuration.standalone;
@@ -48,8 +68,10 @@ module Http_client = struct
     let base_uri = Uri.add_query_param' uri ("token", token configuration) in
     return { configuration; base_uri; }
 
-  let client_error ~where ~what = `Client (`Http (where, what))
-  let client_error_exn where exn = `Client (`Http (where, `Exn exn))
+  let client_error ~where ~what = `Client (`Http (where, what) : Error.t)
+  let client_error_exn where exn = `Client (`Http (where, `Exn exn) : Error.t)
+  let fail_client (e : Error.t) = fail (`Client e)
+
 
   let call_json ?(args=[]) t ~meta_meth ~path =
     let uri =
@@ -79,12 +101,12 @@ module Http_client = struct
       begin try
         return (Yojson.Safe.from_string body_str)
       with e ->
-        fail (`Client (`Http (where, `Json_parsing (body_str, `Exn e))))
+        fail_client (`Http (where, `Json_parsing (body_str, `Exn e)))
       end
     | `Not_found ->
-        fail (`Client (`Server_error_response (where, body_str)))
+        fail_client (`Server_error_response (where, body_str))
     | other ->
-      fail (`Client (`Http (where, `Wrong_response (response, body_str))))
+      fail_client (`Http (where, `Wrong_response (response, body_str)))
     end
 
   let filter_down_message json ~f ~loc =
@@ -93,9 +115,9 @@ module Http_client = struct
       begin match f message with
       | Some x -> return x
       | None ->
-        fail (`Client (`Http (loc, `Unexpected_message message)))
+        fail_client (`Http (loc, `Unexpected_message message))
       end
-    with _ -> fail (`Client (`Http (loc, `Wrong_json json)))
+    with _ -> fail_client (`Http (loc, `Wrong_json json))
     end
 
 
@@ -248,7 +270,7 @@ let call_query t ~target query =
     >>< begin function 
     | `Ok s -> return s
     | `Error (`Failure e) -> fail (Log.s e)
-    | `Error (`Client e) -> fail (Ketrew_error.log_client_error e)
+    | `Error (`Client e) -> fail (Error.log e)
     end
 
 let restart_target t ids =

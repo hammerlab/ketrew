@@ -24,7 +24,7 @@ let log_client_error error_value =
   let log_action =
     function
     | `Call (meth, the_uri) ->
-      s (Cohttp.Code.string_of_method meth) % sp % uri the_uri
+      s (Cohttp.Code.(string_of_method (meth :> meth))) % sp % uri the_uri
     | `Targets -> s "Getting targets"
     | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
     | `Restart_targets ids ->

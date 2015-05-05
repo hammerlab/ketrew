@@ -24,27 +24,15 @@ type t
 val create : client:Ketrew_client.t -> unit -> t
 
 val explore : t ->
-  (unit, [> `Client of
-            [> `Http of
-              [> `Call of [> `GET | `POST ] * Uri.t
-              | `Kill_targets of string list
-              | `Restart_targets of string list
-              | `Targets ] *
-              [> `Exn of exn
-              | `Json_parsing of string * [> `Exn of exn ]
-              | `Unexpected_message of Ketrew_protocol.Down_message.t
-              | `Wrong_json of Json.t
-              | `Wrong_response of Cohttp.Response.t * string ]
-            | `Server_error_response of [> `Call of [> `GET | `POST ] * Uri.t ]
-            * string ]
-        | `Database of Trakeva.Error.t
-        | `Database_unavailable of string
-        | `Failure of string
-        | `IO of [> `Read_file_exn of string * exn
-                 | `Write_file_exn of string * exn ]
-        | `Missing_data of string
-        | `Persistent_state of [> `Deserilization of string ]
-        | `System of [> `File_info of string ] * [> `Exn of exn ]
-        | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+  (unit, [> `Client of Ketrew_client.Error.t 
+         | `Database of Trakeva.Error.t
+         | `Database_unavailable of string
+         | `Failure of string
+         | `IO of [> `Read_file_exn of string * exn
+                  | `Write_file_exn of string * exn ]
+         | `Missing_data of string
+         | `Persistent_state of [> `Deserilization of string ]
+         | `System of [> `File_info of string ] * [> `Exn of exn ]
+         | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** [explore ~client exploration_states] runs a read-eval loop to explore and
     interact with targets.*)

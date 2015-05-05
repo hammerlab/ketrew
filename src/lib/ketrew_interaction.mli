@@ -59,22 +59,13 @@ val get_key : unit -> (char, [> `Failure of string ]) t
 (** Get a key from the terminal input. *)
 
 val build_sublist_of_targets :
-  client:[< `Http_client of Ketrew_client.Http_client.t
-         | `Standalone of Ketrew_client.Standalone.t ] ->
+  client: Ketrew_client.t ->
   list_name:string ->
   all_log:SmartPrint.t ->
   go_verb:SmartPrint.t ->
   filter:(Ketrew_target.t -> bool) ->
     ([> `Cancel | `Go of string list ],
-     [> `Client of
-          [> `Http of
-               [> `Call of [> `GET | `POST ] * Uri.t | `Targets ] *
-               [> `Exn of exn
-                | `Json_parsing of string * [> `Exn of exn ]
-                | `Unexpected_message of Ketrew_protocol.Down_message.t
-                | `Wrong_json of Ketrew_pervasives.Json.t
-                | `Wrong_response of Cohttp.Response.t * string ]
-           | `Server_error_response of [> `Call of [> `GET | `POST ] * Uri.t ] * string ]
+     [> `Client of Ketrew_client.Error.t
       | `Database of Trakeva.Error.t
       | `Failure of string
       | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
