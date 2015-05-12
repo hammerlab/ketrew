@@ -40,14 +40,14 @@ Generating From Command Line
 ----------------------------
 
 The command `ketrew initialize` can generate a configuration file (limited to
-standalone for now); see `ketrew init --help`.
+standalone mode for now); see `ketrew init --help`.
 
 
-Examples
---------
+Example
+-------
 
-A configuration file `config.ml` (that Ketrew will execute through `OCaml`)
-would look like:
+A configuration file `configuration.ml` (that Ketrew will execute through
+`OCaml`) would look like:
 
 ```ocaml
 #use "topfind"
@@ -114,96 +114,21 @@ let () =
   ]
 ```
 
-You may run `ocaml config.ml` to see the equivalent Json.
+You may run `ocaml configuration.ml` to see the equivalent Json.
 
 Creating a test environment (`make test-env`, cf. developer
 [docs](./Developer_Documentation.md)) generates a very similar configuration
 file.
 
-Explanation of the Options
---------------------------
+Details on the Options
+----------------------
 
 To build configurations refer to the [API](src/lib/ketrew_configuration.mli) of
 the `Ketrew_configuration` module.
 
-### The `engine` Options
-
-In standalone and server modes, the `engine` configures how to run the
-workflows.
-
-- `database_parameters`: the path to the database file/directory (the
-default is `~/.ketrew/database`).
-- `persistent_state_key`: the name of a key to the “root of the tree”; if more
-than one application is using the same database, this can be useful to avoid
-conflicts (“normal” users should *never* need to set this).
-- `turn_unix_ssh_failure_into_target_failure`: boolean;
-when an SSH or system call fails it may not mean that the command in your
-workflow is wrong (could be an SSH configuration or tunneling problem). By
-default (i.e. `false`), Ketrew tries to be clever and does not make targets
-fail. To change this behavior set the option to `true`.
-- `host_timeout_upper_bound`: float (seconds, default is `60.`); every
-connection/command time-out will be `≤ upper-bound`.
-
-### The `ui` Options
-
-The `ui` function configures the behavior of the User Interface.
-
-- `color`: boolean (default `true`); tell Ketrew to display *f-ANSI* colors.
-- The Interactive Explorer's configuration:
-    - `request_targets_ids` how to request target IDs from the server.
-    - `targets_per_page`: the number of targets to display in a single “page.”
-    - `targets_to_prefetch`: how many targets to download at once while
-      prefetching (the client-side cache fetches targets in advance to improve
-      latency).
-- `with_cbreak`: should the interactive UI use “`cbreak`” or not:
-    - when `false`: it reads from `stdin` classically (i.e. it waits for the
-      `return` key to be pressed),
-    - when `true`: it gets the key-presses directly (it's the default but
-      requires a compliant terminal).
-
-### The `plugins` Option
-
-This optional argument asks Ketrew to dynamically load plugins:
-
-- `` `Ocamlfind``: a package name or a list of package names to find and load
-with `Findlib`.
-- `` `Compiled``: a path or a list of paths to load.
-
-### The `client` Options
-
-The `client` function configures Ketrew in client-mode:
-
-- the `connection`: URL for connecting to the server
-  (e.g. `"https://example.com:8443"`).
-- `token`: API authentication token.
-
-### The `server` Options
-
-The `server` function configures the HTTP server:
-
-- The value `` `Tls (certificate, private_key, port)`` configures the connection
-  settings:
-    - `certificate`: path to the SSL certificate (*mandatory*).
-    - `private_key`: path to the SSL private-key (*mandatory*).
-    - `port`: port to listen on (*mandatory*).
-- `authorized_tokens`: list of values representing authorized tokens, either:
-    - `authorized_token ~name value`: an *inline* token definition, or
-    - `authorized_token_path path`: a path to a file containing authentication
-      tokens; it uses the SSH
-      [`authorized_keys`](http://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#.7E.2F.ssh.2Fauthorized_keys)
-      format (whitespace-separated lines of the form:
-      `<name> <token> <optional comments ...>`).
-- `command_pipe`: if set this asks the server to listen on a named pipe for
-  control commands (*highly recommended*).
-- `daemonize`: if `true`, ask the server to detach from the current terminal; if
-  you use this option it is required to provide absolute paths for all other
-  parameters requiring paths (daemonization changes the process directory to
-  `/`).
-- `log_path`: if set together with `daemonize`, ask the server to redirect logs
-  to this path (if not set logs go to `/dev/null`).
-- `return_error_messages`: if `true`, the server will return real error messages
-  (in the *body* of the response) to the client; if `false` (the default), any
-  kind of error will result in the same uninformative message.
+As shown above, the idea is to call the function `Ketrew_configuration.output`
+with results of the function `Ketrew_configuration.profile`, themselves created
+thanks to the function `Ketrew_configuration.create`, etc.
 
 Print The Configuration
 -----------------------
