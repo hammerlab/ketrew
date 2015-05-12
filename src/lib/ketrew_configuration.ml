@@ -21,7 +21,6 @@
 open Ketrew_pervasives
 open Ketrew_unix_io
 
-let default_persistent_state_key = "ketrew_persistent_state"
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson]
@@ -29,7 +28,6 @@ type plugin = [ `Compiled of string | `OCamlfind of string ]
 
 type engine = {
   database_parameters: string;
-  persistent_state_key: string [@default default_persistent_state_key];
   turn_unix_ssh_failure_into_target_failure: bool [@default false];
   host_timeout_upper_bound: float option [@default None];
 } [@@deriving yojson]
@@ -114,7 +112,6 @@ let log t =
   let engine t =
     sublist [
       item "Database" (quote t.database_parameters);
-      item "State-key" (quote t.persistent_state_key);
       item "Unix-failure"
         ((if t.turn_unix_ssh_failure_into_target_failure
           then s "turns"
@@ -189,11 +186,9 @@ let default_ui = ui ()
 
 let engine
     ?(database_parameters=default_database_path)
-    ?(persistent_state_key=default_persistent_state_key)
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?host_timeout_upper_bound () = {
   database_parameters;
-  persistent_state_key;
   turn_unix_ssh_failure_into_target_failure;
   host_timeout_upper_bound;
 }
@@ -232,7 +227,6 @@ let command_pipe s = s.command_pipe
 let daemon       s = s.daemon
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
-let persistent_state_key e = e.persistent_state_key
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let mode t = t.mode
 let standalone_engine st = st.standalone_engine

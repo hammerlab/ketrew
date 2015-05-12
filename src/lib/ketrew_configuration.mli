@@ -88,7 +88,6 @@ type engine
 
 val engine: 
   ?database_parameters:string ->
-  ?persistent_state_key:string -> 
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?host_timeout_upper_bound: float ->
   unit -> engine
@@ -96,10 +95,6 @@ val engine:
 
     - [database_parameters]: the path to the database file/directory
       (the default is ["~/.ketrew/database"]).
-    - [persistent_state_key]: the name of a key to the “root of the
-      tree”; if more than one application is using the same database,
-      this can be useful to avoid conflicts (“normal” users should
-      *never* need to set this).
     - [turn_unix_ssh_failure_into_target_failure]: when an
       SSH or system call fails it may not mean that the command in
       your workflow is wrong (could be an SSH configuration or
@@ -226,9 +221,6 @@ val default_database_path: string
 
 val database_parameters: engine -> string
 (** Get the database parameters. *)
-
-val persistent_state_key: engine -> string
-(** Get the “key” of the state values in the database. *)
 
 val is_unix_ssh_failure_fatal: engine -> bool
 (** Should we kill targets on ssh/unix errors. *)

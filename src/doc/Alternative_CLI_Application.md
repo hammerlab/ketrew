@@ -84,7 +84,6 @@ The new one succeeds:
 [ketrew]
     From user-overriden:
     * Database: "/tmp/somepath"
-    * State-key: "ketrew_persistent_state"
     * Unix-failure does not turn into target failure
     * Debug-level: 42
     * Client with colors
