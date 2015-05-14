@@ -26,7 +26,7 @@ any Unix platform.
 
 If you have `opam` up and running:
 
-    opam remote add smondet git@github.com:smondet/dev-opam-repo.git
+    opam remote add -k git smondet https://github.com/smondet/dev-opam-repo
     opam install ketrew
 
 Then you need at runtime `ssh` in the `$PATH`.
