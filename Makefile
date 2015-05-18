@@ -11,7 +11,7 @@ _oasis: tools/_oasis.in tools/please.ml
 setup.data: _oasis
 	oasis setup -setup-update dynamic
 
-configure: myocamlbuild.ml setup.data
+configure: setup.data
 	ocaml setup.ml -configure --enable-all $(EN) && \
 	echo 'Configured'
 

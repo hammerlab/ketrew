@@ -105,12 +105,16 @@ let () =
                 |> String.concat ~sep:" ");
     ()
   | "make" :: "_oasis" :: [] ->
+    let with_bisect = try Sys.getenv "WITH_BISECT" = "true" with _ -> false in
+    let packages l =
+      (if with_bisect then "bisect_ppx" :: l else l)
+      |> String.concat ~sep:", " in
     cmd_exn "sed 's/%s/%s/g' tools/_oasis.in | sed 's/%s/%s/'  | sed 's/%s/%s/' > _oasis"
       oasis_meta_variable_version (version_string ())
       oasis_meta_variable_pure_findlib_packages
-      (String.concat ~sep:", " pure_findlib_packages)
+      (packages pure_findlib_packages)
       oasis_meta_variable_unix_findlib_packages
-      (String.concat ~sep:", " unix_findlib_packages)
+      (packages unix_findlib_packages)
   | [] -> printf "Nothing to do"
   | others ->
     printf "Don't know what to do with: %s" (String.concat ~sep:", " others);

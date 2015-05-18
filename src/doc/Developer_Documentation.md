@@ -143,13 +143,21 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
 
 ### Coverage
 
-To generate coverage reports `make configure EN="--enable-coverage"` then
-`make` will build instrumented versions of the executibles that will generate
-`bisect*.out` files when run. `make report` will take the  latest such file
+To generate coverage reports you need to instrument the code byt
+reconfiguring/compiling from scratch using the environment variable
+`WITH_BISECT` equal to `true`:
+
+    WITH_BISECT=true make distclean configure all
+
+Running the instrumented versions of the code will generate `bisect*.out` files
+when run.
+
+Then, `make report` will take the  latest such file
 and generate an html file in `_report_dir/index.html`. `make clean_reports`
-removes the reports and `_report_dir`. Finally,
-`make configure EN="--disable-coverage"` will return the build process to a
-non-instrumented state.
+removes the reports and `_report_dir`.
+
+To remove the instrumentation just use `make distclean configure all` withou
+`WITH_BISECT` set to `true`.
 
 
 How to Release
