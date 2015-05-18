@@ -425,13 +425,13 @@ let explore_single_target ~client (es: exploration_state) target =
       | some -> [menu_item ~char ~log result] in
     let follow_deps_item =
       menu_item_of_id_list ~char:'d' ~log:Log.(s "Follow a dependency")
-        ~result:`Follow_dependencies (Target.dependencies target) in
-    let follow_fbacks_item =
-      menu_item_of_id_list ~char:'f' ~log:Log.(s "Follow a fallback")
-        ~result:`Follow_fallbacks (Target.fallbacks target) in
-    let follow_success_triggers_item =
-      menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success-trigger")
-        ~result:`Follow_success_triggers (Target.success_triggers target) in
+        ~result:`Follow_dependencies (Target.depends_on target) in
+    let follow_failed_item =
+      menu_item_of_id_list ~char:'f' ~log:Log.(s "Follow a failure")
+        ~result:`Follow_failures (Target.on_failure_activate target) in
+    let follow_successful_item =
+      menu_item_of_id_list ~char:'t' ~log:Log.(s "Follow a success")
+        ~result:`Follow_successes (Target.on_success_activate target) in
     let restart_item =
       if Target.state target |> Target.State.Is.finished
       then [menu_item ~char:'r' ~log:Log.(s "Restart (clone & activate)")
@@ -443,8 +443,8 @@ let explore_single_target ~client (es: exploration_state) target =
       @ condition_details_item
       @ metadata_details_item
       @ follow_deps_item
-      @ follow_fbacks_item
-      @ follow_success_triggers_item
+      @ follow_failed_item
+      @ follow_successful_item
       @ kill_item
       @ restart_item
       @ [menu_item ~char:'O' ~log:Log.(s "See JSON in $EDITOR") `View_json]
@@ -613,13 +613,13 @@ let rec exploration_loop explorer state =
         | `View_metadata ->
           view_metadata ~client:explorer.ketrew_client chosen >>= fun () ->
           exploration_loop explorer history
-        | `Follow_dependencies | `Follow_fallbacks | `Follow_success_triggers
+        | `Follow_dependencies | `Follow_failures | `Follow_successes
           as follow ->
           let target_ids t =
             match follow with
-            | `Follow_fallbacks -> (Target.fallbacks t)
-            | `Follow_success_triggers -> (Target.success_triggers t)
-            | `Follow_dependencies -> (Target.dependencies t) in
+            | `Follow_failures -> (Target.on_failure_activate t)
+            | `Follow_successes -> (Target.on_success_activate t)
+            | `Follow_dependencies -> (Target.depends_on t) in
           let rec next_target ids =
             begin pick_a_target_from_list explorer ids
               >>= function

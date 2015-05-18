@@ -301,7 +301,7 @@ let make_automaton_graph () =
   let targets = [
     dep #render;
     (Ketrew.EDSL.target "02" |> activate_and_render);
-    (Ketrew.EDSL.target "03" ~dependencies:[dep] |> activate_and_render);
+    (Ketrew.EDSL.target "03" ~depends_on:[dep] |> activate_and_render);
     (Ketrew.EDSL.target "03" ~make:(`Long_running ("", "")) |> activate_and_render);
     (Ketrew.EDSL.target "03" ~make:(`Long_running ("", ""))
        ~done_when:`Never |> activate_and_render);

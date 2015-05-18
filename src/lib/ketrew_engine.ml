@@ -623,7 +623,7 @@ module Run_automaton = struct
         make_new_target ~log:"Attempted to kill" murder_attempt_result in
       return new_target
     | `Check_and_activate_dependencies make_new_target ->
-      let ids = Target.dependencies target in
+      let ids = Target.depends_on target in
       let log =
         fmt "Check-and-Activation of [%s]" (String.concat ~sep:", " ids)
       in

@@ -155,7 +155,7 @@ let run_2_commands_with_python_method ~host cmd1 cmd2 =
   in
   let target2 =
     target (sprintf "Pyd: %S" cmd2)
-      ~dependencies:[ target1 ]
+      ~depends_on:[ target1 ]
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd2) ~host)
   in
   Ketrew_client.submit target2
@@ -196,7 +196,7 @@ let fail_because_of_condition ~host =
   let target2 =
     make_target "Won't-run because of failed dependency"
       ~cmd:"ls /tmp"
-      ~dependencies:[ target_with_condition ]
+      ~depends_on:[ target_with_condition ]
   in
   Ketrew_client.submit target2
 (*M
@@ -255,9 +255,9 @@ let deploy_website branches =
   let in_cloned_repo = Program.shf "cd %s/ketrew" dest_path in
   (* A function that creates a target that checks-out a given git branch
      (and actively verifies that it was successful) *)
-  let check_out ~dependencies branch =
+  let check_out ~depends_on branch =
     target (sprintf "Check out %s" branch)
-      ~dependencies:(clone_repo :: dependencies)
+      ~depends_on:(clone_repo :: depends_on)
       ~make:(local_deamonize
                Program.(
                  in_cloned_repo
@@ -273,7 +273,7 @@ let deploy_website branches =
     match branches with
     | [] ->
       target "Make documentation (default branch)" 
-        ~dependencies:[clone_repo]
+        ~depends_on:[clone_repo]
         ~make:(local_deamonize build_doc_prgram)
     | more -> 
       (* we build a chain of targets depending on each other:
@@ -282,23 +282,23 @@ let deploy_website branches =
          -> check_out last_branch -> build_doc
       *)
       List.fold_left ~init:clone_repo more ~f:(fun previous_dep branch ->
-          let co = check_out ~dependencies:[previous_dep] branch in
+          let co = check_out ~depends_on:[previous_dep] branch in
           target (sprintf "Make documentation (branch %s)" branch)
-            ~dependencies:[co]
+            ~depends_on:[co]
             ~make:(local_deamonize build_doc_prgram))
   in
   let check_out_gh_pages =
     (* first target with dependencies: the two previous ones *)
-    check_out ~dependencies:[make_doc] "gh-pages" in
+    check_out ~depends_on:[make_doc] "gh-pages" in
   let move_website =
-    target "Move _doc/" ~dependencies:[check_out_gh_pages]
+    target "Move _doc/" ~depends_on:[check_out_gh_pages]
       ~make:(local_deamonize 
                Program.(in_cloned_repo && sh "rsync -a _doc/ .")) in
   (* if there is nothing to commit, `git commit -a` will return 1, 
      so we use `ancestor` (without dependencies) as a fallback.
      But `ancestor` will also be run in case of success. *)
-  let ancestor ~dependencies status =
-    target (sprintf "Common ancestor: %s" status) ~dependencies
+  let ancestor ~depends_on status =
+    target (sprintf "Common ancestor: %s" status) ~depends_on
       ~add_tags:["end-of-workflow"]
       ~make:(local_deamonize
                Program.(
@@ -313,7 +313,7 @@ let deploy_website branches =
                    )))
   in
   let commit_website =
-    target "Commit" ~dependencies:[move_website]
+    target "Commit" ~depends_on:[move_website]
       ~make:(local_deamonize
                Program.(
                  in_cloned_repo
@@ -322,11 +322,11 @@ let deploy_website branches =
                  && sh "git commit -a -m 'update website'"
                  && shf "git push origin gh-pages"
                ))
-      ~if_fails_activate:[ancestor "Failed" ~dependencies:[]]
+      ~on_failure_activate:[ancestor "Failed" ~depends_on:[]]
   in
   (* `submit` will activate the target `ancestor` and then `commit_website`, and
      add all their (transitive) dependencies to the system.  *)
-  Ketrew_client.submit (ancestor "Success" ~dependencies:[commit_website])
+  Ketrew_client.submit (ancestor "Success" ~depends_on:[commit_website])
 
 (*M
 
@@ -359,7 +359,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let targz = destination "tar.gz" in
   let make_targz =
-    target ~done_when:targz#exists "make-tar.gz" ~dependencies:[]
+    target ~done_when:targz#exists "make-tar.gz" ~depends_on:[]
       ~make:(daemonize ~host
                Program.(
                  shf "cd %s/../" dir
@@ -370,7 +370,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   in
   let md5 = destination "md5" in
   let md5_targz =
-    target ~done_when:md5#exists "make-md5-of-tar.gz" ~dependencies:[make_targz]
+    target ~done_when:md5#exists "make-md5-of-tar.gz" ~depends_on:[make_targz]
       ~make:(daemonize ~host
                Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
   in
@@ -378,24 +378,24 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     let gpg_file = destination "tar.gz.gpg" in
     let make_it =
       target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists
-        ~dependencies:[make_targz; md5_targz]
+        ~depends_on:[make_targz; md5_targz]
         ~make:(daemonize ~host
                  Program.(
                    sh ". ~/.backup_passphrase"
                    && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
                      gpg_file#path targz#path)) in
     let clean_up =
-      target "rm-tar.gz" ~dependencies:[make_it]
+      target "rm-tar.gz" ~depends_on:[make_it]
         ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
     [make_it; clean_up]
   in
   let common_ancestor =
-    let dependencies =
+    let depends_on =
       match gpg with
       | false -> [make_targz; md5_targz]
       | true ->  gpg_targets ()
     in
-    target "make-targz common ancestor" ~dependencies
+    target "make-targz common ancestor" ~depends_on
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
   Ketrew_client.submit common_ancestor
@@ -434,7 +434,7 @@ let run_ketrew_on_vagrant what_to_do =
     in
     let running =
       target "vagrant-up"
-        ~dependencies:[init]
+        ~depends_on:[init]
         ~make:(do_on_vagrant_host Program.(
             exec ["cd"; vagrant_tmp]
             && exec ["vagrant"; "up"]))
@@ -442,7 +442,7 @@ let run_ketrew_on_vagrant what_to_do =
     let make_ssh_config =
       target (* not a `file_target`, because we want this file regenerated 
                 every time *)
-        "vagrant-ssh-config" ~dependencies:[running]
+        "vagrant-ssh-config" ~depends_on:[running]
         ~make:(do_on_vagrant_host Program.(
             exec ["cd"; vagrant_tmp]
             && shf "vagrant ssh-config --host Vagrew > %s" ssh_config#path))
@@ -458,7 +458,7 @@ let run_ketrew_on_vagrant what_to_do =
       daemonize ~using:`Nohup_setsid ~host:vagrant_box p in
     let get_c_dependencies =
       target "apt-get-c-deps"
-        ~dependencies:[]
+        ~depends_on:[]
         ~make:(do_on_vagrant_box Program.(
             sh "echo GO"
             && sh "sudo apt-get update"
@@ -468,7 +468,7 @@ let run_ketrew_on_vagrant what_to_do =
     let get_opam =
       file_target ~name:"apt-get-opam"
         ~host:vagrant_box "/usr/bin/opam"
-        ~dependencies:[get_c_dependencies]
+        ~depends_on:[get_c_dependencies]
         (* `get_opam` does not really depend on `get_c_dependencies` but
            `apt-get` does not work in parallel, so we need to make things
            sequential. *)
@@ -484,13 +484,13 @@ let run_ketrew_on_vagrant what_to_do =
     let init_opam =
       file_target ~name:"init-opam"
         "/home/vagrant/.opam/opam-init/init.sh"
-        ~dependencies:[get_opam]
+        ~depends_on:[get_opam]
         ~host:vagrant_box
         ~make:(do_on_vagrant_box Program.( sh "opam init"))
     in
     let install_ketrew compiler =
       file_target ~name:"opam-install-ketrew"
-        ~dependencies:[init_opam; get_c_dependencies]
+        ~depends_on:[init_opam; get_c_dependencies]
         ~host:vagrant_box
         (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler)
         ~make:(do_on_vagrant_box Program.(
@@ -512,7 +512,7 @@ let run_ketrew_on_vagrant what_to_do =
     in
     let rm_temp =
       target "rm-temp"
-        ~dependencies:[kill]
+        ~depends_on:[kill]
         ~make:(do_on_vagrant_host Program.(exec ["rm"; "-fr"; vagrant_tmp]))
     in
     rm_temp

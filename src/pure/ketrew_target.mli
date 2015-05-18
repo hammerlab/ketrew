@@ -181,9 +181,9 @@ type t
 val create :
   ?id:id -> ?name:string ->
   ?metadata:[ `String of string ] ->
-  ?dependencies:id list ->
-  ?if_fails_activate:id list ->
-  ?success_triggers:id list ->
+  ?depends_on:id list ->
+  ?on_failure_activate:id list ->
+  ?on_success_activate:id list ->
   ?make:Build_process.t ->
   ?condition:Condition.t ->
   ?equivalence: Equivalence.t ->
@@ -200,9 +200,9 @@ val id : t -> Unique_id.t
 val name : t -> string
 (** Get a target's user-defined name. *)
 
-val dependencies: t -> id list
-val fallbacks: t -> id list
-val success_triggers: t -> id list
+val depends_on: t -> id list
+val on_success_activate: t -> id list
+val on_failure_activate: t -> id list
 val metadata: t -> [`String of string] option
 val build_process: t -> Build_process.t
 val condition: t -> Condition.t option

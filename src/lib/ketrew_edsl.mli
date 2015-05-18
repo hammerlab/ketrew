@@ -165,35 +165,35 @@ class type user_target =
     method is_active: bool
     method id: Ketrew_pervasives.Unique_id.t
     method render: Ketrew_target.t
-    method dependencies: user_target list
-    method if_fails_activate: user_target list
-    method success_triggers: user_target list
+    method depends_on: user_target list
+    method on_failure_activate: user_target list
+    method on_success_activate: user_target list
     (**/**)
   end
 
 val target :
   ?active:bool ->
-  ?dependencies:user_target list ->
+  ?depends_on:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
   ?done_when:Ketrew_target.Condition.t ->
   ?metadata:[ `String of string ] ->
   ?product:user_artifact ->
   ?equivalence:Ketrew_target.Equivalence.t ->
-  ?if_fails_activate:user_target list ->
-  ?success_triggers:user_target list ->
+  ?on_failure_activate:user_target list ->
+  ?on_success_activate:user_target list ->
   ?tags: string list ->
   string -> user_target
 (** Create a new target. *)
 
 val file_target:
-  ?dependencies:user_target list ->
+  ?depends_on:user_target list ->
   ?make:Ketrew_target.Build_process.t ->
   ?metadata:[ `String of string ] ->
   ?name:string ->
   ?host:Host.t ->
   ?equivalence:Ketrew_target.Equivalence.t ->
-  ?if_fails_activate:user_target list ->
-  ?success_triggers:user_target list ->
+  ?on_failure_activate:user_target list ->
+  ?on_success_activate:user_target list ->
   ?tags: string list ->
   string ->
   user_target

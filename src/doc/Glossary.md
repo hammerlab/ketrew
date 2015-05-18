@@ -28,8 +28,8 @@ workflow, a target has many components:
 - Links to other targets:
     - **dependencies** are targets that need to be satisfied or run before a
       target can start,
-    - **fallbacks** targets that will be activated if the target fails, and
-    - **success-triggers** targets that will be activated only *after* a target
+    - **on-failure-activate** targets that will be activated if the target fails, and
+    - **on-success-activate** targets that will be activated only *after* a target
     succeeds.
 - **Metadata** and **tags** are user-provided information; the `?metadata` is,
   for now, just a raw string; the `?tags` are a list of strings which are

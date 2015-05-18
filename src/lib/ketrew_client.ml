@@ -301,16 +301,16 @@ let configuration = function
   Submit a workflow:
 
    - make sure the target is active,
-   - render all the dependencies/fallbacks/success-triggers,
+   - render all the dependencies/failure-callbacks/success-callbacks,
    - writes errors to Log
 *)
 let user_command_list t =
   t#activate;
   let rec go_through_deps t =
     t#render ::
-    List.concat_map t#dependencies ~f:go_through_deps
-    @ List.concat_map t#if_fails_activate ~f:go_through_deps
-    @ List.concat_map t#success_triggers ~f:go_through_deps
+    List.concat_map t#depends_on ~f:go_through_deps
+    @ List.concat_map t#on_failure_activate ~f:go_through_deps
+    @ List.concat_map t#on_success_activate ~f:go_through_deps
   in
   let targets =
     (go_through_deps t)
