@@ -120,8 +120,8 @@ Creating a test environment (`make test-env`, cf. developer
 [docs](./Developer_Documentation.md)) generates a very similar configuration
 file.
 
-Details on the Options
-----------------------
+Option Details
+--------------
 
 To build configurations refer to the [API](src/lib/ketrew_configuration.mli) of
 the `Ketrew_configuration` module.

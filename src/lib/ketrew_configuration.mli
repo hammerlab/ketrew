@@ -28,7 +28,7 @@ open Ketrew_unix_io
 (** {2 Construct Configuration Values} *)
 
 type t
-(** The contents of a given instance of a configuration. *)
+(** The contents of a configuration. *)
 
 type plugin = [ `Compiled of string | `OCamlfind of string ]
 (** The 2 kinds of dynamically loaded “plugins” accepted by Ketrew:
@@ -72,7 +72,7 @@ val ui:
   unit -> ui
 (** Create a configuration of the UI:
     
-    - [color]: ask Ketrew to use ANSI colors (default: [true]).
+    - [with_color]: ask Ketrew to use ANSI colors (default: [true]).
     - [explorer]: the configuration of The Explorer (cf. {!explorer}).
     - [with_cbreak]: should the UI use “[cbreak]” or not.  When
       [false], it reads from [stdin] classically (i.e. it waits for
