@@ -202,4 +202,28 @@ let yarn_distributed_shell
          ?hadoop_bin ?distributed_shell_shell_jar
          ~container_memory ~timeout ~application_name program))
 
-
+let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =
+  let escape c = fmt "\027[%sm" c  in
+  let color c t = if ansi_colors then escape c ^ t ^ escape "0" else t in
+  let bold_red t =  color "1;31" t in
+  let bold_yellow t =  color "1;33" t in
+  let bold_green t =  color "1;32" t in
+  (* let greyish t = color "37" t in *)
+  let rec dump_workflow ?(kind=`Dep) ?(depth=0) ut =
+    let sublist ~kind l =
+      String.concat ~sep:""
+        (List.map l ~f:(dump_workflow ~kind ~depth:(depth + 1))) in
+    let line content =
+      match kind with
+      | `Dep -> bold_green (fmt "* %s" content)
+      | `OFA -> bold_red (fmt "× %s" content)
+      | `OSA -> bold_yellow (fmt "→ %s" content)
+    in
+    fmt "%s%s\n%s%s%s"
+      (String.make (depth * indentation) ' ')
+      (line ut#name)
+      (sublist ut#depends_on          ~kind:`Dep)
+      (sublist ut#on_failure_activate ~kind:`OFA)
+      (sublist ut#on_success_activate ~kind:`OSA)
+  in
+  dump_workflow ut

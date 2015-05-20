@@ -294,3 +294,13 @@ val yarn_distributed_shell :
       can fail if this string contains spaces for example).
 
 *)
+
+
+(** {2 Utilities } *)
+
+val to_display_string :
+  ?ansi_colors:bool ->
+  ?indentation:int ->
+  user_target ->
+  string
+(** Build a display-friendly string summarizing the workflow. *)
