@@ -1,8 +1,6 @@
 Ketrew: Keep Track of Experimental Workflows
 ============================================
 
-[![Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
-
 **Ketrew** is:
 
 - an OCaml library providing an EDSL API to define complex and convoluted
