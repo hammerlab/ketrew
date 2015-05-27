@@ -12,9 +12,9 @@ parameter variations, running on different *hosts* with various schedulers).
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
-This is Ketrew version `1.0.0` the second release of the system, non-backwards
-compatible with the previous
-[`0.0.0`](http://seb.mondet.org/software/ketrew/doc.0.0.0/index.html) release.
+This is the development version of Ketrew, see also
+the documentation for the stable
+[`1.0.0`](http://seb.mondet.org/software/ketrew/doc.1.0.0/index.html) release.
 
 Build & Install
 ---------------
