@@ -67,9 +67,11 @@ let oasis_meta_variable_version = "%%VERSION%%"
 let oasis_meta_variable_pure_findlib_packages = "%%PURE_FINDLIB_PACKAGES%%"
 let oasis_meta_variable_unix_findlib_packages = "%%UNIX_FINDLIB_PACKAGES%%"
 
-let may_add_bisect l =
+let may_add_bisect ?(runtime=false) l =
   let with_bisect = try Sys.getenv "WITH_BISECT" = "true" with _ -> false in
-  (if with_bisect then "bisect_ppx" :: l else l)
+  (if with_bisect then
+     (if runtime then "bisect_ppx.runtime" else "bisect_ppx")
+     :: l else l)
 
 
 let find_all ?(name="*") dir =
@@ -87,7 +89,7 @@ let say_stuff =
       (List.map ~f:(sprintf "-package %s") all_findlib_packages
        |> String.concat ~sep:" ")
   | "ocamlfind-package-list-for-require" :: [] ->
-    printf "%s" (String.concat ~sep:"," (may_add_bisect all_findlib_packages))
+    printf "%s" (String.concat ~sep:"," (may_add_bisect ~runtime:true all_findlib_packages))
   | "lib-mli-files" :: [] ->
     find_all "src/lib" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!");
     find_all "src/pure" ~name:"*.mli" |> List.iter ~f:(printf "%s\n%!")
