@@ -37,6 +37,9 @@ let shellf fmt =
       | other -> failwithf "Shell command %S returned %d" s other
     ) fmt
 
+let test_dir =
+  Sys.getenv "PWD" // "_integration_test"
+
 module Test_host = struct
 
   let as_host () = Ketrew.EDSL.Host.parse "/tmp/ketrew-integration-test"
@@ -45,6 +48,19 @@ module Test_host = struct
     let open Ketrew.EDSL in
     let host = as_host () in
     daemonize ~using:`Python_daemon ~host program
+
+  let write_file path ~content =
+    let open Ketrew.EDSL in
+    let host = as_host () in
+    daemonize ~using:`Python_daemon ~host Program.(
+        shf "mkdir -p %s" Filename.(quote (dirname path))
+        && shf "echo %s > %s"
+          Filename.(quote content)
+          Filename.(quote path)
+      )
+
+  let tmp file = test_dir // file
+
 
 end
 
@@ -68,7 +84,7 @@ The VM still has a misconfiguration: the machine cannot
     initialization: initialization;
   }
 
-  let tmp_dir = Sys.getenv "HOME"  // "tmp/vagrant"
+  let tmp_dir = Test_host.tmp "vagrant-boxes"
 
   let create initialization hostname =
     let dir = tmp_dir // hostname in
@@ -127,6 +143,7 @@ The VM still has a misconfiguration: the machine cannot
           ))
     in
     let running =
+      (* re-running `vagrant up` on a running machine does not fail. *)
       target (namify t "vagrant-up")
         ~depends_on:[init]
         ~make:(Test_host.do_on Program.(
@@ -143,21 +160,27 @@ The VM still has a misconfiguration: the machine cannot
             && shf "vagrant ssh-config --host %s > %s" t.hostname t.ssh_config))
     in
     make_ssh_config
-    
+
   let destroy t =
     let open Ketrew.EDSL in
-    let kill =
-      target (namify t "kill-vagrant")
-        ~make:(Test_host.do_on Program.(
-            in_dir t && exec ["vagrant"; "destroy"; "-f"]
-          ))
-    in
     let rm_temp =
       target (namify t "rm-temp")
-        ~depends_on:[kill]
         ~make:(Test_host.do_on Program.(exec ["rm"; "-fr"; t.dir]))
     in
-    rm_temp
+    let signal_failure =
+      target (namify t "rm-temp")
+        ~make:(Test_host.(
+            write_file (tmp
+                        @@ "results" // sprintf "%s-destroy-failure" t.hostname)
+              ~content:t.ssh_config
+          ))
+    in
+    target (namify t "kill-vagrant")
+      ~make:(Test_host.do_on Program.(
+          in_dir t && exec ["vagrant"; "destroy"; "-f"]
+        ))
+      ~on_success_activate:[rm_temp]
+      ~on_failure_activate:[rm_temp; signal_failure]
 
   let ssh t =
     shellf "cd %s && vagrant ssh" t.dir
