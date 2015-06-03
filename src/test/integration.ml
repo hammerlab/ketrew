@@ -30,12 +30,14 @@ let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 let (//) = Filename.concat
 let failwithf fmt = ksprintf failwith fmt
 
-let shellf fmt =
-  ksprintf (fun s ->
-      match Sys.command s with
-      | 0 -> ()
-      | other -> failwithf "Shell command %S returned %d" s other
-    ) fmt
+let shellf ?(returns=Some 0) fmt =
+  Printf.(ksprintf (fun s ->
+      match Sys.command s, returns with
+      | n, Some m when n = m -> ()
+      | _, None -> ()
+      | other, Some m ->
+        failwith (sprintf "Command %S returned %d instead of %d" s other m)
+    ) fmt)
 
 let test_dir =
   Sys.getenv "PWD" // "_integration_test"
@@ -184,6 +186,12 @@ The VM still has a misconfiguration: the machine cannot
 
   let ssh t =
     shellf "cd %s && vagrant ssh" t.dir
+
+  let is_running t =
+    try
+      shellf ~returns:(Some 0) "cd %s && vagrant status | grep running" t.dir;
+      true
+    with _ -> false
 
   let exec_is_installed t ~exec =
     let host = as_host t in
@@ -533,6 +541,11 @@ let test =
     | "LSF" -> Vagrant_box.ssh lsf_host
     | "PBS" -> Vagrant_box.ssh pbs_host
     | other -> failwithf "Unkown “Box”: %S" other
+    method is_running = function
+    | "LSF" -> Vagrant_box.is_running lsf_host
+    | "PBS" -> Vagrant_box.is_running pbs_host
+    | other -> failwithf "Unkown “Box”: %S" other
+
   end
 
 let () =
@@ -566,9 +579,20 @@ let () =
         (String.concat ", " (List.map ~f:(sprintf "%S") test#box_names)) in
     sub_command ~info:Term.(info "ssh" ~version ~doc)
       ~term:Term.(
-        pure (fun name -> test#ssh name)
-        $ Arg.(required @@ pos 0 (some string) None
-               @@ info [] ~doc:"Name of the VM"))
+          pure (fun name -> test#ssh name)
+          $ Arg.(required @@ pos 0 (some string) None
+                 @@ info [] ~doc:"Name of the VM"))
+  in
+  let is_running =
+    let doc =
+      sprintf "Check if a VM is running (%s)"
+        (String.concat ", " (List.map ~f:(sprintf "%S") test#box_names)) in
+    sub_command ~info:Term.(info "is-running" ~version ~doc)
+      ~term:Term.(
+          pure (fun name ->
+              if test#is_running name then exit 0 else exit 3)
+          $ Arg.(required @@ pos 0 (some string) None
+                 @@ info [] ~doc:"Name of the VM"))
   in
   let default_cmd =
     let doc = "Integration Test for Ketrew" in
@@ -581,6 +605,7 @@ let () =
     go;
     clean_up;
     ssh;
+    is_running;
   ] in
   match Term.eval_choice  default_cmd cmds with
   | `Ok () -> ()
