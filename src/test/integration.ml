@@ -522,29 +522,12 @@ let test =
           pbs_job ~box:pbs_host `Always_runs;
           pbs_job ~box:pbs_host `File_target;
         ]
-    method go_and clean =
-      Ketrew.EDSL.target "Run Tests"
-        ~depends_on:[
-          lsf_job ~box:lsf_host ();
-          pbs_job ~box:pbs_host `Always_runs;
-          pbs_job ~box:pbs_host `File_target;
-        ]
-        ~on_success_activate:[clean]
-        ~on_failure_activate:[clean]
     method clean_up =
       Ketrew.EDSL.target "Destroy VMs"
         ~depends_on:[
           Vagrant_box.destroy lsf_host;
           Vagrant_box.destroy pbs_host;
         ]
-    method do_all =
-      let clean = self#clean_up in
-      let prepare = self#prepare in
-      Ketrew.EDSL.target "All Intergration Tests MiddleTarget (prep → * < {go,clean})"
-        ~depends_on:[prepare]
-        ~on_success_activate:[self#go_and clean]
-        ~on_failure_activate:[clean]
-
     method box_names = ["LSF"; "PBS"]
     method ssh = function
     | "LSF" -> Vagrant_box.ssh lsf_host
@@ -577,9 +560,6 @@ let () =
   let clean_up =
     sub_command_of_target ~name:"clean-up" ~doc:"Destroy the VM(s)"
       (fun () -> test#clean_up) in
-  let do_all =
-    sub_command_of_target ~name:"all" ~doc:"Do the whole test at once"
-      (fun () -> test#do_all) in
   let ssh =
     let doc =
       sprintf "SSH into a VM (%s)"
@@ -600,7 +580,6 @@ let () =
     prepare;
     go;
     clean_up;
-    do_all;
     ssh;
   ] in
   match Term.eval_choice  default_cmd cmds with
