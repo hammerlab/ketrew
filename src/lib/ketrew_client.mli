@@ -40,7 +40,7 @@ module Error : sig
         | `Json_parsing of string * [ `Exn of exn ]
         | `Unexpected_message of Ketrew_protocol.Down_message.t
         | `Wrong_json of Yojson.Safe.json
-        | `Wrong_response of Cohttp_lwt_unix.Client.Response.t * string ]
+        | `Wrong_response of Cohttp.Response.t * string ]
     | `Server_error_response of
         [ `Call of [ `GET | `POST ] * Uri.t ] * string ]
 
