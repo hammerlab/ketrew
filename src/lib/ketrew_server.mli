@@ -45,7 +45,7 @@ val start: configuration:Ketrew_configuration.server ->
 val status: configuration:Ketrew_configuration.server ->
   ([ `Not_responding of string
    | `Running
-   | `Wrong_response of Cohttp_lwt_unix.Client.Response.t ],
+   | `Wrong_response of Cohttp.Response.t ],
    [> `Failure of string | `Server_status_error of string ]) Deferred_result.t
 (** Ask for the status of the server running locally by calling
     ["https://127.0.0.1:<port>/hello"]. *)
