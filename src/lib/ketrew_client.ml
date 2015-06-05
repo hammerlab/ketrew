@@ -32,7 +32,7 @@ module Error = struct
         | `Json_parsing of string * [ `Exn of exn ]
         | `Unexpected_message of Ketrew_protocol.Down_message.t
         | `Wrong_json of Yojson.Safe.json
-        | `Wrong_response of Cohttp_lwt_unix.Client.Response.t * string ]
+        | `Wrong_response of Cohttp_lwt_unix.Response.t * string ]
     | `Server_error_response of
         [ `Call of [ `GET | `POST ] * Uri.t ] * string ]
 
@@ -100,7 +100,7 @@ module Http_client = struct
     wrap_deferred ~on_exn:(fun e -> client_error ~where ~what:(`Exn e))
       (fun () -> Cohttp_lwt_body.to_string body)
     >>= fun body_str ->
-    begin match Cohttp_lwt_unix.Client.Response.status response with
+    begin match Cohttp_lwt_unix.Response.status response with
     | `OK ->
       begin try
         return (Yojson.Safe.from_string body_str)

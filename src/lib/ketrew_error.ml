@@ -49,7 +49,7 @@ let log_client_error error_value =
       | `Wrong_response (http_resp, body) ->
         s "Returned:" % n % 
         indent (s "Response: "
-                % sexp Cohttp_lwt_unix.Client.Response.sexp_of_t http_resp)
+                % sexp Cohttp_lwt_unix.Response.sexp_of_t http_resp)
         % n
         % indent (s "Body: " % quote body)
       | `Json_parsing (j, `Exn e) ->

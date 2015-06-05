@@ -141,20 +141,20 @@ type answer = [
 type 'error service =
   server_state:Server_state.t ->
   body:Cohttp_lwt_body.t ->
-  Cohttp_lwt_unix.Server.Request.t ->
+  Cohttp_lwt_unix.Request.t ->
   (answer, 'error) Deferred_result.t
 (** A service is something that replies an [answer] on a ["/<path>"] URL. *)
 
 (** Get the ["token"] parameter from an URI. *)
 let token_parameter req =
   let token =
-    Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "token" in
+    Uri.get_query_param (Cohttp_lwt_unix.Request.uri req) "token" in
   Log.(s "Got token: " % OCaml.option quote token @ very_verbose);
   token
 
 (** Get a parameter or fail. *)
 let mandatory_parameter req ~name =
-  match Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) name with
+  match Uri.get_query_param (Cohttp_lwt_unix.Request.uri req) name with
   | Some v ->
     Log.(s "Got " % quote name % s ": " % quote v @ very_verbose);
     return v
@@ -171,7 +171,7 @@ let format_parameter req =
 
 (** Fail if the request is not a [`GET]. *)
 let check_that_it_is_a_get request =
-  begin match Cohttp_lwt_unix.Server.Request.meth request with
+  begin match Cohttp_lwt_unix.Request.meth request with
   | `GET ->
     Log.(s "It is a GET request" @ very_verbose);
     return ()
@@ -180,7 +180,7 @@ let check_that_it_is_a_get request =
 
 (** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
 let get_post_body request ~body =
-  begin match Cohttp_lwt_unix.Server.Request.meth request with
+  begin match Cohttp_lwt_unix.Request.meth request with
   | `POST ->
     Log.(s "It is a GET request" @ very_verbose);
     wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
@@ -307,9 +307,9 @@ let api_service ~server_state ~body req =
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
-  Log.(s "Request-in: " % sexp Cohttp_lwt_unix.Server.Request.sexp_of_t req
+  Log.(s "Request-in: " % sexp Cohttp_lwt_unix.Request.sexp_of_t req
        @ verbose);
-  match Uri.path (Cohttp_lwt_unix.Server.Request.uri req) with
+  match Uri.path (Cohttp_lwt_unix.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
   | other ->
