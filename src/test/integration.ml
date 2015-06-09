@@ -26,6 +26,7 @@ Big Integration Test
 M*)
 
 open Nonstd
+module String = Sosa.Native_string
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 let (//) = Filename.concat
 let failwithf fmt = ksprintf failwith fmt
@@ -72,11 +73,14 @@ module Vagrant_box = struct
   About Torque:
   https://github.com/audy/vagrant-torque
   https://redditjs.com/r/bioinformatics/comments/29xz66/vagranttorque_run_a_single_machine_torque_cluster/
-The VM still has a misconfiguration: the machine cannot
+
+https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
+
   *)
   type initialization = [
     | `Precise64
     | `Audy_torque
+    | `Hadoop_spark_cluster
   ]
 
   type t = {
@@ -112,16 +116,29 @@ The VM still has a misconfiguration: the machine cannot
     match t.initialization with
     | `Precise64 -> "precise64"
     | `Audy_torque -> "master"
+    | `Hadoop_spark_cluster -> "TODO"
 
   let internal_username _ = "vagrant"
 
   let namify t sub =
     sprintf "%s: %s" t.hostname sub
 
-  let prepare ?on_success_activate t =
+  let prepare ?(force_hostname=true) ?on_success_activate t =
     let open Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
+      let from_git url =
+        let open Program in
+        [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
+              mkdir -p %s && cd %s && \
+              git clone %s.git && \
+              mv %s %s ; fi"
+           (Filename.quote t.dir)
+           (Filename.quote tmp_dir) (Filename.quote tmp_dir)
+           url
+           (Filename.basename url) (Filename.quote t.dir);
+        ]
+      in
       file_target ~name:(namify t "init-vagrant")
         (t.dir // "Vagrantfile")
         ~host
@@ -133,14 +150,23 @@ The VM still has a misconfiguration: the machine cannot
                   exec ["vagrant"; "init"; "hashicorp/precise64"];
                 ]
               | `Audy_torque ->
+                from_git "https://github.com/audy/vagrant-torque"
+                  (*
                 [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
-                      mkdir -p %s && cd %s && \
-                      git clone git@github.com:audy/vagrant-torque && \
-                      mv vagrant-torque %s ; fi"
+  mkdir -p %s && cd %s && \
+  git clone git@github.com:audy/vagrant-torque && \
+                           mv vagrant-torque %s ; fi"
                    (Filename.quote t.dir)
                    (Filename.quote tmp_dir) (Filename.quote tmp_dir)
                    (Filename.quote t.dir);
-                ]
+                ] *)
+              | `Hadoop_spark_cluster -> 
+                (*
+                sh "vagrant box add \
+                 centos65 \
+                 https://github.com/2creatives/vagrant-centos/releases/download/v6.5.1/centos65-x86_64-20131205.box"
+                :: *)
+                from_git "https://github.com/smondet/vagrant-hadoop-2.4.1-spark-1.0.1"
             )
           ))
     in
@@ -159,7 +185,11 @@ The VM still has a misconfiguration: the machine cannot
         ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
         ~make:(Test_host.do_on Program.(
             in_dir t
-            && shf "vagrant ssh-config --host %s > %s" t.hostname t.ssh_config))
+            && shf "vagrant ssh-config %s > %s"
+              (match force_hostname with
+              | false  -> ""
+              | true  -> sprintf "--host %s" t.hostname)
+              t.ssh_config))
     in
     make_ssh_config
 
@@ -210,19 +240,36 @@ The VM still has a misconfiguration: the machine cannot
 
   let with_installed t ~packages =
     let open Ketrew.EDSL in
-    let name = sprintf "apt-getting-%s" (String.concat "-" packages) in
+    let name = sprintf "apt-getting-%s" (String.concat ~sep:"-" packages) in
     target name
       ~tags:["integration"; "apt-get"]
       ~make:(do_on t Program.(
           sh "echo GO"
           && sh "sudo apt-get update"
-          && shf "sudo apt-get install -y %s" (String.concat " " packages)
+          && shf "sudo apt-get install -y %s" (String.concat ~sep:" " packages)
         ))
 
   let file t ~path =
     let host = as_host t in
     Ketrew.EDSL.file ~host path
 
+end
+
+module Vagrant_hadoop_cluster = struct
+
+  type t = {
+    box: Vagrant_box.t;
+  }
+  let create () =
+    let box = Vagrant_box.create `Hadoop_spark_cluster "HadoopSpark" in
+    {box}
+  let prepare {box} =
+    Vagrant_box.prepare ~force_hostname:false box
+  let destroy {box} =
+    Vagrant_box.destroy box
+  let ssh {box} node =
+    shellf "cd %s && vagrant ssh %s" box.Vagrant_box.dir node
+  let is_running {box} = Vagrant_box.is_running box
 end
 
 (*M
@@ -272,7 +319,7 @@ USER_NAME	MAX_JOBS	JL/P
 %s
 End User
   " (List.map usernames (sprintf "%s 50 -")
-     |> String.concat "\n")
+     |> String.concat ~sep:"\n")
 );
   sprintf "lsf.cluster.%s" hostname, `Inline (sprintf "
 Begin   ClusterAdmins
@@ -291,7 +338,7 @@ RESOURCENAME  LOCATION
 # console       [default]
 End ResourceMap
   " 
-    (List.map usernames (sprintf "%s") |> String.concat " ")
+    (List.map usernames ~f:(sprintf "%s") |> String.concat ~sep:" ")
     hostname
 );
 
@@ -493,7 +540,7 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
           shf "echo \"PBS-2 Starts:\n%s\""
             (List.map ~f:(fun s -> sprintf "%s: $%s\n" s s)
                ["PBS_O_HOST"; "PBS_SERVER"]
-            |> String.concat "")
+            |> String.concat ~sep:"")
           && sh "echo PBS-2 Starts >&2"
           && sh "sleep 10"
           && sh "echo PBS-2 Ends"
@@ -513,15 +560,30 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
         (* ~queue:"normal" *)
       )
 
+let finish_hadoop_setup ~box () =
+  let open Ketrew.EDSL in
+  (* let host = Vagrant_box.as_host box in *)
+  let make =
+    let setup = [
+    ] in
+    Vagrant_box.do_on box
+      ~program:Program.( chain (List.map ~f:sh setup))
+  in
+  target "setup Hadoop cluster"
+    ~make
+
 let test =
   let lsf_host = Vagrant_box.create `Precise64 "LsfTestHost" in
   let pbs_host = Vagrant_box.create `Audy_torque "PbsTestHost" in
+  let hadoop_host =
+    Vagrant_hadoop_cluster.create () in
   object  (self)
     method prepare =
       Ketrew.EDSL.target "Prepare VMs"
         ~depends_on:[
           Vagrant_box.prepare lsf_host;
           Vagrant_box.prepare pbs_host;
+          Vagrant_hadoop_cluster.prepare hadoop_host;
         ]
     method go =
       Ketrew.EDSL.target "Run Tests"
@@ -535,15 +597,19 @@ let test =
         ~depends_on:[
           Vagrant_box.destroy lsf_host;
           Vagrant_box.destroy pbs_host;
+          Vagrant_hadoop_cluster.destroy hadoop_host;
         ]
-    method box_names = ["LSF"; "PBS"]
-    method ssh = function
-    | "LSF" -> Vagrant_box.ssh lsf_host
-    | "PBS" -> Vagrant_box.ssh pbs_host
-    | other -> failwithf "Unkown “Box”: %S" other
+    method box_names = ["LSF"; "PBS"; "Hadoop"]
+    method ssh spec =
+      match String.split spec ~on:(`Character ':') with
+      | "LSF" :: [] -> Vagrant_box.ssh lsf_host
+      | "PBS" :: [] -> Vagrant_box.ssh pbs_host
+      | "Hadoop" :: node :: [] -> Vagrant_hadoop_cluster.ssh hadoop_host node
+      | other -> failwithf "Unkown “Box”: %S" spec
     method is_running = function
     | "LSF" -> Vagrant_box.is_running lsf_host
     | "PBS" -> Vagrant_box.is_running pbs_host
+    | "Hadoop" -> Vagrant_hadoop_cluster.is_running hadoop_host;
     | other -> failwithf "Unkown “Box”: %S" other
 
   end
@@ -576,7 +642,7 @@ let () =
   let ssh =
     let doc =
       sprintf "SSH into a VM (%s)"
-        (String.concat ", " (List.map ~f:(sprintf "%S") test#box_names)) in
+        (String.concat ~sep:", " (List.map ~f:(sprintf "%S") test#box_names)) in
     sub_command ~info:Term.(info "ssh" ~version ~doc)
       ~term:Term.(
           pure (fun name -> test#ssh name)
@@ -586,7 +652,7 @@ let () =
   let is_running =
     let doc =
       sprintf "Check if a VM is running (%s)"
-        (String.concat ", " (List.map ~f:(sprintf "%S") test#box_names)) in
+        (String.concat ~sep:", " (List.map ~f:(sprintf "%S") test#box_names)) in
     sub_command ~info:Term.(info "is-running" ~version ~doc)
       ~term:Term.(
           pure (fun name ->
