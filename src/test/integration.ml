@@ -270,6 +270,58 @@ module Vagrant_hadoop_cluster = struct
   let ssh {box} node =
     shellf "cd %s && vagrant ssh %s" box.Vagrant_box.dir node
   let is_running {box} = Vagrant_box.is_running box
+
+  let host {box} name = 
+    let open Ketrew.EDSL in
+    Host.ssh ~add_ssh_options:["-F"; box.Vagrant_box.ssh_config]
+      ~playground:"/tmp/KT/" name
+
+  let finish_setup t =
+    let open Ketrew.EDSL in
+    (* From https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1/blob/master/README.md *)
+    let namenode_setup = [
+      "$HADOOP_PREFIX/bin/hdfs namenode -format myhadoop";
+    ] in
+    let hdfs_setup = [
+      "$HADOOP_PREFIX/sbin/hadoop-daemon.sh \
+       --config $HADOOP_CONF_DIR --script hdfs start namenode";
+      "$HADOOP_PREFIX/sbin/hadoop-daemons.sh --config $HADOOP_CONF_DIR  \
+       --script hdfs start datanode";
+    ] in
+    let yarn_setup = [
+      "$HADOOP_YARN_HOME/sbin/yarn-daemon.sh --config $HADOOP_CONF_DIR start resourcemanager";
+      "$HADOOP_YARN_HOME/sbin/yarn-daemons.sh --config $HADOOP_CONF_DIR start nodemanager";
+      "$HADOOP_YARN_HOME/sbin/yarn-daemon.sh start proxyserver --config $HADOOP_CONF_DIR";
+      "$HADOOP_PREFIX/sbin/mr-jobhistory-daemon.sh start historyserver --config $HADOOP_CONF_DIR";
+    ] in
+    let make = daemonize ~using:`Nohup_setsid in
+    let on_node1 =
+      let host = host t "node1" in
+      target "Namenode + HDFS Setup"
+        ~make:Program.(
+            make ~host
+              (chain (List.map ~f:(shf "sudo %s") (namenode_setup @ hdfs_setup)))
+          )
+    in
+    let on_node2 =
+      let host = host t "node2" in
+      target "Yarn Setup"
+        ~make:Program.(
+            make ~host
+              (chain (List.map ~f:(shf "sudo %s") yarn_setup))
+          )
+        ~done_when:Condition.(
+            program ~returns:0 ~host
+              Program.(
+                sh "yarn jar \
+                    /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.4.1.jar \
+                    pi 2 100")
+            )
+        ~depends_on:[on_node1]
+    in
+    target "HadoopSpark-cluster post-install setup"
+      ~depends_on:[on_node2]
+
 end
 
 (*M
