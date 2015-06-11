@@ -556,6 +556,50 @@ that the potential condition has been ensured.
 
   end
 
+  module Count = struct
+    module Latest = struct
+      let make_counter ~continue t =
+        let rec count v (t: t) =
+          match continue t with
+          | Some previous_state ->
+            count (v + 1) (previous_state :> t)
+          | _ -> v
+        in
+        count 0 t
+      let tried_to_eval_condition (t: t) =
+        make_counter ~continue:(function
+          | `Tried_to_eval_condition { log; previous_state } -> Some previous_state
+          | _ -> None) t
+      let tried_to_reeval_condition (t: t) =
+        make_counter ~continue:(function
+          | `Tried_to_reeval_condition (_, { log; previous_state }) ->
+            Some previous_state
+          | _ -> None) t
+      let tried_to_kill (t: t) =
+        make_counter ~continue:(function
+          | `Tried_to_kill { log; previous_state } -> Some previous_state
+          | _ -> None) t
+      let tried_to_start (t: t) =
+        make_counter ~continue:(function
+          | `Tried_to_start ({ log; previous_state }, _) -> Some previous_state
+          | _ -> None) t
+    end
+    let consecutive_recent_attempts t =
+      let (+-+) = max in
+      let open Latest in
+      tried_to_start t
+      +-+ tried_to_kill t
+      +-+ tried_to_eval_condition t
+      +-+ tried_to_reeval_condition t
+    (* let rec count v (t: t) = *)
+    (*   match t with *)
+    (*   | `Tried_to_eval_condition { log; previous_state } -> *)
+    (*     count (v + 1) (previous_state :> t) *)
+    (*   | _ -> v *)
+    (* in *)
+    (* count 0 t *)
+  end
+
 end
   
 

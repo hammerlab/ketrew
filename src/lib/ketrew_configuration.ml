@@ -30,6 +30,7 @@ type engine = {
   database_parameters: string;
   turn_unix_ssh_failure_into_target_failure: bool [@default false];
   host_timeout_upper_bound: float option [@default None];
+  maximum_successive_attempts: int [@default 10];
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -109,13 +110,17 @@ let log t =
            item "Targets-to-prefectch" (i targets_to_prefetch);
          ]);
     ] in
-  let engine t =
+  let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
+               host_timeout_upper_bound; maximum_successive_attempts } =
     sublist [
-      item "Database" (quote t.database_parameters);
+      item "Database" (quote database_parameters);
       item "Unix-failure"
-        ((if t.turn_unix_ssh_failure_into_target_failure
+        ((if turn_unix_ssh_failure_into_target_failure
           then s "turns"
           else s "does not turn") % s " into target failure");
+      item "Host-timeout-upper-bound"
+        (option f host_timeout_upper_bound);
+      item "Maximum-successive-attempts" (i maximum_successive_attempts);
     ] in
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
@@ -187,10 +192,13 @@ let default_ui = ui ()
 let engine
     ?(database_parameters=default_database_path)
     ?(turn_unix_ssh_failure_into_target_failure=false)
-    ?host_timeout_upper_bound () = {
+    ?host_timeout_upper_bound
+    ?(maximum_successive_attempts=10)
+    () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
   host_timeout_upper_bound;
+  maximum_successive_attempts;
 }
 let default_engine = engine ()
 
@@ -228,6 +236,7 @@ let daemon       s = s.daemon
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
+let maximum_successive_attempts e = e.maximum_successive_attempts
 let mode t = t.mode
 let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine

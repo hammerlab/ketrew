@@ -472,17 +472,21 @@ let add_targets = Adding_targets.store_targets_to_add
 
 module Run_automaton = struct
 
-  let _long_running_action_error t ~error ~bookkeeping =
+  let _long_running_action_error t ~error ~bookkeeping ~previous_attempts =
     let should_kill = Configuration.is_unix_ssh_failure_fatal t.configuration in
     match error, should_kill with
     | `Recoverable str, true
-    | `Fatal str, _ ->
+    | `Fatal str, _ -> `Fatal, str, bookkeeping
+    | `Recoverable str, false when
+        previous_attempts >=
+        Ketrew_configuration.maximum_successive_attempts t.configuration ->
       `Fatal, str, bookkeeping
-    | `Recoverable str, false ->
-      `Try_again, str, bookkeeping
+    | `Recoverable str, false -> `Try_again, str, bookkeeping
 
-  let _start_running_target t bookkeeping =
+  let _start_running_target t ~target ~bookkeeping =
     let {Target.Automaton. plugin_name; run_parameters} = bookkeeping in
+    let previous_attempts =
+      Target.(state target |> State.Count.consecutive_recent_attempts) in
     begin match Ketrew_plugin.find_plugin plugin_name with
     | Some m ->
       let module Long_running = (val m : LONG_RUNNING) in
@@ -493,7 +497,7 @@ module Run_automaton = struct
             fail (_long_running_action_error t
                     ~error:(`Fatal (fmt "Deserialize-long-running: %s"
                                       (Printexc.to_string e)))
-                    ~bookkeeping)
+                    ~bookkeeping ~previous_attempts)
         end
         >>= fun run_parameters ->
         Long_running.start run_parameters
@@ -502,11 +506,12 @@ module Run_automaton = struct
           let run_parameters = Long_running.serialize rp in
           return { Target.Automaton. plugin_name; run_parameters}
         | `Error e ->
-          fail (_long_running_action_error t ~error:e ~bookkeeping)
+          fail (_long_running_action_error t ~error:e ~bookkeeping
+          ~previous_attempts)
       end
     | None ->
       let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
-      fail (_long_running_action_error t ~error ~bookkeeping)
+      fail (_long_running_action_error t ~error ~bookkeeping ~previous_attempts)
     end
 
   let _check_and_activate_dependencies t ~dependency_of ~ids =
@@ -563,6 +568,8 @@ module Run_automaton = struct
 
   let _attempt_to_kill t ~target ~bookkeeping =
     let {Target.Automaton. plugin_name; run_parameters} = bookkeeping in
+    let previous_attempts =
+      Target.(state target |> State.Count.consecutive_recent_attempts) in
     begin match Ketrew_plugin.find_plugin plugin_name with
     | Some m ->
       let module Long_running = (val m : LONG_RUNNING) in
@@ -573,11 +580,13 @@ module Run_automaton = struct
           let run_parameters = Long_running.serialize rp in
           return { Target.Automaton. plugin_name; run_parameters}
         | `Error e ->
-          fail (_long_running_action_error t ~error:e ~bookkeeping)
+          fail (_long_running_action_error t
+                  ~error:e ~bookkeeping ~previous_attempts)
       end
     | None ->
       let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
-      fail (_long_running_action_error t ~error ~bookkeeping)
+      fail (_long_running_action_error t
+              ~error ~bookkeeping ~previous_attempts)
     end
 
   let _check_process t ~target ~bookkeeping =
@@ -605,11 +614,16 @@ module Run_automaton = struct
                 { bookkeeping with
                   Target.Automaton.run_parameters = run_parameters })
         | `Error e ->
-          fail (_long_running_action_error t ~error:e ~bookkeeping)
+          let previous_attempts =
+            Target.(state target |> State.Count.consecutive_recent_attempts) in
+          fail (_long_running_action_error t
+                  ~error:e ~bookkeeping ~previous_attempts)
       end
     | None ->
       let error = `Recoverable (fmt "Missing plugin %S" plugin_name) in
-      fail (_long_running_action_error t ~error ~bookkeeping)
+      let previous_attempts =
+        Target.(state target |> State.Count.consecutive_recent_attempts) in
+      fail (_long_running_action_error t ~error ~bookkeeping ~previous_attempts)
     end
 
   let _process_automaton_transition t target =
@@ -631,7 +645,7 @@ module Run_automaton = struct
         ~dependency_of:(Target.id target) ~ids
       >>| (make_new_target ~log)
     | `Start_running (bookkeeping, make_new_target) ->
-      _start_running_target t bookkeeping
+      _start_running_target t ~target ~bookkeeping
       >>< fun starting_attemp ->
       return (make_new_target ~log:("Attempt to start") starting_attemp)
     | `Eval_condition (condition, make_new_target) ->
@@ -641,11 +655,16 @@ module Run_automaton = struct
         | `Ok answer ->
           return (make_new_target ?log:None (`Ok answer))
         | `Error e ->
+          let attempts =
+            Target.(state target |> State.Count.consecutive_recent_attempts) in
           let log = Ketrew_error.to_string e in
           let severity =
             match e with
             | `Volume _  -> `Fatal
-            | `Host _ -> `Try_again
+            | `Host _ ->
+              if attempts >=
+                 Ketrew_configuration.maximum_successive_attempts t.configuration
+              then `Fatal else `Try_again
           in
           return (make_new_target ?log:None (`Error (severity, log)))
       end

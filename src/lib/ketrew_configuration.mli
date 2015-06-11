@@ -90,6 +90,7 @@ val engine:
   ?database_parameters:string ->
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?host_timeout_upper_bound: float ->
+  ?maximum_successive_attempts: int ->
   unit -> engine
 (** Build an [engine] configuration:
 
@@ -103,6 +104,8 @@ val engine:
       behavior set the option to [true].
     - [host_timeout_upper_bound]: every connection/command timeout
       will be “≤ upper-bound” (in seconds, default is [60.]).
+    - [maximum_successive_attempts]: number of successive non-fatal
+      failures allowed before declaring a target dead (default is [10]).
 *)
 
 type authorized_tokens 
@@ -225,6 +228,9 @@ val database_parameters: engine -> string
 val is_unix_ssh_failure_fatal: engine -> bool
 (** Should we kill targets on ssh/unix errors. *)
 
+val maximum_successive_attempts: engine -> int
+(** Get the maximum number of successive non-fatal failures. *)
+  
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
 
