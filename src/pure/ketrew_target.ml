@@ -654,9 +654,10 @@ let tags: t -> string list = fun t -> t.tags
 let state: t -> State.t = fun t -> t.history
 
 let is_equivalent t ext =
-  match t.equivalence with
-  | `None -> false
-  | `Same_active_condition -> 
+  match t.equivalence, ext.equivalence with
+  | `None, _
+  | _, `None -> false
+  | `Same_active_condition, `Same_active_condition -> 
     begin match t.condition with
     | None -> false
     | Some other -> Some other = ext.condition
