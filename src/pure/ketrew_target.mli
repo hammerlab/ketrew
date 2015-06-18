@@ -172,6 +172,15 @@ module State : sig
     val killable: t -> bool
     val finished_because_dependencies_died: t -> bool
   end
+
+  (** A module providing functions [t -> int] to provide counts. *)
+  module Count : sig
+    val consecutive_recent_attempts: t -> int
+    (** 
+      Count how many times a current non-fatal failure state
+      “repeats.” I.e. how many [`Tried_to_...] state form recent
+      history of the target. *)
+  end
 end
 
 type t
