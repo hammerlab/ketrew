@@ -322,6 +322,10 @@ module Vagrant_hadoop_cluster = struct
     target "HadoopSpark-cluster post-install setup"
       ~depends_on:[on_node2]
 
+  let run_all_tests t =
+    let open Ketrew.EDSL in
+    target "Hadoop-tests common ancestor"
+      ~depends_on:[finish_setup t]
 end
 
 (*M
@@ -612,17 +616,6 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
         (* ~queue:"normal" *)
       )
 
-let finish_hadoop_setup ~box () =
-  let open Ketrew.EDSL in
-  (* let host = Vagrant_box.as_host box in *)
-  let make =
-    let setup = [
-    ] in
-    Vagrant_box.do_on box
-      ~program:Program.( chain (List.map ~f:sh setup))
-  in
-  target "setup Hadoop cluster"
-    ~make
 
 let test =
   let lsf_host = Vagrant_box.create `Precise64 "LsfTestHost" in
@@ -643,6 +636,7 @@ let test =
           lsf_job ~box:lsf_host ();
           pbs_job ~box:pbs_host `Always_runs;
           pbs_job ~box:pbs_host `File_target;
+          Vagrant_hadoop_cluster.run_all_tests hadoop_host;        
         ]
     method clean_up =
       Ketrew.EDSL.target "Destroy VMs"
