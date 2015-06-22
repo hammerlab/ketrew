@@ -310,17 +310,24 @@ module Vagrant_hadoop_cluster = struct
             make ~host
               (chain (List.map ~f:(shf "sudo %s") yarn_setup))
           )
-        ~done_when:Condition.(
-            program ~returns:0 ~host
-              Program.(
-                sh "yarn jar \
-                    /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.4.1.jar \
-                    pi 2 100")
-            )
         ~depends_on:[on_node1]
     in
+    let test_yarn_setup =
+      let host = host t "node2" in
+      let witness = "/home/vagrant/pi-2-100" in
+      file_target ~name:"Test Yarn Setup"
+        witness ~host
+        ~make:Program.(
+            make ~host (
+              shf "yarn jar \
+                  /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.4.1.jar \
+                   pi 2 100 > %s" witness
+            )
+          )
+        ~depends_on:[on_node2]
+    in
     target "HadoopSpark-cluster post-install setup"
-      ~depends_on:[on_node2]
+      ~depends_on:[test_yarn_setup]
 
   let run_all_tests t =
     let open Ketrew.EDSL in
