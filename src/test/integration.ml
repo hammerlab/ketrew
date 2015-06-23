@@ -280,7 +280,9 @@ module Vagrant_hadoop_cluster = struct
     let open Ketrew.EDSL in
     (* From https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1/blob/master/README.md *)
     let namenode_setup = [
-      "$HADOOP_PREFIX/bin/hdfs namenode -format myhadoop";
+      "$HADOOP_PREFIX/bin/hdfs namenode -format myhadoop -force -nonInteractive";
+      (* We add `-force -nonInteractive` because the commad asks `Y/N`
+         questions by default *)
     ] in
     let hdfs_setup = [
       "$HADOOP_PREFIX/sbin/hadoop-daemon.sh \
@@ -326,13 +328,32 @@ module Vagrant_hadoop_cluster = struct
           )
         ~depends_on:[on_node2]
     in
-    target "HadoopSpark-cluster post-install setup"
-      ~depends_on:[test_yarn_setup]
+    test_yarn_setup
+
+  let yarn_du_minus_sh ({box} as t) =
+    let open Ketrew.EDSL in
+    let host = host t "node2" in
+    let application_name = "yarn-du-sh-usr-local" in
+    file_target ~host (sprintf "/home/vagrant/%s" application_name)
+      ~make:(yarn_distributed_shell 
+              ~host ~container_memory:(`MB 120)
+              ~timeout:(`Seconds 1800)
+              ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
+              ~application_name Program.(
+                  sh "du -sh /usr/local/"
+                  ))
+    
 
   let run_all_tests t =
     let open Ketrew.EDSL in
     target "Hadoop-tests common ancestor"
-      ~depends_on:[finish_setup t]
+      ~depends_on:[
+        target "HadoopSpark-cluster post-install setup"
+          ~depends_on:[finish_setup t]
+          ~on_success_activate:[
+            yarn_du_minus_sh t;
+          ];
+      ]
 end
 
 (*M
