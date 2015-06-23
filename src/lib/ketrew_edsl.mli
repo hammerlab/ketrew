@@ -239,6 +239,7 @@ val daemonize :
   ?call_script:(string -> string list) ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Host.t ->
+  ?no_log_is_ok: bool ->
   Program.t ->
   Ketrew_target.Build_process.t
 (** Create a “daemonize” build process:
@@ -251,6 +252,11 @@ val daemonize :
       (default: [(fun script -> ["bash"; script])]).
     - [?using]: which method to use when damonizing on the [host]
     (see {!Ketrew_daemonize} for more details).
+    - [?no_log_is_ok]: consider that if the script run does not
+      produce a log file, the process still has succeeded (the default
+      and most common is [false], this can be useful for example when
+      the [Program.t] or [call_script] do something special over the
+      network).
 
 *)
 

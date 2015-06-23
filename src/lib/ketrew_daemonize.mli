@@ -62,7 +62,7 @@ val create:
   ?starting_timeout:float ->
   ?call_script:(string -> string list) ->
   ?using:[ `Nohup_setsid | `Python_daemon] ->
-  ?host:Ketrew_host.t -> Ketrew_program.t ->
+  ?host:Ketrew_host.t -> ?no_log_is_ok: bool -> Ketrew_program.t ->
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_target.build_process} (run parameters
     are already serialized), see {!Ketrew_edsl.daemonize} for more
