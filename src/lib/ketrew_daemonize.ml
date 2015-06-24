@@ -34,6 +34,7 @@ module Run_parameters = struct
     using: [ `Nohup_setsid | `Python_daemon ];
     starting_timeout: Time.t;
     shell_command: string list;
+    no_log_is_ok: bool [@default false];
   } [@@deriving yojson]
 
   type running = {
@@ -69,10 +70,12 @@ let script_placeholder = "<script>"
 
 let create
   ?(starting_timeout=5.) ?(call_script=fun s -> [default_shell; s])
-  ?(using=`Nohup_setsid) ?(host=Ketrew_host.tmp_on_localhost) program =
+  ?(using=`Nohup_setsid) ?(host=Ketrew_host.tmp_on_localhost)
+  ?(no_log_is_ok=false)
+  program =
   let shell_command = call_script script_placeholder in
   let c =
-    {host; program; using; starting_timeout; shell_command } in
+    {host; program; using; starting_timeout; shell_command; no_log_is_ok } in
   `Long_running (name, `Created c |> serialize)
 
 let using_to_string = function
@@ -88,6 +91,7 @@ let log =
       "Program", Ketrew_program.log c.program;
       "Starting-timeout", f c.starting_timeout % s " sec.";
       "Call-script", OCaml.list quote c.shell_command;
+      "No-log-is-OK", OCaml.bool c.no_log_is_ok;
     ]
   | `Running rp -> [
       "Status", s "Running" % sp
@@ -314,6 +318,9 @@ let update run_parameters =
           | None when elapsed <= run.created.starting_timeout ->
             (* no log at all *)
             return (`Still_running new_run_parameters)
+          | None when run.created.no_log_is_ok ->
+            (* The caller explicitly asked not to care about the log file. *)
+            return (`Succeeded new_run_parameters)
           | None ->
             return (`Failed (new_run_parameters, "no log file"))
           | Some (`Success  date) ->

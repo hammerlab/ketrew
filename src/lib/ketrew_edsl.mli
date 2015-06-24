@@ -183,7 +183,33 @@ val target :
   ?on_success_activate:user_target list ->
   ?tags: string list ->
   string -> user_target
-(** Create a new target. *)
+(** Construct a new target, the node of a workflow graph. The main
+    argument (the [string]) is its name, then all optional arguments mean:
+
+  - [?active]: whether this target should be started by the engine or
+    wait to be ativated by a dependency machanism or alike (default:
+    [false]). Usual workflows should not set this value since
+    the function {!Ketrew.Cliean.submit} will activate the toplevel
+    target automatically.
+  - [?depends_on]: list of dependencies of the target.
+  - [?make]: the build-process used to “build” the target; where the
+    computation happens.
+  - [?done_when]: the condition that the target ensures (checked
+    before potentially running and after running).
+  - [?metadata]: arbitrary metadata to attach to the target.
+  - [?product]: the {!user_artifact} that the target embeds (returned
+    by the [#product] method of the target).
+  - [?equivalence]: how to tell if two targets are equivalent (and
+    then will be merged by the engine). The default is
+    [`Same_active_condition] which means that if two targets have the
+    same non-[None] [?done_when] argument they will be considered
+    equivalent (i.e. they try to “ensure the same condition”).
+  - [?on_failure_activate]: targets to activate when this target fails.
+  - [?on_success_activate]: targets to activate when this target succeeds.
+  - [?tags]: arbitrary tags to add to the target (e.g. for
+    search/filter in the UI)
+
+*)
 
 val file_target:
   ?depends_on:user_target list ->
@@ -197,13 +223,23 @@ val file_target:
   ?tags: string list ->
   string ->
   user_target
-(** Create a file {!user_artifact} and the {!user_target} that produces it. *)
+(** Create a file {!user_artifact} and the {!user_target} that produces it.
+
+    The [?product] of the target will be the file on the given [?host]
+    (default: localhost using ["/tmp"]).
+    
+    The [?done_when] condition will be the existence of that file.
+    
+    This can be seen as a classical [make]-like file-producing target,
+    but on any arbitrary host.
+*)
 
 val daemonize :
   ?starting_timeout:float ->
   ?call_script:(string -> string list) ->
   ?using:[`Nohup_setsid | `Python_daemon] ->
   ?host:Host.t ->
+  ?no_log_is_ok: bool ->
   Program.t ->
   Ketrew_target.Build_process.t
 (** Create a “daemonize” build process:
@@ -216,6 +252,11 @@ val daemonize :
       (default: [(fun script -> ["bash"; script])]).
     - [?using]: which method to use when damonizing on the [host]
     (see {!Ketrew_daemonize} for more details).
+    - [?no_log_is_ok]: consider that if the script run does not
+      produce a log file, the process still has succeeded (the default
+      and most common is [false], this can be useful for example when
+      the [Program.t] or [call_script] do something special over the
+      network).
 
 *)
 

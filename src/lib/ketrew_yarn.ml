@@ -76,7 +76,7 @@ let distributed_shell_program
 let create
     ?(host=Ketrew_host.tmp_on_localhost)
     ?(daemonize_using=`Python_daemon)
-    ?(daemon_start_timeout=3600.)
+    ?(daemon_start_timeout=20.)
     program =
   let created = {host; program; daemonize_using; daemon_start_timeout} in
   `Long_running (name, `Created created |> serialize)
@@ -168,6 +168,20 @@ let get_application_id daemonize_run_param =
   >>= fun stderr ->
   find_application_id (stdout ^ stderr)
 
+let parse_status str =
+  let lines = String.split ~on:(`Character '\n') str in
+  let key_values =
+    List.map lines ~f:(fun line ->
+        String.split ~on:(`Character ':') line
+        |> List.map ~f:String.strip)
+  in
+  match
+    List.find key_values ~f:(function "Final-State" :: _ -> true | _ -> false)
+  with
+  | Some (_ :: "SUCCEEDED" :: _) -> `Succeeded
+  | Some (_ :: "FAILED" :: _)
+  | Some (_ :: "KILLED" :: _) -> `Failed
+  | Some _ | None -> `Unknown
 
 let query run_param item =
   match run_param with
@@ -231,7 +245,7 @@ let start = function
     Ketrew_daemonize.create
       ~starting_timeout:daemon_start_timeout
       ~host actual_program ~using:daemonize_using
-      ?call_script in
+      ?call_script ~no_log_is_ok:true in
   Ketrew_daemonize.(start (deserialize_exn daemonize_run_param))
   >>= fun daemonized_script ->
   return (`Running {created; daemonized_script})
@@ -251,7 +265,25 @@ let update run_parameters =
       return (`Failed (new_rp, s))
     | `Succeeded rp ->
       make_new_rp rp >>= fun new_rp ->
-      return (`Succeeded new_rp)
+      (* Since we use `~no_log_is_ok:true` it is pretty easy for a
+         daemonized process to succeed while the yarn application
+         failed, hence we need to get the status from yarn. *)
+      begin
+        begin
+          let host = run.created.host in
+          get_application_id run.daemonized_script
+          >>= fun app_id ->
+          shell_command_output_or_log ~host (fmt "yarn application -status %s" app_id)
+          >>= fun application_status_string ->
+          begin match parse_status application_status_string with
+          | `Succeeded -> return (`Succeeded new_rp)
+          | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
+          | `Unknown -> return (`Still_running new_rp)
+          end
+        end >>< function
+        | `Ok o -> return o
+        | `Error log -> fail (`Fatal (Log.to_long_string log))
+      end
     | `Still_running rp ->
       make_new_rp rp >>= fun new_rp ->
       return (`Still_running new_rp)
