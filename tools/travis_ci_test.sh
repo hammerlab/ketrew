@@ -82,9 +82,6 @@ opam update
 # We add the react dependency for lwt.react in the tests
 opam install react
 
-# We need a not-yet released bug in ppx_deriving_yojson
-opam pin add ppx_deriving_yojson --yes -k git https://github.com/whitequark/ppx_deriving_yojson.git
-
 
 opam pin $opam_pin_add ketrew .
 
