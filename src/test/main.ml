@@ -396,10 +396,13 @@ let integration_meta_test options =
 
   ketrew ~bin:"./ketrew-integration-test" "client" "is-running LSF";
   ketrew ~bin:"./ketrew-integration-test" "client" "is-running PBS";
+  ketrew ~bin:"./ketrew-integration-test" "client" "is-running Hadoop";
 
   phase "Submit integration tests";
   ketrew ~bin:"./ketrew-integration-test" "client" "go";
   wait_for_targets_to_complete ();
+
+  ketrew ~bin:"./ketrew-integration-test" "client" "check";
 
   phase "Submit integration clean-up";
   ketrew ~bin:"./ketrew-integration-test" "client" "clean";

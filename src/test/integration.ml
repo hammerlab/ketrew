@@ -65,6 +65,30 @@ module Test_host = struct
   let tmp file = test_dir // file
 
 
+  let test_target ?(and_then = []) ~name ~make should =
+    let open Ketrew.EDSL in
+    let result_file = tmp (name ^ "-result") in
+    let expectations_file = tmp (name ^ "-expectation") in
+    let on_success_activate =
+      target (sprintf "register-success-of-%s" name)
+        ~make:(write_file ~content:"OK" result_file)
+      :: and_then in
+    let on_failure_activate =
+      target (sprintf "register-failure-of-%s" name)
+        ~make:(write_file ~content:"KO" result_file)
+      :: and_then in
+    let t = target name ~make ~on_success_activate ~on_failure_activate in
+    begin match should with
+    | `Should_succeed -> shellf "echo OK > %s" expectations_file
+    | `Should_fail -> shellf "echo KO > %s" expectations_file
+    end;
+    t
+
+  let check_test_targets () =
+    shellf "for exp in %s/*-expectation ; do echo $exp ; \
+            diff $exp ${exp%%-expectation}-result ; done"
+      test_dir
+
 end
 
 module Vagrant_box = struct
@@ -330,28 +354,36 @@ module Vagrant_hadoop_cluster = struct
     in
     test_yarn_setup
 
-  let yarn_du_minus_sh ({box} as t) =
+  let yarn_du_minus_sh ({box} as t) should =
     let open Ketrew.EDSL in
     let host = host t "node2" in
-    let application_name = "yarn-du-sh-usr-local" in
-    file_target ~host (sprintf "/home/vagrant/%s" application_name)
+    let application_name =
+      sprintf "yarn-du-sh-%s"
+        (match should with
+        | `Should_succeed -> "succeeds"
+        | `Should_fail -> "fails") in
+    Test_host.test_target ~name:application_name should
       ~make:(yarn_distributed_shell 
-              ~host ~container_memory:(`MB 120)
-              ~timeout:(`Seconds 1800)
-              ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
-              ~application_name Program.(
-                  sh "du -sh /usr/local/"
-                  ))
-    
+               ~host ~container_memory:(`MB 120)
+               ~timeout:(`Seconds 1800)
+               ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
+               ~application_name Program.(
+                   sh "hostname"
+                   && (match should with
+                       | `Should_succeed -> sh "du -sh /usr/local/"
+                       | `Should_fail -> sh "du -sh /doesnotexist/")
+                 ))
+
 
   let run_all_tests t =
     let open Ketrew.EDSL in
-    target "Hadoop-tests common ancestor"
+    target "Hadoop-tests coordinator"
       ~depends_on:[
         target "HadoopSpark-cluster post-install setup"
           ~depends_on:[finish_setup t]
           ~on_success_activate:[
-            yarn_du_minus_sh t;
+            yarn_du_minus_sh t `Should_succeed;
+            yarn_du_minus_sh t `Should_fail;
           ];
       ]
 end
@@ -734,6 +766,14 @@ let () =
           $ Arg.(required @@ pos 0 (some string) None
                  @@ info [] ~doc:"Name of the VM"))
   in
+  let check_tests =
+    let doc = "Check that tests succeeded or failed appropriately" in
+    sub_command ~info:Term.(info "check-tests" ~version ~doc)
+      ~term:Term.(
+          pure (fun () ->
+              Test_host.check_test_targets ())
+          $ pure ()) in
+  (* $ Arg.(unit)) in *)
   let default_cmd =
     let doc = "Integration Test for Ketrew" in
     let man = [] in
@@ -746,6 +786,7 @@ let () =
     clean_up;
     ssh;
     is_running;
+    check_tests;
   ] in
   match Term.eval_choice  default_cmd cmds with
   | `Ok () -> ()
