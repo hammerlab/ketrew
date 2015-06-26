@@ -44,7 +44,7 @@ test-env:
 clean:
 	rm -fr _build $(OWN_BINARIES)
 
-distclean: clean clean_reports
+distclean: clean clean-bisect
 	ocaml setup.ml -distclean || echo OK ; \
 	    rm -fr setup.ml _tags gen src/*/META src/*/*.mldylib src/*/*.mllib _oasis
 
