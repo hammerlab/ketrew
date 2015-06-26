@@ -147,7 +147,8 @@ https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
   let namify t sub =
     sprintf "%s: %s" t.hostname sub
 
-  let prepare ?(force_hostname=true) ?on_success_activate t =
+  let prepare ?(force_hostname=true)
+      ?on_success_activate ?on_failure_activate t =
     let open Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
@@ -205,7 +206,7 @@ https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
       target (* not a `file_target`, because we want this file regenerated 
                 every time. We set the `product` but not the “condition”. *)
         (namify t "vagrant-ssh-config")
-        ~depends_on:[running] ?on_success_activate
+        ~depends_on:[running] ?on_success_activate ?on_failure_activate
         ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
         ~make:(Test_host.do_on Program.(
             in_dir t
@@ -683,13 +684,26 @@ let test =
   let hadoop_host =
     Vagrant_hadoop_cluster.create () in
   object  (self)
-    method prepare =
-      Ketrew.EDSL.target "Prepare VMs"
-        ~depends_on:[
-          Vagrant_box.prepare lsf_host;
-          Vagrant_box.prepare pbs_host;
-          Vagrant_hadoop_cluster.prepare hadoop_host;
-        ]
+    method prepare what =
+      match what with
+      | "ALL" ->
+        let prepare_hadoop = Vagrant_hadoop_cluster.prepare hadoop_host in
+        let prepare_pbs =
+          Vagrant_box.prepare pbs_host
+            ~on_success_activate:[prepare_hadoop]
+            ~on_failure_activate:[prepare_hadoop]
+        in
+        let prepare_lsf = 
+          Vagrant_box.prepare lsf_host
+            ~on_success_activate:[prepare_pbs]
+            ~on_failure_activate:[prepare_pbs]
+        in
+        Ketrew.EDSL.target "Trigger VM preparation" ~depends_on:[prepare_lsf]
+      | "LSF" -> Vagrant_box.prepare lsf_host
+      | "PBS" -> Vagrant_box.prepare pbs_host
+      | "Hadoop" -> Vagrant_hadoop_cluster.prepare hadoop_host
+      | other ->
+        failwithf "Don't know how to “prepare” %S" other
     method go =
       Ketrew.EDSL.target "Run Tests"
         ~depends_on:[
@@ -738,7 +752,7 @@ let () =
   in
   let prepare =
     sub_command_of_target ~name:"prepare" ~doc:"Setup the VM(s)"
-      (fun () -> test#prepare) in
+      (fun () -> test#prepare "ALL") in
   let go =
     sub_command_of_target ~name:"go" ~doc:"Do the test"
       (fun () -> test#go) in
