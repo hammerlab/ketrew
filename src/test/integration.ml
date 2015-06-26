@@ -65,7 +65,7 @@ module Test_host = struct
   let tmp file = test_dir // file
 
 
-  let test_target ?(and_then = []) ~name ~make should =
+  let test_target ?depends_on ?(and_then = []) ~name ~make should =
     let open Ketrew.EDSL in
     let result_file = tmp (name ^ "-result") in
     let expectations_file = tmp (name ^ "-expectation") in
@@ -77,12 +77,17 @@ module Test_host = struct
       target (sprintf "register-failure-of-%s" name)
         ~make:(write_file ~content:"KO" result_file)
       :: and_then in
-    let t = target name ~make ~on_success_activate ~on_failure_activate in
+    let t =
+      target name ?depends_on ~make ~on_success_activate ~on_failure_activate in
     begin match should with
     | `Should_succeed -> shellf "echo OK > %s" expectations_file
     | `Should_fail -> shellf "echo KO > %s" expectations_file
     end;
     t
+
+  let should_to_3rd_person_verb = function
+  | `Should_fail -> "fails"
+  | `Should_succeed -> "succeeds"
 
   let check_test_targets () =
     shellf "for exp in %s/*-expectation ; do echo $exp ; \
@@ -360,9 +365,7 @@ module Vagrant_hadoop_cluster = struct
     let host = host t "node2" in
     let application_name =
       sprintf "yarn-du-sh-%s"
-        (match should with
-        | `Should_succeed -> "succeeds"
-        | `Should_fail -> "fails") in
+        (Test_host.should_to_3rd_person_verb should) in
     Test_host.test_target ~name:application_name should
       ~make:(yarn_distributed_shell 
                ~host ~container_memory:(`MB 120)
@@ -389,13 +392,14 @@ module Vagrant_hadoop_cluster = struct
       ]
 end
 
+module Lsf = struct
 (*M
 
 See [openlava.org](http://www.openlava.org/home.html).
 
-M*)
-let config_files ~hostname ~usernames () = [
-  "lsb.hosts", `Inline "
+  M*)
+  let config_files ~hostname ~usernames () = [
+    "lsb.hosts", `Inline "
 Begin Host
 HOST_NAME     MXJ JL/U   r1m    pg    ls     tmp  DISPATCH_WINDOW  # Keywords
 #host0        1    1   3.5/4.5  15/   12/15  0      ()		   # Example
@@ -404,7 +408,7 @@ HOST_NAME     MXJ JL/U   r1m    pg    ls     tmp  DISPATCH_WINDOW  # Keywords
 default       2   ()     ()    ()    ()     ()     ()		   # Example
 End Host
     ";
-  "lsb.params", `Inline "
+    "lsb.params", `Inline "
 Begin Parameters
 DEFAULT_QUEUE  = normal   #default job queue name
 MBD_SLEEP_TIME = 10       #mbatchd scheduling interval (60 secs is default)
@@ -413,7 +417,7 @@ JOB_ACCEPT_INTERVAL = 1   #interval for any host to accept a job
                           # (default is 1 (one-fold of MBD_SLEEP_TIME))
 End Parameters
 ";
-  "lsb.queues", `Inline "
+    "lsb.queues", `Inline "
 Begin Queue
 QUEUE_NAME   = normal
 PRIORITY     = 30
@@ -422,7 +426,7 @@ DESCRIPTION  = For normal low priority jobs, running only if hosts are \
 lightly loaded.
 End Queue
 ";
-  "lsb.users", `Inline (sprintf "
+    "lsb.users", `Inline (sprintf "
 Begin UserGroup
 GROUP_NAME       GROUP_MEMBER              
 #develop         (jwang long david ming)  
@@ -436,9 +440,9 @@ USER_NAME	MAX_JOBS	JL/P
 %s
 End User
   " (List.map usernames (sprintf "%s 50 -")
-     |> String.concat ~sep:"\n")
-);
-  sprintf "lsf.cluster.%s" hostname, `Inline (sprintf "
+       |> String.concat ~sep:"\n")
+                         );
+    sprintf "lsf.cluster.%s" hostname, `Inline (sprintf "
 Begin   ClusterAdmins
 Administrators = (root %s)
 End    ClusterAdmins
@@ -447,7 +451,7 @@ Begin   Host
 HOSTNAME          model          type  server  r1m  RESOURCES
 %s               !              !     1       -       -
 End     Host
-
+                                                  
 Begin ResourceMap
 RESOURCENAME  LOCATION
 # tmp2          [default]
@@ -459,7 +463,7 @@ End ResourceMap
     hostname
 );
 
-  "lsf.shared", `Inline (sprintf "
+    "lsf.shared", `Inline (sprintf "
 Begin Cluster
 ClusterName			# Keyword
 %s
@@ -479,7 +483,7 @@ RESOURCENAME  TYPE    INTERVAL INCREASING  DESCRIPTION 	      # Keywords
    cs         Boolean ()       ()          (Compute server)
 End Resource
 " hostname);
-  "lsf.task", `Inline "
+    "lsf.task", `Inline "
 Begin RemoteTasks
 ar
 as
@@ -525,94 +529,122 @@ zcat/cpu:mem
 zmore/cpu
 End RemoteTasks
   ";
-  "lsf.conf", `File "config/lsf.conf";
+    "lsf.conf", `File "config/lsf.conf";
   (*
     hack found here:
 https://groups.google.com/forum/#!topic/openlava-users/ezYDlyeb1wk
   *)
-  "hosts", `Inline (sprintf "
+    "hosts", `Inline (sprintf "
 127.0.0.1 %s
 127.0.1.1 %s
 " hostname hostname);
-]
+  ]
 
-let install_lsf ~box =
-  let packages = ["build-essential"; "libncurses-dev"; "tk8.4-dev"] in
-  let open Ketrew.EDSL in
-  target "install-lsf"
-    ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"bsub")
-    ~tags:["intergration"]
-    ~depends_on:[Vagrant_box.with_installed ~packages box]
-    ~make:(
-      Vagrant_box.do_on box Program.(
-          exec ["wget"; "http://www.openlava.org/tarball/openlava-2.2.tar.gz"]
-          && exec ["sudo"; "sh"; "-c"; "cd /usr/include && rm -fr tcl && ln -s tcl8.4 tcl"]
-          && exec ["rm"; "-fr"; "openlava-2.2"]
-          && exec ["tar"; "xvfz"; "openlava-2.2.tar.gz"]
-          && exec ["cd"; "openlava-2.2"]
-          && sh "./configure --prefix /usr"
-          && exec ["make"]
-          && exec ["sudo"; "make"; "install"]
+  let install_lsf ~box =
+    let packages = ["build-essential"; "libncurses-dev"; "tk8.4-dev"] in
+    let open Ketrew.EDSL in
+    target "install-lsf"
+      ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"bsub")
+      ~tags:["intergration"]
+      ~depends_on:[Vagrant_box.with_installed ~packages box]
+      ~make:(
+        Vagrant_box.do_on box Program.(
+            exec ["wget"; "http://www.openlava.org/tarball/openlava-2.2.tar.gz"]
+            && exec ["sudo"; "sh"; "-c"; "cd /usr/include && rm -fr tcl && ln -s tcl8.4 tcl"]
+            && exec ["rm"; "-fr"; "openlava-2.2"]
+            && exec ["tar"; "xvfz"; "openlava-2.2.tar.gz"]
+            && exec ["cd"; "openlava-2.2"]
+            && sh "./configure --prefix /usr"
+            && exec ["make"]
+            && exec ["sudo"; "make"; "install"]
+          ))
+
+  let ensure_lsf_is_running ~box =
+    let open Ketrew.EDSL in
+    let installed = install_lsf ~box in
+    let hostname = Vagrant_box.internal_hostname box in
+    let usernames = [Vagrant_box.internal_username box] in
+    let config_files = config_files ~hostname ~usernames () in
+    let config_directory = "/usr/etc" in
+    let conditions = 
+      Condition.chain_and (List.map config_files (fun (name, _) ->
+          let file = Vagrant_box.file box (config_directory // name) in
+          file#exists))
+    in
+    let open Ketrew.EDSL in
+    target "start-lsf"
+      ~done_when:Condition.(
+          conditions
+          && program ~returns:0
+            ~host:(Vagrant_box.as_host box)
+            Program.(exec ["timeout"; "1"; "sh"; "-c"; "bjobs; exit 0"]))
+      ~tags:["integration"]
+      ~depends_on:[ installed; ]
+      ~make:( Vagrant_box.do_on box Program.(
+          chain (List.map config_files ~f:(fun (name, content) ->
+              match content with
+              | `Inline c ->
+                exec ["sudo"; "sh"; "-c";
+                      sprintf "echo %s > %s" Filename.(quote c)
+                        (config_directory // name)]
+              | `File f -> exec ["sudo"; "cp"; "openlava-2.2" // f; config_directory // name]
+            ))
+          && exec ["sudo"; "/usr/etc/openlava"; "start"]
         ))
 
-let ensure_lsf_is_running ~box =
-  let open Ketrew.EDSL in
-  let installed = install_lsf ~box in
-  let hostname = Vagrant_box.internal_hostname box in
-  let usernames = [Vagrant_box.internal_username box] in
-  let config_files = config_files ~hostname ~usernames () in
-  let config_directory = "/usr/etc" in
-  let conditions = 
-    Condition.chain_and (List.map config_files (fun (name, _) ->
-        let file = Vagrant_box.file box (config_directory // name) in
-        file#exists))
-  in
-  let open Ketrew.EDSL in
-  target "start-lsf"
-    ~done_when:Condition.(
-        conditions
-        && program ~returns:0
-          ~host:(Vagrant_box.as_host box)
-          Program.(exec ["timeout"; "1"; "sh"; "-c"; "bjobs; exit 0"]))
-    ~tags:["integration"]
-    ~depends_on:[ installed; ]
-    ~make:( Vagrant_box.do_on box Program.(
-        chain (List.map config_files ~f:(fun (name, content) ->
-            match content with
-            | `Inline c ->
-              exec ["sudo"; "sh"; "-c";
-                    sprintf "echo %s > %s" Filename.(quote c)
-                      (config_directory // name)]
-            | `File f -> exec ["sudo"; "cp"; "openlava-2.2" // f; config_directory // name]
-          ))
-        && exec ["sudo"; "/usr/etc/openlava"; "start"]
-      ))
+  let lsf_job ?on_success_activate ?on_failure_activate ~box () =
+    let open Ketrew.EDSL in
+    let output = "/tmp/du-sh-dollar-home" in
+    let host = Vagrant_box.as_host box in
+    let name = "lsf-1" in
+    file_target ~host ~name output ?on_success_activate ?on_failure_activate
+      ~depends_on:[ ensure_lsf_is_running ~box ]
+      ~tags:["integration"; "lsf"]
+      ~make:(
+        lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
+                                 && exec ["cat"; output])
+          ~queue:"normal"
+      )
 
-let lsf_job ?on_success_activate ?on_failure_activate ~box () =
-  let open Ketrew.EDSL in
-  let output = "/tmp/du-sh-dollar-home" in
-  let host = Vagrant_box.as_host box in
-  let name = "lsf-1" in
-  file_target ~host ~name output ?on_success_activate ?on_failure_activate
-    ~depends_on:[ ensure_lsf_is_running ~box ]
-    ~tags:["integration"; "lsf"]
-    ~make:(
-      lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
-                               && exec ["cat"; output])
-        ~queue:"normal"
-    )
+  let test_lsf_job box should =
+    let open Ketrew.EDSL in
+    let host = Vagrant_box.as_host box in
+    let name =
+      sprintf "lsf-test-that-%s"
+        (Test_host.should_to_3rd_person_verb should) in
+    Test_host.test_target ~name should
+      ~depends_on:[
+        lsf_job ~box ();
+        ensure_lsf_is_running ~box;
+      ]
+      ~make:(
+        lsf ~host ~name ~queue:"normal"
+          Program.(
+            match should with
+            | `Should_fail -> sh "ls /somewierd/path/"
+            | `Should_succeed -> sh "du -sh $HOME"
+          )
+        )
+
+  let run_all_tests box =
+    Ketrew.EDSL.target "LSF tests common ancestor"
+      ~depends_on:[
+        test_lsf_job box `Should_fail;
+        test_lsf_job box `Should_succeed;
+      ]
+end
 
 (* Old stuff:
-let setup_pbs ~box () =
-  let packages =
+   let setup_pbs ~box () =
+   let packages =
     ["torque-server"; "torque-scheduler"; "torque-client"; "torque-mom"] in
-  let open Ketrew.EDSL in
-  let setup = [
+   let open Ketrew.EDSL in
+   let setup = [
     sprintf "echo '%s' > /var/spool/torque/server_name"
       (Vagrant_box.internal_hostname box);
     "sed -i 's/127.0.1.1/127.0.0.1/' /etc/hosts";
-  ] in
-  target "install-pbs"
+   ] in
+   target "install-pbs"
     (* ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"qsub") *)
     ~tags:["intergration"]
     ~depends_on:[Vagrant_box.with_installed ~packages box]
@@ -707,7 +739,7 @@ let test =
     method go =
       Ketrew.EDSL.target "Run Tests"
         ~depends_on:[
-          lsf_job ~box:lsf_host ();
+          Lsf.run_all_tests lsf_host;
           pbs_job ~box:pbs_host `Always_runs;
           pbs_job ~box:pbs_host `File_target;
           Vagrant_hadoop_cluster.run_all_tests hadoop_host;        
