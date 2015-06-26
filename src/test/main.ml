@@ -388,7 +388,9 @@ let integration_meta_test options =
   server_output 10;
 
   let wait_for_targets_to_complete () =
-    ketrew "client" "status --loop"
+    ketrew "client" "status --loop";
+    cmdf "sleep 2"; (* we “avoid” some kinds of race-conditions … *)
+    ketrew "client" "status --loop";
   in
   phase "Submit integration preparation";
   ketrew ~bin:"./ketrew-integration-test" "client" "prepare";
