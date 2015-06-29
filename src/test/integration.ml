@@ -64,6 +64,7 @@ module Test_host = struct
 
   let tmp file = test_dir // file
 
+  let to_kill_file = test_dir // "targets-to-kill"
 
   let test_target ?depends_on ?(and_then = []) ~name ~make should =
     let open Ketrew.EDSL in
@@ -78,10 +79,15 @@ module Test_host = struct
         ~make:(write_file ~content:"KO" result_file)
       :: and_then in
     let t =
-      target name ?depends_on ~make ~on_success_activate ~on_failure_activate in
+      target name
+        ~tags:["to-kill"] ?depends_on ~make
+        ~on_success_activate ~on_failure_activate in
     begin match should with
     | `Should_succeed -> shellf "echo OK > %s" expectations_file
     | `Should_fail -> shellf "echo KO > %s" expectations_file
+    | `Should_be_killed ->
+      shellf "echo KO > %s" expectations_file;
+      shellf "echo %s >> %s" t#id to_kill_file;
     end;
     t
 
@@ -378,6 +384,19 @@ module Vagrant_hadoop_cluster = struct
                        | `Should_fail -> sh "du -sh /doesnotexist/")
                  ))
 
+  let yarn_job_to_kill t =
+    let open Ketrew.EDSL in
+    let host = host t "node2" in
+    let application_name = sprintf "yarn-job-to-kill" in
+    Test_host.test_target ~name:application_name `Should_be_killed
+      ~make:(yarn_distributed_shell 
+               ~host ~container_memory:(`Raw "110")
+               ~timeout:(`Raw "1800000")
+               ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
+               ~application_name Program.(
+                   sh "hostname" && sh "sleep 120"
+                 ))
+
 
   let run_all_tests t =
     let open Ketrew.EDSL in
@@ -388,6 +407,7 @@ module Vagrant_hadoop_cluster = struct
           ~on_success_activate:[
             yarn_du_minus_sh t `Should_succeed;
             yarn_du_minus_sh t `Should_fail;
+            yarn_job_to_kill t;
           ];
       ]
 end
@@ -819,6 +839,13 @@ let () =
           pure (fun () ->
               Test_host.check_test_targets ())
           $ pure ()) in
+  let to_kill_list =
+    let doc = "Display list of IDs to kill externally" in
+    sub_command ~info:Term.(info "to-kill" ~version ~doc)
+      ~term:Term.(
+          pure (fun () ->
+              shellf "cat %s" Test_host.to_kill_file)
+          $ pure ()) in
   (* $ Arg.(unit)) in *)
   let default_cmd =
     let doc = "Integration Test for Ketrew" in
@@ -833,6 +860,7 @@ let () =
     ssh;
     is_running;
     check_tests;
+    to_kill_list;
   ] in
   match Term.eval_choice  default_cmd cmds with
   | `Ok () -> ()

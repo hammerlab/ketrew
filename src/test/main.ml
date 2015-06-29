@@ -363,11 +363,13 @@ let integration_meta_test options =
         | other, Some m ->
           failwith (sprintf "Command %S returned %d instead of %d" s other m)
       ) fmt) in
-  let ketrew ?(bin="./ketrew") profile fmt =
+  let ketrew_configuration_prefix profile =
     let config_file = Sys.getenv "PWD" // "_test_env" // "configuration.ml" in
+    Printf.sprintf "KETREW_CONFIGURATION=%s KETREW_PROFILE=%s"
+          Filename.(quote config_file) profile in
+  let ketrew ?(bin="./ketrew") profile fmt =
     Printf.ksprintf (fun s ->
-        cmdf "KETREW_CONFIGURATION=%s KETREW_PROFILE=%s %s %s"
-          Filename.(quote config_file) profile bin s
+        cmdf "%s %s %s" (ketrew_configuration_prefix profile) bin s
       ) fmt in
   phase "Preparing Integration Meta-Test";
   cmdf "mkdir -p %s" tmpdir;
@@ -402,6 +404,14 @@ let integration_meta_test options =
 
   phase "Submit integration tests";
   ketrew ~bin:"./ketrew-integration-test" "client" "go";
+  (* We need to kill the targets-to-kill. *)
+  phase "Kill the targets-to-kill";
+  cmdf "sleep 20";
+  cmdf "for id in `./ketrew-integration-test to-kill` ; do \n\
+        echo \"Kill $i\"\n\
+        %s ./ketrew kill $id\n\
+        done" (ketrew_configuration_prefix "client");
+
   wait_for_targets_to_complete ();
 
   ketrew ~bin:"./ketrew-integration-test" "client" "check";
