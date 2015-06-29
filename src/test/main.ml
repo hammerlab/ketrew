@@ -348,6 +348,7 @@ let integration_meta_test options =
   let tmp fmt = Printf.ksprintf (fun s -> tmpdir // s) fmt in
   let with_server = List.mem ~set:options "with-server" in
   let verbose_commands = List.mem ~set:options "quiet-cmd" |> not in
+  let with_clean_up = List.mem ~set:options "no-clean-up" |> not in
   (*
   let write_file f ~content =
     let o = open_out f in
@@ -416,9 +417,14 @@ let integration_meta_test options =
 
   ketrew ~bin:"./ketrew-integration-test" "client" "check";
 
-  phase "Submit integration clean-up";
-  ketrew ~bin:"./ketrew-integration-test" "client" "clean";
-  wait_for_targets_to_complete ();
+  begin match with_clean_up with
+  | true  ->
+    phase "Submit integration clean-up";
+    ketrew ~bin:"./ketrew-integration-test" "client" "clean";
+    wait_for_targets_to_complete ();
+  | false ->
+    phase "NO integration clean-up";
+  end;
 
   if with_server then begin
     phase "Stopping server";
