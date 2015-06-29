@@ -805,6 +805,9 @@ let () =
   let prepare =
     sub_command_of_target ~name:"prepare" ~doc:"Setup the VM(s)"
       (fun () -> test#prepare "ALL") in
+  let hadoop_prepare =
+    sub_command_of_target ~name:"hadoop-prepare" ~doc:"Setup the VM(s)"
+      (fun () -> test#prepare "Hadoop") in
   let go =
     sub_command_of_target ~name:"go" ~doc:"Do the test"
       (fun () -> test#go) in
@@ -855,6 +858,7 @@ let () =
       ~info:(Term.info "ketrew-integration-test" ~version ~doc ~man) in
   let cmds = [
     prepare;
+    hadoop_prepare;
     go;
     clean_up;
     ssh;
