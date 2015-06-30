@@ -394,7 +394,7 @@ module Vagrant_hadoop_cluster = struct
                ~timeout:(`Raw "1800000")
                ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
                ~application_name Program.(
-                   sh "hostname" && sh "sleep 120"
+                   sh "hostname" && sh "sleep 400"
                  ))
 
 
@@ -407,8 +407,14 @@ module Vagrant_hadoop_cluster = struct
           ~on_success_activate:[
             yarn_du_minus_sh t `Should_succeed;
             yarn_du_minus_sh t `Should_fail;
-            yarn_job_to_kill t;
           ];
+      ]
+
+  let test_to_kill t =
+    let open Ketrew.EDSL in
+    target "Hadoop-to-kill-tests common ancestor"
+      ~depends_on:[
+        yarn_job_to_kill t;
       ]
 end
 
@@ -764,6 +770,11 @@ let test =
           pbs_job ~box:pbs_host `File_target;
           Vagrant_hadoop_cluster.run_all_tests hadoop_host;        
         ]
+    method start_jobs_to_kill =
+      Ketrew.EDSL.target "Jobs to kill"
+        ~depends_on:[
+          Vagrant_hadoop_cluster.test_to_kill hadoop_host;        
+        ]
     method clean_up =
       Ketrew.EDSL.target "Destroy VMs"
         ~depends_on:[
@@ -811,6 +822,10 @@ let () =
   let go =
     sub_command_of_target ~name:"go" ~doc:"Do the test"
       (fun () -> test#go) in
+  let start_jobs_to_kill =
+    sub_command_of_target ~name:"start-jobs-to-kill"
+      ~doc:"Start jobs that should be killed"
+      (fun () -> test#start_jobs_to_kill) in
   let clean_up =
     sub_command_of_target ~name:"clean-up" ~doc:"Destroy the VM(s)"
       (fun () -> test#clean_up) in
@@ -860,6 +875,7 @@ let () =
     prepare;
     hadoop_prepare;
     go;
+    start_jobs_to_kill;
     clean_up;
     ssh;
     is_running;

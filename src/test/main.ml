@@ -405,9 +405,17 @@ let integration_meta_test options =
 
   phase "Submit integration tests";
   ketrew ~bin:"./ketrew-integration-test" "client" "go";
+  wait_for_targets_to_complete ();
+
+  
+  phase "Start the targets-to-kill";
+  ketrew ~bin:"./ketrew-integration-test" "client" "start-jobs-to-kill";
   (* We need to kill the targets-to-kill. *)
   phase "Kill the targets-to-kill";
-  cmdf "sleep 20";
+  cmdf "sleep 300";
+  (* We hope it is enough for them to actually start; an observed
+     low-bound is 120 seconds (between application start and obtention of
+     an application ID from YARN!) *)
   cmdf "for id in `./ketrew-integration-test to-kill` ; do \n\
         echo \"Kill $i\"\n\
         %s ./ketrew kill $id\n\
