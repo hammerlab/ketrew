@@ -424,6 +424,26 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           $ Arg.(required & pos 0 (some string) None
                  & info [] ~docv:"PATH" ~doc:"Path of the generated config file")
         ) in
+  let start_gui =
+    sub_command
+      ~info:Term.(info "gui" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
+                    ~doc:"Get info about this instance.")
+      ~term: Term.(
+          pure (fun configuration open_cmd  ->
+              match Configuration.mode configuration  with
+              | `Server _
+              | `Standalone _ -> fail (`Failure "This not a client")
+              | `Client c ->
+                let url = Configuration.connection c in
+                let token = Configuration.token c in
+                System.Shell.do_or_fail
+                  (fmt "%s %s/gui?token=%s" open_cmd url token)
+            )
+          $ config_file_argument
+          $ Arg.(value @@ opt string "open"
+                 @@ info ["O"; "open-command"]
+                   ~doc:"Command to use as browser (default: `open`).")
+        ) in
   let status_cmd =
     sub_command
       ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
@@ -638,7 +658,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Ok o -> return o
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
-      init_cmd; status_cmd; run_cmd; kill_cmd;
+      init_cmd; status_cmd; start_gui; run_cmd; kill_cmd;
       inspect_cmd;
       interact_cmd;
       explore_cmd;
