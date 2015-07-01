@@ -109,7 +109,7 @@ Executable ketrew
 Executable clientjoo
   Path: src/client-joo/
   CompiledObject: byte
-  BuildDepends: ketrew_pure, js_of_ocaml, js_of_ocaml.syntax
+  BuildDepends: ketrew_pure, js_of_ocaml, js_of_ocaml.syntax, js_of_ocaml.tyxml
   Install: false
   MainIs:  main.ml
 

@@ -22,6 +22,6 @@ depends: [
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.2"} "ppx_include" "ppx_blob"
   "cohttp" "lwt" "ssl"
   "conduit"
-  "js_of_ocaml"
+  "js_of_ocaml" "tyxml" "reactiveData"
   ]
 

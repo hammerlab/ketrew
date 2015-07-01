@@ -7,6 +7,7 @@ let debug f =
 let alert f =
   Printf.ksprintf (fun s -> Dom_html.window##alert(Js.string s); failwith s) f
 
+module T = Tyxml_js
 
 let do_test () =
   let open Lwt in
