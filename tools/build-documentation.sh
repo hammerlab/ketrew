@@ -7,9 +7,8 @@
 # - `findlib_packages` (space separated)
 # - optionally `KAPI_DOC`: if `no` then do not build the OCamlDoc part
 
-ocamlfind_package_options=`ocaml ./tools/please.ml say ocamlfind-package-options`
-lib_mli_files=`ocaml ./tools/please.ml say lib-mli-files`
-lib_ml_files=`ocaml ./tools/please.ml say lib-ml-files`
+
+ocamlfind_packages=$1
 
 make_doc () {
     local git_branch=`git symbolic-ref --short HEAD`
@@ -20,10 +19,12 @@ make_doc () {
     local apidoc=_apidoc/$git_branch
     if [ "$KAPI_DOC" != "no" ] ; then
         mkdir -p $apidoc
-        ocamlfind ocamldoc -html -d $apidoc $ocamlfind_package_options  -thread \
+        pure_files=`find src/pure -type f`
+        lib_files=`find src/lib -type f`
+        ocamlfind ocamldoc -html -d $apidoc -package $ocamlfind_packages  -thread \
                   -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code -sort \
                   -I _build/src/lib/  -I _build/src/pure \
-                  $lib_mli_files $lib_ml_files 
+                  $pure_files $lib_files
     fi
 
     INPUT=src/doc/,src/test/ \

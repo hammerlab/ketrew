@@ -1,0 +1,107 @@
+open build/OCaml
+open tools/OMakeLibrary.om
+DefineCommandVars()
+
+.PHONY: build-all doc install uninstall
+
+
+################################################################################
+# General Project Information
+PROJECT = ketrew
+VERSION = 1.0.0+master
+DESCRIPTION = Workflow Engine For The Trenches
+
+if $(test -e .git)
+  GIT_COMMIT = 'Some "$(shell git rev-parse HEAD)"'
+  export
+else
+  GIT_COMMIT = 'None'
+  export
+
+PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp ppx_deriving_yojson ppx_deriving.show ppx_blob
+
+LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_sqlite \
+         pvem_lwt_unix cmdliner cohttp.lwt lwt ssl conduit dynlink findlib
+
+JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.syntax js_of_ocaml.tyxml
+
+OCAMLFLAGS = -bin-annot -thread -short-paths
+
+section # Pure library
+    OCAMLPACKS[] = $(PURE_LIB_PACKAGES)
+    _build/src/pure/metadata.ml: :value: $(VERSION)
+        echo "let version = lazy \"$(VERSION)\"" >> $@
+        echo "let findlib_packages = lazy [ $(addprefix \",$(addsuffix \";, $(LWT_UNIX_LIB_PACKAGES))) ]" >> $@
+    OCAML_GENERATED_MODULES[] = metadata
+    .DEFAULT: $(OCamlPackedLibraryOfDir ketrew_pure, src/pure)
+
+section # Javascript client code
+    OCAMLPACKS[] = $(JOO_PACKAGES)
+    OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
+    OCAMLDEPFLAGS += -syntax camlp4o
+    OCAMLFLAGS += -syntax camlp4o
+    NATIVE_ENABLED = false
+    _build/client.js: _build/src/client-joo/ketrew-client-joo.run
+        js_of_ocaml +weak.js +toplevel.js  $< -o $@
+    .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo))
+
+section # Big Lwt/Unix library; server, EDSL, Text-UI
+    OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
+    OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
+    DESCRIPTION = $(DESCRIPTION) -- Lwt/Unix library
+    _build/src/lib/server.ml: _build/client.js
+    .DEFAULT: $(OCamlPackedLibraryOfDir ketrew, src/lib)
+
+section # 3-Lines "main" application ./ketrew
+    OCAML_LOCAL_LIBS += src/pure/ketrew_pure src/lib/ketrew
+    OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
+    .DEFAULT: $(OCamlProgramOfDirectory ketrew, $(dir src/app))
+
+section # Test “library,” it is a plugin
+    OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
+    OCAML_LOCAL_LIBS += src/pure/ketrew_pure src/lib/ketrew
+    .PHONY: test-plugin
+    test-plugin: $(OCamlPackedLibraryOfDir dummy_plugin_test_lib, src/test/dummy-plugin/)
+
+section # Test that uses the above plugin
+    OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
+    OCAML_LOCAL_LIBS = src/pure/ketrew_pure src/lib/ketrew src/test/dummy-plugin/dummy_plugin_test_lib
+    .PHONY: test-plugin-user
+    test-plugin-user: $(OCamlProgramOfFile ketrew-dummy-plugin-user, $(file src/test/dummy_plugin_user.ml))
+
+section # Executable tests
+    OCAML_LOCAL_LIBS += src/pure/ketrew_pure src/lib/ketrew
+    OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
+    .PHONY: main-test integration-test
+    main-test: $(OCamlProgramOfFile ketrew-test, $(file src/test/main.ml))
+    integration-test: $(OCamlProgramOfFile ketrew-integration-test, $(file src/test/integration.ml))
+
+DotMerlin(./src, $(LWT_UNIX_LIB_PACKAGES) $(JOO_PACKAGES))
+
+install: install-lib-ketrew_pure install-lib-ketrew install-app-ketrew
+uninstall: uninstall-lib-ketrew_pure uninstall-lib-ketrew uninstall-app-ketrew
+
+build-all: app-ketrew app-ketrew-client-joo main-test integration-test test-plugin test-plugin-user
+
+.PHONY: doc test-env bisect-report bisect-clean
+
+DOC_PACKAGES[] =  $(LWT_UNIX_LIB_PACKAGES) $(JOO_PACKAGES)
+
+doc:
+    ./tools/build-documentation.sh $(concat \,, $(LWT_UNIX_LIB_PACKAGES))
+
+test-env:
+    echo $(shell sh -c ". ./tools/test_environment.env   ; \
+             set_test_additional_findlib_plugin ; \
+             ssl_cert_key ; test_config_file $(concat \,, $(LWT_UNIX_LIB_PACKAGES)); test_environment")
+
+
+bisect-clean:
+    rm -rf _report_dir bisect*.out
+
+_report_dir:
+    mkdir _report_dir
+
+bisect-report: _report_dir
+    bisect-report -I _build -html _report_dir $(shell ls -t bisect*.out | head -1)
+    

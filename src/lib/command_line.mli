@@ -18,17 +18,28 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+(** Command line interface to the engine. *)
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+open Ketrew_pure.Internal_pervasives
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+open Unix_io
+
+val run_main :
+  ?argv:string array ->
+  ?override_configuration:Configuration.t ->
+  ?additional_commands: ((unit, string) Deferred_result.t Cmdliner.Term.t * Cmdliner.Term.info) list ->
+  unit ->
+  [ `Never_returns ]
+(** The “main” function for the application, it will [exit n] with [n = 0] if
+    succeed or [n > 0] if an error occurs.
+
+    - [argv]: one can provide an array of arguments to be used instead of
+    {!Sys.argv}.
+    - [override_configuration]: providing a custom configuration will prevent
+    Ketrew from looking up a configuration file.
+    - [additional_commands]: a list of {!Cmdliner} commands to add to the
+    interface.
+
+*)
+
+

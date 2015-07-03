@@ -13,3 +13,7 @@ gen/
 /ketrew-workflow-examples-test
 /ketrew_test
 /_oasis
+/.omakedb
+/.omakedb.lock
+/OMakeroot.omc
+/tools/OMakeLibrary.omc

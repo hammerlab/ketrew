@@ -18,17 +18,47 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+(** Implementation of the {!LONG_RUNNING} API with the LSF batch processing
+    scheduler.
+*)
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+(**
+    “Long-running” plugin based on the
+    {{:http://en.wikipedia.org/wiki/Platform_LSF}LSF} batch scheduler.
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+    Shell commands are put in a {!Ketrew_pure.Monitored_script.t}, and
+    started with ["bsub [OPTIONS] < <script>"] (we gather the job-id while
+    submitting).
+
+    The {!update} function uses the log-file of the monitored-script, and the
+    command ["bjobs [OPTIONS] <job-ID>"].
+
+    The {!kill} function kills the job with ["bkill <job-ID>"].
+
+*)
+
+
+include Long_running.LONG_RUNNING
+(** The “standard” plugin API. *)
+
+val create :
+  ?host:Ketrew_pure.Host.t ->
+  ?queue:string ->
+  ?name:string ->
+  ?wall_limit:string ->
+  ?processors:[ `Min of int | `Min_max of int * int ] ->
+  ?project:string ->
+  Ketrew_pure.Program.t ->
+  [> `Long_running of string  * string ]
+  (** Create a “long-running” {!Ketrew_pure.Target.build_process} to run a 
+    {!Ketrew_pure.Program.t} on a given LSF-enabled host (run parameters
+    already serialized): {ul
+      {li [?queue] is the name of the LSF queue requested (["-q"] option). }
+      {li [?name] is the job name (["-J"] option). }
+      {li [?wall_limit] is the job's Wall-time timeout (["-W"] option). }
+      {li [?processors] is the “processors” request (["-n"] option). }
+      {li [?project] is the job assigned “project” (["-P"] option). }
+    }
+
+*)
+

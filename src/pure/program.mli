@@ -18,17 +18,26 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+(** The “things” to run on a given host. *)
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+open Internal_pervasives
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+
+type t = [
+  | `And of t list
+  | `Exec of string list
+  | `Shell_command of string
+] [@@deriving yojson]
+(** A program. *)
+
+val to_shell_commands: t -> string list
+(** Convert a program to a list of shell commands. *)
+
+val to_single_shell_command: t -> string
+(** Convert a program to a shell command. *)
+
+val log: t -> Log.t
+(** Create a {!Log.t} document to display a program. *)
+
+val to_string_hum: t -> string
+(** Get a display-friendly string of a program. *)

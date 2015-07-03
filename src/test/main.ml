@@ -18,8 +18,8 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-open Ketrew_pervasives
-open Ketrew_unix_io
+open Ketrew_pure.Internal_pervasives
+open Ketrew.Unix_io
 
 module Test = struct
   exception Tests_failed
@@ -58,11 +58,11 @@ module Test = struct
   module Target = struct
     let check_history t ~matches fmt =
       Printf.ksprintf (fun msg ->
-          let state = Ketrew_target.(state t) in
+          let state = Ketrew_pure.Target.(state t) in
           let b = state |> matches in
           if not b && over_verbose then
             Log.(s "Test: " % s msg % s ": unexpected history: "
-                 % n % indent (Ketrew_target.State.log state) @ warning);
+                 % n % indent (Ketrew_pure.Target.State.log state) @ warning);
           checkf b "%s" msg
         ) fmt
   end
@@ -74,15 +74,15 @@ let test_0 () =
     Test.new_db_file ()
     >>= fun db_file ->
     let configuration = 
-      Ketrew_configuration.engine ~database_parameters:db_file () in
-    Ketrew_engine.with_engine ~configuration (fun ~engine ->
-        Ketrew_engine.Run_automaton.step engine
+      Ketrew.Configuration.engine ~database_parameters:db_file () in
+    Ketrew.Engine.with_engine ~configuration (fun ~engine ->
+        Ketrew.Engine.Run_automaton.step engine
         >>= fun v ->
         Test.checkf (not v) "1st step, nothing to do";
         let test_steps ~checks msg =
           List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
             prev >>= fun () ->
-            Ketrew_engine.Run_automaton.step engine
+            Ketrew.Engine.Run_automaton.step engine
             >>= fun v ->
             let rec do_checks = 
               function
@@ -91,7 +91,7 @@ let test_0 () =
                 Test.checkf (ret = v) "step %d of %s step-returned: %b" idx msg v;
                 return ()
               | `Target_is (id, matches) ->
-                Ketrew_engine.get_target engine id
+                Ketrew.Engine.get_target engine id
                 >>= fun re_re_target_01 ->
                 Test.Target.check_history re_re_target_01 ~matches
                   "step %d of %s target-matching %s" idx msg id;
@@ -104,11 +104,11 @@ let test_0 () =
             do_checks check_step
           end 
         in
-        let target_01 = Ketrew_edsl.target "01" in
+        let target_01 = Ketrew.EDSL.target "01" in
         target_01#activate;
-        Ketrew_engine.add_targets engine [target_01#render]
+        Ketrew.Engine.add_targets engine [target_01#render]
         >>= fun () ->
-        let open Ketrew_target.State.Is in
+        let open Ketrew_pure.Target.State.Is in
         test_steps "almost empty target" ~checks:[
           `Step_returns true;
           `And [
@@ -225,8 +225,8 @@ let tree_to_dot ?(style=`Action_boxes) t =
 (* ^ String.concat ~sep:" --- " (List.map ~f:tree_to_string trees) ^ "}" *)
 
 let make_automaton_graph () =
-  let module T = Ketrew_target in
-  let state_name t = {name = Ketrew_target.(State.name (state t)) } in
+  let module T = Ketrew_pure.Target in
+  let state_name t = {name = T.(State.name (state t)) } in
   let rec loop ~depth ?(stop_afterwards=false) target =
     (* Log.(s "status: " % Ketrew_target.(State.log ~depth:1 (state target)) @ normal); *)
     let node action l : tree =
@@ -258,7 +258,7 @@ let make_automaton_graph () =
           response,
           protect_rec_call "changed-state" (fun () ->
               loop ~depth:(depth + 1) t))) in
-    match Ketrew_target.Automaton.transition target with
+    match T.Automaton.transition target with
     | `Kill (b, mkt) ->
       node_map "kill"
         ["OK", mkt (`Ok b);
@@ -307,7 +307,7 @@ let make_automaton_graph () =
        ~done_when:`Never |> activate_and_render);
     (Ketrew.EDSL.target "04" ~done_when:(`Satisfied) |> activate_and_render);
     (Ketrew.EDSL.target "04" |> activate_and_render
-     |> Ketrew_target.kill ?log:None |> Option.value_exn ~msg:"not killable?");
+     |> Ketrew_pure.Target.kill ?log:None |> Option.value_exn ~msg:"not killable?");
     (Ketrew.EDSL.target "TOKILL" ~make:(`Long_running ("", ""))
      |> activate_and_render);
   ] in

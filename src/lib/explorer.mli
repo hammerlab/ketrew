@@ -18,17 +18,24 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+open Ketrew_pure.Internal_pervasives
+open Unix_io
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+(** The “Target Explorer™“ *)
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+type t
+
+val create : client:Client.t -> unit -> t
+
+val explore : t ->
+  (unit, [> `Client of Client.Error.t 
+         | `Database of Trakeva.Error.t
+         | `Database_unavailable of string
+         | `Failure of string
+         | `IO of [> `Read_file_exn of string * exn
+                  | `Write_file_exn of string * exn ]
+         | `Missing_data of string
+         | `System of [> `File_info of string ] * [> `Exn of exn ]
+         | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+(** [explore ~client exploration_states] runs a read-eval loop to explore and
+    interact with targets.*)

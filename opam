@@ -1,14 +1,9 @@
 opam-version: "1"
 maintainer: "seb@mondet.org"
-ocaml-version: [ >= "4.01.0" ]
+ocaml-version: [ >= "4.02.0" ]
 build: [
-  [make "_oasis"]
-  ["oasis" "setup" ]
-  ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
-  ["ocaml" "tools/please.ml" "generate" "metadata"]
-  [make "_build/client.js"]
-  ["ocaml" "setup.ml" "-build" ]
-  ["ocaml" "setup.ml" "-install" ]
+  ["omake"]
+  ["omake" "install" "BINDIR=%{bin}%"]
 ]
 remove: [
   ["ocamlfind" "remove" "ketrew"]
@@ -16,10 +11,10 @@ remove: [
   ["rm" "-f" "%{bin}%/ketrew"]
 ]
 depends: [
-  "oasis" "ocamlfind"
+  "omake" "ocamlfind"
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
-  "ppx_deriving" "ppx_deriving_yojson" {>= "2.2"} "ppx_include" "ppx_blob"
+  "ppx_deriving" "ppx_deriving_yojson" "ppx_include" "ppx_blob"
   "cohttp" "lwt" "ssl"
   "conduit"
   "js_of_ocaml" "tyxml" "reactiveData"

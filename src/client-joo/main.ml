@@ -1,5 +1,6 @@
-open Ketrew_pervasives
-    
+open Ketrew_pure
+open Internal_pervasives
+
 let error f =
   Printf.ksprintf (fun s -> Firebug.console##error (Js.string s); failwith s) f
 let debug f =
@@ -39,7 +40,7 @@ let do_test () =
       (Option.value_map Url.Current.port ~f:(fmt ":%d") ~default:"")
       token
       callback_name
-      (Ketrew_protocol.Up_message.serialize msg |> Url.urlencode)
+      (Protocol.Up_message.serialize msg |> Url.urlencode)
   in
   let jsonp_call up =
     Jsonp.call_custom_url (url_to_call up)
@@ -48,7 +49,7 @@ let do_test () =
        https://github.com/ocsigen/js_of_ocaml/commit/65fcc49cfe9d4df8fd193eb5330953923a001618 *)
     let got =  (Js.to_string (content##message)) |> Url.urldecode in
     debug "Got content %S" got;
-    return (Ketrew_protocol.Down_message.deserialize_exn got)
+    return (Protocol.Down_message.deserialize_exn got)
   in
   (* debug "url_to_call: %s Vs %s" (url_to_call "MSG" "CALLBACK") Url.Current.as_string; *)
   catch
@@ -72,7 +73,7 @@ let do_test () =
                     jsonp_call (`Get_targets [id])
                     >>= begin function
                     | `List_of_targets [one] ->
-                      box##innerHTML <- Js.string (Ketrew_target.name one);
+                      box##innerHTML <- Js.string (Target.name one);
                       return ()
                     | other -> error "wrong down message"
                     end

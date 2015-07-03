@@ -18,17 +18,45 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+(**
+Implementation of the HTTP server.
+*)
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+open Ketrew_pure.Internal_pervasives
+
+open Unix_io
+
+
+val start: configuration:Configuration.server ->
+  (unit,
+   [> `Database of Trakeva.Error.t
+   | `Dyn_plugin of [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of string
+   | `IO of [> `Read_file_exn of Unix_io.IO.path * exn ]
+   | `Server_status_error of string
+   | `Start_server_error of string
+   | `System of
+        [> `File_info of string | `List_directory of string | `Remove of string ] *
+        [> `Exn of exn ] ]) Deferred_result.t
+(** Start the server according to its configuration.  *)
+
+
+val status: configuration:Configuration.server ->
+  ([ `Not_responding of string
+   | `Running
+   | `Wrong_response of Cohttp.Response.t ],
+   [> `Failure of string | `Server_status_error of string ]) Deferred_result.t
+(** Ask for the status of the server running locally by calling
+    ["https://127.0.0.1:<port>/hello"]. *)
+
+
+
+val stop: configuration:Configuration.server ->
+  ([ `Done | `Timeout ],
+   [> `IO of [> `Exn of exn | `File_exists of string | `Wrong_path of string ]
+   | `Stop_server_error of string
+   | `System of [> `File_info of string ] * [> `Exn of exn ] ]) Deferred_result.t
+(** Stop the server by calling the commad ["die"] on the configured
+    command-pipe, stopping will fail with [`Stop_server_error _] if
+    that path is not configured. *)
