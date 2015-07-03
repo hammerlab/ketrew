@@ -81,7 +81,7 @@ DotMerlin(./src, $(LWT_UNIX_LIB_PACKAGES) $(JOO_PACKAGES))
 install: install-lib-ketrew_pure install-lib-ketrew install-app-ketrew
 uninstall: uninstall-lib-ketrew_pure uninstall-lib-ketrew uninstall-app-ketrew
 
-build-all: app-ketrew app-ketrew-client-joo main-test integration-test test-plugin test-plugin-user
+build-all: lib-ketrew_pure lib-ketrew app-ketrew app-ketrew-client-joo main-test integration-test test-plugin test-plugin-user
 
 .PHONY: doc test-env bisect-report bisect-clean
 

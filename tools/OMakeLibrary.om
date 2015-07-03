@@ -2,7 +2,7 @@
 .PHONY: clean distclean
 
 NATIVE_ENABLED = $(OCAMLOPT_EXISTS)
-BYTE_ENABLED = $(OCAMLC_EXISTS)
+BYTE_ENABLED = true
 
 .SUBDIRS: .
     echo "Go!"
@@ -52,7 +52,7 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
             ocamlopt -pack -o $(libname).cmx $(OCamlLinkSort $(LIB_CMXS))
         $(libname).cmxs: $(libname).cmx
             ocamlopt -shared -o $@ $(libname).cmx
-        $(targetname): $(OCamlLibrary $(libname), $(libname)) $(libname).cmxs
+        $(targetname): $(OCamlLibrary $(libname), $(libname)) $(libname).cmxs $(libname).cma
         META:  :value: $(VERSION) :value: $(DESCRIPTION) :value: $(OCAMLPACKS) :value: $(OCAML_LOCAL_LIBS)
             echo "description = \"$(DESCRIPTION)\"" > $@
             echo "version = \"$(VERSION)\"" >> $@
