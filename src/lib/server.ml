@@ -347,9 +347,9 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | "/apijsonp" ->
     (* api_service ~server_state ~body req *)
     let token =
-      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "token" in
+      Uri.get_query_param (Cohttp.Request.uri req) "token" in
     let body = 
-      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "message" in
+      Uri.get_query_param (Cohttp.Request.uri req) "message" in
     begin match body with
     | Some s -> return s
     | None -> wrong_request "missing jsonp-message" ""
@@ -360,7 +360,7 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
     answer_message ~server_state ?token up_msg
     >>= fun down_msg ->
     let callback =
-      Uri.get_query_param (Cohttp_lwt_unix.Server.Request.uri req) "callback" in
+      Uri.get_query_param (Cohttp.Request.uri req) "callback" in
     let page =
       fmt "window.%s({ \"message\" : %S })"
         Option.(value callback ~default:"missing_callback")
