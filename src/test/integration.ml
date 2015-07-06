@@ -25,33 +25,23 @@ Big Integration Test
 
 M*)
 
-(**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
-(*                                                                        *)
-(*  Licensed under the Apache License, Version 2.0 (the "License");       *)
-(*  you may not use this file except in compliance with the License.      *)
-(*  You may obtain a copy of the License at                               *)
-(*                                                                        *)
-(*      http://www.apache.org/licenses/LICENSE-2.0                        *)
-(*                                                                        *)
-(*  Unless required by applicable law or agreed to in writing, software   *)
-(*  distributed under the License is distributed on an "AS IS" BASIS,     *)
-(*  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or       *)
-(*  implied.  See the License for the specific language governing         *)
-(*  permissions and limitations under the License.                        *)
-(**************************************************************************)
-
 open Nonstd
+module String = Sosa.Native_string
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 let (//) = Filename.concat
 let failwithf fmt = ksprintf failwith fmt
 
-let shellf fmt =
-  ksprintf (fun s ->
-      match Sys.command s with
-      | 0 -> ()
-      | other -> failwithf "Shell command %S returned %d" s other
-    ) fmt
+let shellf ?(returns=Some 0) fmt =
+  Printf.(ksprintf (fun s ->
+      match Sys.command s, returns with
+      | n, Some m when n = m -> ()
+      | _, None -> ()
+      | other, Some m ->
+        failwith (sprintf "Command %S returned %d instead of %d" s other m)
+    ) fmt)
+
+let test_dir =
+  Sys.getenv "PWD" // "_integration_test"
 
 module Test_host = struct
 
@@ -62,6 +52,54 @@ module Test_host = struct
     let host = as_host () in
     daemonize ~using:`Python_daemon ~host program
 
+  let write_file path ~content =
+    let open Ketrew.EDSL in
+    let host = as_host () in
+    daemonize ~using:`Python_daemon ~host Program.(
+        shf "mkdir -p %s" Filename.(quote (dirname path))
+        && shf "echo %s > %s"
+          Filename.(quote content)
+          Filename.(quote path)
+      )
+
+  let tmp file = test_dir // file
+
+  let to_kill_file = test_dir // "targets-to-kill"
+
+  let test_target ?depends_on ?(and_then = []) ~name ~make should =
+    let open Ketrew.EDSL in
+    let result_file = tmp (name ^ "-result") in
+    let expectations_file = tmp (name ^ "-expectation") in
+    let on_success_activate =
+      target (sprintf "register-success-of-%s" name)
+        ~make:(write_file ~content:"OK" result_file)
+      :: and_then in
+    let on_failure_activate =
+      target (sprintf "register-failure-of-%s" name)
+        ~make:(write_file ~content:"KO" result_file)
+      :: and_then in
+    let t =
+      target name
+        ~tags:["to-kill"] ?depends_on ~make
+        ~on_success_activate ~on_failure_activate in
+    begin match should with
+    | `Should_succeed -> shellf "echo OK > %s" expectations_file
+    | `Should_fail -> shellf "echo KO > %s" expectations_file
+    | `Should_be_killed ->
+      shellf "echo KO > %s" expectations_file;
+      shellf "echo %s >> %s" t#id to_kill_file;
+    end;
+    t
+
+  let should_to_3rd_person_verb = function
+  | `Should_fail -> "fails"
+  | `Should_succeed -> "succeeds"
+
+  let check_test_targets () =
+    shellf "for exp in %s/*-expectation ; do echo $exp ; \
+            diff $exp ${exp%%-expectation}-result ; done"
+      test_dir
+
 end
 
 module Vagrant_box = struct
@@ -70,11 +108,14 @@ module Vagrant_box = struct
   About Torque:
   https://github.com/audy/vagrant-torque
   https://redditjs.com/r/bioinformatics/comments/29xz66/vagranttorque_run_a_single_machine_torque_cluster/
-The VM still has a misconfiguration: the machine cannot
+
+https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
+
   *)
   type initialization = [
     | `Precise64
     | `Audy_torque
+    | `Hadoop_spark_cluster
   ]
 
   type t = {
@@ -84,7 +125,7 @@ The VM still has a misconfiguration: the machine cannot
     initialization: initialization;
   }
 
-  let tmp_dir = Sys.getenv "HOME"  // "tmp/vagrant"
+  let tmp_dir = Test_host.tmp "vagrant-boxes"
 
   let create initialization hostname =
     let dir = tmp_dir // hostname in
@@ -110,16 +151,30 @@ The VM still has a misconfiguration: the machine cannot
     match t.initialization with
     | `Precise64 -> "precise64"
     | `Audy_torque -> "master"
+    | `Hadoop_spark_cluster -> "TODO"
 
   let internal_username _ = "vagrant"
 
   let namify t sub =
     sprintf "%s: %s" t.hostname sub
 
-  let prepare ?on_success_activate t =
+  let prepare ?(force_hostname=true)
+      ?on_success_activate ?on_failure_activate t =
     let open Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
+      let from_git url =
+        let open Program in
+        [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
+              mkdir -p %s && cd %s && \
+              git clone %s.git && \
+              mv %s %s ; fi"
+           (Filename.quote t.dir)
+           (Filename.quote tmp_dir) (Filename.quote tmp_dir)
+           url
+           (Filename.basename url) (Filename.quote t.dir);
+        ]
+      in
       file_target ~name:(namify t "init-vagrant")
         (t.dir // "Vagrantfile")
         ~host
@@ -131,18 +186,28 @@ The VM still has a misconfiguration: the machine cannot
                   exec ["vagrant"; "init"; "hashicorp/precise64"];
                 ]
               | `Audy_torque ->
+                from_git "https://github.com/audy/vagrant-torque"
+                  (*
                 [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
-                      mkdir -p %s && cd %s && \
-                      git clone git@github.com:audy/vagrant-torque && \
-                      mv vagrant-torque %s ; fi"
+  mkdir -p %s && cd %s && \
+  git clone git@github.com:audy/vagrant-torque && \
+                           mv vagrant-torque %s ; fi"
                    (Filename.quote t.dir)
                    (Filename.quote tmp_dir) (Filename.quote tmp_dir)
                    (Filename.quote t.dir);
-                ]
+                ] *)
+              | `Hadoop_spark_cluster -> 
+                (*
+                sh "vagrant box add \
+                 centos65 \
+                 https://github.com/2creatives/vagrant-centos/releases/download/v6.5.1/centos65-x86_64-20131205.box"
+                :: *)
+                from_git "https://github.com/smondet/vagrant-hadoop-2.4.1-spark-1.0.1"
             )
           ))
     in
     let running =
+      (* re-running `vagrant up` on a running machine does not fail. *)
       target (namify t "vagrant-up")
         ~depends_on:[init]
         ~make:(Test_host.do_on Program.(
@@ -152,31 +217,47 @@ The VM still has a misconfiguration: the machine cannot
       target (* not a `file_target`, because we want this file regenerated 
                 every time. We set the `product` but not the “condition”. *)
         (namify t "vagrant-ssh-config")
-        ~depends_on:[running] ?on_success_activate
+        ~depends_on:[running] ?on_success_activate ?on_failure_activate
         ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
         ~make:(Test_host.do_on Program.(
             in_dir t
-            && shf "vagrant ssh-config --host %s > %s" t.hostname t.ssh_config))
+            && shf "vagrant ssh-config %s > %s"
+              (match force_hostname with
+              | false  -> ""
+              | true  -> sprintf "--host %s" t.hostname)
+              t.ssh_config))
     in
     make_ssh_config
-    
+
   let destroy t =
     let open Ketrew.EDSL in
-    let kill =
-      target (namify t "kill-vagrant")
-        ~make:(Test_host.do_on Program.(
-            in_dir t && exec ["vagrant"; "destroy"; "-f"]
-          ))
-    in
     let rm_temp =
       target (namify t "rm-temp")
-        ~depends_on:[kill]
         ~make:(Test_host.do_on Program.(exec ["rm"; "-fr"; t.dir]))
     in
-    rm_temp
+    let signal_failure =
+      target (namify t "rm-temp")
+        ~make:(Test_host.(
+            write_file (tmp
+                        @@ "results" // sprintf "%s-destroy-failure" t.hostname)
+              ~content:t.ssh_config
+          ))
+    in
+    target (namify t "kill-vagrant")
+      ~make:(Test_host.do_on Program.(
+          in_dir t && exec ["vagrant"; "destroy"; "-f"]
+        ))
+      ~on_success_activate:[rm_temp]
+      ~on_failure_activate:[rm_temp; signal_failure]
 
   let ssh t =
     shellf "cd %s && vagrant ssh" t.dir
+
+  let is_running t =
+    try
+      shellf ~returns:(Some 0) "cd %s && vagrant status | grep running" t.dir;
+      true
+    with _ -> false
 
   let exec_is_installed t ~exec =
     let host = as_host t in
@@ -195,13 +276,13 @@ The VM still has a misconfiguration: the machine cannot
 
   let with_installed t ~packages =
     let open Ketrew.EDSL in
-    let name = sprintf "apt-getting-%s" (String.concat "-" packages) in
+    let name = sprintf "apt-getting-%s" (String.concat ~sep:"-" packages) in
     target name
       ~tags:["integration"; "apt-get"]
       ~make:(do_on t Program.(
           sh "echo GO"
           && sh "sudo apt-get update"
-          && shf "sudo apt-get install -y %s" (String.concat " " packages)
+          && shf "sudo apt-get install -y %s" (String.concat ~sep:" " packages)
         ))
 
   let file t ~path =
@@ -210,13 +291,141 @@ The VM still has a misconfiguration: the machine cannot
 
 end
 
+module Vagrant_hadoop_cluster = struct
+
+  type t = {
+    box: Vagrant_box.t;
+  }
+  let create () =
+    let box = Vagrant_box.create `Hadoop_spark_cluster "HadoopSpark" in
+    {box}
+  let prepare {box} =
+    Vagrant_box.prepare ~force_hostname:false box
+  let destroy {box} =
+    Vagrant_box.destroy box
+  let ssh {box} node =
+    shellf "cd %s && vagrant ssh %s" box.Vagrant_box.dir node
+  let is_running {box} = Vagrant_box.is_running box
+
+  let host {box} name = 
+    let open Ketrew.EDSL in
+    Host.ssh ~add_ssh_options:["-F"; box.Vagrant_box.ssh_config]
+      ~playground:"/tmp/KT/" name
+
+  let finish_setup t =
+    let open Ketrew.EDSL in
+    (* From https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1/blob/master/README.md *)
+    let namenode_setup = [
+      "$HADOOP_PREFIX/bin/hdfs namenode -format myhadoop -force -nonInteractive";
+      (* We add `-force -nonInteractive` because the commad asks `Y/N`
+         questions by default *)
+    ] in
+    let hdfs_setup = [
+      "$HADOOP_PREFIX/sbin/hadoop-daemon.sh \
+       --config $HADOOP_CONF_DIR --script hdfs start namenode";
+      "$HADOOP_PREFIX/sbin/hadoop-daemons.sh --config $HADOOP_CONF_DIR  \
+       --script hdfs start datanode";
+    ] in
+    let yarn_setup = [
+      "$HADOOP_YARN_HOME/sbin/yarn-daemon.sh --config $HADOOP_CONF_DIR start resourcemanager";
+      "$HADOOP_YARN_HOME/sbin/yarn-daemons.sh --config $HADOOP_CONF_DIR start nodemanager";
+      "$HADOOP_YARN_HOME/sbin/yarn-daemon.sh start proxyserver --config $HADOOP_CONF_DIR";
+      "$HADOOP_PREFIX/sbin/mr-jobhistory-daemon.sh start historyserver --config $HADOOP_CONF_DIR";
+    ] in
+    let make = daemonize ~using:`Nohup_setsid in
+    let on_node1 =
+      let host = host t "node1" in
+      target "Namenode + HDFS Setup"
+        ~make:Program.(
+            make ~host
+              (chain (List.map ~f:(shf "sudo %s") (namenode_setup @ hdfs_setup)))
+          )
+    in
+    let on_node2 =
+      let host = host t "node2" in
+      target "Yarn Setup"
+        ~make:Program.(
+            make ~host
+              (chain (List.map ~f:(shf "sudo %s") yarn_setup))
+          )
+        ~depends_on:[on_node1]
+    in
+    let test_yarn_setup =
+      let host = host t "node2" in
+      let witness = "/home/vagrant/pi-2-100" in
+      file_target ~name:"Test Yarn Setup"
+        witness ~host
+        ~make:Program.(
+            make ~host (
+              shf "yarn jar \
+                  /usr/local/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-2.4.1.jar \
+                   pi 2 100 > %s" witness
+            )
+          )
+        ~depends_on:[on_node2]
+    in
+    test_yarn_setup
+
+  let yarn_du_minus_sh ({box} as t) should =
+    let open Ketrew.EDSL in
+    let host = host t "node2" in
+    let application_name =
+      sprintf "yarn-du-sh-%s"
+        (Test_host.should_to_3rd_person_verb should) in
+    Test_host.test_target ~name:application_name should
+      ~make:(yarn_distributed_shell 
+               ~host ~container_memory:(`MB 120)
+               ~timeout:(`Seconds 1800)
+               ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
+               ~application_name Program.(
+                   sh "hostname"
+                   && (match should with
+                       | `Should_succeed -> sh "du -sh /usr/local/"
+                       | `Should_fail -> sh "du -sh /doesnotexist/")
+                 ))
+
+  let yarn_job_to_kill t =
+    let open Ketrew.EDSL in
+    let host = host t "node2" in
+    let application_name = sprintf "yarn-job-to-kill" in
+    Test_host.test_target ~name:application_name `Should_be_killed
+      ~make:(yarn_distributed_shell 
+               ~host ~container_memory:(`Raw "110")
+               ~timeout:(`Raw "1800000")
+               ~distributed_shell_shell_jar:"/usr/local/hadoop-2.4.1/share/hadoop/yarn/hadoop-yarn-applications-distributedshell-2.4.1.jar"
+               ~application_name Program.(
+                   sh "hostname" && sh "sleep 400"
+                 ))
+
+
+  let run_all_tests t =
+    let open Ketrew.EDSL in
+    target "Hadoop-tests coordinator"
+      ~depends_on:[
+        target "HadoopSpark-cluster post-install setup"
+          ~depends_on:[finish_setup t]
+          ~on_success_activate:[
+            yarn_du_minus_sh t `Should_succeed;
+            yarn_du_minus_sh t `Should_fail;
+          ];
+      ]
+
+  let test_to_kill t =
+    let open Ketrew.EDSL in
+    target "Hadoop-to-kill-tests common ancestor"
+      ~depends_on:[
+        yarn_job_to_kill t;
+      ]
+end
+
+module Lsf = struct
 (*M
 
 See [openlava.org](http://www.openlava.org/home.html).
 
-M*)
-let config_files ~hostname ~usernames () = [
-  "lsb.hosts", `Inline "
+  M*)
+  let config_files ~hostname ~usernames () = [
+    "lsb.hosts", `Inline "
 Begin Host
 HOST_NAME     MXJ JL/U   r1m    pg    ls     tmp  DISPATCH_WINDOW  # Keywords
 #host0        1    1   3.5/4.5  15/   12/15  0      ()		   # Example
@@ -225,7 +434,7 @@ HOST_NAME     MXJ JL/U   r1m    pg    ls     tmp  DISPATCH_WINDOW  # Keywords
 default       2   ()     ()    ()    ()     ()     ()		   # Example
 End Host
     ";
-  "lsb.params", `Inline "
+    "lsb.params", `Inline "
 Begin Parameters
 DEFAULT_QUEUE  = normal   #default job queue name
 MBD_SLEEP_TIME = 10       #mbatchd scheduling interval (60 secs is default)
@@ -234,7 +443,7 @@ JOB_ACCEPT_INTERVAL = 1   #interval for any host to accept a job
                           # (default is 1 (one-fold of MBD_SLEEP_TIME))
 End Parameters
 ";
-  "lsb.queues", `Inline "
+    "lsb.queues", `Inline "
 Begin Queue
 QUEUE_NAME   = normal
 PRIORITY     = 30
@@ -243,7 +452,7 @@ DESCRIPTION  = For normal low priority jobs, running only if hosts are \
 lightly loaded.
 End Queue
 ";
-  "lsb.users", `Inline (sprintf "
+    "lsb.users", `Inline (sprintf "
 Begin UserGroup
 GROUP_NAME       GROUP_MEMBER              
 #develop         (jwang long david ming)  
@@ -257,9 +466,9 @@ USER_NAME	MAX_JOBS	JL/P
 %s
 End User
   " (List.map usernames (sprintf "%s 50 -")
-     |> String.concat "\n")
-);
-  sprintf "lsf.cluster.%s" hostname, `Inline (sprintf "
+       |> String.concat ~sep:"\n")
+                         );
+    sprintf "lsf.cluster.%s" hostname, `Inline (sprintf "
 Begin   ClusterAdmins
 Administrators = (root %s)
 End    ClusterAdmins
@@ -268,7 +477,7 @@ Begin   Host
 HOSTNAME          model          type  server  r1m  RESOURCES
 %s               !              !     1       -       -
 End     Host
-
+                                                  
 Begin ResourceMap
 RESOURCENAME  LOCATION
 # tmp2          [default]
@@ -276,11 +485,11 @@ RESOURCENAME  LOCATION
 # console       [default]
 End ResourceMap
   " 
-    (List.map usernames (sprintf "%s") |> String.concat " ")
+    (List.map usernames ~f:(sprintf "%s") |> String.concat ~sep:" ")
     hostname
 );
 
-  "lsf.shared", `Inline (sprintf "
+    "lsf.shared", `Inline (sprintf "
 Begin Cluster
 ClusterName			# Keyword
 %s
@@ -300,7 +509,7 @@ RESOURCENAME  TYPE    INTERVAL INCREASING  DESCRIPTION 	      # Keywords
    cs         Boolean ()       ()          (Compute server)
 End Resource
 " hostname);
-  "lsf.task", `Inline "
+    "lsf.task", `Inline "
 Begin RemoteTasks
 ar
 as
@@ -346,94 +555,122 @@ zcat/cpu:mem
 zmore/cpu
 End RemoteTasks
   ";
-  "lsf.conf", `File "config/lsf.conf";
+    "lsf.conf", `File "config/lsf.conf";
   (*
     hack found here:
 https://groups.google.com/forum/#!topic/openlava-users/ezYDlyeb1wk
   *)
-  "hosts", `Inline (sprintf "
+    "hosts", `Inline (sprintf "
 127.0.0.1 %s
 127.0.1.1 %s
 " hostname hostname);
-]
+  ]
 
-let install_lsf ~box =
-  let packages = ["build-essential"; "libncurses-dev"; "tk8.4-dev"] in
-  let open Ketrew.EDSL in
-  target "install-lsf"
-    ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"bsub")
-    ~tags:["intergration"]
-    ~depends_on:[Vagrant_box.with_installed ~packages box]
-    ~make:(
-      Vagrant_box.do_on box Program.(
-          exec ["wget"; "http://www.openlava.org/tarball/openlava-2.2.tar.gz"]
-          && exec ["sudo"; "sh"; "-c"; "cd /usr/include && rm -fr tcl && ln -s tcl8.4 tcl"]
-          && exec ["rm"; "-fr"; "openlava-2.2"]
-          && exec ["tar"; "xvfz"; "openlava-2.2.tar.gz"]
-          && exec ["cd"; "openlava-2.2"]
-          && sh "./configure --prefix /usr"
-          && exec ["make"]
-          && exec ["sudo"; "make"; "install"]
+  let install_lsf ~box =
+    let packages = ["build-essential"; "libncurses-dev"; "tk8.4-dev"] in
+    let open Ketrew.EDSL in
+    target "install-lsf"
+      ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"bsub")
+      ~tags:["intergration"]
+      ~depends_on:[Vagrant_box.with_installed ~packages box]
+      ~make:(
+        Vagrant_box.do_on box Program.(
+            exec ["wget"; "http://www.openlava.org/tarball/openlava-2.2.tar.gz"]
+            && exec ["sudo"; "sh"; "-c"; "cd /usr/include && rm -fr tcl && ln -s tcl8.4 tcl"]
+            && exec ["rm"; "-fr"; "openlava-2.2"]
+            && exec ["tar"; "xvfz"; "openlava-2.2.tar.gz"]
+            && exec ["cd"; "openlava-2.2"]
+            && sh "./configure --prefix /usr"
+            && exec ["make"]
+            && exec ["sudo"; "make"; "install"]
+          ))
+
+  let ensure_lsf_is_running ~box =
+    let open Ketrew.EDSL in
+    let installed = install_lsf ~box in
+    let hostname = Vagrant_box.internal_hostname box in
+    let usernames = [Vagrant_box.internal_username box] in
+    let config_files = config_files ~hostname ~usernames () in
+    let config_directory = "/usr/etc" in
+    let conditions = 
+      Condition.chain_and (List.map config_files (fun (name, _) ->
+          let file = Vagrant_box.file box (config_directory // name) in
+          file#exists))
+    in
+    let open Ketrew.EDSL in
+    target "start-lsf"
+      ~done_when:Condition.(
+          conditions
+          && program ~returns:0
+            ~host:(Vagrant_box.as_host box)
+            Program.(exec ["timeout"; "1"; "sh"; "-c"; "bjobs; exit 0"]))
+      ~tags:["integration"]
+      ~depends_on:[ installed; ]
+      ~make:( Vagrant_box.do_on box Program.(
+          chain (List.map config_files ~f:(fun (name, content) ->
+              match content with
+              | `Inline c ->
+                exec ["sudo"; "sh"; "-c";
+                      sprintf "echo %s > %s" Filename.(quote c)
+                        (config_directory // name)]
+              | `File f -> exec ["sudo"; "cp"; "openlava-2.2" // f; config_directory // name]
+            ))
+          && exec ["sudo"; "/usr/etc/openlava"; "start"]
         ))
 
-let ensure_lsf_is_running ~box =
-  let open Ketrew.EDSL in
-  let installed = install_lsf ~box in
-  let hostname = Vagrant_box.internal_hostname box in
-  let usernames = [Vagrant_box.internal_username box] in
-  let config_files = config_files ~hostname ~usernames () in
-  let config_directory = "/usr/etc" in
-  let conditions = 
-    Condition.chain_and (List.map config_files (fun (name, _) ->
-        let file = Vagrant_box.file box (config_directory // name) in
-        file#exists))
-  in
-  let open Ketrew.EDSL in
-  target "start-lsf"
-    ~done_when:Condition.(
-        conditions
-        && program ~returns:0
-          ~host:(Vagrant_box.as_host box)
-          Program.(exec ["timeout"; "1"; "sh"; "-c"; "bjobs; exit 0"]))
-    ~tags:["integration"]
-    ~depends_on:[ installed; ]
-    ~make:( Vagrant_box.do_on box Program.(
-        chain (List.map config_files ~f:(fun (name, content) ->
-            match content with
-            | `Inline c ->
-              exec ["sudo"; "sh"; "-c";
-                    sprintf "echo %s > %s" Filename.(quote c)
-                      (config_directory // name)]
-            | `File f -> exec ["sudo"; "cp"; "openlava-2.2" // f; config_directory // name]
-          ))
-        && exec ["sudo"; "/usr/etc/openlava"; "start"]
-      ))
+  let lsf_job ?on_success_activate ?on_failure_activate ~box () =
+    let open Ketrew.EDSL in
+    let output = "/tmp/du-sh-dollar-home" in
+    let host = Vagrant_box.as_host box in
+    let name = "lsf-1" in
+    file_target ~host ~name output ?on_success_activate ?on_failure_activate
+      ~depends_on:[ ensure_lsf_is_running ~box ]
+      ~tags:["integration"; "lsf"]
+      ~make:(
+        lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
+                                 && exec ["cat"; output])
+          ~queue:"normal"
+      )
 
-let lsf_job ?on_success_activate ?on_failure_activate ~box () =
-  let open Ketrew.EDSL in
-  let output = "/tmp/du-sh-dollar-home" in
-  let host = Vagrant_box.as_host box in
-  let name = "lsf-1" in
-  file_target ~host ~name output ?on_success_activate ?on_failure_activate
-    ~depends_on:[ ensure_lsf_is_running ~box ]
-    ~tags:["integration"; "lsf"]
-    ~make:(
-      lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
-                               && exec ["cat"; output])
-        ~queue:"normal"
-    )
+  let test_lsf_job box should =
+    let open Ketrew.EDSL in
+    let host = Vagrant_box.as_host box in
+    let name =
+      sprintf "lsf-test-that-%s"
+        (Test_host.should_to_3rd_person_verb should) in
+    Test_host.test_target ~name should
+      ~depends_on:[
+        lsf_job ~box ();
+        ensure_lsf_is_running ~box;
+      ]
+      ~make:(
+        lsf ~host ~name ~queue:"normal"
+          Program.(
+            match should with
+            | `Should_fail -> sh "ls /somewierd/path/"
+            | `Should_succeed -> sh "du -sh $HOME"
+          )
+        )
+
+  let run_all_tests box =
+    Ketrew.EDSL.target "LSF tests common ancestor"
+      ~depends_on:[
+        test_lsf_job box `Should_fail;
+        test_lsf_job box `Should_succeed;
+      ]
+end
 
 (* Old stuff:
-let setup_pbs ~box () =
-  let packages =
+   let setup_pbs ~box () =
+   let packages =
     ["torque-server"; "torque-scheduler"; "torque-client"; "torque-mom"] in
-  let open Ketrew.EDSL in
-  let setup = [
+   let open Ketrew.EDSL in
+   let setup = [
     sprintf "echo '%s' > /var/spool/torque/server_name"
       (Vagrant_box.internal_hostname box);
     "sed -i 's/127.0.1.1/127.0.0.1/' /etc/hosts";
-  ] in
-  target "install-pbs"
+   ] in
+   target "install-pbs"
     (* ~done_when:Condition.( Vagrant_box.exec_is_installed box ~exec:"qsub") *)
     ~tags:["intergration"]
     ~depends_on:[Vagrant_box.with_installed ~packages box]
@@ -478,7 +715,7 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
           shf "echo \"PBS-2 Starts:\n%s\""
             (List.map ~f:(fun s -> sprintf "%s: $%s\n" s s)
                ["PBS_O_HOST"; "PBS_SERVER"]
-            |> String.concat "")
+            |> String.concat ~sep:"")
           && sh "echo PBS-2 Starts >&2"
           && sh "sleep 10"
           && sh "echo PBS-2 Ends"
@@ -498,51 +735,66 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
         (* ~queue:"normal" *)
       )
 
+
 let test =
   let lsf_host = Vagrant_box.create `Precise64 "LsfTestHost" in
   let pbs_host = Vagrant_box.create `Audy_torque "PbsTestHost" in
+  let hadoop_host =
+    Vagrant_hadoop_cluster.create () in
   object  (self)
-    method prepare =
-      Ketrew.EDSL.target "Prepare VMs"
-        ~depends_on:[
-          Vagrant_box.prepare lsf_host;
-          Vagrant_box.prepare pbs_host;
-        ]
+    method prepare what =
+      match what with
+      | "ALL" ->
+        let prepare_hadoop = Vagrant_hadoop_cluster.prepare hadoop_host in
+        let prepare_pbs =
+          Vagrant_box.prepare pbs_host
+            ~on_success_activate:[prepare_hadoop]
+            ~on_failure_activate:[prepare_hadoop]
+        in
+        let prepare_lsf = 
+          Vagrant_box.prepare lsf_host
+            ~on_success_activate:[prepare_pbs]
+            ~on_failure_activate:[prepare_pbs]
+        in
+        Ketrew.EDSL.target "Trigger VM preparation" ~depends_on:[prepare_lsf]
+      | "LSF" -> Vagrant_box.prepare lsf_host
+      | "PBS" -> Vagrant_box.prepare pbs_host
+      | "Hadoop" -> Vagrant_hadoop_cluster.prepare hadoop_host
+      | other ->
+        failwithf "Don't know how to “prepare” %S" other
     method go =
       Ketrew.EDSL.target "Run Tests"
         ~depends_on:[
-          lsf_job ~box:lsf_host ();
+          Lsf.run_all_tests lsf_host;
           pbs_job ~box:pbs_host `Always_runs;
           pbs_job ~box:pbs_host `File_target;
+          Vagrant_hadoop_cluster.run_all_tests hadoop_host;        
         ]
-    method go_and clean =
-      Ketrew.EDSL.target "Run Tests"
+    method start_jobs_to_kill =
+      Ketrew.EDSL.target "Jobs to kill"
         ~depends_on:[
-          lsf_job ~box:lsf_host ();
-          pbs_job ~box:pbs_host `Always_runs;
-          pbs_job ~box:pbs_host `File_target;
+          Vagrant_hadoop_cluster.test_to_kill hadoop_host;        
         ]
-        ~on_success_activate:[clean]
-        ~on_failure_activate:[clean]
     method clean_up =
       Ketrew.EDSL.target "Destroy VMs"
         ~depends_on:[
           Vagrant_box.destroy lsf_host;
           Vagrant_box.destroy pbs_host;
+          Vagrant_hadoop_cluster.destroy hadoop_host;
         ]
-    method do_all =
-      let clean = self#clean_up in
-      let prepare = self#prepare in
-      Ketrew.EDSL.target "All Intergration Tests MiddleTarget (prep → * < {go,clean})"
-        ~depends_on:[prepare]
-        ~on_success_activate:[self#go_and clean]
-        ~on_failure_activate:[clean]
-
-    method box_names = ["LSF"; "PBS"]
-    method ssh = function
-    | "LSF" -> Vagrant_box.ssh lsf_host
-    | "PBS" -> Vagrant_box.ssh pbs_host
+    method box_names = ["LSF"; "PBS"; "Hadoop"]
+    method ssh spec =
+      match String.split spec ~on:(`Character ':') with
+      | "LSF" :: [] -> Vagrant_box.ssh lsf_host
+      | "PBS" :: [] -> Vagrant_box.ssh pbs_host
+      | "Hadoop" :: node :: [] -> Vagrant_hadoop_cluster.ssh hadoop_host node
+      | other -> failwithf "Unkown “Box”: %S" spec
+    method is_running = function
+    | "LSF" -> Vagrant_box.is_running lsf_host
+    | "PBS" -> Vagrant_box.is_running pbs_host
+    | "Hadoop" -> Vagrant_hadoop_cluster.is_running hadoop_host;
     | other -> failwithf "Unkown “Box”: %S" other
+
   end
 
 let () =
@@ -563,26 +815,56 @@ let () =
   in
   let prepare =
     sub_command_of_target ~name:"prepare" ~doc:"Setup the VM(s)"
-      (fun () -> test#prepare) in
+      (fun () -> test#prepare "ALL") in
+  let hadoop_prepare =
+    sub_command_of_target ~name:"hadoop-prepare" ~doc:"Setup the VM(s)"
+      (fun () -> test#prepare "Hadoop") in
   let go =
     sub_command_of_target ~name:"go" ~doc:"Do the test"
       (fun () -> test#go) in
+  let start_jobs_to_kill =
+    sub_command_of_target ~name:"start-jobs-to-kill"
+      ~doc:"Start jobs that should be killed"
+      (fun () -> test#start_jobs_to_kill) in
   let clean_up =
     sub_command_of_target ~name:"clean-up" ~doc:"Destroy the VM(s)"
       (fun () -> test#clean_up) in
-  let do_all =
-    sub_command_of_target ~name:"all" ~doc:"Do the whole test at once"
-      (fun () -> test#do_all) in
   let ssh =
     let doc =
       sprintf "SSH into a VM (%s)"
-        (String.concat ", " (List.map ~f:(sprintf "%S") test#box_names)) in
+        (String.concat ~sep:", " (List.map ~f:(sprintf "%S") test#box_names)) in
     sub_command ~info:Term.(info "ssh" ~version ~doc)
       ~term:Term.(
-        pure (fun name -> test#ssh name)
-        $ Arg.(required @@ pos 0 (some string) None
-               @@ info [] ~doc:"Name of the VM"))
+          pure (fun name -> test#ssh name)
+          $ Arg.(required @@ pos 0 (some string) None
+                 @@ info [] ~doc:"Name of the VM"))
   in
+  let is_running =
+    let doc =
+      sprintf "Check if a VM is running (%s)"
+        (String.concat ~sep:", " (List.map ~f:(sprintf "%S") test#box_names)) in
+    sub_command ~info:Term.(info "is-running" ~version ~doc)
+      ~term:Term.(
+          pure (fun name ->
+              if test#is_running name then exit 0 else exit 3)
+          $ Arg.(required @@ pos 0 (some string) None
+                 @@ info [] ~doc:"Name of the VM"))
+  in
+  let check_tests =
+    let doc = "Check that tests succeeded or failed appropriately" in
+    sub_command ~info:Term.(info "check-tests" ~version ~doc)
+      ~term:Term.(
+          pure (fun () ->
+              Test_host.check_test_targets ())
+          $ pure ()) in
+  let to_kill_list =
+    let doc = "Display list of IDs to kill externally" in
+    sub_command ~info:Term.(info "to-kill" ~version ~doc)
+      ~term:Term.(
+          pure (fun () ->
+              shellf "cat %s" Test_host.to_kill_file)
+          $ pure ()) in
+  (* $ Arg.(unit)) in *)
   let default_cmd =
     let doc = "Integration Test for Ketrew" in
     let man = [] in
@@ -591,10 +873,14 @@ let () =
       ~info:(Term.info "ketrew-integration-test" ~version ~doc ~man) in
   let cmds = [
     prepare;
+    hadoop_prepare;
     go;
+    start_jobs_to_kill;
     clean_up;
-    do_all;
     ssh;
+    is_running;
+    check_tests;
+    to_kill_list;
   ] in
   match Term.eval_choice  default_cmd cmds with
   | `Ok () -> ()

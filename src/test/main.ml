@@ -332,6 +332,115 @@ let make_automaton_graph () =
     Log.(s "Trrreeees: " % n % tree_to_log result_tree @ normal);
   ()
 
+let integration_meta_test options =
+  let say fmt =
+    Printf.(ksprintf (fun s ->
+        printf "=> %s\n%!"
+          (String.split s ~on:(`Character '\n') |> String.concat ~sep:"\n   ")
+      ) fmt) in
+  let phase fmt =
+    Printf.(ksprintf (fun s ->
+        let sep = String.make (String.length s) '#' in
+        printf "###%s###\n## %s ##\n###%s###\n%!" sep s sep
+      ) fmt)
+  in
+  let tmpdir = Sys.getenv "PWD" // "_integration_testing" in
+  let tmp fmt = Printf.ksprintf (fun s -> tmpdir // s) fmt in
+  let with_server = List.mem ~set:options "with-server" in
+  let verbose_commands = List.mem ~set:options "quiet-cmd" |> not in
+  let with_clean_up = List.mem ~set:options "no-clean-up" |> not in
+  (*
+  let write_file f ~content =
+    let o = open_out f in
+    output_string o content;
+    close_out o in
+     *)
+  let cmdf ?(returns=Some 0) fmt =
+    Printf.(ksprintf (fun s ->
+        if verbose_commands then printf " $ %s\n%!" s;
+        match Sys.command s, returns with
+        | n, Some m when n = m -> ()
+        | _, None -> ()
+        | other, Some m ->
+          failwith (sprintf "Command %S returned %d instead of %d" s other m)
+      ) fmt) in
+  let ketrew_configuration_prefix profile =
+    let config_file = Sys.getenv "PWD" // "_test_env" // "configuration.ml" in
+    Printf.sprintf "KETREW_CONFIGURATION=%s KETREW_PROFILE=%s"
+          Filename.(quote config_file) profile in
+  let ketrew ?(bin="./ketrew") profile fmt =
+    Printf.ksprintf (fun s ->
+        cmdf "%s %s %s" (ketrew_configuration_prefix profile) bin s
+      ) fmt in
+  phase "Preparing Integration Meta-Test";
+  cmdf "mkdir -p %s" tmpdir;
+
+  let server_out = tmp "server-out.txt" in
+  let server_output lines =
+    if with_server then (
+      say "Server output (%d lines)" lines;
+      cmdf "tail -n %d %s | sed 's/^/   /'" lines Filename.(quote server_out)
+    );
+  in
+  begin if with_server then (
+      phase "Starting Server";
+      ketrew "server" "start 2>&1 > %s &"
+        Filename.(quote server_out);
+      cmdf "sleep 3";
+    ) end;
+  server_output 10;
+
+  let wait_for_targets_to_complete () =
+    ketrew "client" "status --loop";
+    cmdf "sleep 2"; (* we “avoid” some kinds of race-conditions … *)
+    ketrew "client" "status --loop";
+  in
+  phase "Submit integration preparation";
+  ketrew ~bin:"./ketrew-integration-test" "client" "prepare";
+  wait_for_targets_to_complete ();
+
+  ketrew ~bin:"./ketrew-integration-test" "client" "is-running LSF";
+  ketrew ~bin:"./ketrew-integration-test" "client" "is-running PBS";
+  ketrew ~bin:"./ketrew-integration-test" "client" "is-running Hadoop";
+
+  phase "Submit integration tests";
+  ketrew ~bin:"./ketrew-integration-test" "client" "go";
+  wait_for_targets_to_complete ();
+
+  
+  phase "Start the targets-to-kill";
+  ketrew ~bin:"./ketrew-integration-test" "client" "start-jobs-to-kill";
+  (* We need to kill the targets-to-kill. *)
+  phase "Kill the targets-to-kill";
+  cmdf "sleep 300";
+  (* We hope it is enough for them to actually start; an observed
+     low-bound is 120 seconds (between application start and obtention of
+     an application ID from YARN!) *)
+  cmdf "for id in `./ketrew-integration-test to-kill` ; do \n\
+        echo \"Kill $i\"\n\
+        %s ./ketrew kill $id\n\
+        done" (ketrew_configuration_prefix "client");
+
+  wait_for_targets_to_complete ();
+
+  ketrew ~bin:"./ketrew-integration-test" "client" "check";
+
+  begin match with_clean_up with
+  | true  ->
+    phase "Submit integration clean-up";
+    ketrew ~bin:"./ketrew-integration-test" "client" "clean";
+    wait_for_targets_to_complete ();
+  | false ->
+    phase "NO integration clean-up";
+  end;
+
+  if with_server then begin
+    phase "Stopping server";
+    ketrew "server" "stop";
+    cmdf "sleep 3";
+  end;
+  cmdf "ps aux | grep ketrew";
+  ()
 
 let run_all_tests () =
   Log.(s "Starting ALL Tests" @ normal);
@@ -352,6 +461,7 @@ let () =
     else begin
       if List.mem ~set:argl "basic-test" then test_0 ();
       if List.mem ~set:argl "automaton-graph" then make_automaton_graph ();
+      if List.mem ~set:argl "integration" then integration_meta_test argl;
     end
   end;
   begin match !Test.failed_tests with

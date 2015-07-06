@@ -72,7 +72,8 @@ module Ssh = struct
       | "" :: actual_stderr :: return_value :: [] ->
         begin match Int.of_string (String.strip return_value) with
         | Some r -> return (out, actual_stderr, r)
-        | None -> fail_parsing "Return value not an integer"
+        | None ->
+          fail_parsing (fmt "Return value not an integer: %S" return_value)
         end
       | somehting_else -> fail_parsing "Cannot parse error log"
     in

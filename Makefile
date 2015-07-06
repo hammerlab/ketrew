@@ -1,5 +1,5 @@
 
-.PHONY: all clean build configure distclean doc apidoc gen test-env
+.PHONY: all clean build configure distclean doc apidoc gen test-env report bisect-clean bisect-report
 
 PLEASE=ocaml tools/please.ml
 
@@ -44,15 +44,15 @@ test-env:
 clean:
 	rm -fr _build $(OWN_BINARIES)
 
-distclean: clean clean_reports
+distclean: clean bisect-clean
 	ocaml setup.ml -distclean || echo OK ; \
 	    rm -fr setup.ml _tags gen src/*/META src/*/*.mldylib src/*/*.mllib _oasis
 
-clean_reports:
+bisect-clean:
 	rm -rf _report_dir bisect*.out
 
 _report_dir:
 	mkdir _report_dir
 
-report: _report_dir
-	bisect-report -I _build -html _report_dir $(shell ls -t bisect*.out | head -1)
+bisect-report: _report_dir
+	bisect-ppx-report -I _build -html _report_dir bisect*.out
