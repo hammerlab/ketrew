@@ -31,7 +31,6 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
     protected.packname = $(capitalize $(libname))
     protected.targetname = lib-$(libname)
     protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
-    echo $(local_deps)
     .PHONY: $(targetname)
     .SUBDIRS: _build/$(directory)
         OCAMLFLAGS += -for-pack $(packname)
