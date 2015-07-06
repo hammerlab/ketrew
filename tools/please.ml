@@ -41,7 +41,7 @@ let write_file n ~content =
   close_out o
 
 let version_string () =
-  let default = "1.0.0+master" in
+  let default = "1.1.0" in
   try
     read_cmd "git describe --tags --always --dirty"
     |> String.strip
