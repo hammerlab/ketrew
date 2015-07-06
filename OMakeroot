@@ -41,15 +41,21 @@ section # Javascript client code
     OCAMLDEPFLAGS += -syntax camlp4o
     OCAMLFLAGS += -syntax camlp4o
     NATIVE_ENABLED = false
-    _build/client.js: _build/src/client-joo/ketrew-client-joo.run
+    _build/client.js: $(file _build/src/client-joo/ketrew-client-joo.run)
         js_of_ocaml +weak.js +toplevel.js  $< -o $@
     .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo))
+    _build/quick-test.html: _build/client.js 
+        echo "<html><head><script>" > $@
+        cat _build/client.js >> $@
+        echo "</script></head><body><div id=\"ketrew-gui\"/></body> </html>" >> $@
+    .PHONY: gui-quick
+    gui-quick: _build/quick-test.html
 
 section # Big Lwt/Unix library; server, EDSL, Text-UI
     OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
     OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
     DESCRIPTION = $(DESCRIPTION) -- Lwt/Unix library
-    _build/src/lib/server.ml: _build/client.js
+    _build/src/lib/server.cmo _build/src/lib/server.cmx _build/src/lib/server.o: $(file _build/client.js)
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew, src/lib)
 
 section # 3-Lines "main" application ./ketrew
