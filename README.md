@@ -13,8 +13,8 @@ and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
 This is the development version of Ketrew, see also
-the documentation for the stable
-[`1.0.0`](http://seb.mondet.org/software/ketrew/doc.1.0.0/index.html) release.
+the documentation for the
+[`1.1.0`](http://seb.mondet.org/software/ketrew/doc.1.1.0/index.html) release.
 
 Build & Install
 ---------------

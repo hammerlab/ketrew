@@ -152,8 +152,8 @@ reconfiguring/compiling from scratch using the environment variable
 Running the instrumented versions of the code will generate `bisect*.out` files
 when run.
 
-Then, `make report` will take the  latest such file
-and generate an html file in `_report_dir/index.html`. `make clean_reports`
+Then, `make bisect-report` will take these files
+and generate an html file in `_report_dir/index.html`. `make bisect-clean`
 removes the reports and `_report_dir`.
 
 To remove the instrumentation just use `make distclean configure all` withou

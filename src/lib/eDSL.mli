@@ -188,11 +188,12 @@ val target :
     argument (the [string]) is its name, then all optional arguments mean:
 
   - [?active]: whether this target should be started by the engine or
-    wait to be ativated by a dependency machanism or alike (default:
-    [false]). Usual workflows should not set this value since
-    the function {!Ketrew.Client.submit} will activate the toplevel
-    target automatically.
-  - [?depends_on]: list of dependencies of the target.
+    wait to be ativated by another target (through [depends_on] or
+    [on_{success,failure}_activate]) (default:
+    [false], i.e., inactive). Usual workflows should not set this
+    value since the function {!Ketrew.Cliean.submit} will activate the
+    toplevel target automatically.
+  - [?depends_on]: list of the dependencies of the target.
   - [?make]: the build-process used to “build” the target; where the
     computation happens.
   - [?done_when]: the condition that the target ensures (checked
@@ -226,8 +227,8 @@ val file_target:
   user_target
 (** Create a file {!user_artifact} and the {!user_target} that produces it.
 
-    The [?product] of the target will be the file on the given [?host]
-    (default: localhost using ["/tmp"]).
+    The [?product] of the target will be the file given as argument on
+    the host given by the [?host] option (default: localhost using ["/tmp"]).
     
     The [?done_when] condition will be the existence of that file.
     
