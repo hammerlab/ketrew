@@ -46,6 +46,11 @@ section # Javascript client code
     .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo))
     _build/quick-test.html: _build/client.js 
         echo "<html><head><script>" > $@
+        echo "window.ketrew_connections = [" >> $@
+        echo "  \"https://localhost:8443/apijsonp?token=nekot\", " >> $@
+        echo $(addprefix \",$(addsuffix \"\, , $(getenv MORE_SERVERS, https://localhost:8443/apijsonp?token=nekot))) >> $@
+        echo "  \"https://does.not.exist:8888/apijsonp?token=nekot\"" >> $@
+        echo "];" >> $@
         cat _build/client.js >> $@
         echo "</script></head><body><div id=\"ketrew-gui\"/></body> </html>" >> $@
     .PHONY: gui-quick
