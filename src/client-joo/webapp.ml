@@ -31,6 +31,12 @@ module Reactive_signal = struct
       [React.S.value t]
       (React.E.map (fun e -> Set [e]) (React.S.changes t))
 
+  let list t =
+    let open ReactiveData.RList in
+    make_from
+      (React.S.value t)
+      (React.E.map (fun e -> Set e) (React.S.changes t))
+
   module Option = struct
     type 'a signal = 'a t
     type 'a t =  'a option signal 
@@ -392,48 +398,85 @@ module Single_client = struct
 
     let targets t =
       let open H5 in
-      let showing = Reactive_signal.create (`First 10) in
+      let showing = Reactive_signal.create (0, 10) in
       let navigation =
         Reactive.div Reactive_signal.(
             signal showing
             |> map ~f:(function
-              | `First n ->
+              | (n_from, n_count) ->
                 span [
-                  pcdata (fmt "Showing [%d, %d] " 0 n);
-                  span ~a:[
-                    a_onclick (fun _ ->
-                        Reactive_signal.set showing (`First (n + 10));
-                        false);
-                  ] [pcdata " >> "];
+                  pcdata (fmt "Showing [%d, %d]" (n_from + 1) (n_from + n_count));
+                  begin
+                    if n_from > 0 then
+                      span ~a:[
+                        a_onclick (fun _ ->
+                            Reactive_signal.set showing
+                              (n_from - (min n_count n_from), n_count);
+                            false);
+                      ] [pcdata " << "]
+                    else
+                      span []
+                  end;
+                  begin
+                    let total =
+                      Reactive_signal.signal t.target_ids
+                      |> React.S.value |> List.length in
+                    if n_from + n_count < total then
+                      span ~a:[
+                        a_onclick (fun _ ->
+                            let incr = min (total - n_count - n_from) n_count in
+                            Reactive_signal.set showing (n_from + incr, n_count);
+                            false)
+                      ] [pcdata " >> "]
+                    else
+                      span []
+                  end;
+                  span (List.map [10; 25; 50] ~f:(fun new_count ->
+                      if new_count = n_count then
+                        span []
+                      else
+                        span ~a:[
+                          a_onclick (fun _ ->
+                              Reactive_signal.set showing (n_from, new_count);
+                              false);
+                        ] [ pcdata (fmt " %d " new_count) ]));
                 ]
               )
             |> singleton)
       in
       let target_table =
-        let row_of_id id =
+        let row_of_id index id =
           let target_signal = get_target_signal t ~id in
           Reactive.tr Reactive_signal.(
               signal target_signal
               |> map ~f:(function
-                | None -> td [pcdata (fmt "Still fetching %s …" id)]
+                | None ->
+                  [
+                    td [pcdata (fmt "%d" (index + 1))];
+                    td [pcdata (fmt "Still fetching %s …" id)];
+                  ]
                 | Some trgt ->
-                  td [pcdata (Target.log trgt |> Log.to_long_string)]
+                  [
+                    td [pcdata (fmt "%d" (index + 1))];
+                    td [pcdata (Target.log trgt |> Log.to_long_string)];
+                  ]
                 )
-              |> singleton)
+              |> list)
         in
         Reactive.div
           Reactive_signal.(
             signal showing
-            |> map ~f:(function
-              | `First n ->
+            |> map
+              ~f:begin function
+              | (index, count) ->
                 let ids =
                   List.take
-                    (signal t.target_ids |> React.S.value)
-                    n
+                    (List.drop (signal t.target_ids |> React.S.value) index)
+                    count
                 in
                 table
-                  (List.map ids ~f:row_of_id)
-              )
+                  (List.mapi ids ~f:(fun ind id -> row_of_id (index + ind) id))
+              end
             |> singleton
           )
       in
