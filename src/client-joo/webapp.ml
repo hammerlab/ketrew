@@ -66,6 +66,10 @@ end
 module Lwt_result = struct
   (* Similar to `Pvem_lwt_unix`, we embed the error monad into `Lwt_js`.  *)
   include Pvem.With_deferred(Lwt)
+  let sleep f =
+    wrap_deferred ~on_exn:(fun e -> `Exn e) begin fun () ->
+      Lwt_js.sleep f
+    end
 end
 open Lwt_result
 
@@ -243,49 +247,35 @@ module Single_client = struct
          % Protocol_client.log t.protocol_client)
 
   let start_updating t =
-    let rec loop () =
+    let rec list_of_ids_loop () =
       Protocol_client.call t.protocol_client (`Get_target_ids `All)
       >>= begin function
       | `List_of_target_ids l ->
-        Reactive_signal.set t.target_ids l;
+        Reactive_signal.set t.target_ids
+          (List.sort
+             ~cmp:(fun ta tb -> String.compare tb ta)
+             l);
         Reactive_signal.set t.status `Ok;
-        wrap_deferred ~on_exn:(fun e -> `Exn e) begin fun () ->
-          Lwt_js.sleep 5.
-        end
+        sleep 10.
         >>= fun () ->
-        loop ()
+        list_of_ids_loop ()
       | other ->
         fail (`Wrong_down_message other)
       end
     in
-    Lwt.(
-      async begin fun () ->
-        loop () >>= function
-        | `Ok () ->
-          Log.(s "This should not have ended with OK: "
-               % s "`Single_client.start_updating`" @ error);
-          fail_with "WRONG LOOP"
-        | `Error e ->
-          let problem =
-            let open Log in
-            match e with
-            | `Exn e -> exn e
-            | `Protocol_client pc ->
-              Protocol_client.Error.to_string pc |> s
-            | `Wrong_down_message d -> s "Wrong down-message"
-          in
-          Log.(s "Error in Single_client.start_updating: "
-               % problem @ error);
-          Reactive_signal.set t.status
-            (`Problem (problem |> Log.to_long_string));
-          loop ()
-      end
-    )
-
-  let get_target_signal t ~id =
-    let signal = Target_cache.get t.target_cache ~id in
-    let rec update_cache () =
-      Protocol_client.call t.protocol_client (`Get_targets [id])
+    let rec fill_cache_loop index =
+      let at_once = 5 in
+      let current = (Reactive_signal.signal t.target_ids |> React.S.value) in
+      let total = List.length current in
+      let ids_to_fetch =
+        List.take (List.drop  current index) at_once
+        |> (function [] -> ["doesnotexist"] | more -> more)
+      in
+      Log.(s "fill_cache_loop getting "
+           % OCaml.list quote ids_to_fetch
+           % sf " → %d at once" at_once
+           @ verbose);
+      Protocol_client.call t.protocol_client (`Get_targets ids_to_fetch)
       >>= fun msg_down ->
       begin match msg_down with
       | `List_of_targets l ->
@@ -293,31 +283,46 @@ module Single_client = struct
             let id = Target.id value in
             Target_cache.add t.target_cache ~id ~value
           );
-        wrap_deferred ~on_exn:(fun e -> `Exn e)
-          (fun () -> Lwt_js.sleep 5.)
+        sleep 0.5
         >>= fun () ->
-        update_cache ()
+        fill_cache_loop
+          (if index >= total
+           then 0
+           else (index + (min at_once (total - index))))
       | other ->
         fail (`Wrong_down_message other)
       end
     in
-    Lwt.(async begin fun () ->
-        update_cache ()
-        >>= function
-        | `Ok ()  -> return ()
-        | `Error e ->
-          let problem =
-            let open Log in
-            match e with
-            | `Exn e -> exn e
-            | `Protocol_client pc ->
-              Protocol_client.Error.to_string pc |> s
-            | `Wrong_down_message d -> s "Wrong down-message"
-          in
-          Log.(s "Error in Single_client.get_target_signal: "
-               % problem @ error);
-          return ()
-      end);
+    let asynchronous_loop loop arg =
+      Lwt.(
+        async begin fun () ->
+          loop arg >>= function
+          | `Ok () ->
+            Log.(s "This should not have ended with OK: "
+                 % s "`Single_client.start_updating`" @ error);
+            fail_with "WRONG LOOP"
+          | `Error e ->
+            let problem =
+              let open Log in
+              match e with
+              | `Exn e -> exn e
+              | `Protocol_client pc ->
+                Protocol_client.Error.to_string pc |> s
+              | `Wrong_down_message d -> s "Wrong down-message"
+            in
+            Log.(s "Error in Single_client.start_updating: "
+                 % problem @ error);
+            Reactive_signal.set t.status
+              (`Problem (problem |> Log.to_long_string));
+            loop arg
+        end
+      ) in
+    asynchronous_loop list_of_ids_loop ();
+    asynchronous_loop fill_cache_loop 0;
+    ()
+
+  let get_target_signal t ~id =
+    let signal = Target_cache.get t.target_cache ~id in
     signal
 
   module Html = struct
