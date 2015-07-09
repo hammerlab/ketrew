@@ -304,3 +304,27 @@ module Stored_target : sig
   val make_pointer: from:target -> pointing_to:target -> t
 end
 
+
+module Summary: sig
+  type full_target = t
+  type t [@@deriving yojson]
+  (** A representation of an immutable subset of a target. *)
+
+  val create : full_target -> t
+  (** Create a summary of a target value. *)
+
+  val id : t -> Unique_id.t
+  (** Get a target's id. *)
+
+  val name : t -> string
+  (** Get a target's user-defined name. *)
+
+  val depends_on: t -> id list
+  val on_success_activate: t -> id list
+  val on_failure_activate: t -> id list
+  val metadata: t -> [`String of string] option
+  val build_process: t -> Build_process.t
+  val condition: t -> Condition.t option
+  val equivalence: t -> Equivalence.t
+  val tags: t -> string list
+end

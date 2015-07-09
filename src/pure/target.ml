@@ -607,20 +607,23 @@ module Equivalence = struct
   ] [@@deriving yojson]
 end
 
-type t = {
-  id: id;
-  name: string;
-  metadata: [`String of string] option;
-  depends_on: id list;
-  on_failure_activate: id list;
-  on_success_activate: id list;
-  make: Build_process.t;
-  condition: Condition.t option;
-  equivalence: Equivalence.t;
-  history: State.t;
-  log: (Time.t * string) list;
-  tags: string list;
-} [@@deriving yojson]
+module Target = struct
+  type t = {
+    id: id;
+    name: string;
+    metadata: [`String of string] option;
+    depends_on: id list;
+    on_failure_activate: id list;
+    on_success_activate: id list;
+    make: Build_process.t;
+    condition: Condition.t option;
+    equivalence: Equivalence.t;
+    history: State.t;
+    log: (Time.t * string) list;
+    tags: string list;
+  } [@@deriving yojson]
+end
+include Target (* we want a module name to use for later *)
 
 let create
     ?id ?name ?metadata
@@ -921,4 +924,44 @@ module Stored_target = struct
     `Pointer { Target_pointer.
                original = from;
                pointer = pointing_to.id }
+end
+
+module Summary = struct
+  type full_target = Target.t
+  type t = {
+    id: id;
+    name: string;
+    metadata: [`String of string] option;
+    depends_on: id list;
+    on_failure_activate: id list;
+    on_success_activate: id list;
+    make: Build_process.t;
+    condition: Condition.t option;
+    equivalence: Equivalence.t;
+    tags: string list;
+  } [@@deriving yojson]
+  let id : t -> Unique_id.t = fun t -> t.id
+  let name : t -> string = fun t -> t.name
+  let depends_on: t -> id list = fun t -> t.depends_on
+  let on_success_activate: t -> id list = fun t -> t.on_success_activate
+  let on_failure_activate: t -> id list = fun t -> t.on_failure_activate
+  let metadata = fun t -> t.metadata
+  let build_process: t -> Build_process.t = fun t -> t.make
+  let condition: t -> Condition.t option = fun t -> t.condition
+  let equivalence: t -> Equivalence.t = fun t -> t.equivalence
+  let tags: t -> string list = fun t -> t.tags
+  let create (trgt : full_target) =
+    {
+      id = trgt.Target.id;
+      name = trgt.Target.name;
+      metadata = trgt.Target.metadata;
+      depends_on = trgt.Target.depends_on;
+      on_failure_activate = trgt.Target.on_failure_activate;
+      on_success_activate = trgt.Target.on_success_activate;
+      make = trgt.Target.make;
+      condition = trgt.Target.condition;
+      equivalence = trgt.Target.equivalence;
+      tags = trgt.Target.tags;
+    } 
+
 end
