@@ -176,11 +176,22 @@ module Protocol_client = struct
       >>= fun result ->
       begin match result with
       | `String content ->
+        let content = (Js.to_string (content##message)) in
+        Log.(s "Received string: " % big_byte_sequence content @ verbose);
         (* used the example in toplevel.ml:
            https://github.com/ocsigen/js_of_ocaml/commit/65fcc49cfe9d4df8fd193eb5330953923a001618 *)
-        let got =  (Js.to_string (content##message)) |> Url.urldecode in
+        let got = content  |> Url.urldecode in
         (* debug "Got content %S" got; *)
-        return (Protocol.Down_message.deserialize_exn got)
+        Log.(s "Decoded string: " % big_byte_sequence ~max_length:40 got @ verbose);
+        begin try
+          return (Protocol.Down_message.deserialize_exn got)
+        with e -> 
+          Log.(s "Deserializing message "
+               % big_byte_sequence ~max_length:200 got
+               %sp % s "Exn: " % exn e
+               @ verbose);
+          fail (`Protocol_client (`JSONP (`Parsing_message (got, e))))
+        end
       | `Timeout ->
         fail (`Protocol_client (`JSONP `Timeout))
       end
@@ -189,6 +200,8 @@ module Protocol_client = struct
     let to_string = function
     | `JSONP (`Timeout) -> fmt "JSONP Timeout"
     | `JSONP (`Exn e) -> fmt "JSONP Exception: %s" (Printexc.to_string e)
+    | `JSONP (`Parsing_message (_, e)) ->
+      fmt "JSONP Parsing Exception: %s" (Printexc.to_string e)
   end
 end
 
@@ -270,15 +283,17 @@ module Single_client = struct
       let ids_to_fetch =
         List.take (List.drop  current index) at_once
         |> (function [] -> ["doesnotexist"] | more -> more)
+          (* ["ketrew_2015-06-18-21h43m31s881ms-UTC_994326685"] *)
       in
       Log.(s "fill_cache_loop getting "
            % OCaml.list quote ids_to_fetch
-           % sf " → %d at once" at_once
+           % sf " → [%d, %d]" (index + 1) (index + at_once) 
            @ verbose);
       Protocol_client.call t.protocol_client (`Get_targets ids_to_fetch)
       >>= fun msg_down ->
       begin match msg_down with
       | `List_of_targets l ->
+        Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
         List.iter l ~f:(fun value ->
             let id = Target.id value in
             Target_cache.add t.target_cache ~id ~value
@@ -296,25 +311,30 @@ module Single_client = struct
     let asynchronous_loop loop arg =
       Lwt.(
         async begin fun () ->
-          loop arg >>= function
-          | `Ok () ->
-            Log.(s "This should not have ended with OK: "
-                 % s "`Single_client.start_updating`" @ error);
-            fail_with "WRONG LOOP"
-          | `Error e ->
-            let problem =
-              let open Log in
-              match e with
-              | `Exn e -> exn e
-              | `Protocol_client pc ->
-                Protocol_client.Error.to_string pc |> s
-              | `Wrong_down_message d -> s "Wrong down-message"
-            in
-            Log.(s "Error in Single_client.start_updating: "
-                 % problem @ error);
-            Reactive_signal.set t.status
-              (`Problem (problem |> Log.to_long_string));
-            loop arg
+          let rec meta_loop () =
+            loop arg >>= function
+            | `Ok () ->
+              Log.(s "This should not have ended with OK: "
+                   % s "`Single_client.start_updating`" @ error);
+              Lwt_js.sleep 25. >>= fun () ->
+              meta_loop ()
+            | `Error e ->
+              let problem =
+                let open Log in
+                match e with
+                | `Exn e -> exn e
+                | `Protocol_client pc ->
+                  Protocol_client.Error.to_string pc |> s
+                | `Wrong_down_message d -> s "Wrong down-message"
+              in
+              Log.(s "Error in Single_client.start_updating: "
+                   % problem @ error);
+              Reactive_signal.set t.status
+                (`Problem (problem |> Log.to_long_string));
+              Lwt_js.sleep 25. >>= fun () ->
+              meta_loop ()
+          in
+          meta_loop ()
         end
       ) in
     asynchronous_loop list_of_ids_loop ();
@@ -380,10 +400,11 @@ module Single_client = struct
                     Reactive_signal.set button_style "color: green";
                     Reactive_signal.set t.status (`Problem "Timeout");
                     return ()
-                  | `Error (`Protocol_client (`JSONP (`Exn e))) ->
+                  | `Error (`Protocol_client (`JSONP _ as other)) ->
                     Reactive_signal.set button_style "color: green";
                     Reactive_signal.set t.status
-                      (`Problem (fmt "ERROR: %s" (Printexc.to_string e)));
+                      (`Problem (fmt "ERROR: %s"
+                                   (Protocol_client.Error.to_string other)));
                     return ()
                 );
               Log.(s "returning after setting status" @ verbose);

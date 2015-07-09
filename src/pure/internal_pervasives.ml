@@ -78,6 +78,18 @@ module Log =  struct
   let quote = sf "%S"
   let sexp sexp_of_t t = s (sexp_of_t t |> Sexplib.Sexp.to_string)
   let uri theuri = s (Uri.to_string theuri)
+
+  let big_byte_sequence ?(max_length=20) str =
+    match String.sub str ~index:0 ~length:max_length with
+    | None -> quote str
+    | Some substr ->
+      braces (
+        quote substr % s "…" % nbsp %
+        (match String.length str with
+        | n when n / 1024 > 10 ->
+          i (n / 1024) % nbsp % s "KB"
+        | n -> i n % nbsp % s "B")
+      )
 end
 
 module Json = struct
