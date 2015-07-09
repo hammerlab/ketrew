@@ -366,7 +366,10 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
         Option.(value callback ~default:"missing_callback")
         (Protocol.Down_message.serialize down_msg |> Uri.pct_encode)
     in
-    Log.(s "Returning " %n % verbatim page %n @ verbose);
+    Log.(s "Returning "
+         % i (String.length page) %s " bytes"
+         %sp % parens (s "Callback: " % OCaml.option quote callback)
+         @ verbose);
     return (`Page page)
   | "/gui" -> gui_service ~server_state ~body req
   | other ->
