@@ -209,8 +209,12 @@ end
 
 
 module Target_cache  = struct
+  type target_knowledge = {
+    summary: Target.Summary.t option;
+    full: Target.t option;
+  }
   type t = {
-    targets: (Target.id, Target.t option Reactive_signal.t) Hashtbl.t;
+    targets: (Target.id, target_knowledge option Reactive_signal.t) Hashtbl.t;
   }
 
   let create () = {targets = Hashtbl.create 42}
@@ -224,13 +228,28 @@ module Target_cache  = struct
       Hashtbl.replace targets id signal;
       signal
 
-  let add {targets} ~id ~value =
+  let update {targets} ~id what =
     let signal = get {targets} id in
-    Reactive_signal.set signal (Some value);
-    Hashtbl.replace targets id signal;
+    let current = Reactive_signal.signal signal |> React.S.value in
+    let new_value =
+      match current, what with
+      | None, `Summary sum -> { summary = Some sum; full = None }
+      | None, `Full f -> { summary = None; full = Some f }
+      | Some {summary; full}, `Full f -> { summary; full = Some f }
+      | Some {summary; full}, `Summary s -> { summary = Some s; full }
+    in
+    Reactive_signal.set signal (Some new_value);
+    (* Hashtbl.replace targets id signal; *)
     ()
 
   let clear {targets} = Hashtbl.clear targets
+
+  let summary knowledge =
+    match knowledge with
+    | Some {summary = Some s; _} -> Some s
+    | Some {full = Some f; _} -> Some (Target.Summary.create f)
+    | _ -> None
+
 
 end
 
@@ -259,6 +278,33 @@ module Single_client = struct
     Log.(s "Protocol-client: "
          % Protocol_client.log t.protocol_client)
 
+  let asynchronous_loop t ~name loop =
+    Lwt.(
+      async begin fun () ->
+        let rec meta_loop () =
+          loop () >>= function
+          | `Ok () ->
+            Log.(s "Loop ended with OK: " % quote name @ normal);
+            return ()
+          | `Error e ->
+            let problem =
+              let open Log in
+              match e with
+              | `Exn e -> exn e
+              | `Protocol_client pc ->
+                Protocol_client.Error.to_string pc |> s
+              | `Wrong_down_message d -> s "Wrong down-message"
+            in
+            Log.(s "Error in loop " % quote name % s ": " % problem @ error);
+            Reactive_signal.set t.status
+              (`Problem (problem |> Log.to_long_string));
+            Lwt_js.sleep 25. >>= fun () ->
+            meta_loop ()
+        in
+        meta_loop ()
+      end
+    )
+
   let start_updating t =
     let rec list_of_ids_loop () =
       Protocol_client.call t.protocol_client (`Get_target_ids `All)
@@ -276,69 +322,53 @@ module Single_client = struct
         fail (`Wrong_down_message other)
       end
     in
-    let rec fill_cache_loop index =
-      let at_once = 5 in
-      let current = (Reactive_signal.signal t.target_ids |> React.S.value) in
-      let total = List.length current in
-      let ids_to_fetch =
-        List.take (List.drop  current index) at_once
-        |> (function [] -> ["doesnotexist"] | more -> more)
-          (* ["ketrew_2015-06-18-21h43m31s881ms-UTC_994326685"] *)
+    let (_ : unit React.E.t) =
+      let get_all_missing_summaries targets_ids =
+        Log.(s "get_all_missing_summaries TRIGGERED !" %n
+             % s "targets_ids has " % i (List.length targets_ids)
+             % s " elements" @ verbose);
+        let at_once = 10 in
+        let sleep_time = 0.1 in
+        let rec fetch_summaries ids =
+          match ids with
+          | [] ->
+            Log.(s "fill_cache_loop.fetch_summaries nothing left to do"
+                 @ verbose);
+            return ()
+          | more ->
+            let now, later = List.split_n more at_once in
+            Protocol_client.call t.protocol_client (`Get_target_summaries now)
+            >>= fun msg_down ->
+            begin match msg_down with
+            | `List_of_target_summaries l ->
+              Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
+              List.iter l ~f:(fun value ->
+                  let id = Target.Summary.id value in
+                  Target_cache.update t.target_cache ~id (`Summary value)
+                );
+              sleep sleep_time
+              >>= fun () ->
+              fetch_summaries later
+            | other ->
+              fail (`Wrong_down_message other)
+            end
+        in
+        let missing_ids =
+          List.filter targets_ids ~f:(fun id ->
+              match
+                Target_cache.get t.target_cache id |> Reactive_signal.signal
+                |> React.S.value |> Target_cache.summary
+              with
+              | Some _ -> false
+              | None -> true)
+        in
+        asynchronous_loop t ~name:"fetch-summaries" (fun () ->
+            fetch_summaries missing_ids)
       in
-      Log.(s "fill_cache_loop getting "
-           % OCaml.list quote ids_to_fetch
-           % sf " → [%d, %d]" (index + 1) (index + at_once) 
-           @ verbose);
-      Protocol_client.call t.protocol_client (`Get_targets ids_to_fetch)
-      >>= fun msg_down ->
-      begin match msg_down with
-      | `List_of_targets l ->
-        Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
-        List.iter l ~f:(fun value ->
-            let id = Target.id value in
-            Target_cache.add t.target_cache ~id ~value
-          );
-        sleep 0.5
-        >>= fun () ->
-        fill_cache_loop
-          (if index >= total
-           then 0
-           else (index + (min at_once (total - index))))
-      | other ->
-        fail (`Wrong_down_message other)
-      end
+      let event = Reactive_signal.signal t.target_ids |> React.S.changes in
+      React.E.map get_all_missing_summaries event
     in
-    let asynchronous_loop loop arg =
-      Lwt.(
-        async begin fun () ->
-          let rec meta_loop () =
-            loop arg >>= function
-            | `Ok () ->
-              Log.(s "This should not have ended with OK: "
-                   % s "`Single_client.start_updating`" @ error);
-              Lwt_js.sleep 25. >>= fun () ->
-              meta_loop ()
-            | `Error e ->
-              let problem =
-                let open Log in
-                match e with
-                | `Exn e -> exn e
-                | `Protocol_client pc ->
-                  Protocol_client.Error.to_string pc |> s
-                | `Wrong_down_message d -> s "Wrong down-message"
-              in
-              Log.(s "Error in Single_client.start_updating: "
-                   % problem @ error);
-              Reactive_signal.set t.status
-                (`Problem (problem |> Log.to_long_string));
-              Lwt_js.sleep 25. >>= fun () ->
-              meta_loop ()
-          in
-          meta_loop ()
-        end
-      ) in
-    asynchronous_loop list_of_ids_loop ();
-    asynchronous_loop fill_cache_loop 0;
+    asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
     ()
 
   let get_target_signal t ~id =
@@ -475,6 +505,7 @@ module Single_client = struct
           let target_signal = get_target_signal t ~id in
           Reactive.tr Reactive_signal.(
               signal target_signal
+              |> map ~f:Target_cache.summary
               |> map ~f:(function
                 | None ->
                   [
@@ -484,7 +515,7 @@ module Single_client = struct
                 | Some trgt ->
                   [
                     td [pcdata (fmt "%d" (index + 1))];
-                    td [pcdata (Target.log trgt |> Log.to_long_string)];
+                    td [pcdata (Target.Summary.name trgt)];
                   ]
                 )
               |> list)
