@@ -24,6 +24,7 @@ module Down_message = struct
   module V0 = struct
     type t = [
       | `List_of_targets of Target.t list
+      | `List_of_target_summaries of Target.Summary.t list
       | `List_of_target_ids of string list
       | `List_of_query_descriptions of (string * string) list
       | `Query_result of string
@@ -44,6 +45,7 @@ module Up_message = struct
     ] [@@deriving yojson]
     type t = [
       | `Get_targets of string list (* List of Ids, empty means “all” *)
+      | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
       | `Get_available_queries of string (* Id of the target *)
       | `Call_query of (string * string) (* target-id × query-name *)
       | `Submit_targets of Target.t list

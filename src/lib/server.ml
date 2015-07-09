@@ -198,7 +198,7 @@ let message_of_body ~body =
 
 (** {2 Services; Answering Requests} *)
 
-let answer_get_targets ~server_state target_ids =
+let answer_get_targets ?(summaries=false) ~server_state target_ids =
   begin match target_ids  with
   | [] ->
     Engine.all_targets server_state.state
@@ -214,7 +214,12 @@ let answer_get_targets ~server_state target_ids =
     >>| List.filter_opt
   end
   >>= fun targets ->
-  return (`List_of_targets targets)
+  begin match summaries with
+  | false -> return (`List_of_targets targets)
+  | true ->
+    return (`List_of_target_summaries
+                      (List.map targets ~f:Target.Summary.create))
+  end
 
 let answer_get_target_available_queries ~server_state target_id =
   Engine.get_target server_state.state target_id
@@ -276,6 +281,10 @@ let answer_message ~server_state ?token msg =
     with_capability `See_targets
     >>= fun () ->
     answer_get_targets ~server_state l
+  | `Get_target_summaries l ->
+    with_capability `See_targets
+    >>= fun () ->
+    answer_get_targets ~summaries:true ~server_state l
   | `Get_available_queries target_id ->
     with_capability `Query_targets
     >>= fun () ->
