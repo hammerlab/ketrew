@@ -255,7 +255,16 @@ end
 
 module Single_client = struct
 
-  type status = [ `Unknown | `Ok | `Problem of string]
+  type status = [
+    | `Unknown
+    | `Ok of Protocol.Server_status.t
+    | `Problem of string
+  ]
+
+  let target_query_of_status = function
+  | `Problem _
+  | `Unknown -> `All
+  | `Ok status -> `Created_after (Protocol.Server_status.time status -. 5.)
 
   type t = {
     protocol_client: Protocol_client.t;
@@ -307,20 +316,39 @@ module Single_client = struct
 
   let start_updating t =
     let rec list_of_ids_loop () =
-      Protocol_client.call t.protocol_client (`Get_target_ids `All)
-      >>= begin function
-      | `List_of_target_ids l ->
-        Reactive_signal.set t.target_ids
-          (List.sort
-             ~cmp:(fun ta tb -> String.compare tb ta)
-             l);
-        Reactive_signal.set t.status `Ok;
-        sleep 10.
-        >>= fun () ->
-        list_of_ids_loop ()
-      | other ->
-        fail (`Wrong_down_message other)
-      end
+      let update_server_status () =
+        Protocol_client.call t.protocol_client `Get_server_status
+        >>= begin function
+        | `Server_status status ->
+          let previous_status =
+            Reactive_signal.signal t.status |> React.S.value in
+          Reactive_signal.set t.status (`Ok status);
+          return (target_query_of_status previous_status)
+        | other ->
+          fail (`Wrong_down_message other)
+        end
+      in
+      let update_list_of_ids query =
+        Protocol_client.call t.protocol_client (`Get_target_ids query)
+        >>= begin function
+        | `List_of_target_ids l ->
+          let current = Reactive_signal.signal t.target_ids |> React.S.value in
+          Reactive_signal.set t.target_ids
+            (List.append current l
+             |> List.sort ~cmp:(fun ta tb -> String.compare tb ta)
+             |> List.remove_consecutive_duplicates ~equal:(=));
+          return ()
+        | other ->
+          fail (`Wrong_down_message other)
+        end
+      in
+      update_server_status ()
+      >>= fun query ->
+      update_list_of_ids query
+      >>= fun () ->
+      sleep 10.
+      >>= fun () ->
+      list_of_ids_loop ()
     in
     let (_ : unit React.E.t) =
       let get_all_missing_summaries targets_ids =
@@ -381,7 +409,11 @@ module Single_client = struct
       let open H5 in
       let display_status =
         function
-        | `Ok -> span ~a:[a_style "color: green"] [pcdata "OK"]
+        | `Ok status ->
+          span ~a:[a_style "color: green"] [
+            pcdata (fmt "OK (%s)"
+                      (Protocol.Server_status.time status |> Time.to_filename))
+          ]
         | `Unknown -> span ~a:[a_style "color: orange"] [pcdata "???"]
         | `Problem problem ->
           let help_message = Reactive_signal.Option.create () in
@@ -411,36 +443,8 @@ module Single_client = struct
               )
           ]
       in
-      let button_style = Reactive_signal.create "color: green" in
       div [
-        span ~a:[
-          Reactive.a_style (Reactive_signal.signal button_style);
-          a_onclick (fun ev ->
-              Reactive_signal.set button_style "color: grey";
-              let open Lwt in
-              async (fun () ->
-                  Protocol_client.call t.protocol_client (`Get_targets ["does-not-exist"])
-                  >>= function
-                  | `Ok _ ->
-                    (* ReactiveData.RList.set t.status_handle [`Ok]; *)
-                    Reactive_signal.set button_style "color: green";
-                    Reactive_signal.set t.status `Ok;
-                    return ()
-                  | `Error (`Protocol_client (`JSONP (`Timeout))) ->
-                    Reactive_signal.set button_style "color: green";
-                    Reactive_signal.set t.status (`Problem "Timeout");
-                    return ()
-                  | `Error (`Protocol_client (`JSONP _ as other)) ->
-                    Reactive_signal.set button_style "color: green";
-                    Reactive_signal.set t.status
-                      (`Problem (fmt "ERROR: %s"
-                                   (Protocol_client.Error.to_string other)));
-                    return ()
-                );
-              Log.(s "returning after setting status" @ verbose);
-              false
-            )
-        ] [pcdata "Client: "];
+        span ~a:[] [pcdata "Client: "];
         code [pcdata (Protocol_client.log t.protocol_client
                       |> Log.to_long_string)];
         br ();
