@@ -19,6 +19,11 @@
 (**************************************************************************)
 
 open Internal_pervasives
+module Server_status : sig
+  type t
+  val create: time:float -> unit -> t
+  val time: t -> float
+end
 
 module Down_message : sig
 
@@ -28,6 +33,7 @@ module Down_message : sig
     | `List_of_target_ids of string list
     | `List_of_query_descriptions of (string * string) list
     | `Query_result of string
+    | `Server_status of Server_status.t
     | `Ok
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
@@ -49,6 +55,7 @@ module Up_message : sig
     | `Kill_targets of string list (* List of Ids *)
     | `Restart_targets of string list (* List of Ids *)
     | `Get_target_ids of target_query
+    | `Get_server_status
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 

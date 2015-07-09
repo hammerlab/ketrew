@@ -20,6 +20,14 @@
 
 open Internal_pervasives
 
+module Server_status = struct
+  type t = {
+    time: float;
+  } [@@deriving yojson]
+  let create ~time () = {time}
+  let time t = t.time
+end
+
 module Down_message = struct
   module V0 = struct
     type t = [
@@ -28,6 +36,7 @@ module Down_message = struct
       | `List_of_target_ids of string list
       | `List_of_query_descriptions of (string * string) list
       | `Query_result of string
+      | `Server_status of Server_status.t
       | `Ok
     ] [@@deriving yojson]
   end
@@ -52,6 +61,7 @@ module Up_message = struct
       | `Kill_targets of string list (* List of Ids *)
       | `Restart_targets of string list (* List of Ids *)
       | `Get_target_ids of target_query
+      | `Get_server_status
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)

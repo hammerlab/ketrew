@@ -93,6 +93,7 @@ module Authentication = struct
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
     | Some tok, `Browse_gui
+    | Some tok, `See_server_status
     | Some tok, `See_targets
     | Some tok, `Query_targets
     | Some tok, `Kill_targets
@@ -272,6 +273,10 @@ let answer_get_target_ids ~server_state query =
   >>= fun list_of_ids ->
   return (`List_of_target_ids list_of_ids)
 
+let answer_get_server_status ~server_state =
+  return (`Server_status (Protocol.Server_status.create ~time:Time.(now ()) ()))
+
+  
 let answer_message ~server_state ?token msg =
   let with_capability cap =
     Authentication.ensure_can server_state.authentication ?token cap
@@ -309,6 +314,10 @@ let answer_message ~server_state ?token msg =
     with_capability `See_targets
     >>= fun () ->
     answer_get_target_ids ~server_state query
+  | `Get_server_status ->
+    with_capability `See_server_status
+    >>= fun () ->
+    answer_get_server_status ~server_state
 
 let api_service ~server_state ~body req =
   get_post_body req ~body
