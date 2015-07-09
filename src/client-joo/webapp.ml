@@ -522,15 +522,13 @@ module Single_client = struct
         in
         Reactive.div
           Reactive_signal.(
-            signal showing
+            React.S.l2 (fun a b -> (a, b))
+              (signal t.target_ids)
+              (signal showing)
             |> map
               ~f:begin function
-              | (index, count) ->
-                let ids =
-                  List.take
-                    (List.drop (signal t.target_ids |> React.S.value) index)
-                    count
-                in
+              | (target_ids, (index, count)) ->
+                let ids = List.take (List.drop target_ids index) count in
                 table
                   (List.mapi ids ~f:(fun ind id -> row_of_id (index + ind) id))
               end
