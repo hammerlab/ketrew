@@ -61,6 +61,49 @@ end
 module H5 = struct
   include Tyxml_js.Html5
   module Reactive = Tyxml_js.R.Html5
+
+  module Bootstrap = struct
+
+    let tab_item ~active ~on_click content = (active, on_click, content)
+    let with_tab_bar ~tabs ~content =
+      nav ~a:[a_class ["navbar"; "no-navbar-static-top"]] [
+        div  [
+          ul ~a:[a_class ["nav"; "nav-tabs"]] (
+            List.map tabs ~f:(fun (active_signal, on_click, content_list) ->
+                let active_class =
+                  React.S.map (function | true -> ["active"] | false -> [])
+                    active_signal in
+                li ~a:[ Reactive.a_class active_class ] [
+                  a ~a:[ (* The `a` must be directly under the `li`. *)
+                    a_href "#"; (* The `href` transforms the mouse like a link. *)
+                    a_onclick on_click;
+                  ] content_list
+                ]
+              )
+          );
+          content;
+        ]
+      ]
+
+    let pagination items =
+      nav [
+        ul ~a:[a_class ["pagination"]]
+          (List.map items ~f:(function
+             | `Disabled content ->
+               li ~a:[a_class ["disabled"]] [a content]
+             | `Enabled (on_click, content) ->
+               li [a ~a:[a_onclick on_click] content]
+             ))
+      ]
+
+    let panel ~body =
+      div ~a:[ a_class ["not-container-fluid"]] [
+          div ~a:[ a_class ["panel"; "panel-default"]] [
+            div ~a:[ a_class ["panel-body"; ]] body
+          ]
+        ]
+
+  end
 end
 
 module Lwt_result = struct
@@ -224,7 +267,7 @@ module Target_cache  = struct
     with _ ->
       (* Log.(s "Target-cache: miss on " % s id @ verbose); *)
       let signal = Reactive_signal.create None in
-      Log.(s "Created `None` target signal for " % s id @ verbose);
+      (* Log.(s "Created `None` target signal for " % s id @ verbose); *)
       Hashtbl.replace targets id signal;
       signal
 
@@ -271,16 +314,19 @@ module Single_client = struct
     target_cache: Target_cache.t;
     target_ids: string list Reactive_signal.t;
     status: status Reactive_signal.t;
+    current_tab: [`Status | `Target_table] Reactive_signal.t;
   }
 
   let create ~protocol_client () =
     let target_ids = Reactive_signal.create [] in
     let status = Reactive_signal.create `Unknown in
+    let current_tab = Reactive_signal.create `Target_table in
     {
       protocol_client;
       target_cache = Target_cache.create ();
       target_ids; 
       status;
+      current_tab;
     }
 
   let log t =
@@ -355,7 +401,7 @@ module Single_client = struct
         Log.(s "get_all_missing_summaries TRIGGERED !" %n
              % s "targets_ids has " % i (List.length targets_ids)
              % s " elements" @ verbose);
-        let at_once = 10 in
+        let at_once = 50 in
         let sleep_time = 0.1 in
         let rec fetch_summaries ids =
           match ids with
@@ -480,51 +526,63 @@ module Single_client = struct
           )
       ]
 
-    let targets t =
+    let target_table t =
       let open H5 in
       let showing = Reactive_signal.create (0, 10) in
       let navigation =
         Reactive.div Reactive_signal.(
-            signal showing
+            React.S.l2 (fun a b -> (a, List.length b))
+              (signal showing)
+              (signal t.target_ids)
             |> map ~f:(function
-              | (n_from, n_count) ->
-                span [
-                  pcdata (fmt "Showing [%d, %d]" (n_from + 1) (n_from + n_count));
-                  begin
-                    if n_from > 0 then
-                      span ~a:[
-                        a_onclick (fun _ ->
-                            Reactive_signal.set showing
-                              (n_from - (min n_count n_from), n_count);
-                            false);
-                      ] [pcdata " << "]
-                    else
-                      span []
-                  end;
-                  begin
-                    let total =
-                      Reactive_signal.signal t.target_ids
-                      |> React.S.value |> List.length in
-                    if n_from + n_count < total then
-                      span ~a:[
-                        a_onclick (fun _ ->
-                            let incr = min (total - n_count - n_from) n_count in
-                            Reactive_signal.set showing (n_from + incr, n_count);
-                            false)
-                      ] [pcdata " >> "]
-                    else
-                      span []
-                  end;
-                  span (List.map [10; 25; 50] ~f:(fun new_count ->
-                      if new_count = n_count then
-                        span []
-                      else
-                        span ~a:[
-                          a_onclick (fun _ ->
-                              Reactive_signal.set showing (n_from, new_count);
-                              false);
-                        ] [ pcdata (fmt " %d " new_count) ]));
-                ]
+              | ((n_from, n_count), total) ->
+                let enable_if cond on_click content =
+                  if cond
+                  then [`Enabled (on_click, content)]
+                  else [`Disabled content]
+                in
+                Bootstrap.pagination (List.concat [
+                    [`Disabled [
+                        pcdata (fmt "Showing [%d, %d] of %d"
+                                  (min total (n_from + 1))
+                                  (min (n_from + n_count) total)
+                                  total)
+                      ]];
+                    enable_if (n_from > 0)
+                      (fun _ -> Reactive_signal.set showing (0, n_count); false)
+                      [pcdata (fmt "Start [1, %d]" n_count)];
+                    enable_if (n_from > 0)
+                      (fun _ ->
+                         Reactive_signal.set showing
+                           (n_from - (min n_count n_from), n_count);
+                         false)
+                      [pcdata (fmt "Previous %d" n_count)];
+                    (List.map [10; 25; 50] ~f:(fun new_count ->
+                         let content = [pcdata (fmt "Show %d" new_count)] in
+                         if new_count = n_count
+                         then `Disabled content
+                         else
+                           `Enabled (
+                             (fun _ ->
+                                Reactive_signal.set showing (n_from, new_count);
+                                false), content)
+                       ));
+                    enable_if  (n_from + n_count < total)
+                      (fun _ ->
+                         let incr = min (total - n_count - n_from) n_count in
+                         Reactive_signal.set showing (n_from + incr, n_count);
+                         false)
+                      [pcdata (fmt "Next %d" n_count)];
+                    enable_if (n_from + n_count < total
+                               || (total - n_count + 1 < n_from
+                                   && total - n_count + 1 > 0))
+                      (fun _ ->
+                         Reactive_signal.set showing (total - n_count, n_count);
+                         false)
+                      [pcdata (fmt "End [%d, %d]"
+                                 (max 0 (total - n_count + 1))
+                                 total)];
+                  ])
               )
             |> singleton)
       in
@@ -558,21 +616,49 @@ module Single_client = struct
               | (target_ids, (index, count)) ->
                 let ids = List.take (List.drop target_ids index) count in
                 table
+                  ~a:[a_class ["table"]]
                   (List.mapi ids ~f:(fun ind id -> row_of_id (index + ind) id))
               end
             |> singleton
           )
       in
       div [
-        h3 [
-          pcdata "Targets (";
-          Reactive.pcdata Reactive_signal.(
-              signal t.target_ids |> map ~f:(fun l -> fmt "%d" (List.length l)));
-          pcdata ")";
-        ];
         navigation;
         target_table
       ]
+
+    let render client =
+      let open H5 in
+      let current_tab = client.current_tab in
+      let tabs = [
+        Bootstrap.tab_item
+          ~active:(Reactive_signal.signal current_tab
+                   |> React.S.map (function `Target_table -> true | _ -> false))
+          ~on_click:(fun _ -> Reactive_signal.set current_tab `Target_table; false)
+          [Reactive.pcdata
+             Reactive_signal.(
+               signal client.target_ids
+               |> React.S.map List.length
+               |> React.S.map (fmt "Target Table (%d)")
+             )];
+        Bootstrap.tab_item
+          ~active:(Reactive_signal.signal current_tab
+                   |> React.S.map (function `Status -> true | _ -> false))
+          ~on_click:(fun _ -> Reactive_signal.set current_tab `Status; false)
+          [pcdata "Status"];
+      ] in
+      (* div ~a:[ a_class ["container-fluid"]] [ *)
+      Bootstrap.panel ~body:[
+          Bootstrap.with_tab_bar ~tabs
+            ~content:(
+              Reactive.div
+                (Reactive_signal.signal current_tab
+                 |> React.S.map (function
+                   | `Target_table -> target_table client
+                   | `Status -> status client)
+                 |> Reactive_signal.singleton)
+            );
+        ]
   end
 
 end
@@ -609,45 +695,65 @@ module Application_state = struct
     end
 
   let to_html t =
-    let visible_client = Reactive_signal.create None in
+    let visible_tab =
+      Reactive_signal.create
+        (List.hd t.clients
+         |> Option.value_map ~f:(fun c -> `Client c) ~default:`About) in
     let open H5 in
     let navigation =
-      nav ~a:[a_class ["navbar"; "navbar-static-top"]] [
-        div ~a:[a_class ["container"]] [
-          ul ~a:[a_class ["nav"; "nav-tabs"]] (
-            List.map t.clients ~f:(fun (name, client) ->
-                let active_class =
-                  Reactive_signal.signal visible_client
-                  |> React.S.map (function
-                    | Some (c, _) when c = name -> ["active"] | _ -> [])
-                in
-                li ~a:[ Reactive.a_class active_class ] [
-                  a ~a:[ (* The `a` must be directly under the `li`. *)
-                    a_href "#"; (* The `href` transforms the mouse like a link. *)
-                    a_onclick (fun _ ->
-                        Reactive_signal.set visible_client (Some (name, client));
-                        false);
-                  ] [pcdata (fmt "Client %s " name);
-                     Single_client.Html.status_icon client]
-                ]
-              )
-          )
+      let tabs =
+        (List.map t.clients ~f:(fun (name, client) ->
+             let active =
+               Reactive_signal.signal visible_tab
+               |> React.S.map (function
+                 | `Client (c, _) when c = name -> true | _ -> false) in
+             Bootstrap.tab_item
+               ~active
+               ~on_click:(fun _ ->
+                   Reactive_signal.set visible_tab (`Client (name, client));
+                   false)
+               [pcdata (fmt "Client %s " name);
+                Single_client.Html.status_icon client]
+           ))
+        @ [
+          let active =
+            Reactive_signal.signal visible_tab
+            |> React.S.map (function `About -> true | _ -> false) in
+          Bootstrap.tab_item
+            ~active
+            ~on_click:(fun _ -> Reactive_signal.set visible_tab `About; false)
+            [pcdata "About"]
         ]
-      ] in
-    div ~a:[a_class ["container-fluid"]] [
-      navigation;
-      Reactive.div Reactive_signal.(
-          signal visible_client
-          |> map ~f:(function
-            | Some (_, client) ->
-              div [
-                Single_client.Html.status client;
-                Single_client.Html.targets client;
-              ]
-            | None -> span [pcdata "(Pick a client)"]
-            )
-          |> singleton
-        );
+      in
+      Bootstrap.with_tab_bar ~tabs
+    in
+    (* div ~a:[a_class ["container-fluid"]] [ *)
+    (* Bootstrap.panel ~body:[ *)
+    div [
+      navigation
+        ~content:(
+          Reactive.div Reactive_signal.(
+              signal visible_tab
+              |> map ~f:(function
+                | `Client (_, client) ->
+                  Single_client.Html.render client
+                | `About ->
+                  Bootstrap.panel ~body:[
+                    pcdata "This is Ketrew's GUI."; br ();
+                    pcdata "See the ";
+                    a ~a:[
+                      a_href "http://seb.mondet.org/software/ketrew/";
+                    ] [pcdata "documentation"];
+                    pcdata " for Ketrew."; br ();
+                    pcdata "Report issues and ask questions on the Github ";
+                    a ~a:[
+                      a_href "https://github.com/hammerlab/ketrew";
+                    ] [pcdata "repository"];
+                    pcdata " page.";
+                  ]
+                )
+              |> singleton
+            ));
     ]
 
 end
