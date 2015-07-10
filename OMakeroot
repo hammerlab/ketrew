@@ -46,12 +46,18 @@ section # Javascript client code
         js_of_ocaml --pretty --no-inline --debug-info +weak.js +toplevel.js  $< -o $@
     .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo))
     _build/quick-test.html: _build/client.js 
-        echo "<!DOCTYPE html>" > $@
-        echo "<html><head>" >> $@
-        echo "<link rel=\"stylesheet\" href=\"../src/css/bootstrap_335.min.css\">" >> $@
-        # echo "<style>" >> $@
-        # cat src/css/bootstrap_335.min.css >> $@
-        # echo "</style>" >> $@
+        echo '\
+<!DOCTYPE html>\
+<html lang="en">\
+  <head>\
+    <meta charset="utf-8">\
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">\
+    <meta name="viewport" content="width=device-width, initial-scale=1">\
+    <link rel="stylesheet" href="../src/css/bootstrap_335.min.css">\
+    <title>Test</title>\
+  </head>\
+  <body>\
+    <div class="container-fluid" id="ketrew-gui"></div>' > $@
         echo "<script>" >> $@
         echo "window.ketrew_connections = [" >> $@
         echo "  \"https://localhost:8443/apijsonp?token=nekot\", " >> $@
@@ -59,7 +65,7 @@ section # Javascript client code
         echo "  \"https://does.not.exist:8888/apijsonp?token=nekot\"" >> $@
         echo "];" >> $@
         cat _build/client.js >> $@
-        echo "</script></head><body><div id=\"ketrew-gui\"/></body> </html>" >> $@
+        echo "</script></body> </html>" >> $@
     .PHONY: gui-quick
     gui-quick: _build/quick-test.html
 

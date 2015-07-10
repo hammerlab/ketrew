@@ -405,6 +405,30 @@ module Single_client = struct
 
   module Html = struct
 
+    let status_icon t =
+      let open H5 in
+      let display = function
+      | `Ok status ->
+        span ~a:[ a_class ["label"; "label-success"];
+                  a_title (fmt "OK (%s)"
+                             (Protocol.Server_status.time status |> Time.to_filename));
+                ] [pcdata "✔"]
+      | `Unknown ->
+        span ~a:[ a_class ["label"; "label-warning"];
+                  a_title "Unknown";
+                ] [pcdata "?"]
+      | `Problem problem ->
+        span ~a:[ a_class ["label"; "label-danger"];
+                  a_title (fmt "Problem: %s" problem);
+                ] [pcdata "✖"]
+      in
+      Reactive.span
+        Reactive_signal.(
+          signal t.status
+          |> map ~f:display
+          |> singleton
+        )
+
     let status t =
       let open H5 in
       let display_status =
@@ -587,32 +611,39 @@ module Application_state = struct
   let to_html t =
     let visible_client = Reactive_signal.create None in
     let open H5 in
-    div [
-      ul (
-        List.map t.clients ~f:(fun (name, client) ->
-            li [
-              Reactive.span Reactive_signal.(
-                  signal visible_client
-                  |> map ~f:(function
-                    | Some (c, _) when c = name ->
-                      strong [pcdata name]
-                    | None | Some _ ->
-                      a ~a:[
-                        a_onclick (fun _ ->
-                            Reactive_signal.set visible_client (Some (name, client));
-                            false);
-                      ] [pcdata name]
-                    )
-                  |> singleton);
-              pcdata ": ";
-              (Single_client.Html.status client)
-            ]
+    let navigation =
+      nav ~a:[a_class ["navbar"; "navbar-static-top"]] [
+        div ~a:[a_class ["container"]] [
+          ul ~a:[a_class ["nav"; "nav-tabs"]] (
+            List.map t.clients ~f:(fun (name, client) ->
+                let active_class =
+                  Reactive_signal.signal visible_client
+                  |> React.S.map (function
+                    | Some (c, _) when c = name -> ["active"] | _ -> [])
+                in
+                li ~a:[ Reactive.a_class active_class ] [
+                  a ~a:[ (* The `a` must be directly under the `li`. *)
+                    a_href "#"; (* The `href` transforms the mouse like a link. *)
+                    a_onclick (fun _ ->
+                        Reactive_signal.set visible_client (Some (name, client));
+                        false);
+                  ] [pcdata (fmt "Client %s " name);
+                     Single_client.Html.status_icon client]
+                ]
+              )
           )
-      );
+        ]
+      ] in
+    div ~a:[a_class ["container-fluid"]] [
+      navigation;
       Reactive.div Reactive_signal.(
           signal visible_client
           |> map ~f:(function
-            | Some (_, t) -> Single_client.Html.targets t
+            | Some (_, client) ->
+              div [
+                Single_client.Html.status client;
+                Single_client.Html.targets client;
+              ]
             | None -> span [pcdata "(Pick a client)"]
             )
           |> singleton
