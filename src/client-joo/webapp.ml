@@ -85,12 +85,65 @@ module H5 = struct
         ]
       ]
 
+    let disabled_li content =
+      li ~a:[a_class ["disabled"]] [a content]
+
+    let dropdown_button ~content items =
+      let visible = Reactive_signal.create false in
+      let toggle _ =
+        Reactive_signal.(set visible
+                           (signal visible |> React.S.value |> not));
+        false in
+      let menu =
+        ul ~a:[a_class ["dropdown-menu"]]
+          (List.map items ~f:(function
+             | `Disabled content -> disabled_li content
+             | `Close (on_click, content) ->
+               let on_click ev =
+                 toggle ev |> ignore;
+                 on_click ev in
+               li [a ~a:[a_onclick on_click] content]
+             )) in
+      let classes =
+        Reactive_signal.signal visible
+        |> React.S.map (function
+          | true -> ["btn-group"; "open"]
+          | false -> ["btn-group"])
+      in
+      div ~a:[Reactive.a_class classes] [
+        button ~a:[
+          a_class ["btn"; "btn-default"; "dropdown-toggle"];
+          a_onclick toggle
+        ] (content @ [pcdata " "; span ~a:[a_class ["caret"]] []]);
+        menu;
+      ]
+
+    let button_group ?(justified=true) content =
+      div content
+        ~a:[a_class ["btn-group";
+                     if justified then "btn-group-justified" else "";]]
+
+    let button =
+      let in_group b = button_group ~justified:false [b] in
+      (* buttons must be in a group for justification to work *)
+      function
+      | `Disabled content ->
+        button ~a:[ a_class ["btn"; "btn-default"; "disabled"]] content
+        |> in_group
+      | `Enabled (on_click, content) ->
+        button content
+          ~a:[ a_class ["btn"; "btn-default"; ];
+               a_onclick on_click;
+             ]
+        |> in_group
+
+
     let pagination items =
       nav [
         ul ~a:[a_class ["pagination"]]
           (List.map items ~f:(function
              | `Disabled content ->
-               li ~a:[a_class ["disabled"]] [a content]
+               disabled_li content
              | `Enabled (on_click, content) ->
                li [a ~a:[a_onclick on_click] content]
              ))
@@ -98,10 +151,10 @@ module H5 = struct
 
     let panel ~body =
       div ~a:[ a_class ["not-container-fluid"]] [
-          div ~a:[ a_class ["panel"; "panel-default"]] [
-            div ~a:[ a_class ["panel-body"; ]] body
-          ]
-        ]
+        div ~a:[ a_class ["panel"; "panel-default"]] [
+          div ~a:[ a_class ["panel-body"; ]] body
+        ];
+      ]
 
   end
 end
@@ -309,24 +362,44 @@ module Single_client = struct
   | `Unknown -> `All
   | `Ok status -> `Created_after (Protocol.Server_status.time status -. 5.)
 
+  type column = [
+    | `Arbitrary_index
+    | `Name
+    | `Id
+    | `Tags
+  ]
+  let all_columns = [
+    `Arbitrary_index;
+    `Name;
+    `Id;
+    `Tags;
+  ]
+  let default_columns = all_columns
+
   type t = {
     protocol_client: Protocol_client.t;
     target_cache: Target_cache.t;
     target_ids: string list Reactive_signal.t;
     status: status Reactive_signal.t;
     current_tab: [`Status | `Target_table] Reactive_signal.t;
+    table_showing: (int * int) Reactive_signal.t;
+    table_columns: column list Reactive_signal.t;
   }
 
   let create ~protocol_client () =
     let target_ids = Reactive_signal.create [] in
     let status = Reactive_signal.create `Unknown in
     let current_tab = Reactive_signal.create `Target_table in
+    let table_showing = Reactive_signal.create (0, 10) in
+    let table_columns = Reactive_signal.create default_columns in
     {
       protocol_client;
       target_cache = Target_cache.create ();
       target_ids; 
       status;
       current_tab;
+      table_showing;
+      table_columns;
     }
 
   let log t =
@@ -528,8 +601,8 @@ module Single_client = struct
 
     let target_table t =
       let open H5 in
-      let showing = Reactive_signal.create (0, 10) in
-      let navigation =
+      let showing = t.table_showing in
+      let controls =
         Reactive.div Reactive_signal.(
             React.S.l2 (fun a b -> (a, List.length b))
               (signal showing)
@@ -538,56 +611,54 @@ module Single_client = struct
               | ((n_from, n_count), total) ->
                 let enable_if cond on_click content =
                   if cond
-                  then [`Enabled (on_click, content)]
-                  else [`Disabled content]
+                  then Bootstrap.button (`Enabled (on_click, content))
+                  else Bootstrap.button (`Disabled content)
                 in
-                Bootstrap.pagination (List.concat [
-                    [`Disabled [
-                        pcdata (fmt "Showing [%d, %d] of %d"
-                                  (min total (n_from + 1))
-                                  (min (n_from + n_count) total)
-                                  total)
-                      ]];
-                    enable_if (n_from > 0)
-                      (fun _ -> Reactive_signal.set showing (0, n_count); false)
-                      [pcdata (fmt "Start [1, %d]" n_count)];
-                    enable_if (n_from > 0)
-                      (fun _ ->
-                         Reactive_signal.set showing
-                           (n_from - (min n_count n_from), n_count);
-                         false)
-                      [pcdata (fmt "Previous %d" n_count)];
+                Bootstrap.button_group [
+                  Bootstrap.dropdown_button
+                    ~content:[
+                      pcdata (fmt "Showing %d per page" n_count)
+                    ]
                     (List.map [10; 25; 50] ~f:(fun new_count ->
                          let content = [pcdata (fmt "Show %d" new_count)] in
                          if new_count = n_count
                          then `Disabled content
                          else
-                           `Enabled (
+                           `Close (
                              (fun _ ->
                                 Reactive_signal.set showing (n_from, new_count);
                                 false), content)
                        ));
-                    enable_if  (n_from + n_count < total)
-                      (fun _ ->
-                         let incr = min (total - n_count - n_from) n_count in
-                         Reactive_signal.set showing (n_from + incr, n_count);
-                         false)
-                      [pcdata (fmt "Next %d" n_count)];
-                    enable_if (n_from + n_count < total
-                               || (total - n_count + 1 < n_from
-                                   && total - n_count + 1 > 0))
-                      (fun _ ->
-                         Reactive_signal.set showing (total - n_count, n_count);
-                         false)
-                      [pcdata (fmt "End [%d, %d]"
-                                 (max 0 (total - n_count + 1))
-                                 total)];
-                  ])
+                  enable_if (n_from > 0)
+                    (fun _ -> Reactive_signal.set showing (0, n_count); false)
+                    [pcdata (fmt "Start [1, %d]" n_count)];
+                  enable_if (n_from > 0)
+                    (fun _ ->
+                       Reactive_signal.set showing
+                         (n_from - (min n_count n_from), n_count);
+                       false)
+                    [pcdata (fmt "Previous %d" n_count)];
+                  enable_if  (n_from + n_count < total)
+                    (fun _ ->
+                       let incr = min (total - n_count - n_from) n_count in
+                       Reactive_signal.set showing (n_from + incr, n_count);
+                       false)
+                    [pcdata (fmt "Next %d" n_count)];
+                  enable_if (n_from + n_count < total
+                             || (total - n_count + 1 < n_from
+                                 && total - n_count + 1 > 0))
+                    (fun _ ->
+                       Reactive_signal.set showing (total - n_count, n_count);
+                       false)
+                    [pcdata (fmt "End [%d, %d]"
+                               (max 0 (total - n_count + 1))
+                               total)];
+                ];
               )
             |> singleton)
       in
       let target_table =
-        let row_of_id index id =
+        let row_of_id columns index id =
           let target_signal = get_target_signal t ~id in
           Reactive.tr Reactive_signal.(
               signal target_signal
@@ -596,34 +667,58 @@ module Single_client = struct
                 | None ->
                   [
                     td [pcdata (fmt "%d" (index + 1))];
-                    td [pcdata (fmt "Still fetching %s …" id)];
+                    td ~a:[
+                      a_colspan (List.length columns - 1);
+                    ] [pcdata (fmt "Still fetching %s …" id)];
                   ]
                 | Some trgt ->
-                  [
-                    td [pcdata (fmt "%d" (index + 1))];
-                    td [pcdata (Target.Summary.name trgt)];
-                  ]
-                )
+                  List.map columns ~f:(function
+                    | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
+                    | `Name -> td [pcdata (Target.Summary.name trgt)]
+                    | `Id -> td [pcdata (Target.Summary.id trgt)]
+                    | `Tags ->
+                      td [pcdata (Target.Summary.tags trgt
+                                  |> String.concat ~sep:", ")]
+                    ))
               |> list)
         in
+        let table_head columns =
+          thead [
+            tr 
+              (List.map columns ~f:(function
+                 | `Arbitrary_index -> th [pcdata "Index"]
+                 | `Name -> th [pcdata "Name"]
+                 | `Id -> th [pcdata "Unique Id"]
+                 | `Tags -> th [pcdata "Tags"]
+                 ))
+          ] in
         Reactive.div
           Reactive_signal.(
-            React.S.l2 (fun a b -> (a, b))
+            React.S.l3 (fun a b c -> (a, b, c))
               (signal t.target_ids)
               (signal showing)
+              (signal t.table_columns)
             |> map
               ~f:begin function
-              | (target_ids, (index, count)) ->
+              | (target_ids, (index, count), columns) ->
                 let ids = List.take (List.drop target_ids index) count in
-                table
-                  ~a:[a_class ["table"]]
-                  (List.mapi ids ~f:(fun ind id -> row_of_id (index + ind) id))
+                div ~a:[a_class ["table-responsive"]] [
+                  tablex
+                    ~thead:(table_head columns)
+                    ~a:[a_class ["table"; "table-condensed";
+                                 "table-bordered"; "table-hover"]] [
+                    tbody 
+                      (List.mapi ids ~f:(fun ind id ->
+                           row_of_id columns (index + ind) id))
+                  ]
+                ]
               end
             |> singleton
           )
       in
-      div [
-        navigation;
+      (* div ~a:[a_class ["container"]] [ *)
+      Bootstrap.panel ~body:[
+        controls;
         target_table
       ]
 
@@ -637,10 +732,14 @@ module Single_client = struct
           ~on_click:(fun _ -> Reactive_signal.set current_tab `Target_table; false)
           [Reactive.pcdata
              Reactive_signal.(
-               signal client.target_ids
-               |> React.S.map List.length
-               |> React.S.map (fmt "Target Table (%d)")
-             )];
+               React.S.l2 (fun a b -> (a, List.length b))
+                 (signal client.table_showing)
+                 (signal client.target_ids)
+               |> React.S.map (fun ((n_from, n_count), total) ->
+                      (fmt "Target-table ([%d, %d] of %d)"
+                                (min total (n_from + 1))
+                                (min (n_from + n_count) total)
+                                total)))];
         Bootstrap.tab_item
           ~active:(Reactive_signal.signal current_tab
                    |> React.S.map (function `Status -> true | _ -> false))
