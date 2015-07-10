@@ -103,6 +103,13 @@ module H5 = struct
                  toggle ev |> ignore;
                  on_click ev in
                li [a ~a:[a_onclick on_click] content]
+             | `Checkbox (status_signal, on_click, content) ->
+               let tick_or_cross =
+                 status_signal |> React.S.map (function
+                   | true -> " ✔"
+                   | false -> " ✖") in
+               li [a ~a:[a_onclick on_click;]
+                     [content; Reactive.pcdata tick_or_cross]]
              )) in
       let classes =
         Reactive_signal.signal visible
@@ -375,6 +382,16 @@ module Single_client = struct
     `Tags;
   ]
   let default_columns = all_columns
+  let column_name : column -> _ =
+    let open H5 in
+    function
+    | `Arbitrary_index -> span [pcdata "Index"]
+    | `Name -> span [pcdata "Name"]
+    | `Id -> span [pcdata "Unique Id"]
+    | `Tags -> span [pcdata "Tags"]
+  let insert_column columns col =
+    List.filter all_columns
+      (fun c -> c = col || List.mem c columns)
 
   type t = {
     protocol_client: Protocol_client.t;
@@ -629,6 +646,31 @@ module Single_client = struct
                                 Reactive_signal.set showing (n_from, new_count);
                                 false), content)
                        ));
+                  Bootstrap.dropdown_button
+                    ~content:[
+                      pcdata (fmt "Columns")
+                    ]
+                    (`Close ((fun _ ->
+                         Reactive_signal.set t.table_columns all_columns;
+                         false), [pcdata "ALL"])
+                     :: List.map all_columns ~f:(fun col ->
+                         let content = column_name col in
+                         let signal =
+                           Reactive_signal.signal t.table_columns 
+                           |> React.S.map (fun current ->
+                               List.mem ~set:current col)
+                         in
+                         let on_click _ =
+                           let current = 
+                             Reactive_signal.signal t.table_columns
+                             |> React.S.value in
+                           Reactive_signal.set t.table_columns
+                             (if List.mem ~set:current col
+                              then List.filter current ((<>) col)
+                              else insert_column current col);
+                           false in
+                         `Checkbox (signal, on_click, content)
+                       ));
                   enable_if (n_from > 0)
                     (fun _ -> Reactive_signal.set showing (0, n_count); false)
                     [pcdata (fmt "Start [1, %d]" n_count)];
@@ -683,15 +725,7 @@ module Single_client = struct
               |> list)
         in
         let table_head columns =
-          thead [
-            tr 
-              (List.map columns ~f:(function
-                 | `Arbitrary_index -> th [pcdata "Index"]
-                 | `Name -> th [pcdata "Name"]
-                 | `Id -> th [pcdata "Unique Id"]
-                 | `Tags -> th [pcdata "Tags"]
-                 ))
-          ] in
+          thead [tr (List.map columns ~f:(fun col -> th [column_name col]))] in
         Reactive.div
           Reactive_signal.(
             React.S.l3 (fun a b c -> (a, b, c))
