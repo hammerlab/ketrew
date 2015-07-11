@@ -1,13 +1,6 @@
 open Ketrew_pure
 open Internal_pervasives
 
-let error f =
-  Printf.ksprintf (fun s -> Firebug.console##error (Js.string s); failwith s) f
-let debug f =
-  Printf.ksprintf (fun s -> Firebug.console##log(Js.string s)) f
-let alert f =
-  Printf.ksprintf (fun s -> Dom_html.window##alert(Js.string s); failwith s) f
-
 module Reactive_signal = struct
   (* Trying to wrap React and ReactiveData stuff *)
   type 'a t = {
@@ -917,6 +910,8 @@ let go _ =
   Js._true
 
 let _ =
+  let debug f =
+    Printf.ksprintf (fun s -> Firebug.console##log(Js.string s)) f in
   global_log_print_string := (debug "%s%!");
   global_with_color := false;
   Dom_html.window##onload <- Dom_html.handler go
