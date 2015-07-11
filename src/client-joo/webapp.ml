@@ -906,7 +906,9 @@ let go _ =
         Log.(s "→ END !!!" @ verbose);
         return ()
       end (fun exn ->
-           error "Uncaught Exception: %s" (Printexc.to_string exn)));
+          Printf.ksprintf
+            (fun s -> Firebug.console##error (Js.string s); failwith s)
+            "Uncaught Exception: %s" (Printexc.to_string exn)));
   Js._true
 
 let _ =
