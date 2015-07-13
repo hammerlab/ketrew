@@ -196,13 +196,17 @@ module Protocol_client = struct
         (* (Protocol.Up_message.t -> string (\* callback for json functions *\) -> string) *)
 
   type t = {
+    name: string;
     connection: connection;
   }
 
-  let create connection = {connection}
-  let jsonp_of_raw_url url = create (JSONP url)
+  let create ~name connection = {name; connection}
 
-  let jsonp_call {connection = JSONP url} =
+  let name {name; _} = name
+    
+  let jsonp_of_raw_url ~name url = create ~name (JSONP url)
+
+  let jsonp_call {connection = JSONP url; _} =
     (fun msg callback_name ->
        fmt "%s&callback=%s&message=%s"
          url
@@ -240,7 +244,7 @@ module Protocol_client = struct
     in
     match token_opt, Url.Current.protocol with
     | Some token, not_file when not_file <> "file:" ->
-      Some (jsonp_of_url 
+      Some (jsonp_of_url ~name:"Main"
               ~protocol:Url.Current.protocol
               ~host:Url.Current.host
               ?port:Url.Current.port
@@ -251,7 +255,7 @@ module Protocol_client = struct
       None
     | None, _ -> None
 
-  let base_url {connection} =
+  let base_url {connection; _} =
     match connection with
     | JSONP url -> url
 
@@ -261,14 +265,21 @@ module Protocol_client = struct
       try
         Js.Unsafe.get Dom_html.window (Js.string "ketrew_connections")
         |> Js.to_array
-        |> Array.map ~f:Js.to_string
+        |> Array.map ~f:(fun array ->
+            Js.to_array array |> Array.map ~f:Js.to_string |> Array.to_list)
         |> Array.to_list
       with e ->
         Log.(s "getting window.ketrew_connections: "
              % exn e @ warning);
         []
     in
-    List.map base_urls ~f:jsonp_of_raw_url
+    List.filter_map base_urls ~f:(function
+      | [ name; url ] -> Some (jsonp_of_raw_url ~name url)
+      | other ->
+        Log.(s "wrong specification of clients: "
+             % OCaml.list quote other @ error);
+        None)
+
 
   let call t msg =
     match t.connection with
@@ -438,6 +449,9 @@ module Single_client = struct
   let log t =
     Log.(s "Protocol-client: "
          % Protocol_client.log t.protocol_client)
+
+  let name {protocol_client; _ } = Protocol_client.name protocol_client
+
 
   let asynchronous_loop t ~name loop =
     Lwt.(
@@ -808,7 +822,7 @@ end
 module Application_state = struct
 
   type t = {
-    clients: (string * Single_client.t) list;
+    clients: Single_client.t list;
   }
 
   let create () =
@@ -825,26 +839,27 @@ module Application_state = struct
     let clients =
       (match current_client with
       | None  -> fun e -> e
-      | Some one -> fun l -> ("Current", Single_client.create one ()) :: l)
-        (List.mapi ~f:(fun i c -> fmt "W%d" i, Single_client.create c ())
+      | Some one ->
+        fun l -> Single_client.create one () :: l)
+        (List.mapi ~f:(fun i c -> Single_client.create c ())
            window_clients)
     in
     {clients}
 
   let start_background_processing t =
-    List.iter t.clients begin fun (_, c) ->
-      Single_client.start_updating c
-    end
+    List.iter t.clients ~f:Single_client.start_updating
 
   let to_html t =
     let visible_tab =
       Reactive.Source.create
         (List.hd t.clients
-         |> Option.value_map ~f:(fun c -> `Client c) ~default:`About) in
+         |> Option.value_map ~f:(fun c ->
+             `Client (Single_client.name c, c)) ~default:`About) in
     let open H5 in
     let navigation =
       let tabs =
-        (List.map t.clients ~f:(fun (name, client) ->
+        (List.map t.clients ~f:(fun client ->
+             let name = Single_client.name client in
              let active =
                Reactive.(
                  Source.signal visible_tab
