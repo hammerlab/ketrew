@@ -30,6 +30,7 @@ module Down_message : sig
   type t = [
     | `List_of_targets of Target.t list
     | `List_of_target_summaries of Target.Summary.t list
+    | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
     | `List_of_target_ids of string list
     | `List_of_query_descriptions of (string * string) list
     | `Query_result of string
@@ -50,6 +51,8 @@ module Up_message : sig
     | `Get_targets of string list (* List of Ids, empty means “all” *)
     | `Get_available_queries of string (* Id of the target *)
     | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
+    | `Get_target_flat_states of
+        [`All | `Since of float] * string list (* List of Ids, empty means “all” *)
     | `Call_query of (string * string) (* target-id × query-name *)
     | `Submit_targets of Target.t list
     | `Kill_targets of string list (* List of Ids *)

@@ -199,11 +199,22 @@ module State : sig
       more_info: string list;
     } [@@deriving yojson]
 
+    val time: item ->  float
+    val simple: item ->  simple
+    val name: item ->  string
+    val message: item ->  string option
+    val more_info: item ->  string list
+
     type t = {
       history: item list;
     } [@@deriving yojson]
 
     val create : state -> t
+
+    (** Filter the history with a date, returning a flat-state
+        containing only newer items if any. *)
+    val since: t -> float -> t option
+
   end
 end
 

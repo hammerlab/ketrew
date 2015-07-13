@@ -544,6 +544,12 @@ type state = [
       let (`Time time, `Log message, `Info more_info) = summary state in
       {time; message; name; simple; more_info}
 
+    let time item = item.time
+    let simple item = item.simple
+    let name item = item.name
+    let message item = item.message
+    let more_info item = item.more_info
+
     let create state =
       let rec dive acc t =
         let item = item t in
@@ -555,7 +561,12 @@ type state = [
       in
       let history = dive [] state in
       {history}
-        
+
+    let since {history} date =
+      match List.filter history ~f:(fun {time; _} -> time >= date) with
+      | [] -> None
+      | history -> Some { history }
+
   end
   let rec to_flat_list (t : t) =
     let make_item ?bookkeeping ~history name = 

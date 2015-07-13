@@ -199,7 +199,7 @@ let message_of_body ~body =
 
 (** {2 Services; Answering Requests} *)
 
-let answer_get_targets ?(summaries=false) ~server_state target_ids =
+let get_targets_from_ids ~server_state target_ids =
   begin match target_ids  with
   | [] ->
     Engine.all_targets server_state.state
@@ -214,6 +214,9 @@ let answer_get_targets ?(summaries=false) ~server_state target_ids =
           return None)
     >>| List.filter_opt
   end
+
+let answer_get_targets ?(summaries=false) ~server_state target_ids =
+  get_targets_from_ids ~server_state target_ids
   >>= fun targets ->
   begin match summaries with
   | false -> return (`List_of_targets targets)
@@ -276,7 +279,22 @@ let answer_get_target_ids ~server_state query =
 let answer_get_server_status ~server_state =
   return (`Server_status (Protocol.Server_status.create ~time:Time.(now ()) ()))
 
-  
+let answer_get_target_flat_states ~server_state (time_constrain, target_ids)  =
+  get_targets_from_ids ~server_state target_ids
+  >>= fun targets ->
+  let states =
+    List.filter_map targets ~f:(fun trgt ->
+        let flat_state = Target.State.Flat.create (Target.state trgt) in
+        match time_constrain with
+        | `All -> Some (Target.id trgt, flat_state)
+        | `Since ti ->
+           Target.State.Flat.since flat_state ti
+           |> Option.map ~f:(fun st -> (Target.id trgt, st))
+          )
+  in
+  return (`List_of_target_flat_states states)
+
+
 let answer_message ~server_state ?token msg =
   let with_capability cap =
     Authentication.ensure_can server_state.authentication ?token cap
@@ -318,6 +336,10 @@ let answer_message ~server_state ?token msg =
     with_capability `See_server_status
     >>= fun () ->
     answer_get_server_status ~server_state
+  | `Get_target_flat_states query ->
+    with_capability `See_targets
+    >>= fun () ->
+    answer_get_target_flat_states ~server_state query
 
 let api_service ~server_state ~body req =
   get_post_body req ~body
