@@ -1,38 +1,54 @@
 open Ketrew_pure
 open Internal_pervasives
 
-module Reactive_signal = struct
+module Reactive = struct
   (* Trying to wrap React and ReactiveData stuff *)
-  type 'a t = {
-    signal: 'a React.S.t;
-    set: 'a -> unit;
-  }
 
-  let create v =
-    let signal, set = React.S.create v in
-    {signal; set}
+  module Source = struct
+    type 'a t = {
+      signal: 'a React.S.t;
+      set: 'a -> unit;
+    }
 
-  let set t v = t.set v
+    let create v =
+      let signal, set = React.S.create v in
+      {signal; set}
 
-  let signal t = t.signal
+    let set t v = t.set v
 
-  let map s ~f = React.S.map f s
+    let signal t = t.signal
 
-  let singleton t =
-    let open ReactiveData.RList in
-    make_from
-      [React.S.value t]
-      (React.E.map (fun e -> Set [e]) (React.S.changes t))
+  end
 
-  let list t =
-    let open ReactiveData.RList in
-    make_from
-      (React.S.value t)
-      (React.E.map (fun e -> Set e) (React.S.changes t))
+  module Signal = struct
+
+    type 'a t = 'a React.S.t
+  
+    let map s ~f = React.S.map f s
+    let value s = React.S.value s
+
+    let singleton t =
+      let open ReactiveData.RList in
+      make_from
+        [React.S.value t]
+        (React.E.map (fun e -> Set [e]) (React.S.changes t))
+
+    let list t =
+      let open ReactiveData.RList in
+      make_from
+        (React.S.value t)
+        (React.E.map (fun e -> Set e) (React.S.changes t))
+
+    let tuple_2 a b =
+      React.S.l2 (fun a b -> (a, b)) a b
+
+    let tuple_3 a b c =
+      React.S.l3 (fun a b c -> (a, b, c)) a b c
+  end
 
   module Option = struct
-    type 'a signal = 'a t
-    type 'a t =  'a option signal 
+    type 'a t =  'a option Source.t 
+    open Source
     let create () = create None
     let switch t v =
       match signal t |> React.S.value with
@@ -53,7 +69,7 @@ end
 
 module H5 = struct
   include Tyxml_js.Html5
-  module Reactive = Tyxml_js.R.Html5
+  module Reactive_node = Tyxml_js.R.Html5
 
   module Bootstrap = struct
 
@@ -64,9 +80,10 @@ module H5 = struct
           ul ~a:[a_class ["nav"; "nav-tabs"]] (
             List.map tabs ~f:(fun (active_signal, on_click, content_list) ->
                 let active_class =
-                  React.S.map (function | true -> ["active"] | false -> [])
+                  Reactive.Signal.map
+                    ~f:(function | true -> ["active"] | false -> [])
                     active_signal in
-                li ~a:[ Reactive.a_class active_class ] [
+                li ~a:[ Reactive_node.a_class active_class ] [
                   a ~a:[ (* The `a` must be directly under the `li`. *)
                     a_href "#"; (* The `href` transforms the mouse like a link. *)
                     a_onclick on_click;
@@ -82,10 +99,11 @@ module H5 = struct
       li ~a:[a_class ["disabled"]] [a content]
 
     let dropdown_button ~content items =
-      let visible = Reactive_signal.create false in
+      let visible = Reactive.Source.create false in
       let toggle _ =
-        Reactive_signal.(set visible
-                           (signal visible |> React.S.value |> not));
+        Reactive.(
+          Source.set visible
+            (Source.signal visible |> Signal.value |> not));
         false in
       let menu =
         ul ~a:[a_class ["dropdown-menu"]]
@@ -98,19 +116,20 @@ module H5 = struct
                li [a ~a:[a_onclick on_click] content]
              | `Checkbox (status_signal, on_click, content) ->
                let tick_or_cross =
-                 status_signal |> React.S.map (function
+                 status_signal
+                 |> Reactive.Signal.map ~f:(function
                    | true -> " ✔"
                    | false -> " ✖") in
                li [a ~a:[a_onclick on_click;]
-                     [content; Reactive.pcdata tick_or_cross]]
+                     [content; Reactive_node.pcdata tick_or_cross]]
              )) in
       let classes =
-        Reactive_signal.signal visible
-        |> React.S.map (function
+        Reactive.Source.signal visible
+        |> Reactive.Signal.map ~f:(function
           | true -> ["btn-group"; "open"]
           | false -> ["btn-group"])
       in
-      div ~a:[Reactive.a_class classes] [
+      div ~a:[Reactive_node.a_class classes] [
         button ~a:[
           a_class ["btn"; "btn-default"; "dropdown-toggle"];
           a_onclick toggle
@@ -310,23 +329,33 @@ module Target_cache  = struct
     full: Target.t option;
   }
   type t = {
-    targets: (Target.id, target_knowledge option Reactive_signal.t) Hashtbl.t;
+    targets: (Target.id, target_knowledge option Reactive.Source.t) Hashtbl.t;
   }
 
   let create () = {targets = Hashtbl.create 42}
 
-  let get {targets} ~id =
+  let _get_target_knowledge {targets} ~id =
     try (Hashtbl.find targets id)
     with _ ->
       (* Log.(s "Target-cache: miss on " % s id @ verbose); *)
-      let signal = Reactive_signal.create None in
+      let signal = Reactive.Source.create None in
       (* Log.(s "Created `None` target signal for " % s id @ verbose); *)
       Hashtbl.replace targets id signal;
       signal
 
+  let summary knowledge =
+    match knowledge with
+    | Some {summary = Some s; _} -> Some s
+    | Some {full = Some f; _} -> Some (Target.Summary.create f)
+    | _ -> None
+
+  let get_target_summary_signal t ~id =
+    _get_target_knowledge t ~id
+    |> Reactive.Source.signal |> Reactive.Signal.map ~f:summary
+
   let update {targets} ~id what =
-    let signal = get {targets} id in
-    let current = Reactive_signal.signal signal |> React.S.value in
+    let signal = _get_target_knowledge {targets} id in
+    let current = Reactive.(Source.signal signal |> Signal.value) in
     let new_value =
       match current, what with
       | None, `Summary sum -> { summary = Some sum; full = None }
@@ -334,17 +363,11 @@ module Target_cache  = struct
       | Some {summary; full}, `Full f -> { summary; full = Some f }
       | Some {summary; full}, `Summary s -> { summary = Some s; full }
     in
-    Reactive_signal.set signal (Some new_value);
+    Reactive.Source.set signal (Some new_value);
     (* Hashtbl.replace targets id signal; *)
     ()
 
   let clear {targets} = Hashtbl.clear targets
-
-  let summary knowledge =
-    match knowledge with
-    | Some {summary = Some s; _} -> Some s
-    | Some {full = Some f; _} -> Some (Target.Summary.create f)
-    | _ -> None
 
 
 end
@@ -389,19 +412,19 @@ module Single_client = struct
   type t = {
     protocol_client: Protocol_client.t;
     target_cache: Target_cache.t;
-    target_ids: string list Reactive_signal.t;
-    status: status Reactive_signal.t;
-    current_tab: [`Status | `Target_table] Reactive_signal.t;
-    table_showing: (int * int) Reactive_signal.t;
-    table_columns: column list Reactive_signal.t;
+    target_ids: string list Reactive.Source.t;
+    status: status Reactive.Source.t;
+    current_tab: [`Status | `Target_table] Reactive.Source.t;
+    table_showing: (int * int) Reactive.Source.t;
+    table_columns: column list Reactive.Source.t;
   }
 
   let create ~protocol_client () =
-    let target_ids = Reactive_signal.create [] in
-    let status = Reactive_signal.create `Unknown in
-    let current_tab = Reactive_signal.create `Target_table in
-    let table_showing = Reactive_signal.create (0, 10) in
-    let table_columns = Reactive_signal.create default_columns in
+    let target_ids = Reactive.Source.create [] in
+    let status = Reactive.Source.create `Unknown in
+    let current_tab = Reactive.Source.create `Target_table in
+    let table_showing = Reactive.Source.create (0, 10) in
+    let table_columns = Reactive.Source.create default_columns in
     {
       protocol_client;
       target_cache = Target_cache.create ();
@@ -434,7 +457,7 @@ module Single_client = struct
               | `Wrong_down_message d -> s "Wrong down-message"
             in
             Log.(s "Error in loop " % quote name % s ": " % problem @ error);
-            Reactive_signal.set t.status
+            Reactive.Source.set t.status
               (`Problem (problem |> Log.to_long_string));
             Lwt_js.sleep 25. >>= fun () ->
             meta_loop ()
@@ -450,8 +473,8 @@ module Single_client = struct
         >>= begin function
         | `Server_status status ->
           let previous_status =
-            Reactive_signal.signal t.status |> React.S.value in
-          Reactive_signal.set t.status (`Ok status);
+            Reactive.(Source.signal t.status |> Signal.value) in
+          Reactive.Source.set t.status (`Ok status);
           return (target_query_of_status previous_status)
         | other ->
           fail (`Wrong_down_message other)
@@ -461,8 +484,8 @@ module Single_client = struct
         Protocol_client.call t.protocol_client (`Get_target_ids query)
         >>= begin function
         | `List_of_target_ids l ->
-          let current = Reactive_signal.signal t.target_ids |> React.S.value in
-          Reactive_signal.set t.target_ids
+          let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
+          Reactive.Source.set t.target_ids
             (List.append current l
              |> List.sort ~cmp:(fun ta tb -> String.compare tb ta)
              |> List.remove_consecutive_duplicates ~equal:(=));
@@ -513,8 +536,8 @@ module Single_client = struct
         let missing_ids =
           List.filter targets_ids ~f:(fun id ->
               match
-                Target_cache.get t.target_cache id |> Reactive_signal.signal
-                |> React.S.value |> Target_cache.summary
+                Target_cache.get_target_summary_signal t.target_cache id
+                |> Reactive.Signal.value
               with
               | Some _ -> false
               | None -> true)
@@ -522,15 +545,11 @@ module Single_client = struct
         asynchronous_loop t ~name:"fetch-summaries" (fun () ->
             fetch_summaries missing_ids)
       in
-      let event = Reactive_signal.signal t.target_ids |> React.S.changes in
+      let event = Reactive.Source.signal t.target_ids |> React.S.changes in
       React.E.map get_all_missing_summaries event
     in
     asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
     ()
-
-  let get_target_signal t ~id =
-    let signal = Target_cache.get t.target_cache ~id in
-    signal
 
   module Html = struct
 
@@ -551,11 +570,11 @@ module Single_client = struct
                   a_title (fmt "Problem: %s" problem);
                 ] [pcdata "✖"]
       in
-      Reactive.span
-        Reactive_signal.(
-          signal t.status
-          |> map ~f:display
-          |> singleton
+      Reactive_node.span
+        Reactive.(
+          Source.signal t.status
+          |> Signal.map ~f:display
+          |> Signal.singleton
         )
 
     let status t =
@@ -569,13 +588,13 @@ module Single_client = struct
           ]
         | `Unknown -> span ~a:[a_style "color: orange"] [pcdata "???"]
         | `Problem problem ->
-          let help_message = Reactive_signal.Option.create () in
+          let help_message = Reactive.Option.create () in
           span [
             span ~a:[a_style "color: red"] [pcdata problem];
             pcdata " ";
             button ~a:[
               a_onclick (fun ev ->
-                  Reactive_signal.Option.switch help_message
+                  Reactive.Option.switch help_message
                     (span [
                         pcdata "Cannot connect, and cannot get decent \
                                 error message from the browser. You should try \
@@ -591,7 +610,7 @@ module Single_client = struct
                       ]);
                     false)
             ] [pcdata "Investigate"];
-            Reactive.span Reactive_signal.Option.(
+            Reactive_node.span Reactive.Option.(
                 singleton_or_empty help_message
               )
           ]
@@ -601,11 +620,11 @@ module Single_client = struct
         code [pcdata (Protocol_client.log t.protocol_client
                       |> Log.to_long_string)];
         br ();
-        Reactive.span
-          Reactive_signal.(
-            signal t.status
-            |> map ~f:display_status
-            |> singleton
+        Reactive_node.span
+          Reactive.(
+            Source.signal t.status
+            |> Signal.map ~f:display_status
+            |> Signal.singleton
           )
       ]
 
@@ -613,12 +632,10 @@ module Single_client = struct
       let open H5 in
       let showing = t.table_showing in
       let controls =
-        Reactive.div Reactive_signal.(
-            React.S.l2 (fun a b -> (a, List.length b))
-              (signal showing)
-              (signal t.target_ids)
-            |> map ~f:(function
-              | ((n_from, n_count), total) ->
+        Reactive_node.div Reactive.(
+            Signal.tuple_2 (Source.signal showing) (Source.signal t.target_ids)
+            |> Signal.map ~f:(fun ((n_from, n_count), ids) ->
+                let total = List.length ids in
                 let enable_if cond on_click content =
                   if cond
                   then Bootstrap.button (`Enabled (on_click, content))
@@ -636,7 +653,7 @@ module Single_client = struct
                          else
                            `Close (
                              (fun _ ->
-                                Reactive_signal.set showing (n_from, new_count);
+                                Source.set showing (n_from, new_count);
                                 false), content)
                        ));
                   Bootstrap.dropdown_button
@@ -644,20 +661,19 @@ module Single_client = struct
                       pcdata (fmt "Columns")
                     ]
                     (`Close ((fun _ ->
-                         Reactive_signal.set t.table_columns all_columns;
+                         Source.set t.table_columns all_columns;
                          false), [pcdata "ALL"])
                      :: List.map all_columns ~f:(fun col ->
                          let content = column_name col in
                          let signal =
-                           Reactive_signal.signal t.table_columns 
-                           |> React.S.map (fun current ->
+                           Source.signal t.table_columns 
+                           |> Signal.map ~f:(fun current ->
                                List.mem ~set:current col)
                          in
                          let on_click _ =
                            let current = 
-                             Reactive_signal.signal t.table_columns
-                             |> React.S.value in
-                           Reactive_signal.set t.table_columns
+                             Source.signal t.table_columns |> Signal.value in
+                           Source.set t.table_columns
                              (if List.mem ~set:current col
                               then List.filter current ((<>) col)
                               else insert_column current col);
@@ -665,40 +681,39 @@ module Single_client = struct
                          `Checkbox (signal, on_click, content)
                        ));
                   enable_if (n_from > 0)
-                    (fun _ -> Reactive_signal.set showing (0, n_count); false)
+                    (fun _ -> Source.set showing (0, n_count); false)
                     [pcdata (fmt "Start [1, %d]" n_count)];
                   enable_if (n_from > 0)
                     (fun _ ->
-                       Reactive_signal.set showing
+                       Source.set showing
                          (n_from - (min n_count n_from), n_count);
                        false)
                     [pcdata (fmt "Previous %d" n_count)];
                   enable_if  (n_from + n_count < total)
                     (fun _ ->
                        let incr = min (total - n_count - n_from) n_count in
-                       Reactive_signal.set showing (n_from + incr, n_count);
+                       Source.set showing (n_from + incr, n_count);
                        false)
                     [pcdata (fmt "Next %d" n_count)];
                   enable_if (n_from + n_count < total
                              || (total - n_count + 1 < n_from
                                  && total - n_count + 1 > 0))
                     (fun _ ->
-                       Reactive_signal.set showing (total - n_count, n_count);
+                       Source.set showing (total - n_count, n_count);
                        false)
                     [pcdata (fmt "End [%d, %d]"
                                (max 0 (total - n_count + 1))
                                total)];
                 ];
               )
-            |> singleton)
+            |> Signal.singleton)
       in
       let target_table =
         let row_of_id columns index id =
-          let target_signal = get_target_signal t ~id in
-          Reactive.tr Reactive_signal.(
-              signal target_signal
-              |> map ~f:Target_cache.summary
-              |> map ~f:(function
+          let target_signal =
+            Target_cache.get_target_summary_signal t.target_cache ~id in
+          Reactive_node.tr Reactive.Signal.(
+              map target_signal ~f:(function
                 | None ->
                   [
                     td [pcdata (fmt "%d" (index + 1))];
@@ -719,28 +734,26 @@ module Single_client = struct
         in
         let table_head columns =
           thead [tr (List.map columns ~f:(fun col -> th [column_name col]))] in
-        Reactive.div
-          Reactive_signal.(
-            React.S.l3 (fun a b c -> (a, b, c))
-              (signal t.target_ids)
-              (signal showing)
-              (signal t.table_columns)
-            |> map
-              ~f:begin function
-              | (target_ids, (index, count), columns) ->
-                let ids = List.take (List.drop target_ids index) count in
-                div ~a:[a_class ["table-responsive"]] [
-                  tablex
-                    ~thead:(table_head columns)
-                    ~a:[a_class ["table"; "table-condensed";
-                                 "table-bordered"; "table-hover"]] [
-                    tbody 
-                      (List.mapi ids ~f:(fun ind id ->
-                           row_of_id columns (index + ind) id))
-                  ]
+        Reactive_node.div
+          Reactive.(
+            Signal.tuple_3 
+              (Source.signal t.target_ids)
+              (Source.signal showing)
+              (Source.signal t.table_columns)
+            |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
+              let ids = List.take (List.drop target_ids index) count in
+              div ~a:[a_class ["table-responsive"]] [
+                tablex
+                  ~thead:(table_head columns)
+                  ~a:[a_class ["table"; "table-condensed";
+                               "table-bordered"; "table-hover"]] [
+                  tbody 
+                    (List.mapi ids ~f:(fun ind id ->
+                         row_of_id columns (index + ind) id))
                 ]
-              end
-            |> singleton
+              ]
+            end
+            |> Signal.singleton
           )
       in
       (* div ~a:[a_class ["container"]] [ *)
@@ -754,37 +767,40 @@ module Single_client = struct
       let current_tab = client.current_tab in
       let tabs = [
         Bootstrap.tab_item
-          ~active:(Reactive_signal.signal current_tab
-                   |> React.S.map (function `Target_table -> true | _ -> false))
-          ~on_click:(fun _ -> Reactive_signal.set current_tab `Target_table; false)
-          [Reactive.pcdata
-             Reactive_signal.(
-               React.S.l2 (fun a b -> (a, List.length b))
-                 (signal client.table_showing)
-                 (signal client.target_ids)
-               |> React.S.map (fun ((n_from, n_count), total) ->
-                      (fmt "Target-table ([%d, %d] of %d)"
-                                (min total (n_from + 1))
-                                (min (n_from + n_count) total)
-                                total)))];
+          ~active:Reactive.(
+              Source.signal current_tab
+              |> Signal.map ~f:(function `Target_table -> true | _ -> false))
+          ~on_click:(fun _ -> Reactive.Source.set current_tab `Target_table; false)
+          [Reactive_node.pcdata
+             Reactive.(
+               Signal.tuple_2
+                 (Source.signal client.table_showing)
+                 (Source.signal client.target_ids |> Signal.map ~f:List.length)
+               |> Signal.map ~f:(fun ((n_from, n_count), total) ->
+                   (fmt "Target-table ([%d, %d] of %d)"
+                      (min total (n_from + 1))
+                      (min (n_from + n_count) total)
+                      total)))];
         Bootstrap.tab_item
-          ~active:(Reactive_signal.signal current_tab
-                   |> React.S.map (function `Status -> true | _ -> false))
-          ~on_click:(fun _ -> Reactive_signal.set current_tab `Status; false)
+          ~active:Reactive.(
+              Source.signal current_tab
+              |> Signal.map ~f:(function `Status -> true | _ -> false)
+            )
+          ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
           [pcdata "Status"];
       ] in
       (* div ~a:[ a_class ["container-fluid"]] [ *)
       Bootstrap.panel ~body:[
-          Bootstrap.with_tab_bar ~tabs
-            ~content:(
-              Reactive.div
-                (Reactive_signal.signal current_tab
-                 |> React.S.map (function
-                   | `Target_table -> target_table client
-                   | `Status -> status client)
-                 |> Reactive_signal.singleton)
-            );
-        ]
+        Bootstrap.with_tab_bar ~tabs
+          ~content:(
+            Reactive_node.div
+              Reactive.(Source.signal current_tab
+                        |> Signal.map ~f:(function
+                          | `Target_table -> target_table client
+                          | `Status -> status client)
+                        |> Signal.singleton)
+          );
+      ]
   end
 
 end
@@ -822,7 +838,7 @@ module Application_state = struct
 
   let to_html t =
     let visible_tab =
-      Reactive_signal.create
+      Reactive.Source.create
         (List.hd t.clients
          |> Option.value_map ~f:(fun c -> `Client c) ~default:`About) in
     let open H5 in
@@ -830,24 +846,26 @@ module Application_state = struct
       let tabs =
         (List.map t.clients ~f:(fun (name, client) ->
              let active =
-               Reactive_signal.signal visible_tab
-               |> React.S.map (function
-                 | `Client (c, _) when c = name -> true | _ -> false) in
+               Reactive.(
+                 Source.signal visible_tab
+                 |> Signal.map ~f:(function
+                   | `Client (c, _) when c = name -> true | _ -> false)) in
              Bootstrap.tab_item
                ~active
                ~on_click:(fun _ ->
-                   Reactive_signal.set visible_tab (`Client (name, client));
+                   Reactive.Source.set visible_tab (`Client (name, client));
                    false)
                [pcdata (fmt "Client %s " name);
                 Single_client.Html.status_icon client]
            ))
         @ [
           let active =
-            Reactive_signal.signal visible_tab
-            |> React.S.map (function `About -> true | _ -> false) in
+            Reactive.(
+              Source.signal visible_tab
+              |> Signal.map ~f:(function `About -> true | _ -> false)) in
           Bootstrap.tab_item
             ~active
-            ~on_click:(fun _ -> Reactive_signal.set visible_tab `About; false)
+            ~on_click:(fun _ -> Reactive.Source.set visible_tab `About; false)
             [pcdata "About"]
         ]
       in
@@ -858,9 +876,9 @@ module Application_state = struct
     div [
       navigation
         ~content:(
-          Reactive.div Reactive_signal.(
-              signal visible_tab
-              |> map ~f:(function
+          Reactive_node.div Reactive.(
+              Source.signal visible_tab
+              |> Signal.map ~f:(function
                 | `Client (_, client) ->
                   Single_client.Html.render client
                 | `About ->
@@ -878,7 +896,7 @@ module Application_state = struct
                     pcdata " page.";
                   ]
                 )
-              |> singleton
+              |> Signal.singleton
             ));
     ]
 
