@@ -127,18 +127,20 @@ end
 
 module State : sig
   type t
-  val simplify: t -> [
-      | `Activable
-      | `In_progress
-      | `Successful
-      | `Failed
-    ]
+
+  type simple = [
+    | `Activable
+    | `In_progress
+    | `Successful
+    | `Failed
+  ]
+  val simplify: t -> simple
 
   val name: t -> string
 
-  val summary :
-    t ->
+  type summary =
     [ `Time of Time.t ] * [ `Log of string option ] * [ `Info of string list ]
+  val summary : t -> summary
 
   val log: ?depth:int ->  t -> Log.t
 
@@ -180,6 +182,28 @@ module State : sig
       Count how many times a current non-fatal failure state
       “repeats.” I.e. how many [`Tried_to_...] state form recent
       history of the target. *)
+  end
+
+  (** A “flat” representation of the state (the “normal”
+      representation can be very deep hierarchy, that clients running on
+      weak VMs, like Javascript engines, cannot handle)i. *)
+  module Flat : sig
+
+    type state = t
+      
+    type item = {
+      time: float;
+      simple: simple;
+      name: string;
+      message: string option;
+      more_info: string list;
+    } [@@deriving yojson]
+
+    type t = {
+      history: item list;
+    } [@@deriving yojson]
+
+    val create : state -> t
   end
 end
 

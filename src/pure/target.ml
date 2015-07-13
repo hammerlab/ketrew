@@ -257,7 +257,13 @@ that the potential condition has been ensured.
   let to_history ?log previous_state =
     {log = make_log ?message:log (); previous_state}
 
-  let rec simplify (t: t) =
+  type simple = [
+    | `Activable
+    | `In_progress
+    | `Successful
+    | `Failed
+  ] [@@deriving yojson, show] 
+  let rec simplify (t: t) : simple =
     match t with
     | `Building _
     | `Tried_to_start _
@@ -410,6 +416,10 @@ that the potential condition has been ensured.
     | `Finished history -> (some history, None)
     | `Passive log -> (None, None)
 
+  type summary =
+    [ `Time of Time.t ] * [ `Log of string option ] * [ `Info of string list ]
+    [@@deriving yojson]
+
   let summary t =
     let rec count_start_attempts : starting history -> int = fun h ->
       match h.previous_state with 
@@ -484,15 +494,78 @@ that the potential condition has been ensured.
       | Some (time, m) -> time, m in
     (`Time time, `Log message, `Info (dive t))
 
+  module Flat = struct
+    (*
+type state = [
+    | `Building
+    | `Tried_to_start
+    | `Started_running
+    | `Starting
+    | `Still_building
+    | `Still_running
+    | `Still_running_despite_recoverable_error
+    | `Ran_successfully
+    | `Successfully_did_nothing
+    | `Tried_to_eval_condition
+    | `Tried_to_reeval_condition
+    | `Active
+    | `Verified_success
+    | `Already_done
+    | `Dependencies_failed
+    | `Failed_running
+    | `Failed_to_kill
+    | `Failed_to_start
+    | `Failed_to_eval_condition
+    | `Killing
+    | `Tried_to_kill
+    | `Did_not_ensure_condition
+    | `Killed
+    | `Finished
+    | `Passive
+] [@@deriving yojson, show]
+       *)
+    type state = t
+    type item = {
+      time: float;
+      simple: simple;
+      name: string;
+      message: string option;
+      more_info: string list;
+    }
+    [@@deriving yojson]
+
+    type t = {
+      history: item list;
+    } [@@deriving yojson]
+
+    let item state =
+      let simple = simplify state in
+      let name = name state in
+      let (`Time time, `Log message, `Info more_info) = summary state in
+      {time; message; name; simple; more_info}
+
+    let create state =
+      let rec dive acc t =
+        let item = item t in
+        let history_opt, bookkeeping_opt = contents t in
+        match history_opt with
+        | Some history ->
+          dive (item :: acc) history.previous_state
+        | None -> List.rev acc
+      in
+      let history = dive [] state in
+      {history}
+        
+  end
   let rec to_flat_list (t : t) =
     let make_item ?bookkeeping ~history name = 
-        let { log; previous_state } = history in
-        let bookkeeping_msg =
-          Option.map bookkeeping ~f:(fun { plugin_name; run_parameters } ->
-              fmt "[%s] Run-parameters: %d bytes" plugin_name
-                (String.length run_parameters)) in
-        (log.time, name, log.message, bookkeeping_msg)
-        :: to_flat_list (previous_state :> t)
+      let { log; previous_state } = history in
+      let bookkeeping_msg =
+        Option.map bookkeeping ~f:(fun { plugin_name; run_parameters } ->
+            fmt "[%s] Run-parameters: %d bytes" plugin_name
+              (String.length run_parameters)) in
+      (log.time, name, log.message, bookkeeping_msg)
+      :: to_flat_list (previous_state :> t)
     in
     let name = name t in
     let history_opt, bookkeeping = contents t in
