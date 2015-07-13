@@ -350,31 +350,13 @@ let api_service ~server_state ~body req =
   >>= fun msg ->
   return (`Message (`Json, msg))
 
-let compiled_script = [%blob "../../client.js"]
-let html_page script =
-    {html|<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Ketrew's Mighty GUI</title>
-<style type="text/css">
-<!--
-body {background-color: white; color:black}
--->
-</style>
-<script >
-|html} ^ script ^ {html|
-</script>
-</head>
-<body><div id="ketrew-gui"/></body>
-</html>      
-|html}
+let html_page () = [%blob "../../gui-page.html"]
 
 let gui_service ~server_state ~body req =
   let token = token_parameter req in
   Authentication.ensure_can server_state.authentication ?token `Browse_gui
   >>= fun () ->
-  return (`Page (html_page compiled_script))
+  return (`Page (html_page ()))
 
 (** {2 Dispatcher} *)
 

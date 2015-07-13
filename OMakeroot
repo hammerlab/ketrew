@@ -36,6 +36,7 @@ section # Pure library
     OCAML_GENERATED_MODULES[] = metadata
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew_pure, src/pure)
 
+
 section # Javascript client code
     OCAMLPACKS[] = $(JOO_PACKAGES)
     OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
@@ -44,36 +45,23 @@ section # Javascript client code
     NATIVE_ENABLED = false
     _build/client.js: $(file _build/src/client-joo/ketrew-client-joo.run)
         js_of_ocaml --pretty --no-inline --debug-info +weak.js +toplevel.js  $< -o $@
-    .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo))
-    _build/quick-test.html: _build/client.js 
-        echo '\
-<!DOCTYPE html>\
-<html lang="en">\
-  <head>\
-    <meta charset="utf-8">\
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">\
-    <meta name="viewport" content="width=device-width, initial-scale=1">\
-    <link rel="stylesheet" href="../src/css/bootstrap_335.min.css">\
-    <title>Test</title>\
-  </head>\
-  <body>\
-    <div class="container-fluid" id="ketrew-gui"></div>' > $@
-        echo "<script>" >> $@
-        echo "window.ketrew_connections = [" >> $@
-        echo "  \"https://localhost:8443/apijsonp?token=nekot\", " >> $@
-        echo $(addprefix \",$(addsuffix \"\, , $(getenv MORE_SERVERS, https://localhost:8443/apijsonp?token=nekot))) >> $@
-        echo "  \"https://does.not.exist:8888/apijsonp?token=nekot\"" >> $@
-        echo "];" >> $@
-        cat _build/client.js >> $@
-        echo "</script></body> </html>" >> $@
+    _build/style.css: $(file ./src/css/bootstrap_335_min.css)
+        echo "Building _build/style.css"
+        cp ./src/css/bootstrap_335_min.css _build/style.css
+    MORE_SERVERS_FOR_GUI=$(getenv MORE_SERVERS, "")
+    _build/gui-page.html: _build/client.js _build/style.css
+        ./tools/template-gui.sh $@ _build/client.js _build/style.css $(MORE_SERVERS_FOR_GUI)
     .PHONY: gui-quick
-    gui-quick: _build/quick-test.html
+    .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo)) _build/gui-page.html
+    gui-quick: _build/gui-page.html
 
 section # Big Lwt/Unix library; server, EDSL, Text-UI
     OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
     OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
     DESCRIPTION = $(DESCRIPTION) -- Lwt/Unix library
-    _build/src/lib/server.ml: $(file _build/client.js)
+    _build/src/lib/server.cmo: _build/gui-page.html
+    _build/src/lib/server.cmx: _build/gui-page.html
+    _build/src/lib/server.o: _build/gui-page.html
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew, src/lib)
 
 section # 3-Lines "main" application ./ketrew
