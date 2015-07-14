@@ -79,12 +79,12 @@ module Log =  struct
   let sexp sexp_of_t t = s (sexp_of_t t |> Sexplib.Sexp.to_string)
   let uri theuri = s (Uri.to_string theuri)
 
-  let big_byte_sequence ?(max_length=20) str =
+  let big_byte_sequence ?(string=quote) ?(max_length=20) str =
     match String.sub str ~index:0 ~length:max_length with
-    | None -> quote str
+    | None -> string str
     | Some substr ->
       braces (
-        quote substr % s "…" % nbsp %
+        string substr % s "…" % nbsp %
         (match String.length str with
         | n when n / 1024 > 10 ->
           i (n / 1024) % nbsp % s "KB"
