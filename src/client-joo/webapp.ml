@@ -426,12 +426,14 @@ module Single_client = struct
     | `Name
     | `Id
     | `Tags
+    | `Status
   ]
   let all_columns = [
     `Arbitrary_index;
     `Name;
     `Id;
     `Tags;
+    `Status;
   ]
   let default_columns = all_columns
   let column_name : column -> _ =
@@ -441,6 +443,8 @@ module Single_client = struct
     | `Name -> span [pcdata "Name"]
     | `Id -> span [pcdata "Unique Id"]
     | `Tags -> span [pcdata "Tags"]
+    | `Status -> span [pcdata "Status"]
+
   let insert_column columns col =
     List.filter all_columns
       (fun c -> c = col || List.mem c columns)
@@ -736,6 +740,91 @@ module Single_client = struct
           )
       ]
 
+    let target_status_badge t ~id =
+      let open H5 in
+      let signal =
+        Target_cache.get_target_flat_status_signal
+          t.target_cache ~id in
+      let content =
+        Reactive.Signal.(
+          map signal ~f:Target.State.Flat.latest
+          |> map ~f:(function
+            | None ->
+              span ~a:[a_class ["label"; "label-warning"]]
+                [pcdata "Unknown … yet"]
+            | Some item ->
+              let text_of_item item =
+                fmt "%s%s%s"
+                  (Target.State.Flat.name item)
+                  (Target.State.Flat.message item
+                   |> Option.value_map ~default:""
+                     ~f:(fmt " (%s)"))
+                  (Target.State.Flat.more_info item
+                   |> function
+                   | [] -> ""
+                   | more -> ": " ^ String.concat ~sep:", " more)
+              in
+              let label =
+                match Target.State.Flat.simple item with
+                | `Activable ->  "label-default"
+                | `In_progress -> "label-info"
+                | `Successful -> "label-success"
+                | `Failed -> "label-danger"
+              in
+              let additional_info =
+                List.take (
+                  Reactive.Signal.value signal |> Target.State.Flat.history
+                ) 10
+                |> List.map ~f:(fun item ->
+                    div [
+                      code [pcdata
+                              (Target.State.Flat.time item |> Time.to_filename)];
+                      br ();
+                      pcdata (text_of_item item);
+                    ])
+                |> fun l ->
+                if List.length l > 10 then
+                  l @ [div [code [pcdata "..."]]]
+                else
+                  l
+              in
+              let visible_popover = Reactive.Source.create None in
+              let popover =
+                Reactive.(
+                  Source.signal visible_popover
+                  |> Signal.map ~f:(function
+                    | Some (x,y) ->
+                      let width = 500 in
+                      div ~a:[
+                        a_class ["popover"; "fade"; "left"; "in"];
+                        a_style
+                          (fmt "left: %dpx; top: 10px; position: fixed;  \
+                                max-width: %dpx; display: block"
+                             (x - width - 100) width);
+                      ] [
+                        h3 ~a:[a_class ["popover-title"]] [pcdata "State History"];
+                        div ~a:[a_class ["popover-content"]] additional_info;
+                      ]
+                    | None -> div [])
+                  |> Signal.singleton
+                ) in
+              div [
+                span ~a:[
+                  a_class ["label"; label];
+                  a_onmouseover (fun ev ->
+                      let mx, my = ev##clientX, ev##clientY in
+                      Reactive.Source.set visible_popover (Some (mx, my));
+                      false);
+                  a_onmouseout (fun _ ->
+                      Reactive.Source.set visible_popover None;
+                      false);
+                ] [pcdata (Target.State.Flat.name item)];
+                Reactive_node.div popover;
+              ]
+            )
+          |> singleton) in
+      Reactive_node.div content
+
     let target_table t =
       let open H5 in
       let showing = t.table_showing in
@@ -837,6 +926,8 @@ module Single_client = struct
                     | `Tags ->
                       td [pcdata (Target.Summary.tags trgt
                                   |> String.concat ~sep:", ")]
+                    | `Status ->
+                      td [target_status_badge t ~id;]
                     ))
               |> list)
         in
