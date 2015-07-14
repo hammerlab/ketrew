@@ -282,16 +282,24 @@ let answer_get_server_status ~server_state =
 let answer_get_target_flat_states ~server_state (time_constrain, target_ids)  =
   get_targets_from_ids ~server_state target_ids
   >>= fun targets ->
+  Log.(s "answer_get_target_flat_states computing states " @ verbose);
   let states =
     List.filter_map targets ~f:(fun trgt ->
-        let flat_state = Target.State.Flat.create (Target.state trgt) in
+        let flat_state = Target.State.Flat.of_state (Target.state trgt) in
         match time_constrain with
         | `All -> Some (Target.id trgt, flat_state)
         | `Since ti ->
-           Target.State.Flat.since flat_state ti
-           |> Option.map ~f:(fun st -> (Target.id trgt, st))
-          )
+          Target.State.Flat.since flat_state ti
+          |> Option.map ~f:(fun st -> (Target.id trgt, st))
+      )
   in
+  let total_items =
+    (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
+         prev + (List.length flat.Target.State.Flat.history)))
+  in
+  Log.(s "answer_get_target_flat_states" % n
+       % s "States: " % i (List.length states) % n
+       % s "Total items: " % i  total_items @ normal);
   return (`List_of_target_flat_states states)
 
 

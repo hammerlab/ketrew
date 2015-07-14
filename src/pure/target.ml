@@ -531,6 +531,7 @@ type state = [
       name: string;
       message: string option;
       more_info: string list;
+      finished: bool;
     }
     [@@deriving yojson]
 
@@ -539,33 +540,88 @@ type state = [
     } [@@deriving yojson]
 
     let item state =
+      let finished =
+        match state with
+        | `Finished _ -> true
+        | _ -> false in
       let simple = simplify state in
       let name = name state in
-      let (`Time time, `Log message, `Info more_info) = summary state in
-      {time; message; name; simple; more_info}
+      let (`Time time, `Log message, `Info too_much) = summary state in
+      let more_info =
+        List.remove_consecutive_duplicates too_much ~equal:((=)) in
+      {time; message; name; simple; more_info; finished}
 
     let time item = item.time
     let simple item = item.simple
     let name item = item.name
     let message item = item.message
     let more_info item = item.more_info
+    let finished item = item.finished
 
-    let create state =
+    (*
+       The invariant we keep is that the history is sorted, `List.hd`
+       should give the latest piece of state.
+    *)
+    let empty () = {history = []}
+                   
+    let latest {history} = List.hd history
+
+    let history {history} = history
+
+    let of_state state =
       let rec dive acc t =
         let item = item t in
+        (*
+        Log.(s "Item: " % s item.name % sp % OCaml.list quote item.more_info
+             @ verbose);
+          *)
         let history_opt, bookkeeping_opt = contents t in
+        let stack =
+          let similar_item one two =
+            one.simple = two.simple
+            && one.name = two.name
+            && one.message = two.message
+            && one.more_info = two.more_info
+          in
+          match acc with
+          | one :: more when similar_item one item ->
+(*
+            Log.(s "Skipping Item: " % s item.name % sp % OCaml.list quote item.more_info
+             @ verbose); *)
+            item :: more
+          | _ -> item :: acc
+        in
         match history_opt with
         | Some history ->
-          dive (item :: acc) history.previous_state
-        | None -> List.rev acc
+          dive stack history.previous_state
+        | None ->
+          List.rev stack
       in
       let history = dive [] state in
+      (*
+      List.iter history (fun item ->
+        Log.(s "Item: " % s item.name % sp % OCaml.list quote item.more_info
+             @ verbose);
+        );
+      exit 3
+         *)
+        (*
+        if item.finished |> not then (
+          Log.(s "item not finished !" @ error);
+          exit 3
+        );
+           *)
       {history}
 
     let since {history} date =
       match List.filter history ~f:(fun {time; _} -> time >= date) with
       | [] -> None
       | history -> Some { history }
+
+    let merge one two =
+      {history =
+         List.rev_append one.history two.history
+         |> List.sort ~cmp:(fun a b -> ~- (Float.compare a.time b.time))}
 
   end
   let rec to_flat_list (t : t) =

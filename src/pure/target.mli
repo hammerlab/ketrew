@@ -191,12 +191,13 @@ module State : sig
 
     type state = t
       
-    type item = {
+    type item = private {
       time: float;
       simple: simple;
       name: string;
       message: string option;
       more_info: string list;
+      finished: bool;
     } [@@deriving yojson]
 
     val time: item ->  float
@@ -204,17 +205,26 @@ module State : sig
     val name: item ->  string
     val message: item ->  string option
     val more_info: item ->  string list
+    val finished: item -> bool
 
-    type t = {
+    type t = private {
       history: item list;
     } [@@deriving yojson]
 
-    val create : state -> t
+    val empty: unit -> t
+    val of_state : state -> t
 
+    val history: t -> item list
+
+    (** Get the most recent item. *)
+    val latest: t -> item option
+      
     (** Filter the history with a date, returning a flat-state
         containing only newer items if any. *)
     val since: t -> float -> t option
 
+    (** Merge two flat states into a sorted new one. *)
+    val merge: t -> t -> t
   end
 end
 
