@@ -341,9 +341,13 @@ module Target_cache  = struct
   }
   type t = {
     targets: (Target.id, target_knowledge option Reactive.Source.t) Hashtbl.t;
+    flat_statuses: (Target.id, Target.State.Flat.t Reactive.Source.t) Hashtbl.t; 
   }
 
-  let create () = {targets = Hashtbl.create 42}
+  let create () = {
+    targets = Hashtbl.create 42;
+    flat_statuses = Hashtbl.create 42;
+  }
 
   let _get_target_knowledge {targets} ~id =
     try (Hashtbl.find targets id)
@@ -352,6 +356,13 @@ module Target_cache  = struct
       let signal = Reactive.Source.create None in
       (* Log.(s "Created `None` target signal for " % s id @ verbose); *)
       Hashtbl.replace targets id signal;
+      signal
+
+  let _get_target_flat_status {flat_statuses; _} ~id =
+    try (Hashtbl.find flat_statuses id)
+    with _ ->
+      let signal = Reactive.Source.create (Target.State.Flat.empty ()) in
+      Hashtbl.replace flat_statuses id signal;
       signal
 
   let summary knowledge =
@@ -364,8 +375,12 @@ module Target_cache  = struct
     _get_target_knowledge t ~id
     |> Reactive.Source.signal |> Reactive.Signal.map ~f:summary
 
-  let update {targets} ~id what =
-    let signal = _get_target_knowledge {targets} id in
+  let get_target_flat_status_signal t ~id =
+    _get_target_flat_status t ~id
+    |> Reactive.Source.signal
+
+  let update_target t ~id what =
+    let signal = _get_target_knowledge t id in
     let current = Reactive.(Source.signal signal |> Signal.value) in
     let new_value =
       match current, what with
@@ -378,7 +393,17 @@ module Target_cache  = struct
     (* Hashtbl.replace targets id signal; *)
     ()
 
-  let clear {targets} = Hashtbl.clear targets
+  let update_flat_state t ~id more_state =
+    let source = _get_target_flat_status t ~id in
+    let current_value = Reactive.(Source.signal source |> Signal.value) in
+    Reactive.Source.set source
+      (Target.State.Flat.merge current_value more_state);
+    ()
+
+  let clear {targets; flat_statuses} =
+    Hashtbl.clear targets;
+    Hashtbl.clear flat_statuses;
+    ()
 
 
 end
@@ -538,7 +563,7 @@ module Single_client = struct
               Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
               List.iter l ~f:(fun value ->
                   let id = Target.Summary.id value in
-                  Target_cache.update t.target_cache ~id (`Summary value)
+                  Target_cache.update_target t.target_cache ~id (`Summary value)
                 );
               sleep sleep_time
               >>= fun () ->
@@ -561,6 +586,75 @@ module Single_client = struct
       in
       let event = Reactive.Source.signal t.target_ids |> React.S.changes in
       React.E.map get_all_missing_summaries event
+    in
+    let (_ : unit React.E.t) =
+      let update_flat_states targets_ids =
+        Log.(s "get_all_missing_states TRIGGERED !" %n
+             % s "targets_ids has " % i (List.length targets_ids)
+             % s " elements" @ verbose);
+        let at_once = 10 in
+        let sleep_time = 0.3 in
+        let rec batch_fetching ids =
+          match ids with
+          | [] ->
+            Log.(s "fill_cache_loop.fetch_summaries nothing left to do"
+                 @ verbose);
+            return ()
+          | more ->
+            let now, later = List.split_n more at_once in
+            Protocol_client.call t.protocol_client (`Get_target_flat_states (`All, now)) (*TODO*)
+            >>= fun msg_down ->
+            begin match msg_down with
+            | `List_of_target_flat_states l ->
+              Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states"
+                   @ verbose);
+              List.iter l ~f:begin fun (id, value) ->
+                Target_cache.update_flat_state t.target_cache ~id value
+              end;
+              sleep sleep_time
+              >>= fun () ->
+              batch_fetching later
+            | other ->
+              fail (`Wrong_down_message other)
+            end
+        in
+        let rec keep_fetching_for_active_targets tids =
+          let to_fetch, some_in_progress =
+            (* we want to fetch all the ones that can still change,
+               if there are some active targets that “can” make them
+               change. *)
+            let in_progress = ref false in
+            let filtered =
+            List.filter tids ~f:(fun id ->
+                let signal =
+                  Target_cache.get_target_flat_status_signal t.target_cache id in
+                let latest =
+                  Reactive.Signal.value signal |> Target.State.Flat.latest in
+                let not_finished =
+                  not (Option.value_map ~default:false
+                         ~f:Target.State.Flat.finished latest) in
+                match Option.map ~f:Target.State.Flat.simple latest with
+                | None
+                | Some `In_progress -> in_progress := true; true
+                | Some `Activable -> true
+                | Some `Successful
+                | Some `Failed -> not_finished)
+            in
+            (filtered, !in_progress)
+          in
+          match to_fetch with
+          | [] -> return ()
+          | some when not some_in_progress -> return ()
+          | more  ->
+            batch_fetching to_fetch
+            >>= fun () ->
+            keep_fetching_for_active_targets to_fetch
+        in
+        asynchronous_loop t ~name:"fetch-summaries" (fun () ->
+            keep_fetching_for_active_targets targets_ids)
+      in
+      let event = Reactive.Source.signal t.target_ids |> React.S.changes in
+      React.E.map update_flat_states event
     in
     asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
     ()
