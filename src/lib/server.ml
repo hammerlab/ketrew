@@ -350,7 +350,7 @@ let api_service ~server_state ~body req =
   >>= fun msg ->
   return (`Message (`Json, msg))
 
-let html_page () = [%blob "../../gui-page.html"]
+let html_page () = Client_html.gui_page
 
 let gui_service ~server_state ~body req =
   let token = token_parameter req in
