@@ -799,8 +799,8 @@ module Single_client = struct
                         a_class ["popover"; "fade"; "left"; "in"];
                         a_style
                           (fmt "left: %dpx; top: 10px; position: fixed;  \
-                                max-width: %dpx; display: block"
-                             (x - width - 100) width);
+                                max-width: %dpx; width: %dpx; display: block"
+                             (x - width - 100) width width);
                       ] [
                         h3 ~a:[a_class ["popover-title"]] [pcdata "State History"];
                         div ~a:[a_class ["popover-content"]] additional_info;
