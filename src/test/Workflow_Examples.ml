@@ -46,8 +46,8 @@ First, the mandatory license:
 
 And some preliminary OCaml settings:
 M*)
-open Printf
-module List = ListLabels
+open Nonstd
+module String = Sosa.Native_string
 let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 (*M
 
@@ -64,7 +64,7 @@ M*)
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew_client.submit (
+  Ketrew.Client.submit (
     target "run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
@@ -81,7 +81,7 @@ M*)
 let run_command_with_nohup ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew_client.submit (
+  Ketrew.Client.submit (
     target (sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
@@ -99,7 +99,7 @@ M*)
 let run_command_with_python_method ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew_client.submit (
+  Ketrew.Client.submit (
     target (sprintf "Pyd: %S" cmd)
       ~make:(daemonize (Program.sh cmd)
                ~using:`Python_daemon ~host
@@ -129,7 +129,7 @@ let run_command_with_yarn ~host cmd =
       (* do not put spaces up there, it can break Yarn *)
       (Program.sh cmd)
   in
-  Ketrew_client.submit (
+  Ketrew.Client.submit (
     target (sprintf "Yarn: %S" cmd) ~make
   )
 
@@ -158,7 +158,7 @@ let run_2_commands_with_python_method ~host cmd1 cmd2 =
       ~depends_on:[ target1 ]
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd2) ~host)
   in
-  Ketrew_client.submit target2
+  Ketrew.Client.submit target2
 (*M
 For example:
 
@@ -198,7 +198,7 @@ let fail_because_of_condition ~host =
       ~cmd:"ls /tmp"
       ~depends_on:[ target_with_condition ]
   in
-  Ketrew_client.submit target2
+  Ketrew.Client.submit target2
 (*M
 
 The Explorer™ will show the failed targets:
@@ -239,7 +239,8 @@ let deploy_website branches =
   let local_deamonize = daemonize ~host ~using:`Python_daemon in
   let current_path = Sys.getenv "PWD" in
   let dest_path =
-    sprintf "/tmp/deploy_website_%s" (Ketrew_pervasives.Unique_id.create ())
+    sprintf "/tmp/deploy_website_%s"
+      (Ketrew_pure.Internal_pervasives.Unique_id.create ())
   in
   let target ?(add_tags=[]) = target ~tags:("website" :: add_tags) in
   let clone_repo =
@@ -318,7 +319,7 @@ let deploy_website branches =
                Program.(
                  in_cloned_repo
                  && shf "git add api *.html *.svg %s "
-                   (String.concat " " (List.filter ~f:((<>) "master") branches))
+                   (String.concat ~sep:" " (List.filter ~f:((<>) "master") branches))
                  && sh "git commit -a -m 'update website'"
                  && shf "git push origin gh-pages"
                ))
@@ -326,7 +327,7 @@ let deploy_website branches =
   in
   (* `submit` will activate the target `ancestor` and then `commit_website`, and
      add all their (transitive) dependencies to the system.  *)
-  Ketrew_client.submit (ancestor "Success" ~depends_on:[commit_website])
+  Ketrew.Client.submit (ancestor "Success" ~depends_on:[commit_website])
 
 (*M
 
@@ -398,7 +399,7 @@ let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
     target "make-targz common ancestor" ~depends_on
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
-  Ketrew_client.submit common_ancestor
+  Ketrew.Client.submit common_ancestor
 
 (*M
 
@@ -452,7 +453,7 @@ let run_ketrew_on_vagrant what_to_do =
     let vagrant_box =
       let open Ketrew in
       Host.ssh ~add_ssh_options:["-F"; ssh_config#path]
-        ~playground:(Path.absolute_directory_exn "/tmp/KT/") "Vagrew"
+        ~playground:"/tmp/KT/" "Vagrew"
     in
     let do_on_vagrant_box p =
       daemonize ~using:`Nohup_setsid ~host:vagrant_box p in
@@ -529,12 +530,12 @@ Here it is kept very basic but one may use usual OCaml tools
 M*)
 let () =
   let argl = Array.to_list Sys.argv in
-  match List.tl argl with
+  match List.tl_exn argl with
   | "website" :: more_args ->
     say "Deploying website for %s"
       (match more_args with
        | [] -> "The current branch"
-       | _ -> "branches: " ^ String.concat ", " more_args);
+       | _ -> "branches: " ^ String.concat ~sep:", " more_args);
     deploy_website more_args
   | "tgz" :: more_args ->
     begin match more_args with
@@ -591,11 +592,11 @@ let () =
   | "CI" :: more ->
     begin match more with
     | "prepare" :: [] ->
-      Ketrew_client.submit (run_ketrew_on_vagrant `Prepare)
+      Ketrew.Client.submit (run_ketrew_on_vagrant `Prepare)
     | "go" :: [] ->
-      Ketrew_client.submit (run_ketrew_on_vagrant `Go)
+      Ketrew.Client.submit (run_ketrew_on_vagrant `Go)
     | "clean" :: [] ->
-      Ketrew_client.submit (run_ketrew_on_vagrant `Clean)
+      Ketrew.Client.submit (run_ketrew_on_vagrant `Clean)
     | other ->
       say "usage: %s CI {prepare,go,clean}" Sys.argv.(0);
       failwith "Wrong command line"
@@ -603,6 +604,6 @@ let () =
   | args ->
     say "usage: %s [website|tgz|lsf|nhss|pyd|two-py|failing-product|CI] ..."
       Sys.argv.(0);
-    say "Don't know what to do with %s" (String.concat ", " args);
+    say "Don't know what to do with %s" (String.concat ~sep:", " args);
     failwith "Wrong command line"
 
