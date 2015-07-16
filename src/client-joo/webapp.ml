@@ -827,11 +827,29 @@ module Single_client = struct
                     | None -> div [])
                   |> Signal.singleton
                 ) in
+              (* let span_id = Unique_id.create () in *)
               div [
                 span ~a:[
+                  (* a_id span_id; *)
                   a_class ["label"; label];
                   a_onmouseover (fun ev ->
-                      let mx, my = ev##clientX, ev##clientY in
+                      let mx, my =
+                        Js.Optdef.case (ev##toElement)
+                          (fun () ->
+                             Log.(s "toElement undefined !!" @ error);
+                             (200, 200))
+                          (fun eltopt ->
+                             Js.Opt.case eltopt
+                               (fun () ->
+                                  Log.(s "toElement defined but null!!" @ error);
+                                  (200, 200))
+                               (fun elt ->
+                                  let rect = elt##getBoundingClientRect() in
+                                  (int_of_float rect##left,
+                                   int_of_float rect##top)))
+                      in
+                      Log.(s "Mouseover: " % parens (i mx % s ", " % i my)
+                           @ verbose);
                       Reactive.Source.set visible_popover (Some (mx, my));
                       false);
                   a_onmouseout (fun _ ->
