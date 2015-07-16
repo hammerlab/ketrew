@@ -77,20 +77,22 @@ module H5 = struct
     let with_tab_bar ~tabs ~content =
       nav ~a:[a_class ["navbar"; "no-navbar-static-top"]] [
         div  [
-          ul ~a:[a_class ["nav"; "nav-tabs"]] (
-            List.map tabs ~f:(fun (active_signal, on_click, content_list) ->
-                let active_class =
-                  Reactive.Signal.map
-                    ~f:(function | true -> ["active"] | false -> [])
-                    active_signal in
-                li ~a:[ Reactive_node.a_class active_class ] [
-                  a ~a:[ (* The `a` must be directly under the `li`. *)
-                    a_href "#"; (* The `href` transforms the mouse like a link. *)
-                    a_onclick on_click;
-                  ] content_list
-                ]
+          Reactive_node.ul ~a:[a_class ["nav"; "nav-tabs"]] (
+            Reactive.Signal.map tabs ~f:(fun tablist ->
+                List.map tablist ~f:(fun (active_signal, on_click, content_list) ->
+                    let active_class =
+                      Reactive.Signal.map
+                        ~f:(function | true -> ["active"] | false -> [])
+                        active_signal in
+                    li ~a:[ Reactive_node.a_class active_class ] [
+                      a ~a:[ (* The `a` must be directly under the `li`. *)
+                        a_href "#"; (* The `href` transforms the mouse like a link. *)
+                        a_onclick on_click;
+                      ] content_list;
+                    ]
+                  )
               )
-          );
+            |> Reactive.Signal.list);
           content;
         ]
       ]
@@ -175,6 +177,15 @@ module H5 = struct
         ];
       ]
 
+    let table_responsive ~head ~body =
+      div ~a:[a_class ["table-responsive"]] [
+        tablex
+          ~thead:head
+          ~a:[a_class ["table"; "table-condensed";
+                       "table-bordered"; "table-hover"]] [
+          tbody body
+        ]
+      ]
   end
 end
 
@@ -449,12 +460,18 @@ module Single_client = struct
     List.filter all_columns
       (fun c -> c = col || List.mem c columns)
 
+  type tab = [
+    | `Status
+    | `Target_table
+    | `Target_page of string
+  ]
   type t = {
     protocol_client: Protocol_client.t;
     target_cache: Target_cache.t;
     target_ids: string list Reactive.Source.t;
     status: status Reactive.Source.t;
-    current_tab: [`Status | `Target_table] Reactive.Source.t;
+    tabs: tab list Reactive.Source.t;
+    current_tab: tab Reactive.Source.t;
     table_showing: (int * int) Reactive.Source.t;
     table_columns: column list Reactive.Source.t;
   }
@@ -465,11 +482,13 @@ module Single_client = struct
     let current_tab = Reactive.Source.create `Target_table in
     let table_showing = Reactive.Source.create (0, 10) in
     let table_columns = Reactive.Source.create default_columns in
+    let tabs = Reactive.Source.create [ `Status; `Target_table ] in
     {
       protocol_client;
       target_cache = Target_cache.create ();
       target_ids; 
       status;
+      tabs;
       current_tab;
       table_showing;
       table_columns;
@@ -740,7 +759,7 @@ module Single_client = struct
           )
       ]
 
-    let target_status_badge t ~id =
+    let target_status_badge ?(tiny = false) t ~id =
       let open H5 in
       let signal =
         Target_cache.get_target_flat_status_signal
@@ -818,12 +837,21 @@ module Single_client = struct
                   a_onmouseout (fun _ ->
                       Reactive.Source.set visible_popover None;
                       false);
-                ] [pcdata (Target.State.Flat.name item)];
+                ] [pcdata (if tiny then " " else Target.State.Flat.name item)];
                 Reactive_node.div popover;
               ]
             )
           |> singleton) in
       Reactive_node.div content
+
+    let target_link_on_click_handler t ~id =
+      let open Reactive in
+      let current = Source.signal t.tabs |> Signal.value in
+      begin match List.exists current ~f:((=) (`Target_page id)) with
+      | true -> Source.set t.current_tab (`Target_page id)
+      | false -> Source.set t.tabs (current @ [`Target_page id])
+      end;
+      ()
 
     let target_table t =
       let open H5 in
@@ -909,7 +937,11 @@ module Single_client = struct
         let row_of_id columns index id =
           let target_signal =
             Target_cache.get_target_summary_signal t.target_cache ~id in
-          Reactive_node.tr Reactive.Signal.(
+          Reactive_node.tr
+            ~a:[a_onclick Reactive.(fun _ ->
+                target_link_on_click_handler t ~id;
+                false)]
+            Reactive.Signal.(
               map target_signal ~f:(function
                 | None ->
                   [
@@ -941,16 +973,10 @@ module Single_client = struct
               (Source.signal t.table_columns)
             |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
               let ids = List.take (List.drop target_ids index) count in
-              div ~a:[a_class ["table-responsive"]] [
-                tablex
-                  ~thead:(table_head columns)
-                  ~a:[a_class ["table"; "table-condensed";
-                               "table-bordered"; "table-hover"]] [
-                  tbody 
-                    (List.mapi ids ~f:(fun ind id ->
-                         row_of_id columns (index + ind) id))
-                ]
-              ]
+              Bootstrap.table_responsive
+                ~head:(table_head columns)
+                ~body:(List.mapi ids
+                         ~f:(fun ind id -> row_of_id columns (index + ind) id))
             end
             |> Signal.singleton
           )
@@ -961,33 +987,217 @@ module Single_client = struct
         target_table
       ]
 
+    let summarize_id id =
+      String.sub id ~index:10 ~length:(String.length id - 10)
+      |> Option.value_map ~default:id ~f:(fmt "…%s")
+
+    let target_page_tab_title client ~id =
+      let open H5 in
+      let colorize_classes =
+        Reactive.Signal.(
+          Target_cache.get_target_flat_status_signal client.target_cache ~id
+          |> map ~f:Target.State.Flat.latest
+          |> map ~f:(function
+            | None -> ["text-warning"]
+            | Some item ->
+              let text_class =
+                match Target.State.Flat.simple item with
+                | `Failed -> "text-danger"
+                | `In_progress -> "text-info"
+                | `Activable -> "text-muted"
+                | `Successful -> "text-success"
+              in
+              [text_class]
+            )
+        ) in
+      let text =
+        let open Reactive.Signal in
+        Target_cache.get_target_summary_signal client.target_cache ~id
+        |> map ~f:(function
+          | None ->
+            span ~a:[a_title "Not yet fetched"] [pcdata (summarize_id id)]
+          | Some summary ->
+            span ~a:[
+              a_title id;
+            ] [
+              pcdata (Target.Summary.name summary);
+            ])
+        |> singleton in
+      span ~a:[
+        Reactive_node.a_class colorize_classes;
+      ] [
+        Reactive_node.span text;
+      ]
+
+    let target_page client ~id =
+      let open H5 in
+      let three_columns ~left ~middle ~right =
+        div ~a:[a_class ["row"]] [
+          div ~a:[a_class ["col-md-4"]] left;
+          div ~a:[a_class ["col-md-4"]] middle;
+          div ~a:[a_class ["col-md-4"]] right;
+        ] in
+      let target_sumary =
+        Bootstrap.panel ~body:[
+          Reactive_node.div Reactive.Signal.(
+              Target_cache.get_target_summary_signal client.target_cache ~id
+              |> map ~f:(function
+                | None ->
+                  div ~a:[a_title "Not yet fetched"] [
+                    pcdata "Still fetching summary for ";
+                    pcdata (summarize_id id)
+                  ]
+                | Some summary ->
+                  let row head content =
+                    tr [
+                      th [pcdata head];
+                      td content;
+                    ] in
+                  let code_row n v = row n [code [pcdata v]] in
+                  let list_of_ids_row name ids =
+                    row name [
+                      ul
+                        (List.map ids ~f:(fun id ->
+                             li ~a:[
+                               a_onclick Reactive.(fun _ ->
+                                   target_link_on_click_handler client ~id;
+                                   false)
+                             ] [
+                               target_page_tab_title client ~id
+                             ]))
+                    ]
+                  in
+                  Bootstrap.table_responsive
+                    ~head:(thead [])
+                    ~body:[
+                      code_row "ID" (Target.Summary.id summary);
+                      code_row "Name" (Target.Summary.name summary);
+                      code_row "Metadata" (Target.Summary.metadata summary
+                                           |> Option.value_map ~default:""
+                                             ~f:(fun (`String s) -> s));
+                      list_of_ids_row "Depends on"
+                        (Target.Summary.depends_on summary);
+                      list_of_ids_row "On failure activates"
+                        (Target.Summary.on_failure_activate summary);
+                      list_of_ids_row "On success activates"
+                        (Target.Summary.on_success_activate summary);
+                    ]
+                )
+              |> singleton)
+        ]
+      in
+      let target_status =
+        Bootstrap.panel ~body:[
+          Reactive_node.div Reactive.Signal.(
+              Target_cache.get_target_flat_status_signal client.target_cache ~id
+              |> map ~f:(fun state ->
+                  let text_of_item item =
+                    fmt "%s%s%s"
+                      (Target.State.Flat.name item)
+                      (Target.State.Flat.message item
+                       |> Option.value_map ~default:""
+                         ~f:(fmt " (%s)"))
+                      (Target.State.Flat.more_info item
+                       |> function
+                       | [] -> ""
+                       | more -> ": " ^ String.concat ~sep:", " more)
+                  in
+                  let additional_info =
+                    (state |> Target.State.Flat.history)
+                    |> List.map ~f:(fun item ->
+                        div [
+                          code [pcdata
+                                  (Target.State.Flat.time item |> Time.to_filename)];
+                          br ();
+                          pcdata (text_of_item item);
+                        ])
+                    |> fun l ->
+                    if List.length l > 10 then
+                      l @ [div [code [pcdata "..."]]]
+                    else
+                      l
+                  in
+                  div additional_info
+                )
+              |> singleton)
+        ]
+      in
+      let target_controls =
+        div [pcdata (fmt "TODO target controls page: %s" id)]
+      in
+      three_columns
+        ~left:[target_sumary]
+        ~middle:[target_status]
+        ~right:[target_controls]
+
     let render client =
       let open H5 in
       let current_tab = client.current_tab in
-      let tabs = [
-        Bootstrap.tab_item
-          ~active:Reactive.(
-              Source.signal current_tab
-              |> Signal.map ~f:(function `Target_table -> true | _ -> false))
-          ~on_click:(fun _ -> Reactive.Source.set current_tab `Target_table; false)
-          [Reactive_node.pcdata
-             Reactive.(
-               Signal.tuple_2
-                 (Source.signal client.table_showing)
-                 (Source.signal client.target_ids |> Signal.map ~f:List.length)
-               |> Signal.map ~f:(fun ((n_from, n_count), total) ->
-                   (fmt "Target-table ([%d, %d] of %d)"
-                      (min total (n_from + 1))
-                      (min (n_from + n_count) total)
-                      total)))];
-        Bootstrap.tab_item
-          ~active:Reactive.(
-              Source.signal current_tab
-              |> Signal.map ~f:(function `Status -> true | _ -> false)
-            )
-          ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
-          [pcdata "Status"];
-      ] in
+      let tabs =
+        Reactive.Source.signal client.tabs
+        |> Reactive.Signal.map ~f:(fun tabs ->
+            List.map tabs ~f:(function
+              | `Target_table ->
+                Bootstrap.tab_item
+                  ~active:Reactive.(
+                      Source.signal current_tab
+                      |> Signal.map ~f:(function `Target_table -> true | _ -> false))
+                  ~on_click:(fun _ -> Reactive.Source.set current_tab `Target_table; false)
+                  [Reactive_node.pcdata
+                     Reactive.(
+                       Signal.tuple_2
+                         (Source.signal client.table_showing)
+                         (Source.signal client.target_ids |> Signal.map ~f:List.length)
+                       |> Signal.map ~f:(fun ((n_from, n_count), total) ->
+                           (fmt "Target-table ([%d, %d] of %d)"
+                              (min total (n_from + 1))
+                              (min (n_from + n_count) total)
+                              total)))]
+              | `Status ->
+                Bootstrap.tab_item
+                  ~active:Reactive.(
+                      Source.signal current_tab
+                      |> Signal.map ~f:(function `Status -> true | _ -> false)
+                    )
+                  ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
+                  [pcdata "Status"]
+              | `Target_page id ->
+                Bootstrap.tab_item
+                  ~active:Reactive.(
+                      Source.signal current_tab
+                      |> Signal.map ~f:(function `Target_page i -> i = id | _ -> false)
+                    )
+                  ~on_click:Reactive.(fun _ ->
+                      let current_tabs =
+                        Source.signal client.tabs |> Signal.value in
+                      if List.mem ~set:current_tabs (`Target_page id)
+                      then (Source.set current_tab (`Target_page id););
+                      false)
+                  [
+                    target_page_tab_title client ~id;
+                    pcdata " ";
+                    span ~a:[ a_class ["label"; "label-default"];
+                              a_title (fmt "Close: %s" id);
+                              a_onclick Reactive.(fun _ ->
+                                  let current =
+                                    Source.signal client.tabs |> Signal.value in
+                                  let visible =
+                                    Source.signal client.current_tab
+                                    |> Signal.value in
+                                  begin match visible = `Target_page id with
+                                  | true ->
+                                    Source.set client.current_tab `Target_table
+                                  | _ -> ()
+                                  end;
+                                  Source.set client.tabs
+                                    (List.filter current
+                                       ~f:(fun t -> t <> `Target_page id));
+                                  false)
+                            ] [pcdata "✖"];
+                  ]
+              )
+          )
+      in
       (* div ~a:[ a_class ["container-fluid"]] [ *)
       Bootstrap.panel ~body:[
         Bootstrap.with_tab_bar ~tabs
@@ -996,7 +1206,8 @@ module Single_client = struct
               Reactive.(Source.signal current_tab
                         |> Signal.map ~f:(function
                           | `Target_table -> target_table client
-                          | `Status -> status client)
+                          | `Status -> status client
+                          | `Target_page id -> target_page client ~id)
                         |> Signal.singleton)
           );
       ]
@@ -1042,7 +1253,7 @@ module Application_state = struct
              `Client (Single_client.name c, c)) ~default:`About) in
     let open H5 in
     let navigation =
-      let tabs =
+      let tab_list =
         (List.map t.clients ~f:(fun client ->
              let name = Single_client.name client in
              let active =
@@ -1069,7 +1280,7 @@ module Application_state = struct
             [pcdata "About"]
         ]
       in
-      Bootstrap.with_tab_bar ~tabs
+      Bootstrap.with_tab_bar ~tabs:Reactive.Source.(create tab_list |> signal)
     in
     (* div ~a:[a_class ["container-fluid"]] [ *)
     (* Bootstrap.panel ~body:[ *)
