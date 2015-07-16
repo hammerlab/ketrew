@@ -73,10 +73,7 @@ module Build_process: sig
     (** Use a long-running plugin: [(plugin_name, initial_run_parameters)].  *)
   ]
   (** Specification of how to build a target. {ul
-      {li  [`Artifact a]: literal, already-built, artifact, }
-      {li [`Direct_command c]: a [Command.t] to run (should produce a [Volume.t]), }
-      {li [`Get_output c]: a [Command.t] to run and get its [stdout] (should
-       produce a value), }
+      {li  [`No_operation]: do nothing, }
       {li [`Long_running (plugin_name, initial_run_parameters)]:
       Use a long-running plugin. }
       }
