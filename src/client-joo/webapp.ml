@@ -1387,6 +1387,17 @@ let go _ =
   Js._true
 
 let _ =
+  let debug_level =
+    try
+      Js.Unsafe.get Dom_html.window (Js.string "ketrew_debug_level")
+      |> Js.to_string
+      |> int_of_string
+    with e ->
+      Log.(s "getting window.ketrew_debug_level: "
+           % exn e @ warning);
+      0
+  in
+  global_debug_level := debug_level;
   let debug f =
     Printf.ksprintf (fun s -> Firebug.console##log(Js.string s)) f in
   global_log_print_string := (debug "%s%!");

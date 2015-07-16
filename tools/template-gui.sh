@@ -6,6 +6,7 @@ OUTPUT_HTML=$1
 CLIENT_JS=$2
 CSS=$3
 MORE_SERVERS=$4
+DEBUG_LEVEL=$5
 
 cat <<EOBLOB > $OUTPUT_HTML
 <!DOCTYPE html>
@@ -27,6 +28,7 @@ cat <<EOBLOB >> $OUTPUT_HTML
   <body>
     <div class="container-fluid" id="ketrew-gui"></div>
     <script>
+      window.ketrew_debug_level = "$DEBUG_LEVEL";
       window.ketrew_connections = [
 EOBLOB
 if [ -f "$MORE_SERVERS" ]; then

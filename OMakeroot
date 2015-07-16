@@ -49,8 +49,10 @@ section # Javascript client code
         echo "Building _build/style.css"
         cp ./src/css/bootstrap_335_min.css _build/style.css
     MORE_SERVERS_FOR_GUI=$(getenv MORE_SERVERS, "")
+    DEBUG_LEVEL_IN_GUI=$(getenv DEBUG_LEVEL_IN_GUI, "0")
     _build/gui-page.html: _build/client.js _build/style.css
-        ./tools/template-gui.sh $@ _build/client.js _build/style.css $(MORE_SERVERS_FOR_GUI)
+        ./tools/template-gui.sh $@ _build/client.js _build/style.css \
+            $(MORE_SERVERS_FOR_GUI) $(DEBUG_LEVEL_IN_GUI)
     .PHONY: gui-quick
     .DEFAULT: $(OCamlProgramOfDirectory ketrew-client-joo, $(dir src/client-joo)) _build/gui-page.html
     gui-quick: _build/gui-page.html
