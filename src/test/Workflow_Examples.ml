@@ -520,6 +520,43 @@ let run_ketrew_on_vagrant what_to_do =
 
 (*M
 
+## The Pythological Workflow
+
+This function creates a “pointless” workflow.
+
+M*)
+let pythological () =
+  let open Ketrew.EDSL in
+  let target_kind_1 f =
+    file_target f
+      ~depends_on:[file_target f ~name:(sprintf "obnoxious loop %S" f)]
+      ~on_success_activate:[file_target f ~name:(sprintf "obnoxious loop %S" f)]
+      ~on_failure_activate:[file_target f ~name:(sprintf "obnoxious loop %S" f)]
+      ~tags:["pythological"; "workflow-examples"; "target-kind-1"]
+      ~metadata:(
+        let lines = Random.int 300 in
+        `String (List.init lines
+                   ~f:(fun i -> sprintf "Metadata line %d/%d" i lines)
+                 |> String.concat ~sep:"\n"))
+      ~equivalence:`None
+      ~make:(
+        daemonize ~using:`Python_daemon Program.(
+            shf "sleep %d" (Random.int 42 + 1)
+            && shf "echo OK > %s" f
+          ))
+  in
+  let too_many_tags =
+    target "too-many-tags"
+      ~tags:(List.init 200 ~f:(sprintf "tag%d"))
+  in
+  target "pythological common ancestor"
+    ~tags:["pythological"; "workflow-examples"]
+    ~depends_on:(List.init 10
+                   ~f:(fun n -> target_kind_1 (sprintf "/tmp/f%d" n)))
+    ~on_success_activate:[too_many_tags]
+
+(*M
+
 ## “Main” Of the Module  
 
 Command line parsing for this multi-workflow script.
@@ -601,8 +638,10 @@ let () =
       say "usage: %s CI {prepare,go,clean}" Sys.argv.(0);
       failwith "Wrong command line"
     end
+  | "pythological" :: _ ->
+    Ketrew.Client.submit (pythological ())
   | args ->
-    say "usage: %s [website|tgz|lsf|nhss|pyd|two-py|failing-product|CI] ..."
+    say "usage: %s [website|tgz|lsf|nhss|pyd|two-py|failing-product|CI|pythological] ..."
       Sys.argv.(0);
     say "Don't know what to do with %s" (String.concat ~sep:", " args);
     failwith "Wrong command line"
