@@ -465,10 +465,25 @@ module Single_client = struct
     | `Target_table
     | `Target_page of string
   ]
+
+  module Target_id_set = struct
+    include Set.Make(struct
+        type t = string
+        let compare a b = String.compare b a
+      end)
+    let add_list t list =
+      List.fold ~init:t list ~f:(fun set elt ->
+          add elt set)
+      (* TODO: check whether (union (of_list list) t) is faster. *)
+    let length = cardinal
+    let to_list = elements
+
+  end
+
   type t = {
     protocol_client: Protocol_client.t;
     target_cache: Target_cache.t;
-    target_ids: string list Reactive.Source.t;
+    target_ids: Target_id_set.t Reactive.Source.t;
     status: status Reactive.Source.t;
     tabs: tab list Reactive.Source.t;
     current_tab: tab Reactive.Source.t;
@@ -477,7 +492,7 @@ module Single_client = struct
   }
 
   let create ~protocol_client () =
-    let target_ids = Reactive.Source.create [] in
+    let target_ids = Reactive.Source.create Target_id_set.empty in
     let status = Reactive.Source.create `Unknown in
     let current_tab = Reactive.Source.create `Target_table in
     let table_showing = Reactive.Source.create (0, 10) in
@@ -528,6 +543,12 @@ module Single_client = struct
       end
     )
 
+  let add_target_ids t l =
+    let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
+    Reactive.Source.set t.target_ids
+      (Target_id_set.add_list current l);
+    ()
+
   let start_updating t =
     let rec list_of_ids_loop () =
       let update_server_status () =
@@ -546,11 +567,7 @@ module Single_client = struct
         Protocol_client.call t.protocol_client (`Get_target_ids query)
         >>= begin function
         | `List_of_target_ids l ->
-          let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
-          Reactive.Source.set t.target_ids
-            (List.append current l
-             |> List.sort ~cmp:(fun ta tb -> String.compare tb ta)
-             |> List.remove_consecutive_duplicates ~equal:(=));
+          add_target_ids t l;
           return ()
         | other ->
           fail (`Wrong_down_message other)
@@ -608,7 +625,9 @@ module Single_client = struct
             fetch_summaries missing_ids)
       in
       let event = Reactive.Source.signal t.target_ids |> React.S.changes in
-      React.E.map get_all_missing_summaries event
+      React.E.map
+        (fun set -> get_all_missing_summaries (Target_id_set.to_list set))
+        event
     in
     let (_ : unit React.E.t) =
       let update_flat_states targets_ids =
@@ -648,20 +667,20 @@ module Single_client = struct
                change. *)
             let in_progress = ref false in
             let filtered =
-            List.filter tids ~f:(fun id ->
-                let signal =
-                  Target_cache.get_target_flat_status_signal t.target_cache id in
-                let latest =
-                  Reactive.Signal.value signal |> Target.State.Flat.latest in
-                let not_finished =
-                  not (Option.value_map ~default:false
-                         ~f:Target.State.Flat.finished latest) in
-                match Option.map ~f:Target.State.Flat.simple latest with
-                | None
-                | Some `In_progress -> in_progress := true; true
-                | Some `Activable -> true
-                | Some `Successful
-                | Some `Failed -> not_finished)
+              List.filter tids ~f:(fun id ->
+                  let signal =
+                    Target_cache.get_target_flat_status_signal t.target_cache id in
+                  let latest =
+                    Reactive.Signal.value signal |> Target.State.Flat.latest in
+                  let not_finished =
+                    not (Option.value_map ~default:false
+                           ~f:Target.State.Flat.finished latest) in
+                  match Option.map ~f:Target.State.Flat.simple latest with
+                  | None
+                  | Some `In_progress -> in_progress := true; true
+                  | Some `Activable -> true
+                  | Some `Successful
+                  | Some `Failed -> not_finished)
             in
             (filtered, !in_progress)
           in
@@ -677,7 +696,9 @@ module Single_client = struct
             keep_fetching_for_active_targets targets_ids)
       in
       let event = Reactive.Source.signal t.target_ids |> React.S.changes in
-      React.E.map update_flat_states event
+      React.E.map
+        (fun set -> update_flat_states (Target_id_set.to_list set))
+        event
     in
     asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
     ()
@@ -878,7 +899,7 @@ module Single_client = struct
         Reactive_node.div Reactive.(
             Signal.tuple_2 (Source.signal showing) (Source.signal t.target_ids)
             |> Signal.map ~f:(fun ((n_from, n_count), ids) ->
-                let total = List.length ids in
+                let total = Target_id_set.length ids in
                 let enable_if cond on_click content =
                   if cond
                   then Bootstrap.button (`Enabled (on_click, content))
@@ -986,7 +1007,8 @@ module Single_client = struct
         Reactive_node.div
           Reactive.(
             Signal.tuple_3 
-              (Source.signal t.target_ids)
+              (Source.signal t.target_ids
+               |> Signal.map ~f:Target_id_set.to_list)
               (Source.signal showing)
               (Source.signal t.table_columns)
             |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
@@ -1165,7 +1187,8 @@ module Single_client = struct
                      Reactive.(
                        Signal.tuple_2
                          (Source.signal client.table_showing)
-                         (Source.signal client.target_ids |> Signal.map ~f:List.length)
+                         (Source.signal client.target_ids
+                          |> Signal.map ~f:Target_id_set.length)
                        |> Signal.map ~f:(fun ((n_from, n_count), total) ->
                            (fmt "Target-table ([%d, %d] of %d)"
                               (min total (n_from + 1))
