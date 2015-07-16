@@ -427,11 +427,6 @@ module Single_client = struct
     | `Problem of string
   ]
 
-  let target_query_of_status = function
-  | `Problem _
-  | `Unknown -> `All
-  | `Ok status -> `Created_after (Protocol.Server_status.time status -. 5.)
-
   type column = [
     | `Arbitrary_index
     | `Name
@@ -489,7 +484,9 @@ module Single_client = struct
     current_tab: tab Reactive.Source.t;
     table_showing: (int * int) Reactive.Source.t;
     table_columns: column list Reactive.Source.t;
+    default_target_query: Protocol.Up_message.target_query;
   }
+
 
   let create ~protocol_client () =
     let target_ids = Reactive.Source.create Target_id_set.empty in
@@ -498,6 +495,13 @@ module Single_client = struct
     let table_showing = Reactive.Source.create (0, 10) in
     let table_columns = Reactive.Source.create default_columns in
     let tabs = Reactive.Source.create [ `Status; `Target_table ] in
+    let default_target_query =
+      if !global_debug_level > 0 then
+        `All
+      else
+        (* Two weeks *)
+        `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.))
+    in
     {
       protocol_client;
       target_cache = Target_cache.create ();
@@ -507,6 +511,7 @@ module Single_client = struct
       current_tab;
       table_showing;
       table_columns;
+      default_target_query;
     }
 
   let log t =
@@ -514,6 +519,12 @@ module Single_client = struct
          % Protocol_client.log t.protocol_client)
 
   let name {protocol_client; _ } = Protocol_client.name protocol_client
+
+  let target_query_of_status client = function
+  | `Problem _
+  | `Unknown -> client.default_target_query
+  | `Ok status ->
+    `Created_after (Protocol.Server_status.time status -. 5.)
 
 
   let asynchronous_loop t ~name loop =
@@ -558,7 +569,7 @@ module Single_client = struct
           let previous_status =
             Reactive.(Source.signal t.status |> Signal.value) in
           Reactive.Source.set t.status (`Ok status);
-          return (target_query_of_status previous_status)
+          return (target_query_of_status t previous_status)
         | other ->
           fail (`Wrong_down_message other)
         end
