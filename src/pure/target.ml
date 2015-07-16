@@ -619,9 +619,11 @@ type state = [
       | history -> Some { history }
 
     let merge one two =
+      let compare a b = ~- (Float.compare a.time b.time) in
       {history =
          List.rev_append one.history two.history
-         |> List.sort ~cmp:(fun a b -> ~- (Float.compare a.time b.time))}
+         |> List.dedup ~compare
+         |> List.sort ~cmp:compare}
 
   end
   let rec to_flat_list (t : t) =
