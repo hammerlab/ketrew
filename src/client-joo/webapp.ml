@@ -601,8 +601,13 @@ module Single_client = struct
             begin match msg_down with
             | `List_of_target_summaries l ->
               Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
-              List.iter l ~f:(fun value ->
-                  let id = Target.Summary.id value in
+              List.iter l ~f:(fun (id, value) ->
+                  (* We add all the dependencies to make sur we get values
+                     for all the pointers. *)
+                  add_target_ids t
+                    Target.Summary.(depends_on value
+                                    @ on_success_activate value
+                                    @ on_failure_activate value);
                   Target_cache.update_target t.target_cache ~id (`Summary value)
                 );
               sleep sleep_time

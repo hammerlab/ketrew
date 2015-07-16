@@ -203,11 +203,12 @@ let get_targets_from_ids ~server_state target_ids =
   begin match target_ids  with
   | [] ->
     Engine.all_targets server_state.state
+    >>| List.map ~f:(fun trt -> (Target.id trt, trt))
   | more ->
     Deferred_list.while_sequential more ~f:(fun id ->
         Engine.get_target server_state.state id
         >>< function
-        | `Ok t -> return (Some t)
+        | `Ok t -> return (Some (id, t))
         | `Error e -> 
           Log.(s "Error while getting the target " % s id % s ": "
                % s (Error.to_string e) @ error);
@@ -219,10 +220,12 @@ let answer_get_targets ?(summaries=false) ~server_state target_ids =
   get_targets_from_ids ~server_state target_ids
   >>= fun targets ->
   begin match summaries with
-  | false -> return (`List_of_targets targets)
+  | false ->
+    return (`List_of_targets (List.map ~f:snd targets))
   | true ->
     return (`List_of_target_summaries
-                      (List.map targets ~f:Target.Summary.create))
+              (List.map targets ~f:(fun (id, t) ->
+                 (id, Target.Summary.create t))))
   end
 
 let answer_get_target_available_queries ~server_state target_id =
@@ -284,13 +287,13 @@ let answer_get_target_flat_states ~server_state (time_constrain, target_ids)  =
   >>= fun targets ->
   Log.(s "answer_get_target_flat_states computing states " @ verbose);
   let states =
-    List.filter_map targets ~f:(fun trgt ->
+    List.filter_map targets ~f:(fun (id, trgt) ->
         let flat_state = Target.State.Flat.of_state (Target.state trgt) in
         match time_constrain with
-        | `All -> Some (Target.id trgt, flat_state)
+        | `All -> Some (id, flat_state)
         | `Since ti ->
           Target.State.Flat.since flat_state ti
-          |> Option.map ~f:(fun st -> (Target.id trgt, st))
+          |> Option.map ~f:(fun st -> (id, st))
       )
   in
   let total_items =

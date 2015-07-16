@@ -32,7 +32,7 @@ module Down_message = struct
   module V0 = struct
     type t = [
       | `List_of_targets of Target.t list
-      | `List_of_target_summaries of Target.Summary.t list
+      | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
       | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
       | `List_of_target_ids of string list
       | `List_of_query_descriptions of (string * string) list
