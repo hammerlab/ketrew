@@ -56,6 +56,8 @@ type server = {
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
+  max_blocking_time: float [@default 300.];
+  block_step_time: float [@default 3.];
 } [@@deriving yojson]
 type client = {
   connection: string;
@@ -156,6 +158,8 @@ let log t =
           item "Command Pipe" (OCaml.option quote srv.command_pipe);
           item "Log-path" (OCaml.option quote srv.log_path);
           item "Return-error-messages" (OCaml.bool srv.return_error_messages);
+          item "Max-blocking-time" (OCaml.float srv.max_blocking_time);
+          item "Block-step-time" (OCaml.float srv.block_step_time);
           item "Listen"
             (let `Tls (cert, key, port) = srv.listen_to in
              sublist [
@@ -216,11 +220,15 @@ let authorized_tokens_path p = `Path p
 let server
     ?ui ?engine
     ?(authorized_tokens=[]) ?(return_error_messages=false)
-    ?command_pipe ?(daemon=false) ?log_path listen_to =
+    ?command_pipe ?(daemon=false) ?log_path
+    ?(max_blocking_time = 300.)
+    ?(block_step_time = 3.)
+    listen_to =
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
-            return_error_messages; command_pipe; daemon; log_path; })
+            return_error_messages; command_pipe; daemon; log_path;
+            max_blocking_time; block_step_time;})
 
 
 let plugins t = t.plugins
@@ -243,6 +251,8 @@ let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine
 let connection c = c.connection
 let token c = c.token
+let max_blocking_time s = s.max_blocking_time
+let block_step_time s = s.block_step_time
 
 let standalone_of_server s =
   {standalone_ui = s.server_ui;

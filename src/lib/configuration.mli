@@ -142,6 +142,8 @@ val server:
   ?command_pipe: string ->
   ?daemon: bool ->
   ?log_path: string ->
+  ?max_blocking_time: float ->
+  ?block_step_time: float ->
   [ `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
@@ -160,6 +162,12 @@ val server:
       other parameters requiring paths.
     - [log_path]: if set together with [daemonize], ask the server to
       redirect logs to this path (if not set, daemon logs go to ["/dev/null"]).
+    - [max_blocking_time]: 
+      upper bound on the request for blocking in the protocol (seconds,
+      default [300.]).
+    - [block_step_time]: 
+      granularity of the checking for blocking conditions (this will
+      hopefully disapear soon) (seconds, default [3.]).
     - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
       server to listen on [port].
 *)
@@ -273,6 +281,9 @@ val with_color: t -> bool
 val request_targets_ids: t -> [ `All | `Younger_than of [ `Days of float ] ]
 val targets_per_page: t -> int
 val targets_to_prefetch: t -> int
+
+val max_blocking_time: server -> float
+val block_step_time:   server -> float
 
 val use_cbreak: unit -> bool
 (** See the documentation of [with_cbreak]. *)

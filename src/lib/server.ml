@@ -282,10 +282,12 @@ let answer_get_target_ids ~server_state (query, options) =
   | _, (_ :: _) -> return (`List_of_target_ids list_of_ids)
   | Some (`Block_if_empty req_block_time), [] ->
     let start_time = Time.now () in
-    let sleep_time = 3. in
+    let sleep_time =
+      Configuration.block_step_time server_state.server_configuration in
     let block_time =
-      let max_block_time = 300. in (* TODO put this in the configuration *)
-      if req_block_time > 300. then (
+      let max_block_time =
+        Configuration.max_blocking_time server_state.server_configuration in
+      if req_block_time > max_block_time then (
         Log.(s "requested block-time: " % f req_block_time %n
              % s "Using max instead: " % f max_block_time @ warning);
         max_block_time
