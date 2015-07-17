@@ -538,7 +538,6 @@ let pythological () =
         `String (List.init lines
                    ~f:(fun i -> sprintf "Metadata line %d/%d" i lines)
                  |> String.concat ~sep:"\n"))
-      ~equivalence:`None
       ~make:(
         daemonize ~using:`Python_daemon Program.(
             shf "sleep %d" (Random.int 42 + 1)
@@ -547,6 +546,7 @@ let pythological () =
   in
   let too_many_tags =
     target "too-many-tags"
+      ~equivalence:`None
       ~tags:(List.init 200 ~f:(sprintf "tag%d"))
   in
   target "pythological common ancestor"
