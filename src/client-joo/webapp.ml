@@ -325,7 +325,7 @@ module Protocol_client = struct
         None)
 
 
-  let call t msg =
+  let call ?(timeout = 20.) t msg =
     match t.connection with
     | JSONP url ->
       wrap_deferred
@@ -338,7 +338,7 @@ module Protocol_client = struct
                 return (`String msg)
               end;
               begin
-                Lwt_js.sleep 10.
+                Lwt_js.sleep timeout
                 >>= fun () ->
                 return (`Timeout)
               end;
@@ -518,6 +518,9 @@ module Single_client = struct
     table_showing: (int * int) Reactive.Source.t;
     table_columns: column list Reactive.Source.t;
     default_target_query: Protocol.Up_message.target_query;
+    block_time_request: float;
+    default_protocol_client_timeout: float;
+    wait_before_retry_asynchronous_loop: float;
   }
 
 
@@ -545,6 +548,10 @@ module Single_client = struct
       table_showing;
       table_columns;
       default_target_query;
+      block_time_request = 255.; (* the server will cut at 300. anyway *)
+      default_protocol_client_timeout = 20.;
+      wait_before_retry_asynchronous_loop =
+        (if !global_debug_level > 0 then 120. else 30.);
     }
 
   let log t =
@@ -557,6 +564,7 @@ module Single_client = struct
   | `Problem _
   | `Unknown -> client.default_target_query
   | `Ok status ->
+    (* Those 5 seconds actually generate traffic, but for know, who cares … *)
     `Created_after (Protocol.Server_status.time status -. 5.)
 
 
@@ -580,7 +588,8 @@ module Single_client = struct
             Log.(s "Error in loop " % quote name % s ": " % problem @ error);
             Reactive.Source.set t.status
               (`Problem (problem |> Log.to_long_string));
-            Lwt_js.sleep 25. >>= fun () ->
+            Lwt_js.sleep t.wait_before_retry_asynchronous_loop
+            >>= fun () ->
             meta_loop ()
         in
         meta_loop ()
@@ -596,7 +605,9 @@ module Single_client = struct
   let start_updating t =
     let rec list_of_ids_loop () =
       let update_server_status () =
-        Protocol_client.call t.protocol_client `Get_server_status
+        Protocol_client.call
+          ~timeout:t.default_protocol_client_timeout
+          t.protocol_client `Get_server_status
         >>= begin function
         | `Server_status status ->
           let previous_status =
@@ -608,9 +619,15 @@ module Single_client = struct
         end
       in
       let update_list_of_ids query =
-        Protocol_client.call t.protocol_client (`Get_target_ids query)
+        let blocking_time = t.block_time_request in
+        Protocol_client.call
+          ~timeout:(blocking_time +. t.default_protocol_client_timeout)
+            t.protocol_client (`Get_target_ids (query,
+                                                [`Block_if_empty blocking_time]))
         >>= begin function
         | `List_of_target_ids l ->
+          Log.(log t % s " got " % i (List.length l) % s " new IDs at "
+               % Time.(log (now ())) @ verbose);
           add_target_ids t l;
           return ()
         | other ->
@@ -620,8 +637,6 @@ module Single_client = struct
       update_server_status ()
       >>= fun query ->
       update_list_of_ids query
-      >>= fun () ->
-      sleep 10.
       >>= fun () ->
       list_of_ids_loop ()
     in
@@ -640,7 +655,9 @@ module Single_client = struct
             return ()
           | more ->
             let now, later = List.split_n more at_once in
-            Protocol_client.call t.protocol_client (`Get_target_summaries now)
+            Protocol_client.call
+              ~timeout:t.default_protocol_client_timeout
+              t.protocol_client (`Get_target_summaries now)
             >>= fun msg_down ->
             begin match msg_down with
             | `List_of_target_summaries l ->
@@ -693,7 +710,9 @@ module Single_client = struct
             return ()
           | more ->
             let now, later = List.split_n more at_once in
-            Protocol_client.call t.protocol_client (`Get_target_flat_states (`All, now)) (*TODO*)
+            Protocol_client.call
+              ~timeout:t.default_protocol_client_timeout
+              t.protocol_client (`Get_target_flat_states (`All, now)) (*TODO*)
             >>= fun msg_down ->
             begin match msg_down with
             | `List_of_target_flat_states l ->

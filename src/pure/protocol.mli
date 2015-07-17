@@ -49,6 +49,9 @@ module Up_message : sig
     | `Not_finished_before of float
     | `Created_after of float
   ]
+  type query_option = [
+    | `Block_if_empty of float
+  ]
   type t = [
     | `Get_targets of string list (* List of Ids, empty means “all” *)
     | `Get_available_queries of string (* Id of the target *)
@@ -59,7 +62,7 @@ module Up_message : sig
     | `Submit_targets of Target.t list
     | `Kill_targets of string list (* List of Ids *)
     | `Restart_targets of string list (* List of Ids *)
-    | `Get_target_ids of target_query
+    | `Get_target_ids of target_query * (query_option list)
     | `Get_server_status
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t

@@ -53,6 +53,9 @@ module Up_message = struct
       | `Not_finished_before of float
       | `Created_after of float
     ] [@@deriving yojson]
+    type query_option = [
+      | `Block_if_empty of float
+    ] [@@deriving yojson]
     type t = [
       | `Get_targets of string list (* List of Ids, empty means “all” *)
       | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
@@ -63,7 +66,7 @@ module Up_message = struct
       | `Submit_targets of Target.t list
       | `Kill_targets of string list (* List of Ids *)
       | `Restart_targets of string list (* List of Ids *)
-      | `Get_target_ids of target_query
+      | `Get_target_ids of target_query * (query_option list)
       | `Get_server_status
     ] [@@deriving yojson]
   end

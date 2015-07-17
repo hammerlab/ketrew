@@ -274,10 +274,46 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   Light.green server_state.loop_traffic_light;
   return (`Ok)
 
-let answer_get_target_ids ~server_state query =
+let answer_get_target_ids ~server_state (query, options) =
   Engine.get_list_of_target_ids server_state.state query
   >>= fun list_of_ids ->
-  return (`List_of_target_ids list_of_ids)
+  begin match List.hd options, list_of_ids with
+  | None, []
+  | _, (_ :: _) -> return (`List_of_target_ids list_of_ids)
+  | Some (`Block_if_empty req_block_time), [] ->
+    let start_time = Time.now () in
+    let sleep_time = 3. in
+    let block_time =
+      let max_block_time = 300. in (* TODO put this in the configuration *)
+      if req_block_time > 300. then (
+        Log.(s "requested block-time: " % f req_block_time %n
+             % s "Using max instead: " % f max_block_time @ warning);
+        max_block_time
+      ) else
+        req_block_time in
+    let rec loop () =
+      let now =  Time.now () in
+      match start_time +. block_time < now with
+      | true ->
+        Log.(s "answer_get_target_ids + blocking → returns " % n
+             % s "start_time: " % Time.log start_time % n
+             % s "block_time: " % f block_time % n
+             % s "req_block_time: " % f req_block_time % n
+             % s "now: " % Time.log now % n
+            @ verbose);
+        return (`List_of_target_ids list_of_ids)
+      | false ->
+        (System.sleep sleep_time >>< fun _ -> return ())
+        >>= fun () ->
+        Engine.get_list_of_target_ids server_state.state query
+        >>= fun list_of_ids ->
+        begin match list_of_ids with
+        | [] -> loop ()
+        | _ :: _ -> return (`List_of_target_ids list_of_ids)
+        end
+    in
+    loop ()
+  end
 
 let answer_get_server_status ~server_state =
   return (`Server_status (Protocol.Server_status.create ~time:Time.(now ()) ()))

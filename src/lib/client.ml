@@ -264,7 +264,7 @@ let get_list_of_target_ids t ~query =
   | `Standalone s ->
     Engine.get_list_of_target_ids s.Standalone.engine query
   | `Http_client c ->
-    Http_client.get_list_of_target_ids c query
+    Http_client.get_list_of_target_ids c (query, [])
 
 let call_query t ~target query =
   match t with
