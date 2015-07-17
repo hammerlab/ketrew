@@ -186,6 +186,39 @@ module H5 = struct
           tbody body
         ]
       ]
+
+    let collapsable_pre ?(first_line_limit = 30) string =
+      match String.find string ~f:((=) '\n') with
+      | None -> (None, pre [pcdata string])
+      | Some end_of_first_line ->
+        let expanded = Reactive.Source.create false in
+        let content_signal =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map ~f:(function
+            | true -> string
+            | false ->
+              (String.sub_exn string ~index:0
+                 ~length:(min end_of_first_line first_line_limit)
+               ^ " [...]"))
+        in
+        let expand_button =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map ~f:(fun expandedness ->
+              a ~a:[
+                a_onclick (fun _ ->
+                    Reactive.Source.set expanded (not expandedness);
+                    false);
+              ] [
+                pcdata (if expandedness then "⊖" else "⊕")
+              ]
+            )
+          |> Reactive.Signal.singleton
+        in
+        (Some (Reactive_node.span expand_button),
+         pre [
+           Reactive_node.pcdata content_signal;
+         ])
+
   end
 end
 
@@ -1085,106 +1118,196 @@ module Single_client = struct
         Reactive_node.span text;
       ]
 
+    let target_summary_panel client ~id =
+      let open H5 in
+      Bootstrap.panel ~body:[
+        Reactive_node.div Reactive.Signal.(
+            Target_cache.get_target_summary_signal client.target_cache ~id
+            |> map ~f:(function
+              | None ->
+                div ~a:[a_title "Not yet fetched"] [
+                  pcdata "Still fetching summary for ";
+                  pcdata (summarize_id id)
+                ]
+              | Some summary ->
+                let row head content =
+                  tr [
+                    th head;
+                    td content;
+                  ] in
+                let simple_row head content =
+                  tr [
+                    th [pcdata head];
+                    td content;
+                  ] in
+                let code_row n v = simple_row n [code [pcdata v]] in
+                let list_of_ids_row name ids =
+                  simple_row name [
+                    ul
+                      (List.map ids ~f:(fun id ->
+                           li ~a:[
+                             a_onclick Reactive.(fun _ ->
+                                 target_link_on_click_handler client ~id;
+                                 false)
+                           ] [
+                             target_page_tab_title client ~id
+                           ]))
+                  ]
+                in
+                Bootstrap.table_responsive
+                  ~head:(thead [])
+                  ~body:[
+                    simple_row "Name" [target_page_tab_title client ~id];
+                    code_row "ID" (Target.Summary.id summary);
+                    begin
+                      let potential_button, content =
+                        Target.Summary.metadata summary
+                        |> Option.value_map
+                          ~default:(None, pcdata "None")
+                          ~f:(fun (`String s) -> Bootstrap.collapsable_pre s) in
+                      let head =
+                        pcdata "Metadata"
+                        ::
+                        (match potential_button with
+                        | None -> []
+                        | Some b -> [pcdata " ";b]) in
+                      row head [content]
+                    end;
+                    code_row "Tags"
+                      (Target.Summary.tags summary
+                       |> String.concat ~sep:", ");
+                    list_of_ids_row "Depends on"
+                      (Target.Summary.depends_on summary);
+                    list_of_ids_row "On failure activates"
+                      (Target.Summary.on_failure_activate summary);
+                    list_of_ids_row "On success activates"
+                      (Target.Summary.on_success_activate summary);
+                    code_row "Equivalence"
+                      (Target.Summary.equivalence summary
+                       |> function
+                       | `None -> "None"
+                       | `Same_active_condition -> "Same-active-condition");
+                    code_row "Condition"
+                      (Target.Summary.condition summary
+                       |> Option.value_map ~default:"None"
+                         ~f:Target.Condition.to_string_hum);
+                    code_row "Build-process"
+                      (Target.Summary.build_process summary
+                       |> function
+                       | `No_operation -> "No-op"
+                       | `Long_running (name, init) -> "Backend: " ^ name);
+                  ]
+              )
+            |> singleton)
+      ]
+
+    let build_process_display_div client ~id =
+      let open H5 in
+      Reactive_node.div Reactive.Signal.(
+          Target_cache.get_target_summary_signal client.target_cache ~id
+          |> map ~f:(function
+            | None ->
+              div ~a:[a_title "Not yet fetched"] [
+                pcdata "Still fetching summary for ";
+                pcdata (summarize_id id)
+              ]
+            | Some summary ->
+              begin match Target.Summary.build_process summary with
+              | `No_operation -> div [h3 [pcdata "No-operation"]]
+              | `Long_running (name, init) ->
+                div [
+                  h3 [pcdata (fmt "Using %s" name)];
+                  pre [
+                    pcdata (
+                      let pretty_json =
+                        Yojson.Safe.(from_string init
+                                     |> pretty_to_string ~std:true) in
+                      pretty_json
+                    );
+                  ]
+                ]
+              end)
+          |> Reactive.Signal.singleton)
+
+    let flat_status_display_div client ~id =
+      let open H5 in
+      Reactive_node.div (
+        Target_cache.get_target_flat_status_signal client.target_cache ~id
+        |> Reactive.Signal.map ~f:(fun state ->
+            let text_of_item item =
+              fmt "%s%s%s"
+                (Target.State.Flat.name item)
+                (Target.State.Flat.message item
+                 |> Option.value_map ~default:""
+                   ~f:(fmt " (%s)"))
+                (Target.State.Flat.more_info item
+                 |> function
+                 | [] -> ""
+                 | more -> ": " ^ String.concat ~sep:", " more)
+            in
+            let additional_info =
+              (state |> Target.State.Flat.history)
+              |> List.map ~f:(fun item ->
+                  div [
+                    code [pcdata
+                            (Target.State.Flat.time item |> Time.to_filename)];
+                    br ();
+                    pcdata (text_of_item item);
+                  ])
+            in
+            div additional_info
+          )
+        |> Reactive.Signal.singleton)
+
     let target_page client ~id =
       let open H5 in
-      let three_columns ~left ~middle ~right =
+      let two_columns ~left ~right =
         div ~a:[a_class ["row"]] [
           div ~a:[a_class ["col-md-4"]] left;
-          div ~a:[a_class ["col-md-4"]] middle;
-          div ~a:[a_class ["col-md-4"]] right;
+          (* div ~a:[a_class ["col-md-4"]] middle; *)
+          div ~a:[a_class ["col-md-8"]] right;
         ] in
-      let target_sumary =
-        Bootstrap.panel ~body:[
-          Reactive_node.div Reactive.Signal.(
-              Target_cache.get_target_summary_signal client.target_cache ~id
-              |> map ~f:(function
-                | None ->
-                  div ~a:[a_title "Not yet fetched"] [
-                    pcdata "Still fetching summary for ";
-                    pcdata (summarize_id id)
-                  ]
-                | Some summary ->
-                  let row head content =
-                    tr [
-                      th [pcdata head];
-                      td content;
-                    ] in
-                  let code_row n v = row n [code [pcdata v]] in
-                  let list_of_ids_row name ids =
-                    row name [
-                      ul
-                        (List.map ids ~f:(fun id ->
-                             li ~a:[
-                               a_onclick Reactive.(fun _ ->
-                                   target_link_on_click_handler client ~id;
-                                   false)
-                             ] [
-                               target_page_tab_title client ~id
-                             ]))
-                    ]
-                  in
-                  Bootstrap.table_responsive
-                    ~head:(thead [])
-                    ~body:[
-                      code_row "ID" (Target.Summary.id summary);
-                      code_row "Name" (Target.Summary.name summary);
-                      code_row "Metadata" (Target.Summary.metadata summary
-                                           |> Option.value_map ~default:""
-                                             ~f:(fun (`String s) -> s));
-                      list_of_ids_row "Depends on"
-                        (Target.Summary.depends_on summary);
-                      list_of_ids_row "On failure activates"
-                        (Target.Summary.on_failure_activate summary);
-                      list_of_ids_row "On success activates"
-                        (Target.Summary.on_success_activate summary);
-                    ]
-                )
-              |> singleton)
-        ]
-      in
+      let target_sumary = target_summary_panel client ~id in
       let target_status =
+        let showing_on_the_right = Reactive.Source.create `Flat_status in
         Bootstrap.panel ~body:[
-          Reactive_node.div Reactive.Signal.(
-              Target_cache.get_target_flat_status_signal client.target_cache ~id
-              |> map ~f:(fun state ->
-                  let text_of_item item =
-                    fmt "%s%s%s"
-                      (Target.State.Flat.name item)
-                      (Target.State.Flat.message item
-                       |> Option.value_map ~default:""
-                         ~f:(fmt " (%s)"))
-                      (Target.State.Flat.more_info item
-                       |> function
-                       | [] -> ""
-                       | more -> ": " ^ String.concat ~sep:", " more)
-                  in
-                  let additional_info =
-                    (state |> Target.State.Flat.history)
-                    |> List.map ~f:(fun item ->
-                        div [
-                          code [pcdata
-                                  (Target.State.Flat.time item |> Time.to_filename)];
-                          br ();
-                          pcdata (text_of_item item);
-                        ])
-                    |> fun l ->
-                    if List.length l > 10 then
-                      l @ [div [code [pcdata "..."]]]
-                    else
-                      l
-                  in
-                  div additional_info
-                )
-              |> singleton)
+          Reactive_node.div (
+            Reactive.Source.signal showing_on_the_right
+            |> Reactive.Signal.map ~f:(fun showing ->
+                let enable_if_not_shown thing ~on_click content =
+                  if showing = thing
+                  then `Disabled content
+                  else `Enabled (on_click, content) in
+                Bootstrap.button_group ~justified:true [
+                  Bootstrap.button 
+                    (enable_if_not_shown `Flat_status
+                       ~on_click:(fun _ ->
+                           Reactive.Source.set showing_on_the_right `Flat_status;
+                           false)
+                       [pcdata "Status history"]);
+                  Bootstrap.button 
+                    (enable_if_not_shown `Build_process_details
+                       ~on_click:(fun _ ->
+                           Reactive.Source.set showing_on_the_right `Build_process_details;
+                           false)
+                       [pcdata "Build-process details"]);
+                ])
+            |> Reactive.Signal.singleton);
+          Reactive_node.div (
+            Reactive.Source.signal showing_on_the_right
+            |> Reactive.Signal.map ~f:(fun showing ->
+                begin match showing with
+                | `Flat_status -> flat_status_display_div client ~id
+                | `Build_process_details -> build_process_display_div client ~id
+                end)
+            |> Reactive.Signal.singleton)
         ]
       in
-      let target_controls =
-        div [pcdata (fmt "TODO target controls page: %s" id)]
-      in
-      three_columns
+      (* let target_controls = div [pcdata (fmt "TODO target controls page: %s" id)] in *)
+      two_columns
         ~left:[target_sumary]
-        ~middle:[target_status]
-        ~right:[target_controls]
+        ~right:[target_status]
+    (* ~right:[target_controls] *)
 
     let render client =
       let open H5 in
