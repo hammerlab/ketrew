@@ -73,6 +73,16 @@ module H5 = struct
 
   module Bootstrap = struct
 
+    let loader_gif () =
+      let src =
+        "https://cdn.rawgit.com/hammerlab/cycledash/\
+         99431cf62210523d352b37c01f6b0dea8fa921f4/\
+         cycledash/static/img/loader.gif" in
+      img ~alt:"Spining loader from Cycledash" ~src ()
+
+    let muted_text content =
+      span ~a:[a_class ["text-muted"];] [content]
+        
     let tab_item ~active ~on_click content = (active, on_click, content)
     let with_tab_bar ~tabs ~content =
       nav ~a:[a_class ["navbar"; "no-navbar-static-top"]] [
@@ -1074,7 +1084,8 @@ module Single_client = struct
                     td [pcdata (fmt "%d" (index + 1))];
                     td ~a:[
                       a_colspan (List.length columns - 1);
-                    ] [pcdata (fmt "Still fetching %s …" id)];
+                    ] [Bootstrap.muted_text (pcdata (fmt "Still fetching %s " id));
+                       Bootstrap.loader_gif ();];
                   ]
                 | Some trgt ->
                   List.map columns ~f:(function
