@@ -347,12 +347,13 @@ module Protocol_client = struct
       begin match result with
       | `String content ->
         let content = (Js.to_string (content##message)) in
-        Log.(s "Received string: " % big_byte_sequence content @ verbose);
+        (* Log.(s "Received string: " % big_byte_sequence content @ verbose); *)
         (* used the example in toplevel.ml:
            https://github.com/ocsigen/js_of_ocaml/commit/65fcc49cfe9d4df8fd193eb5330953923a001618 *)
         let got = content  |> Url.urldecode in
         (* debug "Got content %S" got; *)
-        Log.(s "Decoded string: " % big_byte_sequence ~max_length:40 got @ verbose);
+        Log.(s "Decoded string: "
+             % big_byte_sequence ~max_length:100 got @ verbose);
         begin try
           return (Protocol.Down_message.deserialize_exn got)
         with e -> 
@@ -512,6 +513,7 @@ module Single_client = struct
     protocol_client: Protocol_client.t;
     target_cache: Target_cache.t;
     target_ids: Target_id_set.t Reactive.Source.t;
+    interesting_targets: Target_id_set.t Reactive.Source.t;
     status: status Reactive.Source.t;
     tabs: tab list Reactive.Source.t;
     current_tab: tab Reactive.Source.t;
@@ -526,6 +528,7 @@ module Single_client = struct
 
   let create ~protocol_client () =
     let target_ids = Reactive.Source.create Target_id_set.empty in
+    let interesting_targets = Reactive.Source.create Target_id_set.empty in
     let status = Reactive.Source.create `Unknown in
     let current_tab = Reactive.Source.create `Target_table in
     let table_showing = Reactive.Source.create (0, 10) in
@@ -542,6 +545,7 @@ module Single_client = struct
       protocol_client;
       target_cache = Target_cache.create ();
       target_ids; 
+      interesting_targets;
       status;
       tabs;
       current_tab;
@@ -567,6 +571,16 @@ module Single_client = struct
     (* Those 5 seconds actually generate traffic, but for know, who cares … *)
     `Created_after (Protocol.Server_status.time status -. 5.)
 
+  let add_interesting_targets t l =
+    let current =
+      Reactive.Source.signal t.interesting_targets |> Reactive.Signal.value in
+    Reactive.Source.set t.interesting_targets (Target_id_set.add_list current l)
+
+  let add_target_ids t l =
+    let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
+    Reactive.Source.set t.target_ids
+      (Target_id_set.add_list current l);
+    ()
 
   let asynchronous_loop t ~name loop =
     Lwt.(
@@ -596,12 +610,6 @@ module Single_client = struct
       end
     )
 
-  let add_target_ids t l =
-    let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
-    Reactive.Source.set t.target_ids
-      (Target_id_set.add_list current l);
-    ()
-
   let start_updating t =
     let rec list_of_ids_loop () =
       let update_server_status () =
@@ -622,12 +630,13 @@ module Single_client = struct
         let blocking_time = t.block_time_request in
         Protocol_client.call
           ~timeout:(blocking_time +. t.default_protocol_client_timeout)
-            t.protocol_client (`Get_target_ids (query,
-                                                [`Block_if_empty blocking_time]))
+          t.protocol_client (`Get_target_ids (query,
+                                              [`Block_if_empty blocking_time]))
         >>= begin function
         | `List_of_target_ids l ->
+          (*
           Log.(log t % s " got " % i (List.length l) % s " new IDs at "
-               % Time.(log (now ())) @ verbose);
+               % Time.(log (now ())) @ verbose); *)
           add_target_ids t l;
           return ()
         | other ->
@@ -650,8 +659,7 @@ module Single_client = struct
         let rec fetch_summaries ids =
           match ids with
           | [] ->
-            Log.(s "fill_cache_loop.fetch_summaries nothing left to do"
-                 @ verbose);
+            (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" @ verbose); *)
             return ()
           | more ->
             let now, later = List.split_n more at_once in
@@ -690,7 +698,8 @@ module Single_client = struct
         asynchronous_loop t ~name:"fetch-summaries" (fun () ->
             fetch_summaries missing_ids)
       in
-      let event = Reactive.Source.signal t.target_ids |> React.S.changes in
+      let event =
+        Reactive.Source.signal t.interesting_targets |> React.S.changes in
       React.E.map
         (fun set -> get_all_missing_summaries (Target_id_set.to_list set))
         event
@@ -705,8 +714,8 @@ module Single_client = struct
         let rec batch_fetching ids =
           match ids with
           | [] ->
-            Log.(s "fill_cache_loop.fetch_summaries nothing left to do"
-                 @ verbose);
+            (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" *)
+            (*      @ verbose); *)
             return ()
           | more ->
             let now, later = List.split_n more at_once in
@@ -716,8 +725,8 @@ module Single_client = struct
             >>= fun msg_down ->
             begin match msg_down with
             | `List_of_target_flat_states l ->
-              Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states"
-                   @ verbose);
+              (* Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states" *)
+              (*      @ verbose); *)
               List.iter l ~f:begin fun (id, value) ->
                 Target_cache.update_flat_state t.target_cache ~id value
               end;
@@ -756,14 +765,24 @@ module Single_client = struct
           | [] -> return ()
           | some when not some_in_progress -> return ()
           | more  ->
+            Log.(s "Batch fetching state for "
+                 % (match List.length to_fetch > 14 with
+                   | true -> i (List.length to_fetch) % s " targets"
+                   | false -> OCaml.list quote to_fetch)
+                 @ verbose);
             batch_fetching to_fetch
+            >>= fun () ->
+            sleep 3.
             >>= fun () ->
             keep_fetching_for_active_targets to_fetch
         in
         asynchronous_loop t ~name:"fetch-summaries" (fun () ->
             keep_fetching_for_active_targets targets_ids)
       in
-      let event = Reactive.Source.signal t.target_ids |> React.S.changes in
+      let event =
+        Reactive.Source.signal t.interesting_targets
+        |> React.S.diff (fun set1 set2 -> Target_id_set.diff set1 set2)
+      in
       React.E.map
         (fun set -> update_flat_states (Target_id_set.to_list set))
         event
@@ -1081,6 +1100,10 @@ module Single_client = struct
               (Source.signal t.table_columns)
             |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
               let ids = List.take (List.drop target_ids index) count in
+              add_interesting_targets t
+                (let greedy_index = max 0 (index - 25) in
+                 let greedy_count = count + 25 + (index - greedy_index) in
+                  List.take (List.drop target_ids greedy_index) greedy_count);
               Bootstrap.table_responsive
                 ~head:(table_head columns)
                 ~body:(List.mapi ids
@@ -1173,6 +1196,10 @@ module Single_client = struct
                            ]))
                   ]
                 in
+                add_interesting_targets client
+                  Target.Summary.(depends_on summary
+                                  @ on_success_activate summary
+                                  @ on_failure_activate summary);
                 Bootstrap.table_responsive
                   ~head:(thead [])
                   ~body:[
@@ -1279,6 +1306,7 @@ module Single_client = struct
         |> Reactive.Signal.singleton)
 
     let target_page client ~id =
+      add_interesting_targets client [id];
       let open H5 in
       let two_columns ~left ~right =
         div ~a:[a_class ["row"]] [
@@ -1322,11 +1350,9 @@ module Single_client = struct
             |> Reactive.Signal.singleton)
         ]
       in
-      (* let target_controls = div [pcdata (fmt "TODO target controls page: %s" id)] in *)
       two_columns
         ~left:[target_sumary]
         ~right:[target_status]
-    (* ~right:[target_controls] *)
 
     let render client =
       let open H5 in
