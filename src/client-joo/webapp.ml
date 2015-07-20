@@ -515,6 +515,7 @@ module Single_client = struct
   ]
 
   type column = [
+    | `Controls
     | `Arbitrary_index
     | `Name
     | `Id
@@ -522,6 +523,7 @@ module Single_client = struct
     | `Status
   ]
   let all_columns = [
+    `Controls;
     `Arbitrary_index;
     `Name;
     `Id;
@@ -532,6 +534,7 @@ module Single_client = struct
   let column_name : column -> _ =
     let open H5 in
     function
+    | `Controls -> Bootstrap.wrench_icon ()
     | `Arbitrary_index -> span [pcdata "Index"]
     | `Name -> span [pcdata "Name"]
     | `Id -> span [pcdata "Unique Id"]
@@ -1116,22 +1119,26 @@ module Single_client = struct
         let row_of_id columns index id =
           let target_signal =
             Target_cache.get_target_summary_signal t.target_cache ~id in
-          Reactive_node.tr
-            ~a:[a_onclick Reactive.(fun _ ->
-                target_link_on_click_handler t ~id;
-                false)]
-            Reactive.Signal.(
+          Reactive_node.tr Reactive.Signal.(
               map target_signal ~f:(function
                 | None ->
                   [
-                    td [pcdata (fmt "%d" (index + 1))];
                     td ~a:[
-                      a_colspan (List.length columns - 1);
+                      a_colspan (List.length columns);
                     ] [Bootstrap.muted_text (pcdata (fmt "Still fetching %s " id));
                        Bootstrap.loader_gif ();];
                   ]
                 | Some trgt ->
                   List.map columns ~f:(function
+                    | `Controls ->
+                      td [
+                        a 
+                          ~a:[a_onclick Reactive.(fun _ ->
+                              target_link_on_click_handler t ~id;
+                              false)] [
+                          pcdata "⤯"
+                        ]
+                      ]
                     | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
                     | `Name -> td [pcdata (Target.Summary.name trgt)]
                     | `Id -> td [pcdata (Target.Summary.id trgt)]
