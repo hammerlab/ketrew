@@ -83,6 +83,12 @@ module H5 = struct
     let muted_text content =
       span ~a:[a_class ["text-muted"];] [content]
         
+    let wrench_icon () =
+      (* span ~a:[a_class ["glyphicon"; "glyphicon-wrench"]] [] *)
+      span
+        ~a:[a_style "font-weight: normal"]
+        [pcdata "🔧"]
+
     let tab_item ~active ~on_click content = (active, on_click, content)
     let with_tab_bar ~tabs ~content =
       nav ~a:[a_class ["navbar"; "no-navbar-static-top"]] [
