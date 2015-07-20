@@ -7,7 +7,6 @@ open Reactive_html5
 module Target_cache  = struct
   type target_knowledge = {
     summary: Target.Summary.t option;
-    full: Target.t option;
   }
   type t = {
     targets: (Target.id, target_knowledge option Reactive.Source.t) Hashtbl.t;
@@ -38,7 +37,6 @@ module Target_cache  = struct
   let summary knowledge =
     match knowledge with
     | Some {summary = Some s; _} -> Some s
-    | Some {full = Some f; _} -> Some (Target.Summary.create f)
     | _ -> None
 
   let get_target_summary_signal t ~id =
@@ -54,10 +52,8 @@ module Target_cache  = struct
     let current = Reactive.(Source.signal signal |> Signal.value) in
     let new_value =
       match current, what with
-      | None, `Summary sum -> { summary = Some sum; full = None }
-      | None, `Full f -> { summary = None; full = Some f }
-      | Some {summary; full}, `Full f -> { summary; full = Some f }
-      | Some {summary; full}, `Summary s -> { summary = Some s; full }
+      | None, `Summary sum -> { summary = Some sum;  }
+      | Some {summary }, `Summary s -> { summary = Some s }
     in
     Reactive.Source.set signal (Some new_value);
     (* Hashtbl.replace targets id signal; *)
