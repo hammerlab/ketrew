@@ -1035,6 +1035,15 @@ module Single_client = struct
       end;
       ()
 
+    let display_list_of_tags client tags =
+      let open H5 in
+      Bootstrap.collapsable_ul
+        (List.map tags ~f:(fun tag ->
+             small ~a:[
+               a_class ["text-info"]
+             ] [pcdata tag]))
+
+    
     let target_table t =
       let open H5 in
       let showing = t.table_showing in
@@ -1143,8 +1152,9 @@ module Single_client = struct
                     | `Name -> td [pcdata (Target.Summary.name trgt)]
                     | `Id -> td [pcdata (Target.Summary.id trgt)]
                     | `Tags ->
-                      td [pcdata (Target.Summary.tags trgt
-                                  |> String.concat ~sep:", ")]
+                      td [
+                        display_list_of_tags t (Target.Summary.tags trgt);
+                      ]
                     | `Status ->
                       td [target_status_badge t ~id;]
                     ))
@@ -1164,7 +1174,7 @@ module Single_client = struct
               add_interesting_targets t
                 (let greedy_index = max 0 (index - 25) in
                  let greedy_count = count + 25 + (index - greedy_index) in
-                  List.take (List.drop target_ids greedy_index) greedy_count);
+                 List.take (List.drop target_ids greedy_index) greedy_count);
               Bootstrap.table_responsive
                 ~head:(table_head columns)
                 ~body:(List.mapi ids
@@ -1280,9 +1290,10 @@ module Single_client = struct
                         | Some b -> [pcdata " ";b]) in
                       row head [content]
                     end;
-                    code_row "Tags"
-                      (Target.Summary.tags summary
-                       |> String.concat ~sep:", ");
+                    row
+                      [pcdata "Tags"]
+                      [display_list_of_tags client
+                         (Target.Summary.tags summary)];
                     list_of_ids_row "Depends on"
                       (Target.Summary.depends_on summary);
                     list_of_ids_row "On failure activates"
