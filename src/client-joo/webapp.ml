@@ -203,6 +203,43 @@ module H5 = struct
         ]
       ]
 
+    let collapsable_ul
+        ?(ul_kind = `Inline) ?(maxium_items = 4) items =
+      let make_ul_content items =
+        List.map items ~f:(fun s -> li [s]) in
+      let list_style =
+        match ul_kind with
+        | `None -> []
+        | `Inline -> ["list-inline"; "inline-items-separated"]
+      in
+      match List.length items with
+      | n when n <= maxium_items ->
+        ul ~a:[a_class list_style] (make_ul_content items)
+      | n ->
+        let expanded = Reactive.Source.create false in
+        Reactive_node.ul
+          ~a:[a_class list_style]
+          Reactive.(
+            Source.signal expanded
+            |> Signal.map ~f:(fun expandedness ->
+                let button =
+                  a ~a:[
+                    a_onclick (fun _ ->
+                        Reactive.Source.set expanded (not expandedness);
+                        false);
+                  ] [
+                    pcdata (if expandedness then "⊖" else "⊕")
+                  ] in
+                match expandedness with
+                | true -> (make_ul_content (items @ [button]))
+                | false ->
+                  let shown_items = List.take items maxium_items @ [button] in
+                  (make_ul_content shown_items)
+              )
+            |> Signal.list
+          )
+
+
     let collapsable_pre ?(first_line_limit = 30) string =
       match String.find string ~f:((=) '\n') with
       | None -> (None, pre [pcdata string])

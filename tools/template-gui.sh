@@ -22,6 +22,18 @@ cat <<EOBLOB >> $OUTPUT_HTML
 EOBLOB
 cat $CSS >> $OUTPUT_HTML
 cat <<EOBLOB >> $OUTPUT_HTML
+
+ul.inline-items-separated {
+    padding: 0;
+    margin: 2px;
+}
+.inline-items-separated>li {
+    padding: 0;
+    margin: 0;
+}
+.inline-items-separated>li+li:before {
+    content: ", ";
+}
     </style>
     <title>Ketrew's Mighty GUI</title>
   </head>
