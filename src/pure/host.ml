@@ -79,6 +79,41 @@ let shell_of_default_shell t cmd =
 let create ~connection ?execution_timeout ?(default_shell=shell_sh_minus_c) ?playground name =
   {name; connection; playground; default_shell; execution_timeout}
 
+let markup {name; connection; playground; default_shell; execution_timeout} =
+  let open Display_markup in
+  description_list [
+    "Name", Text name;
+    "Connection",
+    begin match connection with
+    | `Localhost -> Text "Local-host"
+    | `Ssh {Ssh. address; port; user; add_ssh_options} ->
+      concat [
+        path (fmt "ssh://%s%s%s"
+                (Option.value_map user ~default:"" ~f:(fmt "%s@"))
+                address
+                (Option.value_map port ~default:"" ~f:(fmt ":%d")));
+        (match add_ssh_options with
+        | [] -> Text " (no options)"
+        | more ->
+          concat [textf " (options: ";
+                  flat_list more ~f:command;
+                  textf ")"])
+      ]
+    end;
+    "Playground", option ~f:(fun p -> Path.to_string p |> path) playground;
+    "Default-shell",
+    (let {binary; command_name; options; command_option} = default_shell in
+      description_list [
+        "Binary", option ~f:command binary;
+        "Command-name", command command_name;
+        "Options", flat_list options ~f:command;
+        "Command-option", command command_option;
+      ]);
+    "Execution-timeout", option ~f:time_span execution_timeout;
+  ]
+
+
+  
 let localhost 
     ?execution_timeout ?default_shell ?playground ?(name="localhost") () = 
   create ~connection:`Localhost ?default_shell ?playground name

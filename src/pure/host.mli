@@ -130,6 +130,9 @@ val to_string_hum : t -> string
 val log : t -> Log.t
 (** Get a {!Log.t} document. *)
 
+val markup: t -> Display_markup.t
+(** Get a higher-level display document. *)
+
 val execution_timeout: t -> Time.t option
 (** The execution timeout configured for the host. *)
 
