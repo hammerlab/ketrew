@@ -119,55 +119,54 @@ let long_running_log plugin_name content =
     ["Error", log]
   end
 
+
+let with_run_parameters target ~f ~fail =
+  begin match Target.(build_process target) with
+  | `Long_running (plugin, first_run_parameters) ->
+    let rp =
+      match Target.latest_run_parameters target with
+      | Some rp -> rp
+      | None -> first_run_parameters in
+    f ~plugin rp
+  | other -> fail ()
+  end
+
 let additional_queries target =
-  let module Target = Target in
-  match Target.(build_process target) with
-  | `Long_running (plugin, _) ->
-    begin match Target.latest_run_parameters target with
-    | Some rp ->
-      begin match find_plugin plugin with
-      | Some m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        begin try
-          let c = Long_running.deserialize_exn rp in
-          Long_running.additional_queries c
-        with e -> 
-          let log = Log.(s "Serialization exception: " % exn e) in
+  with_run_parameters target
+    ~fail:(fun () -> [])
+    ~f:(fun ~plugin rp ->
+        begin match find_plugin plugin with
+        | Some m ->
+          let module Long_running = (val m : LONG_RUNNING) in
+          begin try
+            let c = Long_running.deserialize_exn rp in
+            Long_running.additional_queries c
+          with e -> 
+            let log = Log.(s "Serialization exception: " % exn e) in
+            Log.(log @ error);
+            []
+          end
+        | None ->
+          let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
           Log.(log @ error);
           []
-        end
-      | None ->
-        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
-        Log.(log @ error);
-        []
-      end
-    | None ->
-      Log.(s "Target has no run-parameters: " % Target.log target @ error);
-      []
-    end
-  | other -> []
-
+        end)
 
 let call_query ~target query =
-  let module Target = Target in
-  match Target.build_process target with
-  | `Long_running (plugin, _) ->
-    begin match Target.latest_run_parameters target with
-    | Some rp ->
-      begin match find_plugin plugin with
-      | Some m ->
-        let module Long_running = (val m : LONG_RUNNING) in
-        begin try
-          let c = Long_running.deserialize_exn rp in
-          Long_running.query c query
-        with e ->
-          fail Log.(s "Run-parameters deserialization" % exn e)
-        end
-      | None ->
-        let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
-        fail log
-      end
-    | None -> fail Log.(s "Target has no run-parameters: " % Target.log target)
-    end
-  | other -> fail Log.(s "Target has no queries: " % Target.log target)
+  with_run_parameters target
+    ~fail:(fun () -> fail Log.(s "Target has no queries: " % Target.log target))
+    ~f:(fun ~plugin rp ->
+        begin match find_plugin plugin with
+        | Some m ->
+          let module Long_running = (val m : LONG_RUNNING) in
+          begin try
+            let c = Long_running.deserialize_exn rp in
+            Long_running.query c query
+          with e ->
+            fail Log.(s "Run-parameters deserialization" % exn e)
+          end
+        | None ->
+          let log = Log.(s "Plugin not found: " % sf "%S" plugin) in
+          fail log
+        end)
 
