@@ -4,6 +4,48 @@ open Internal_pervasives
 open Pvem_js
 open Reactive_html5
 
+module Markup_queries = struct
+
+  let discriminate query =
+    begin match String.split ~on:(`Character '/') query with
+    | "ketrew-markup" :: more -> Some (String.concat ~sep:"/" more)
+    | other -> None
+    end
+
+
+  let rec markup_to_html ast =
+    let open Display_markup in
+    let open H5 in
+    match ast with
+    | Date fl -> code [pcdata (Time.to_filename fl)]
+    | Time_span s -> pcdata (fmt "%f s." s)
+    | Text s -> pcdata s
+    | Path p
+    | Command p -> code [pcdata p]
+    | Concat p -> div (List.map ~f:markup_to_html p)
+    | Description (name, t) ->
+      div [strong [pcdata name; pcdata ": "];
+           markup_to_html t]
+    | Itemize ts ->
+      ul (List.map ~f:(fun ast -> li [markup_to_html ast]) ts)
+
+  let render content =
+    let open H5 in
+    begin try
+      let ast = Display_markup.deserialize_exn content in
+      markup_to_html ast
+    with
+    | e ->
+      let title =
+        pcdata
+          (fmt "Error parsing query-result: %s" (Printexc.to_string e)) in
+      Bootstrap.error_box ~title content
+    end
+
+
+
+end
+
 module Target_cache  = struct
   type target_knowledge = [
     | `None
@@ -1089,8 +1131,13 @@ module Html = struct
                             make_toolbar [
                               [raw_json_control current];
                               List.map qds ~f:(fun (name, help) ->
-                                  control ~content:[pcdata name] ~help
-                                    ~self:(`Result_of name) current);
+                                  match Markup_queries.discriminate name with
+                                  | Some subname ->
+                                    control ~content:[pcdata subname] ~help
+                                      ~self:(`Result_of name) current
+                                  | None ->
+                                    control ~content:[pcdata name] ~help
+                                      ~self:(`Result_of name) current);
                               query_additional_controls current;
                             ]
                         )
@@ -1114,7 +1161,12 @@ module Html = struct
                           |> Signal.map ~f:(function
                             | `None -> [pcdata (fmt "Calling “%s”" query);
                                         Bootstrap.loader_gif ()]
-                            | `String r -> [pre [pcdata r]]
+                            | `String r ->
+                              begin match Markup_queries.discriminate query with
+                              | Some _ ->
+                                [Markup_queries.render r]
+                              | None -> [pre [pcdata r]]
+                              end
                             | `Error e ->
                               let title =
                                 pcdata

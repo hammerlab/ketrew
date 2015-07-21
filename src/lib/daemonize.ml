@@ -78,25 +78,25 @@ let using_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
 | `Python_daemon -> "Python-script"
 
-let log =
-  let open Log in
+let rec markup : t -> Display_markup.t =
+  let open Display_markup in
   function
-  | `Created c -> [
-      "Status", s "Created" % sp % parens (s (using_to_string c.using));
-      "Host", Host.log c.host;
-      "Program", Program.log c.program;
-      "Starting-timeout", f c.starting_timeout % s " sec.";
-      "Call-script", OCaml.list quote c.shell_command;
-      "No-log-is-OK", OCaml.bool c.no_log_is_ok;
+  | `Created c -> description_list [
+      "Using", textf "%s" (using_to_string c.using);
+      "Host", Host.markup c.host;
+      "Program", Program.markup c.program;
+      "Starting-timeout", time_span c.starting_timeout;
+      "Call-script", command (String.concat ~sep:" " c.shell_command);
+      "No-log-is-OK", text_of_loggable Log.OCaml.bool c.no_log_is_ok;
     ]
-  | `Running rp -> [
-      "Status", s "Running" % sp
-                % parens (s (using_to_string rp.created.using));
-      "Host", Host.log rp.created.host;
-      "PID", OCaml.option i rp.pid;
-      "Playground", s (Path.to_string rp.playground);
-      "Start-time", Time.log rp.start_time;
+  | `Running rp -> description_list [
+      "Created-as", markup (`Created rp.created);
+      "PID", option ~f:(textf "%d") rp.pid;
+      "Playground", path (Path.to_string rp.playground);
+      "Start-time", date rp.start_time;
     ]
+
+let log rp = ["Daemonize", Display_markup.log (markup rp)]
 
 let python_using_path ~playground =
   Path.(concat playground (relative_file_exn "daemonizator.py"))
@@ -109,7 +109,9 @@ let get_pid run =
 
 
 let additional_queries = function
-| `Created _ -> []
+| `Created _ -> [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
+  ]
 | `Running _ ->
   [
     "stdout", Log.(s "Stardard output");
@@ -117,13 +119,21 @@ let additional_queries = function
     "log", Log.(s "Monitored-script `log` file");
     "script", Log.(s "Monitored-script used");
     "check-process", Log.(s "Check the process-group with `ps`");
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
   ]
 
 let query run_parameters item =
   match run_parameters with
-  | `Created _ -> fail Log.(s "not running")
+  | `Created _ ->
+    begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
+    | other -> fail Log.(s "not running")
+    end
   | `Running rp ->
     begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
     | "log" ->
       let log_file = Monitored_script.log_file rp.script in
       Host_io.grab_file_or_log rp.created.host log_file
