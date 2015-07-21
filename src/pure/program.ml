@@ -43,4 +43,17 @@ let rec log = function
 let to_string_hum p = Log.to_long_string (log p)
 
 
+let rec markup =
+  let open Display_markup in
+  function
+  | `And l ->
+    List.map l ~f:markup
+    |> itemize
+    |> description "Chain (&&)"
+  | `Shell_command c ->
+    description "Sh" (command c)
+  | `Exec tl ->
+    description "Exec" (flat_list tl ~f:command)
+
+
 
