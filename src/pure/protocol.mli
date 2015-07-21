@@ -36,6 +36,7 @@ module Down_message : sig
     | `List_of_target_ids of string list
     | `List_of_query_descriptions of (string * string) list
     | `Query_result of string
+    | `Query_error of string
     | `Server_status of Server_status.t
     | `Ok
   ]

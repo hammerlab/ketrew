@@ -250,7 +250,7 @@ let answer_call_query ~server_state ~target_id ~query =
     | `Ok string -> 
       return (`Query_result string)
     | `Error error_log ->
-      wrong_request "Failed Query" (Log.to_long_string error_log)
+      return (`Query_error (Log.to_long_string error_log))
   end
 
 
@@ -620,9 +620,9 @@ let start_listening_on_connections ~server_state =
               `No_password, `Port port) in
           (* let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in *)
           let request_callback _ request body =
-            let connection_id = Unique_id.create () in
-            Engine.Measure.incomming_request
-              server_state.state ~connection_id ~request;
+            (* let connection_id = Unique_id.create () in *)
+            (* Engine.Measure.incomming_request *)
+            (*   server_state.state ~connection_id ~request; *)
             handle_request ~server_state ~body request 
             >>= fun high_level_answer ->
             let respond_string ?headers ~status ~body () =
@@ -653,9 +653,10 @@ let start_listening_on_connections ~server_state =
               respond_string ~status:`Not_found ~body ()
             end
             >>= fun ((response, body) as cohttp_answer) ->
-            let response_log =
-              Cohttp.Response.sexp_of_t response
-              |> Sexplib.Sexp.to_string_hum ~indent:2 in
+            (* let response_log = *)
+            (*   Cohttp.Response.sexp_of_t response *)
+            (*
+            (*   |> Sexplib.Sexp.to_string_hum ~indent:2 in *)
             let body_length =
               match body with
               | `Stream s -> -1
@@ -664,8 +665,9 @@ let start_listening_on_connections ~server_state =
                 List.fold ~init:0 ~f:(fun a b -> a + String.length b) l
               | `Empty -> 0
             in
-            Engine.Measure.end_of_request server_state.state
-              ~connection_id ~request ~response_log ~body_length;
+               *)
+            (* Engine.Measure.end_of_request server_state.state *)
+            (*   ~connection_id ~request ~response_log ~body_length; *)
             return cohttp_answer
           in
           let conn_closed (_, conn_id) =
