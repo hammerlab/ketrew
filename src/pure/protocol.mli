@@ -50,14 +50,15 @@ module Up_message : sig
     | `Created_after of float
   ]
   type query_option = [
-    | `Block_if_empty of float
+    | `Block_if_empty_at_most of float
   ]
   type t = [
     | `Get_targets of string list (* List of Ids, empty means “all” *)
     | `Get_available_queries of string (* Id of the target *)
     | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
     | `Get_target_flat_states of
-        [`All | `Since of float] * string list (* List of Ids, empty means “all” *)
+        [`All | `Since of float] * string list * (query_option list)
+        (* List of Ids, empty means “all” *)
     | `Call_query of (string * string) (* target-id × query-name *)
     | `Submit_targets of Target.t list
     | `Kill_targets of string list (* List of Ids *)

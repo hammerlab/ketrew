@@ -274,13 +274,20 @@ let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
   Light.green server_state.loop_traffic_light;
   return (`Ok)
 
-let answer_get_target_ids ~server_state (query, options) =
-  Engine.get_list_of_target_ids server_state.state query
-  >>= fun list_of_ids ->
-  begin match List.hd options, list_of_ids with
-  | None, []
-  | _, (_ :: _) -> return (`List_of_target_ids list_of_ids)
-  | Some (`Block_if_empty req_block_time), [] ->
+
+let block_if_empty_at_most ~server_state
+    ~get_values
+    ~should_send
+    ~send
+    options =
+  begin match
+    List.find options ~f:(function `Block_if_empty_at_most _ -> true)
+  with
+  | None ->
+    get_values ()
+    >>= fun values ->
+    send values
+  | Some (`Block_if_empty_at_most req_block_time) ->
     let start_time = Time.now () in
     let sleep_time =
       Configuration.block_step_time server_state.server_configuration in
@@ -295,53 +302,68 @@ let answer_get_target_ids ~server_state (query, options) =
         req_block_time in
     let rec loop () =
       let now =  Time.now () in
+      get_values ()
+      >>= fun values ->
       match start_time +. block_time < now with
       | true ->
-        Log.(s "answer_get_target_ids + blocking → returns " % n
+        Log.(s "block_if_empty_at_most + blocking → returns " % n
              % s "start_time: " % Time.log start_time % n
              % s "block_time: " % f block_time % n
              % s "req_block_time: " % f req_block_time % n
              % s "now: " % Time.log now % n
-            @ verbose);
-        return (`List_of_target_ids list_of_ids)
+             @ verbose);
+        send values
       | false ->
-        (System.sleep sleep_time >>< fun _ -> return ())
-        >>= fun () ->
-        Engine.get_list_of_target_ids server_state.state query
-        >>= fun list_of_ids ->
-        begin match list_of_ids with
-        | [] -> loop ()
-        | _ :: _ -> return (`List_of_target_ids list_of_ids)
+        begin match should_send values with
+        | false ->
+          (System.sleep sleep_time >>< fun _ -> return ())
+          >>= fun () ->
+          loop ()
+        | true -> send values
         end
     in
     loop ()
   end
 
+let answer_get_target_ids ~server_state (query, options) =
+  block_if_empty_at_most ~server_state options
+    ~get_values:(fun () ->
+        Engine.get_list_of_target_ids server_state.state query)
+    ~should_send:(function [] -> false | _ -> true)
+    ~send:(fun v -> return (`List_of_target_ids v))
+
 let answer_get_server_status ~server_state =
   return (`Server_status (Protocol.Server_status.create ~time:Time.(now ()) ()))
 
-let answer_get_target_flat_states ~server_state (time_constrain, target_ids)  =
-  get_targets_from_ids ~server_state target_ids
-  >>= fun targets ->
-  Log.(s "answer_get_target_flat_states computing states " @ verbose);
-  let states =
-    List.filter_map targets ~f:(fun (id, trgt) ->
-        let flat_state = Target.State.Flat.of_state (Target.state trgt) in
-        match time_constrain with
-        | `All -> Some (id, flat_state)
-        | `Since ti ->
-          Target.State.Flat.since flat_state ti
-          |> Option.map ~f:(fun st -> (id, st))
-      )
-  in
-  let total_items =
-    (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
-         prev + (List.length flat.Target.State.Flat.history)))
-  in
-  Log.(s "answer_get_target_flat_states" % n
-       % s "States: " % i (List.length states) % n
-       % s "Total items: " % i  total_items @ normal);
-  return (`List_of_target_flat_states states)
+let answer_get_target_flat_states ~server_state
+    (time_constrain, target_ids, options) =
+  block_if_empty_at_most ~server_state options
+    ~get_values:(fun () ->
+        get_targets_from_ids ~server_state target_ids
+        >>= fun targets ->
+        Log.(s "answer_get_target_flat_states computing states " @ verbose);
+        let states =
+          List.filter_map targets ~f:(fun (id, trgt) ->
+              let flat_state = Target.State.Flat.of_state (Target.state trgt) in
+              match time_constrain with
+              | `All -> Some (id, flat_state)
+              | `Since ti ->
+                Target.State.Flat.since flat_state ti
+                |> Option.map ~f:(fun st -> (id, st))
+            )
+        in
+        return states)
+    ~should_send:(fun states ->
+        let total_items =
+          (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
+               prev + (List.length flat.Target.State.Flat.history)))
+        in
+        Log.(s "answer_get_target_flat_states" % n
+             % s "States: " % i (List.length states) % n
+             % s "Total items: " % i  total_items @ normal);
+        total_items <> 0)
+    ~send:(fun states ->
+        return (`List_of_target_flat_states states))
 
 
 let answer_message ~server_state ?token msg =

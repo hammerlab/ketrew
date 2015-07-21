@@ -54,13 +54,14 @@ module Up_message = struct
       | `Created_after of float
     ] [@@deriving yojson]
     type query_option = [
-      | `Block_if_empty of float
+      | `Block_if_empty_at_most of float
     ] [@@deriving yojson]
     type t = [
       | `Get_targets of string list (* List of Ids, empty means “all” *)
       | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
       | `Get_target_flat_states of
-          [`All | `Since of float] * string list (* List of Ids, empty means “all” *)
+          [`All | `Since of float] * string list * (query_option list)
+          (* List of Ids, empty means “all” *)
       | `Get_available_queries of string (* Id of the target *)
       | `Call_query of (string * string) (* target-id × query-name *)
       | `Submit_targets of Target.t list

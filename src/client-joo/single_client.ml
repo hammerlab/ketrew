@@ -265,8 +265,8 @@ let start_updating t =
       let blocking_time = t.block_time_request in
       Protocol_client.call
         ~timeout:(blocking_time +. t.default_protocol_client_timeout)
-        t.protocol_client (`Get_target_ids (query,
-                                            [`Block_if_empty blocking_time]))
+        t.protocol_client (`Get_target_ids
+                             (query, [`Block_if_empty_at_most blocking_time]))
       >>= begin function
       | `List_of_target_ids l ->
           (*
@@ -374,9 +374,12 @@ let start_updating t =
             |> function
             | Some t -> `Since (t -. 1.)
             | None -> `All in
-          Protocol_client.call
-            ~timeout:t.default_protocol_client_timeout
-            t.protocol_client (`Get_target_flat_states (status_query, now))
+          Protocol_client.call t.protocol_client
+            ~timeout:(t.block_time_request
+                      +. t.default_protocol_client_timeout)
+            (`Get_target_flat_states (status_query, now, 
+                                      [`Block_if_empty_at_most
+                                         t.block_time_request]))
           >>= fun msg_down ->
           begin match msg_down with
           | `List_of_target_flat_states l ->
