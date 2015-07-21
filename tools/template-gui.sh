@@ -30,10 +30,14 @@ ul.inline-items-separated {
 .inline-items-separated>li {
     padding: 0;
     margin: 0;
+    padding-left: 0.2em;
+    padding-right: 0.2em;
 }
+/*
 .inline-items-separated>li+li:before {
     content: ", ";
 }
+*/
     </style>
     <title>Ketrew's Mighty GUI</title>
   </head>
