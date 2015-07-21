@@ -50,6 +50,11 @@ module H5: sig
 
   val to_dom: 'a elt -> Dom.node Js.t
 
+  val local_anchor :
+    on_click:Xml.mouse_event_handler ->
+    ?a:[< Html5_types.a_attrib > `Href `OnClick ] attrib list_wrap ->
+    'a elt list_wrap -> [> `A of 'a ] elt
+
   module Bootstrap: sig
 
     val loader_gif : unit -> [> Html5_types.img ] elt
@@ -58,6 +63,8 @@ module H5: sig
       [< Html5_types.span_content_fun ] elt -> [> Html5_types.span ] elt
 
     val wrench_icon : unit -> [> Html5_types.span ] elt
+
+    val north_east_arrow_label: unit -> [> Html5_types.span ] elt
 
     type tab_item
 

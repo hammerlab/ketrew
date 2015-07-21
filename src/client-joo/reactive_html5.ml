@@ -78,6 +78,17 @@ module H5 = struct
 
   let to_dom e = Tyxml_js.To_dom.of_node e
 
+  let local_anchor ~on_click ?(a=[]) content =
+    Tyxml_js.Html5.a ~a:(
+      [
+        a_href "javascript:;";
+        (* The `href` transforms the mouse like a link.
+           http://stackoverflow.com/questions/5637969/is-an-empty-href-valid *)
+        a_onclick on_click;
+      ]
+      @ a)
+      content;
+
   module Bootstrap = struct
 
     let loader_gif () =
@@ -89,12 +100,20 @@ module H5 = struct
 
     let muted_text content =
       span ~a:[a_class ["text-muted"];] [content]
-        
+
     let wrench_icon () =
       (* span ~a:[a_class ["glyphicon"; "glyphicon-wrench"]] [] *)
-      span
-        ~a:[a_style "font-weight: normal"]
-        [pcdata "🔧"]
+      span ~a:[
+        a_style "font-weight: normal";
+        a_class ["label"; "label-default"];
+      ] [pcdata "🔧"]
+
+    let north_east_arrow_label () =
+      span ~a:[
+        a_class ["label"; "label-default"]
+      ] [
+        pcdata "➚"
+      ]
 
     type tab_item =
       bool React.signal * Xml.mouse_event_handler *
@@ -112,10 +131,8 @@ module H5 = struct
                         ~f:(function | true -> ["active"] | false -> [])
                         active_signal in
                     li ~a:[ Reactive_node.a_class active_class ] [
-                      a ~a:[ (* The `a` must be directly under the `li`. *)
-                        a_href "#"; (* The `href` transforms the mouse like a link. *)
-                        a_onclick on_click;
-                      ] content_list;
+                      (* The `a` must be directly under the `li`. *)
+                      local_anchor ~on_click content_list;
                     ]
                   )
               )

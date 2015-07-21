@@ -743,11 +743,10 @@ module Html = struct
                 List.map columns ~f:(function
                   | `Controls ->
                     td [
-                      a 
-                        ~a:[a_onclick Reactive.(fun _ ->
-                            target_link_on_click_handler t ~id;
-                            false)] [
-                        pcdata "⤯"
+                      local_anchor ~on_click:Reactive.(fun _ ->
+                          target_link_on_click_handler t ~id;
+                          false) [
+                        Bootstrap.north_east_arrow_label ();
                       ]
                     ]
                   | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
