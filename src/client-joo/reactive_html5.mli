@@ -21,6 +21,8 @@ module Reactive: sig
   module Signal: sig
     type 'a t = 'a signal
     val map: 'a t -> f:('a -> 'b) -> 'b t
+    val bind: 'a t -> f:('a -> 'b t) -> 'b t
+    val constant: 'a -> 'a t
     val value: 'a t -> 'a
     val singleton: 'a t -> 'a signal_list_wrap
     val list: 'a list t -> 'a signal_list_wrap

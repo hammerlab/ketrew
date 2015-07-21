@@ -5,11 +5,13 @@ open Pvem_js
 open Reactive_html5
 
 module Target_cache  = struct
-  type target_knowledge = {
-    summary: Target.Summary.t option;
-  }
+  type target_knowledge = [
+    | `None
+    | `Summary of Target.Summary.t
+    | `Pointer of Target.id
+  ]
   type t = {
-    targets: (Target.id, target_knowledge option Reactive.Source.t) Hashtbl.t;
+    targets: (Target.id, target_knowledge Reactive.Source.t) Hashtbl.t;
     flat_statuses: (Target.id, Target.State.Flat.t Reactive.Source.t) Hashtbl.t; 
   }
 
@@ -22,7 +24,7 @@ module Target_cache  = struct
     try (Hashtbl.find targets id)
     with _ ->
       (* Log.(s "Target-cache: miss on " % s id @ verbose); *)
-      let signal = Reactive.Source.create None in
+      let signal = Reactive.Source.create `None in
       (* Log.(s "Created `None` target signal for " % s id @ verbose); *)
       Hashtbl.replace targets id signal;
       signal
@@ -34,28 +36,23 @@ module Target_cache  = struct
       Hashtbl.replace flat_statuses id signal;
       signal
 
-  let summary knowledge =
-    match knowledge with
-    | Some {summary = Some s; _} -> Some s
-    | _ -> None
-
-  let get_target_summary_signal t ~id =
+  let rec get_target_summary_signal t ~id =
+    let open Reactive in
     _get_target_knowledge t ~id
-    |> Reactive.Source.signal |> Reactive.Signal.map ~f:summary
+    |> Source.signal
+    |> Signal.bind ~f:(function
+      | `None -> Signal.constant None
+      | `Summary summary -> Signal.constant (Some summary)
+      | `Pointer id -> get_target_summary_signal t ~id
+      )
 
   let get_target_flat_status_signal t ~id =
     _get_target_flat_status t ~id
     |> Reactive.Source.signal
 
-  let update_target t ~id what =
-    let signal = _get_target_knowledge t id in
-    let current = Reactive.(Source.signal signal |> Signal.value) in
-    let new_value =
-      match current, what with
-      | None, `Summary sum -> { summary = Some sum;  }
-      | Some {summary }, `Summary s -> { summary = Some s }
-    in
-    Reactive.Source.set signal (Some new_value);
+  let update_target t ~id new_value =
+    let source = _get_target_knowledge t id in
+    Reactive.Source.set source new_value;
     (* Hashtbl.replace targets id signal; *)
     ()
 
@@ -301,7 +298,12 @@ let start_updating t =
                   Target.Summary.(depends_on value
                                   @ on_success_activate value
                                   @ on_failure_activate value);
-                Target_cache.update_target t.target_cache ~id (`Summary value)
+                begin match Target.Summary.id value with
+                | i when id = i ->
+                  Target_cache.update_target t.target_cache ~id (`Summary value)
+                | p ->
+                  Target_cache.update_target t.target_cache ~id (`Pointer p)
+                end
               );
             sleep sleep_time
             >>= fun () ->

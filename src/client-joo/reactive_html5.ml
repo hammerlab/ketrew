@@ -29,6 +29,9 @@ module Reactive = struct
     let map s ~f = React.S.map f s
     let value s = React.S.value s
 
+    let bind s ~f = React.S.bind s f
+    let constant s = React.S.const s
+
     let singleton t =
       let open ReactiveData.RList in
       make_from
