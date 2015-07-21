@@ -10,9 +10,13 @@ module Target_cache  = struct
     | `Summary of Target.Summary.t
     | `Pointer of Target.id
   ]
+  type flat_state = {
+    retrieved: Time.t option;
+    value: Target.State.Flat.t;
+  }
   type t = {
     targets: (Target.id, target_knowledge Reactive.Source.t) Hashtbl.t;
-    flat_statuses: (Target.id, Target.State.Flat.t Reactive.Source.t) Hashtbl.t; 
+    flat_statuses: (Target.id, flat_state Reactive.Source.t) Hashtbl.t; 
   }
 
   let create () = {
@@ -32,9 +36,11 @@ module Target_cache  = struct
   let _get_target_flat_status {flat_statuses; _} ~id =
     try (Hashtbl.find flat_statuses id)
     with _ ->
-      let signal = Reactive.Source.create (Target.State.Flat.empty ()) in
-      Hashtbl.replace flat_statuses id signal;
-      signal
+      let source =
+        Reactive.Source.create
+          {retrieved = None; value = Target.State.Flat.empty ()} in
+      Hashtbl.replace flat_statuses id source;
+      source
 
   let rec get_target_summary_signal t ~id =
     let open Reactive in
@@ -49,6 +55,13 @@ module Target_cache  = struct
   let get_target_flat_status_signal t ~id =
     _get_target_flat_status t ~id
     |> Reactive.Source.signal
+    |> Reactive.Signal.map ~f:(fun x -> x.value)
+
+  let get_target_flat_status_last_retrieved_time t ~id =
+    _get_target_flat_status t ~id
+    |> Reactive.Source.signal
+    |> Reactive.Signal.value
+    |> (fun x -> x.retrieved)
 
   let update_target t ~id new_value =
     let source = _get_target_knowledge t id in
@@ -58,9 +71,10 @@ module Target_cache  = struct
 
   let update_flat_state t ~id more_state =
     let source = _get_target_flat_status t ~id in
-    let current_value = Reactive.(Source.signal source |> Signal.value) in
+    let current = Reactive.(Source.signal source |> Signal.value) in
     Reactive.Source.set source
-      (Target.State.Flat.merge current_value more_state);
+      {retrieved = Some (Time.now ());
+       value = Target.State.Flat.merge current.value more_state};
     ()
 
   let clear {targets; flat_statuses} =
@@ -345,9 +359,24 @@ let start_updating t =
           return ()
         | more ->
           let now, later = List.split_n more at_once in
+          let status_query =
+            (* if we find a `None` then we ask for `` `All``, if not
+               we ask for `` `Since minimal_date``: *)
+            List.fold now ~init:(Some (Time.now ())) ~f:(fun prev id ->
+                match
+                  prev,
+                  Target_cache.get_target_flat_status_last_retrieved_time
+                    t.target_cache ~id
+                with
+                | None, _ -> None
+                | Some pr, None -> None
+                | Some pr, Some nw -> Some (min pr nw))
+            |> function
+            | Some t -> `Since (t -. 1.)
+            | None -> `All in
           Protocol_client.call
             ~timeout:t.default_protocol_client_timeout
-            t.protocol_client (`Get_target_flat_states (`All, now)) (*TODO*)
+            t.protocol_client (`Get_target_flat_states (status_query, now))
           >>= fun msg_down ->
           begin match msg_down with
           | `List_of_target_flat_states l ->
