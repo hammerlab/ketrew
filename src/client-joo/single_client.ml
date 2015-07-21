@@ -1116,14 +1116,10 @@ module Html = struct
                                         Bootstrap.loader_gif ()]
                             | `String r -> [pre [pcdata r]]
                             | `Error e ->
-                              [div ~a:[
-                                  a_class ["alert"; "alert-danger"];
-                                ] [
-                                  strong [
-                                    pcdata (fmt "Error while calling %s:" query)
-                                  ];
-                                  pre [pcdata e];
-                                ]]
+                              let title =
+                                pcdata
+                                  (fmt "Error while calling %s:" query) in
+                              [Bootstrap.error_box e ~title]
                             )
                           |> Signal.list
                         )
