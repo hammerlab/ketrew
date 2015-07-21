@@ -50,7 +50,7 @@ section # Javascript client code
         cp ./src/css/bootstrap_335_min.css _build/style.css
     MORE_SERVERS_FOR_GUI=$(getenv MORE_SERVERS, "")
     DEBUG_LEVEL_IN_GUI=$(getenv DEBUG_LEVEL_IN_GUI, "0")
-    _build/gui-page.html: _build/client.js _build/style.css
+    _build/gui-page.html: _build/client.js _build/style.css ./tools/template-gui.sh
         ./tools/template-gui.sh $@ _build/client.js _build/style.css \
             $(MORE_SERVERS_FOR_GUI) $(DEBUG_LEVEL_IN_GUI)
     .PHONY: gui-quick
