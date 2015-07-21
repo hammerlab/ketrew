@@ -14,14 +14,27 @@ module Target_cache  = struct
     retrieved: Time.t option;
     value: Target.State.Flat.t;
   }
+  type query_description = [
+    | `None
+    | `Descriptions of (string * string) list
+  ]
+  type query_result = [
+    | `None
+    | `String of string
+    | `Error of string
+  ]
   type t = {
     targets: (Target.id, target_knowledge Reactive.Source.t) Hashtbl.t;
     flat_statuses: (Target.id, flat_state Reactive.Source.t) Hashtbl.t; 
+    backend_query_descriptions: (Target.id, query_description Reactive.Source.t) Hashtbl.t;
+    backend_query_results: (Target.id * string, query_result Reactive.Source.t) Hashtbl.t;
   }
 
   let create () = {
     targets = Hashtbl.create 42;
     flat_statuses = Hashtbl.create 42;
+    backend_query_descriptions = Hashtbl.create 42;
+    backend_query_results = Hashtbl.create 42;
   }
 
   let _get_target_knowledge {targets} ~id =
@@ -42,6 +55,20 @@ module Target_cache  = struct
       Hashtbl.replace flat_statuses id source;
       source
 
+  let _get_target_query_descriptions {backend_query_descriptions; _} ~id =
+    try (Hashtbl.find backend_query_descriptions id)
+    with _ ->
+      let source = Reactive.Source.create `None in
+      Hashtbl.replace backend_query_descriptions id source;
+      source
+
+  let _get_target_query_result {backend_query_results; _} ~id ~query =
+    try (Hashtbl.find backend_query_results (id, query))
+    with _ ->
+      let source = Reactive.Source.create `None in
+      Hashtbl.replace backend_query_results (id, query) source;
+      source
+
   let rec get_target_summary_signal t ~id =
     let open Reactive in
     _get_target_knowledge t ~id
@@ -56,6 +83,14 @@ module Target_cache  = struct
     _get_target_flat_status t ~id
     |> Reactive.Source.signal
     |> Reactive.Signal.map ~f:(fun x -> x.value)
+
+  let get_target_query_descriptions t ~id =
+    _get_target_query_descriptions t ~id
+    |> Reactive.Source.signal
+
+  let get_target_query_result t ~id ~query =
+    _get_target_query_result t ~id ~query
+    |> Reactive.Source.signal
 
   let get_target_flat_status_last_retrieved_time t ~id =
     _get_target_flat_status t ~id
@@ -77,9 +112,23 @@ module Target_cache  = struct
        value = Target.State.Flat.merge current.value more_state};
     ()
 
-  let clear {targets; flat_statuses} =
+  let update_target_query_descriptions t ~id v =
+    let source = _get_target_query_descriptions t ~id in
+    Reactive.Source.set source v;
+    ()
+
+  let update_target_query_result t ~id ~query result =
+    let source = _get_target_query_result t ~id ~query in
+    Reactive.Source.set source  result;
+    ()
+
+
+  let clear {targets; flat_statuses;
+             backend_query_results; backend_query_descriptions} =
     Hashtbl.clear targets;
     Hashtbl.clear flat_statuses;
+    Hashtbl.clear backend_query_results;
+    Hashtbl.clear backend_query_descriptions;
     ()
 
 
@@ -148,7 +197,10 @@ type t = {
   protocol_client: Protocol_client.t;
   target_cache: Target_cache.t;
   target_ids: Target_id_set.t Reactive.Source.t;
+
   interesting_targets: Target_id_set.t Reactive.Source.t;
+  (* TODO split into priority and prefetching *)
+
   status: status Reactive.Source.t;
   tabs: tab list Reactive.Source.t;
   current_tab: tab Reactive.Source.t;
@@ -446,6 +498,59 @@ let start_updating t =
       event
   in
   asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
+  ()
+
+let get_available_queries t ~id =
+  let go () =
+    Protocol_client.call
+      ~timeout:t.default_protocol_client_timeout
+      t.protocol_client (`Get_available_queries id)
+    >>= begin function
+    | `List_of_query_descriptions qds ->
+      Target_cache.update_target_query_descriptions
+        t.target_cache ~id (`Descriptions qds);
+      return ()
+    | other ->
+      fail (`Wrong_down_message other)
+    end
+  in
+  let signal = Target_cache.get_target_query_descriptions t.target_cache ~id in
+  begin match Reactive.Signal.value signal with
+  | `None -> asynchronous_loop t ~name:(fmt "queries-for-%s" id) go
+  | `Descriptions _ -> ()
+  end;
+  signal
+
+let get_query_result t ~id ~query =
+  let go () =
+    Protocol_client.call
+      ~timeout:t.default_protocol_client_timeout
+      t.protocol_client (`Call_query (id, query))
+    >>= begin function
+    | `Query_result result ->
+      Target_cache.update_target_query_result t.target_cache ~id ~query
+        (`String result);
+      return ()
+    | `Query_error error ->
+      Target_cache.update_target_query_result t.target_cache ~id ~query
+        (`Error error);
+      return ()
+    | other ->
+      fail (`Wrong_down_message other)
+    end
+  in
+  let signal = Target_cache.get_target_query_result t.target_cache ~id ~query in
+  let event = React.S.changes signal in
+  let update_if_none =
+    function
+    | `None -> asynchronous_loop t ~name:(fmt "queries-for-%s" id) go
+    |  _ -> () in
+  let (_ : unit React.E.t) = React.E.map update_if_none event in
+  update_if_none (Reactive.Signal.value signal);
+  signal
+
+let reload_query_result t ~id ~query =
+  Target_cache.update_target_query_result t.target_cache ~id ~query `None;
   ()
 
 module Html = struct
@@ -859,12 +964,12 @@ module Html = struct
                 simple_row name [
                   ul
                     (List.map ids ~f:(fun id ->
-                         li ~a:[
-                           a_onclick Reactive.(fun _ ->
-                               target_link_on_click_handler client ~id;
-                               false)
-                         ] [
-                           target_page_tab_title client ~id
+                         li [
+                           local_anchor
+                             ~on_click:Reactive.(fun _ ->
+                                 target_link_on_click_handler client ~id;
+                                 false)
+                             [target_page_tab_title client ~id]
                          ]))
                 ]
               in
@@ -922,6 +1027,33 @@ module Html = struct
 
   let build_process_display_div client ~id =
     let open H5 in
+    let on_display_right_now = Reactive.Source.create `Nothing in
+    let control ~content ~help ~self current =
+      Bootstrap.button
+        (if current = self
+         then `Disabled [span ~a:[a_class ["text-disabled"]; a_title help] content]
+         else `Enabled (
+             (fun _ -> Reactive.Source.set on_display_right_now self; false),
+             [span ~a:[a_title help] content])) in
+    let raw_json_control current =
+      control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
+        ~help:"Display the contents of the build-process" in
+    let query_additional_controls current =
+      match current with
+      | `Nothing | `Raw_json -> []
+      | `Result_of query ->
+        [
+          Bootstrap.button
+            (`Enabled ((fun _ -> reload_query_result client ~id ~query; false),
+                       [span ~a:[a_title (fmt "reload %s" query)]
+                          [pcdata "↻"]]))
+        ]
+    in
+    let make_toolbar list_of_lists =
+      div  ~a:[a_class ["btn-toolbar"]]
+        (List.filter_map list_of_lists ~f:(function
+           | [] -> None
+           | more -> Some (Bootstrap.button_group ~justified:false more))) in
     Reactive_node.div Reactive.Signal.(
         Target_cache.get_target_summary_signal client.target_cache ~id
         |> map ~f:(function
@@ -936,14 +1068,68 @@ module Html = struct
             | `Long_running (name, init) ->
               div [
                 h3 [pcdata (fmt "Using %s" name)];
-                pre [
-                  pcdata (
-                    let pretty_json =
-                      Yojson.Safe.(from_string init
-                                   |> pretty_to_string ~std:true) in
-                    pretty_json
-                  );
-                ]
+                Reactive_node.div Reactive.(
+                    Signal.tuple_2
+                      (Source.signal on_display_right_now)
+                      (get_available_queries client ~id)
+                    |> Signal.map
+                      ~f:(fun (current, query_descriptions) ->
+                          match query_descriptions with
+                          | `None ->
+                            make_toolbar [
+                              [raw_json_control current];
+                              [
+                                control
+                                  ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
+                                  ~help:"Fetching query descriptions …"
+                                  ~self:`Nothing `Nothing
+                              ]
+                            ]
+                          | `Descriptions qds ->
+                            make_toolbar [
+                              [raw_json_control current];
+                              List.map qds ~f:(fun (name, help) ->
+                                  control ~content:[pcdata name] ~help
+                                    ~self:(`Result_of name) current);
+                              query_additional_controls current;
+                            ]
+                        )
+                    |> Signal.singleton);
+                Reactive_node.div Reactive.(
+                    Source.signal on_display_right_now
+                    |> Signal.map ~f: begin function
+                    | `Nothing -> pcdata "Nothing here"
+                    | `Raw_json ->
+                      pre [
+                        pcdata (
+                          let pretty_json =
+                            Yojson.Safe.(from_string init
+                                         |> pretty_to_string ~std:true) in
+                          pretty_json
+                        );
+                      ]
+                    | `Result_of query ->
+                      Reactive_node.div Reactive.(
+                          get_query_result client ~id ~query
+                          |> Signal.map ~f:(function
+                            | `None -> [pcdata (fmt "Calling “%s”" query);
+                                        Bootstrap.loader_gif ()]
+                            | `String r -> [pre [pcdata r]]
+                            | `Error e ->
+                              [div ~a:[
+                                  a_class ["alert"; "alert-danger"];
+                                ] [
+                                  strong [
+                                    pcdata (fmt "Error while calling %s:" query)
+                                  ];
+                                  pre [pcdata e];
+                                ]]
+                            )
+                          |> Signal.list
+                        )
+
+                    end
+                    |> Signal.singleton);
               ]
             end)
         |> Reactive.Signal.singleton)
