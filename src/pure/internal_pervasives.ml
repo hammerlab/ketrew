@@ -170,4 +170,61 @@ module Unique_id = struct
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
 end
 
-                  
+
+module Display_markup = struct
+
+  module AST = struct
+    type t =
+      | Date of float
+      | Time_span of float
+      | Text of string
+      | Path of string
+      | Command of string
+      | Concat of t list
+      | Description of string * t
+      | Itemize of t list
+    [@@deriving yojson]
+  end
+  include Json.Versioned.Of_v0(AST)
+  include AST
+
+  let date d = Date d
+  let path p = Path p
+  let command p = Command p
+  let description name v = Description (name, v)
+  let itemize l = Itemize l
+
+  let concat l = Concat l
+  let flat_list l ~f =
+    Concat (List.map l ~f:(fun item -> Concat [f item]))
+
+  let time_span s = Time_span s
+
+  let textf fmt = Printf.ksprintf (fun t -> Text t) fmt
+
+  let description_list l =
+    Itemize (List.map l ~f:(fun (n, t) -> Description (n, t)))
+
+  let text_of_stringable f c = Text (f c)
+  let text_of_loggable f c = Text (f c |> Log.to_long_string)
+
+  let option o ~f =
+    Option.value_map ~f ~default:(Text "None") o
+
+  let rec log =
+    function
+    | Date f -> Time.log f
+    | Time_span span -> Log.(f span % nbsp % s "s.") 
+    | Text s -> Log.s s
+    | Path c | Command c -> Log.quote c
+    | Concat l -> Log.concat (List.map l ~f:log)
+    | Description (name, content) ->
+      Log.(s name % s ":" %
+           begin match content with
+           | Itemize _  -> n % indent (log content)
+           | _ -> sp % log content
+           end)
+    | Itemize l ->
+      Log.(separate n (List.map l ~f:(fun content -> s "*" %nbsp % log content)))
+
+end
