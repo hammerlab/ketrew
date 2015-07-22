@@ -66,6 +66,8 @@ module H5: sig
 
     val north_east_arrow_label: unit -> [> Html5_types.span ] elt
 
+    val reload_icon: unit -> [> Html5_types.span ] elt
+
     type tab_item
 
     val tab_item :

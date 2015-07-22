@@ -115,6 +115,9 @@ module H5 = struct
         pcdata "➚"
       ]
 
+    let reload_icon () =
+      span ~a:[a_title "Reload"] [pcdata "↻"]
+
     type tab_item =
       bool React.signal * Xml.mouse_event_handler *
       Html5_types.flow5_without_interactive elt list_wrap

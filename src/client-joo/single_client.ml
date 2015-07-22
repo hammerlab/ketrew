@@ -567,7 +567,7 @@ let start_updating t =
   asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
   ()
 
-let get_available_queries t ~id =
+let fetch_available_queries t ~id =
   let go () =
     Protocol_client.call
       ~timeout:t.default_protocol_client_timeout
@@ -581,12 +581,19 @@ let get_available_queries t ~id =
       fail (`Wrong_down_message other)
     end
   in
+  asynchronous_loop t ~name:(fmt "queries-for-%s" id) go
+
+let get_available_queries t ~id =
   let signal = Target_cache.get_target_query_descriptions t.target_cache ~id in
   begin match Reactive.Signal.value signal with
-  | `None -> asynchronous_loop t ~name:(fmt "queries-for-%s" id) go
+  | `None -> fetch_available_queries t ~id
   | `Descriptions _ -> ()
   end;
   signal
+
+let reload_available_queries t ~id =
+  fetch_available_queries t ~id
+
 
 let get_query_result t ~id ~query =
   let go () =
@@ -1106,15 +1113,18 @@ module Html = struct
       control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
         ~help:"Display the contents of the build-process" in
     let query_additional_controls current =
-      match current with
-      | `Nothing | `Raw_json -> []
-      | `Result_of query ->
-        [
-          Bootstrap.button
-            (`Enabled ((fun _ -> reload_query_result client ~id ~query; false),
-                       [span ~a:[a_title (fmt "reload %s" query)]
-                          [pcdata "↻"]]))
-        ]
+      [
+        Bootstrap.button
+          (`Enabled (
+              (fun _ ->
+                 reload_available_queries client ~id;
+                 begin match current with
+                 | `Nothing | `Raw_json -> ()
+                 | `Result_of query -> reload_query_result client ~id ~query;
+                 end;
+                 false),
+              [Bootstrap.reload_icon ()]))
+      ]
     in
     let make_toolbar list_of_lists =
       div  ~a:[a_class ["btn-toolbar"]]
