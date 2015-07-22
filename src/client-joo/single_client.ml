@@ -1256,10 +1256,11 @@ module Html = struct
                      |> function
                      | `None -> "None"
                      | `Same_active_condition -> "Same-active-condition");
-                  code_row "Condition"
-                    (Target.Summary.condition summary
-                     |> Option.value_map ~default:"None"
-                       ~f:Target.Condition.to_string_hum);
+                  simple_row "Condition"
+                    [Target.Summary.condition summary
+                     |> Option.value_map ~default:(pcdata "") ~f:(fun c ->
+                         Target.Condition.markup c
+                         |> Markup_queries.markup_to_html)];
                   code_row "Build-process"
                     (Target.Summary.build_process summary
                      |> function
