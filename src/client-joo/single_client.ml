@@ -981,8 +981,8 @@ module Html = struct
           |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
             let ids = List.take (List.drop target_ids index) count in
             add_interesting_targets t
-              (let greedy_index = max 0 (index - 25) in
-               let greedy_count = count + 25 + (index - greedy_index) in
+              (let greedy_index = max 0 (index - count) in
+               let greedy_count = count + count + (index - greedy_index) in
                List.take (List.drop target_ids greedy_index) greedy_count);
             Bootstrap.table_responsive
               ~head:(table_head columns)
