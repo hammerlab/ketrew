@@ -240,11 +240,36 @@ let insert_column columns col =
   List.filter all_columns
     (fun c -> c = col || List.mem c columns)
 
-type tab = [
-  | `Status
-  | `Target_table
-  | `Target_page of string
-]
+module Target_page = struct
+  type t = {
+    target_id: string;
+    showing_on_the_right: [`Flat_status | `Build_process_details ] Reactive.Source.t;
+    build_process_on_display:
+      [ `Nothing | `Result_of of string | `Raw_json ] Reactive.Source.t;
+  }
+  let create target_id = {
+    target_id;
+    showing_on_the_right = Reactive.Source.create `Flat_status;
+    build_process_on_display = Reactive.Source.create `Nothing;
+  }
+  let eq a b =
+    a.target_id = b.target_id
+end
+module Tab = struct
+  type t = [
+    | `Status
+    | `Target_table
+    | `Target_page of Target_page.t
+  ]
+  let is_target_page ~id =
+    function
+    | `Target_page t -> (String.compare t.Target_page.target_id id = 0)
+    | `Status | `Target_table -> false
+  let eq a b =
+    match a, b with
+    | `Target_page ta, `Target_page tb -> Target_page.eq ta tb
+    | _, _ -> a = b
+end
 
 module Target_id_set = struct
   include Set.Make(struct
@@ -269,8 +294,8 @@ type t = {
   (* TODO split into priority and prefetching *)
 
   status: status Reactive.Source.t;
-  tabs: tab list Reactive.Source.t;
-  current_tab: tab Reactive.Source.t;
+  tabs: Tab.t list Reactive.Source.t;
+  current_tab: Tab.t Reactive.Source.t;
   table_showing: (int * int) Reactive.Source.t;
   table_columns: column list Reactive.Source.t;
   default_target_query: Protocol.Up_message.target_query;
@@ -284,10 +309,13 @@ let create ~protocol_client () =
   let target_ids = Reactive.Source.create Target_id_set.empty in
   let interesting_targets = Reactive.Source.create Target_id_set.empty in
   let status = Reactive.Source.create `Unknown in
-  let current_tab = Reactive.Source.create `Target_table in
+  let current_tab = Reactive.Source.create ~eq:Tab.eq `Target_table in
   let table_showing = Reactive.Source.create (0, 10) in
   let table_columns = Reactive.Source.create default_columns in
-  let tabs = Reactive.Source.create [ `Status; `Target_table ] in
+  let tabs =
+    Reactive.Source.create
+      ~eq:(fun la lb -> try List.for_all2 ~f:Tab.eq la lb with _ -> false)
+      [ `Status; `Target_table ] in
   let default_target_query =
     if !global_debug_level > 0 then
       `All
@@ -810,10 +838,14 @@ module Html = struct
   let target_link_on_click_handler t ~id =
     let open Reactive in
     let current = Source.signal t.tabs |> Signal.value in
-    begin match List.exists current ~f:((=) (`Target_page id)) with
-    | true -> Source.set t.current_tab (`Target_page id)
-    | false -> Source.set t.tabs (current @ [`Target_page id])
+    begin match List.find current ~f:(Tab.is_target_page ~id) with
+    | Some tp -> Source.set t.current_tab tp
+    | None ->
+      let new_tp = Target_page.create id in
+      Log.(s "Created TP for " % quote id @ verbose);
+      Source.set t.tabs (current @ [`Target_page new_tp])
     end;
+    Log.(s "end of target_link_on_click_handler " % quote id @ verbose);
     ()
 
   let display_list_of_tags client tags =
@@ -1096,9 +1128,10 @@ module Html = struct
           |> singleton)
     ]
 
-  let build_process_display_div client ~id =
+  let build_process_display_div client tp =
     let open H5 in
-    let on_display_right_now = Reactive.Source.create `Nothing in
+    let id = tp.Target_page.target_id in
+    let on_display_right_now = tp.Target_page.build_process_on_display in
     let control ~content ~help ~self current =
       Bootstrap.button
         ~enabled:(current <> self)
@@ -1241,7 +1274,9 @@ module Html = struct
         )
       |> Reactive.Signal.singleton)
 
-  let target_page client ~id =
+  let target_page client tp =
+    let id = tp.Target_page.target_id in
+    let showing_on_the_right = tp.Target_page.showing_on_the_right in
     add_interesting_targets client [id];
     let open H5 in
     let two_columns ~left ~right =
@@ -1252,7 +1287,6 @@ module Html = struct
       ] in
     let target_sumary = target_summary_panel client ~id in
     let target_status =
-      let showing_on_the_right = Reactive.Source.create `Flat_status in
       Bootstrap.panel ~body:[
         Reactive_node.div (
           Reactive.Source.signal showing_on_the_right
@@ -1277,7 +1311,7 @@ module Html = struct
           |> Reactive.Signal.map ~f:(fun showing ->
               begin match showing with
               | `Flat_status -> flat_status_display_div client ~id
-              | `Build_process_details -> build_process_display_div client ~id
+              | `Build_process_details -> build_process_display_div client tp
               end)
           |> Reactive.Signal.singleton)
       ]
@@ -1292,67 +1326,72 @@ module Html = struct
     let tabs =
       Reactive.Source.signal client.tabs
       |> Reactive.Signal.map ~f:(fun tabs ->
-          List.map tabs ~f:(function
-            | `Target_table ->
-              Bootstrap.tab_item
-                ~active:Reactive.(
-                    Source.signal current_tab
-                    |> Signal.map ~f:(function `Target_table -> true | _ -> false))
-                ~on_click:(fun _ -> Reactive.Source.set current_tab `Target_table; false)
-                [Reactive_node.pcdata
-                   Reactive.(
-                     Signal.tuple_2
-                       (Source.signal client.table_showing)
-                       (Source.signal client.target_ids
-                        |> Signal.map ~f:Target_id_set.length)
-                     |> Signal.map ~f:(fun ((n_from, n_count), total) ->
-                         (fmt "Target-table ([%d, %d] of %d)"
-                            (min total (n_from + 1))
-                            (min (n_from + n_count) total)
-                            total)))]
-            | `Status ->
-              Bootstrap.tab_item
-                ~active:Reactive.(
-                    Source.signal current_tab
-                    |> Signal.map ~f:(function `Status -> true | _ -> false)
-                  )
-                ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
-                [pcdata "Status"]
-            | `Target_page id ->
-              Bootstrap.tab_item
-                ~active:Reactive.(
-                    Source.signal current_tab
-                    |> Signal.map ~f:(function `Target_page i -> i = id | _ -> false)
-                  )
-                ~on_click:Reactive.(fun _ ->
-                    let current_tabs =
-                      Source.signal client.tabs |> Signal.value in
-                    if List.mem ~set:current_tabs (`Target_page id)
-                    then (Source.set current_tab (`Target_page id););
-                    false)
-                [
-                  target_page_tab_title client ~id;
-                  pcdata " ";
-                  span ~a:[ a_class ["label"; "label-default"];
-                            a_title (fmt "Close: %s" id);
-                            a_onclick Reactive.(fun _ ->
-                                let current =
-                                  Source.signal client.tabs |> Signal.value in
-                                let visible =
-                                  Source.signal client.current_tab
-                                  |> Signal.value in
-                                begin match visible = `Target_page id with
-                                | true ->
-                                  Source.set client.current_tab `Target_table
-                                | _ -> ()
-                                end;
-                                Source.set client.tabs
-                                  (List.filter current
-                                     ~f:(fun t -> t <> `Target_page id));
-                                false)
-                          ] [pcdata "✖"];
-                ]
-            )
+          List.map tabs ~f:begin function
+          | `Target_table ->
+            Bootstrap.tab_item
+              ~active:Reactive.(
+                  Source.signal current_tab
+                  |> Signal.map ~f:(function `Target_table -> true | _ -> false))
+              ~on_click:(fun _ -> Reactive.Source.set current_tab `Target_table; false)
+              [Reactive_node.pcdata
+                 Reactive.(
+                   Signal.tuple_2
+                     (Source.signal client.table_showing)
+                     (Source.signal client.target_ids
+                      |> Signal.map ~f:Target_id_set.length)
+                   |> Signal.map ~f:(fun ((n_from, n_count), total) ->
+                       (fmt "Target-table ([%d, %d] of %d)"
+                          (min total (n_from + 1))
+                          (min (n_from + n_count) total)
+                          total)))]
+          | `Status ->
+            Bootstrap.tab_item
+              ~active:Reactive.(
+                  Source.signal current_tab
+                  |> Signal.map ~f:(function `Status -> true | _ -> false)
+                )
+              ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
+              [pcdata "Status"]
+          | `Target_page tp ->
+            let id = tp.Target_page.target_id in
+            Bootstrap.tab_item
+              ~active:Reactive.(
+                  Source.signal current_tab
+                  |> Signal.map
+                    ~f:(function
+                      | `Target_page {Target_page.target_id; _} ->
+                        target_id = id
+                      | _ -> false)
+                )
+              ~on_click:Reactive.(fun _ ->
+                  Source.set current_tab (`Target_page tp);
+                  (* let current_tabs = *)
+                  (*   Source.signal client.tabs |> Signal.value in *)
+                  (* if List.mem ~set:current_tabs (`Target_page id) *)
+                  (* then (Source.set current_tab (`Target_page id);); *)
+                  false)
+              [
+                target_page_tab_title client ~id;
+                pcdata " ";
+                span ~a:[ a_class ["label"; "label-default"];
+                          a_title (fmt "Close: %s" id);
+                          a_onclick Reactive.(fun _ ->
+                              let current =
+                                Source.signal client.tabs |> Signal.value in
+                              let visible =
+                                Source.signal client.current_tab |> Signal.value in
+                              begin match Tab.eq visible (`Target_page tp) with
+                              | true ->
+                                Source.set client.current_tab `Target_table
+                              | _ -> ()
+                              end;
+                              Source.set client.tabs
+                                (List.filter current
+                                   ~f:(fun t -> not (Tab.eq t (`Target_page tp))));
+                              false)
+                        ] [pcdata "✖"];
+              ]
+          end
         )
     in
     (* div ~a:[ a_class ["container-fluid"]] [ *)
@@ -1364,7 +1403,7 @@ module Html = struct
                       |> Signal.map ~f:(function
                         | `Target_table -> target_table client
                         | `Status -> status client
-                        | `Target_page id -> target_page client ~id)
+                        | `Target_page tp -> target_page client tp)
                       |> Signal.singleton)
         );
     ]
