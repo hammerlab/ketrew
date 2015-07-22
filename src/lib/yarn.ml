@@ -87,58 +87,66 @@ let using_to_string = function
 | `Nohup_setsid -> "Nohup+Setsid"
 | `Python_daemon -> "Python-script"
 
-let log =
-  let open Log in
-  let prog =
-    function
-    | `Yarn_application ya -> ["Yarn Program", Program.log ya]
-    | `Distributed_shell (params, ds) ->
-      let {hadoop_bin; distributed_shell_shell_jar;
-           container_memory; timeout; application_name} = params in
-      [
-        "Hadoop Binary", s hadoop_bin;
-        "DistShell.jar", s distributed_shell_shell_jar;
-        "Container Memory",
-        (match container_memory with
-         | `GB gb -> sf "%d GB" gb
-         | `MB mb -> sf "%d MB" mb
-         | `Raw raw -> sf "%S" raw);
-        "Timeout",
-        (match timeout with
-         | `Raw raw -> sf "%S" raw
-         | `Seconds secs -> sf "%d s." secs);
-        "DistShell Program", Program.log ds;
-      ] in
-  let created c =
-    List.append
-      [ "Method", s (using_to_string c.daemonize_using);
-        "Host", Host.log c.host; ]
-      (prog c.program)
-  in
+let rec markup : t -> Display_markup.t =
+  let open Display_markup in
   function
-  | `Created c -> ("Status", s "Created") :: created c
+  | `Created c ->
+    let kind, program =
+      match c.program with
+      | `Distributed_shell (dsp, p) ->
+        let dspm =
+          description_list [
+            "Hadoop-binary", path dsp.hadoop_bin;
+            "DS-Jar", path dsp.distributed_shell_shell_jar;
+            "Container-memory",
+            begin match dsp.container_memory with
+            | `GB i -> textf "%d GB" i
+            | `MB i -> textf "%d GB" i
+            | `Raw s -> textf "Raw: %S" s
+            end;
+            "Timeout",
+            begin match dsp.timeout with
+            | `Seconds s -> time_span (float s)
+            |  `Raw r -> textf "Raw: %S" r
+            end;
+            "Application-name", textf "%s" dsp.application_name;
+          ] in
+        (description "YARN-Distributed-Shell" dspm, p)
+      | `Yarn_application p -> (textf "YARN-Application", p)
+    in
+    description_list [
+      "Host", Host.markup c.host;
+      "Kind", kind;
+      "Program", Program.markup program;
+      "Daemonize-starting-timeout", time_span c.daemon_start_timeout;
+      "Daemonize-using",
+      begin match c.daemonize_using with
+      | `Nohup_setsid -> textf "Nohup-setsid"
+      | `Python_daemon -> textf "Python-daemon"
+      end;
+    ]
   | `Running rp ->
-    List.concat [
-      ("Status", s "Running") :: created rp.created;
-      Daemonize.log rp.daemonized_script
-      (* let open Gen_daemonize_v0.Running in *)
-      (* ["PID", OCaml.option i rp.daemonized_script.pid; *)
-      (*  "Playground", s (Path.to_string rp.daemonized_script.playground); *)
-      (*  "Start-time", Time.log rp.daemonized_script.start_time;]; *)
+    description_list [
+      "Created-as", markup (`Created rp.created);
+      "Daemonized-as", Daemonize.markup rp.daemonized_script;
     ]
 
+let log rp = ["YARN", Display_markup.log (markup rp)]
 
 let additional_queries run_param =
+  let always_there = [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
+  ] in
   match run_param with
-  | `Created _ -> []
+  | `Created _ -> always_there
   | `Running rp ->
-    begin match Daemonize.additional_queries rp.daemonized_script with
-    | [] -> []
-    | more ->
-      ("status", Log.(s "Get the Yarn application status"))
-      :: ("logs", Log.(s "Get the Yarn application logs"))
-      :: more
-    end
+    always_there
+    @ [
+      ("status", Log.(s "Get the Yarn application status"));
+      ("logs", Log.(s "Get the Yarn application logs"));
+    ]
+    @ (Daemonize.additional_queries rp.daemonized_script
+       |> List.filter ~f:(fun (n, _) -> n <> "ketrew-markup/status"))
 
 (*
 Dirty way of finding the application ID: we parse the output to find the logging
@@ -186,7 +194,12 @@ let parse_status str =
 
 let query run_param item =
   match run_param with
-  | `Created _ -> fail Log.(s "not running")
+  | `Created _ ->
+    begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_param |> Display_markup.serialize)
+    | other -> fail Log.(s "not running")
+    end
   | `Running rp ->
     let host = rp.created.host in
     begin match item with
@@ -202,6 +215,8 @@ let query run_param item =
         (fmt "yarn logs -applicationId %s > %s" app_id tmp_file)
       >>= fun (_ : string) ->
       Host_io.grab_file_or_log host (Path.absolute_file_exn tmp_file)
+    | "ketrew-markup/status" ->
+      return (markup run_param |> Display_markup.serialize)
     | other -> Daemonize.query rp.daemonized_script other
     end
 

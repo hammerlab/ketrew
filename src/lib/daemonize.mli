@@ -67,3 +67,5 @@ val create:
     are already serialized), see {!Edsl.daemonize} for more
     details *)
 
+
+val markup : run_parameters -> Ketrew_pure.Internal_pervasives.Display_markup.t
