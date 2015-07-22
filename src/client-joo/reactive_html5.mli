@@ -14,7 +14,7 @@ module Reactive: sig
 
   module Source: sig
     type 'a t
-    val create: 'a -> 'a t
+    val create: ?eq:('a -> 'a -> bool) -> 'a -> 'a t
     val set: 'a t -> 'a -> unit
     val signal: 'a t -> 'a signal
   end

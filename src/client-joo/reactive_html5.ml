@@ -12,8 +12,8 @@ module Reactive = struct
       set: 'a -> unit;
     }
 
-    let create v =
-      let signal, set = React.S.create v in
+    let create ?eq v =
+      let signal, set = React.S.create ?eq v in
       {signal; set}
 
     let set t v = t.set v
