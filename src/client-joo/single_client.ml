@@ -12,20 +12,45 @@ module Markup_queries = struct
     | other -> None
     end
 
+  let date_to_string ?(style = `UTC) fl =
+    let obj = jsnew Js.date_fromTimeValue (1000. *. fl) in
+    Js.to_string
+      begin match style with
+      | `ISO -> obj ## toISOString ()
+      | `Javascript -> obj ## toString ()
+      | `Locale -> obj ## toLocaleString ()
+      | `UTC -> obj ## toUTCString ()
+      end
+
+  let time_span_to_string fl =
+    let subsecond, seconds_f = modf fl in
+    let seconds = int_of_float seconds_f in
+    let seconds, minutes = seconds mod 60, seconds / 60 in
+    let minutes, hours = minutes mod 60, minutes / 60 in
+    fmt "%s%s%d%s s"
+      (if hours <> 0 then fmt "%d h " hours  else "")
+      (if minutes <> 0 then fmt "%d m " minutes else
+         (if hours = 0 then "" else "00 m "))
+      seconds
+      (subsecond *. 1000. |> int_of_float
+       |> function
+       | 0 -> ""
+       | n -> "." ^ string_of_int n)
 
   let rec markup_to_html ast =
     let open Display_markup in
     let open H5 in
+    let inline l = div ~a:[a_style "display: inline"] l in
     match ast with
-    | Date fl -> code [pcdata (Time.to_filename fl)]
-    | Time_span s -> pcdata (fmt "%f s." s)
+    | Date fl -> pcdata (date_to_string fl)
+    | Time_span s -> pcdata (time_span_to_string s)
     | Text s -> pcdata s
     | Path p
     | Command p -> code [pcdata p]
-    | Concat p -> div (List.map ~f:markup_to_html p)
+    | Concat p ->
+      inline (List.map ~f:markup_to_html p)
     | Description (name, t) ->
-      div [strong [pcdata name; pcdata ": "];
-           markup_to_html t]
+      inline [strong [pcdata name; pcdata ": "]; markup_to_html t]
     | Itemize ts ->
       ul (List.map ~f:(fun ast -> li [markup_to_html ast]) ts)
 
