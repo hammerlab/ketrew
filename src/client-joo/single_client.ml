@@ -214,6 +214,7 @@ type column = [
   | `Arbitrary_index
   | `Name
   | `Id
+  | `Backend
   | `Tags
   | `Status
 ]
@@ -222,6 +223,7 @@ let all_columns = [
   `Arbitrary_index;
   `Name;
   `Id;
+  `Backend;
   `Tags;
   `Status;
 ]
@@ -233,6 +235,7 @@ let column_name : column -> _ =
   | `Arbitrary_index -> span [pcdata "Index"]
   | `Name -> span [pcdata "Name"]
   | `Id -> span [pcdata "Unique Id"]
+  | `Backend -> span [pcdata "Backend"]
   | `Tags -> span [pcdata "Tags"]
   | `Status -> span [pcdata "Status"]
 
@@ -987,6 +990,11 @@ module Html = struct
                   | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
                   | `Name -> td [pcdata (Target.Summary.name trgt)]
                   | `Id -> td [pcdata (Target.Summary.id trgt)]
+                  | `Backend ->
+                    begin match Target.Summary.build_process trgt with
+                    | `No_operation -> td []
+                    | `Long_running (name, _) -> td [code [pcdata name]]
+                    end
                   | `Tags ->
                     td [
                       display_list_of_tags t (Target.Summary.tags trgt);
