@@ -42,6 +42,8 @@ module Command : sig
   val log: t -> Log.t
   (** Get a display document. *)
 
+  val markup: t -> Display_markup.t
+
   val to_string_hum : t -> string
   (** Get a Human-readable string. *)
 
@@ -62,6 +64,7 @@ module Volume : sig
   val log_structure : structure -> Log.t
 
   val log : t -> Log.t
+  val markup: t -> Display_markup.t
 
   val to_string_hum : t -> string
 end
@@ -112,6 +115,7 @@ module Condition : sig
 
   val log: t -> Log.t
   val to_string_hum: t -> string
+  val markup: t -> Display_markup.t
 
 end
 

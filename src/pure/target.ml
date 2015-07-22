@@ -63,6 +63,25 @@ module Volume = struct
         % parens (s "Tree: " % log_structure structure)
       ))
 
+  let markup {host; root; structure} =
+    let open Display_markup in
+    let rec markup_structure =
+      function
+      | `File f -> path f
+      | `Directory (n, l) ->
+        begin match l with
+        | [] -> concat [path n; path "/";]
+        | [one] -> concat [path n; path "/"; markup_structure one]
+        | more ->
+          concat [path n; path "/"; itemize (List.map ~f:markup_structure more)]
+        end
+    in
+    description_list [
+      "Host", Host.markup host;
+      "Root", Path.to_string root |> path;
+      "Structure", markup_structure structure;
+    ]
+
   let to_string_hum v =
     Log.to_long_string (log v)
 
@@ -85,6 +104,13 @@ module Command = struct
   let log {host; action} = 
     Log.(s "Action: " % Program.log action
          % s " on " % s (Host.to_string_hum host))
+
+  let markup {host; action} = 
+    let open Display_markup in
+    description_list [
+      "Host", Host.markup host;
+      "Action", Program.markup action;
+    ]
 
   let to_string_hum c = Log.to_long_string (log c)
 
@@ -114,6 +140,21 @@ module Condition = struct
         parens (separate (s " && ") (List.map l ~f:log))
       )
   let to_string_hum c = Log.to_long_string (log c)
+
+  let rec markup t =
+    let open Display_markup in
+    match t with
+    | `Satisfied -> textf "Satisfied"
+    | `Never -> textf "Never"
+    | `Volume_exists v ->
+      description "Volume exists" (Volume.markup v)
+    | `Volume_size_bigger_than (v, i) ->
+      description (fmt "Volume ≥ %d B" i) (Volume.markup v)
+    | `Command_returns (c, i) ->
+      description (fmt "Command returns %d" i) (Command.markup c)
+    | `And tl ->
+      description "All true" (itemize (List.map ~f:markup tl))
+
 end
 
 module Build_process = struct
