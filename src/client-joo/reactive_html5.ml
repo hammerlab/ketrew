@@ -302,16 +302,25 @@ module H5 = struct
            Reactive_node.pcdata content_signal;
          ])
 
-    let error_box ~title content =
+    let error_box content =
       div ~a:[
         a_class ["alert"; "alert-danger"];
-      ] [
+      ]  content
+
+    let error_box_pre ~title content =
+      error_box [
         strong [title];
         pre [pcdata content];
       ]
+
     let success_box content =
       div ~a:[
         a_class ["alert"; "alert-success"];
+      ] content
+
+    let warning_box content =
+      div ~a:[
+        a_class ["alert"; "alert-warning"];
       ] content
 
   end

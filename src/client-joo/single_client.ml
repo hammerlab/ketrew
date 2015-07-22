@@ -64,7 +64,7 @@ module Markup_queries = struct
       let title =
         pcdata
           (fmt "Error parsing query-result: %s" (Printexc.to_string e)) in
-      Bootstrap.error_box ~title content
+      Bootstrap.error_box_pre ~title content
     end
 
 
@@ -103,6 +103,16 @@ module Target_cache  = struct
     backend_query_descriptions = Hashtbl.create 42;
     backend_query_results = Hashtbl.create 42;
   }
+
+  let markup_counts t =
+    let open Display_markup in
+    let count n tb = n, textf "%d" (Hashtbl.length tb) in
+    description_list [
+      count "Target-summaries" t.targets; 
+      count "Flat-statuses" t.flat_statuses; 
+      count "Query-descriptions" t.backend_query_descriptions; 
+      count "Query-results" t.backend_query_results; 
+    ]
 
   let _get_target_knowledge {targets} ~id =
     try (Hashtbl.find targets id)
@@ -346,6 +356,8 @@ let create ~protocol_client () =
 let log t =
   Log.(s "Protocol-client: "
        % Protocol_client.log t.protocol_client)
+
+
 
 let name {protocol_client; _ } = Protocol_client.name protocol_client
 
@@ -713,53 +725,89 @@ module Html = struct
 
   let status t =
     let open H5 in
-    let display_status =
-      function
-      | `Ok status ->
-        span ~a:[a_style "color: green"] [
-          pcdata (fmt "OK (%s)"
-                    (Protocol.Server_status.time status |> Time.to_filename))
-        ]
-      | `Unknown -> span ~a:[a_style "color: orange"] [pcdata "???"]
-      | `Problem problem ->
-        let help_message = Reactive.Option.create () in
-        span [
-          span ~a:[a_style "color: red"] [pcdata problem];
-          pcdata " ";
-          button ~a:[
-            a_onclick (fun ev ->
-                Reactive.Option.switch help_message
-                  (span [
-                      pcdata "Cannot connect, and cannot get decent \
-                              error message from the browser. You should try \
-                              to open the following link in a new tab, and \
-                              see the problem, the most common one being \
-                              self-signed TLS certificates, by accepting it \
-                              you may fix it for the current session: ";
-                      a ~a:[
-                        a_href (Protocol_client.base_url t.protocol_client)
-                      ] [
-                        pcdata (Protocol_client.base_url t.protocol_client)
-                      ];
-                    ]);
-                false)
-          ] [pcdata "Investigate"];
-          Reactive_node.span Reactive.Option.(
-              singleton_or_empty help_message
-            )
-        ]
-    in
-    div [
-      span ~a:[] [pcdata "Client: "];
-      code [pcdata (Protocol_client.log t.protocol_client
-                    |> Log.to_long_string)];
-      br ();
-      Reactive_node.span
-        Reactive.(
+    Bootstrap.panel ~body:[
+      h3 [pcdata "Client"];
+      h4 [pcdata "Status"];
+      Reactive_node.div Reactive.(
           Source.signal t.status
-          |> Signal.map ~f:display_status
+          |> Signal.map ~f:(function
+            | `Ok status ->
+              Bootstrap.success_box
+                [span ~a:[a_style "color: green"] [pcdata "OK"];
+                 pcdata (fmt " (server-time: %s)"
+                           (Protocol.Server_status.time status
+                            |> Markup_queries.date_to_string))]
+            | `Unknown ->
+              Bootstrap.warning_box
+                [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
+            | `Problem problem ->
+              Bootstrap.error_box [
+                strong [pcdata "Problem: "];
+                br ();
+                code [pcdata problem];
+                br ();
+                pcdata "Cannot connect, and cannot get a decent \
+                        error message from the browser.";
+                br ();
+                pcdata "You should try \
+                        to open the following link in a new tab, and \
+                        investigate the problem ";
+                i [pcdata
+                        "(the most common issue being \
+                         self-signed TLS certificates, by accepting it \
+                         in the other tab \
+                         you may fix the problem for the current session)"];
+                pcdata ":";
+                br ();
+                a ~a:[
+                  a_href (Protocol_client.base_url t.protocol_client)
+                ] [
+                  pcdata (Protocol_client.base_url t.protocol_client)
+                ];
+              ])
           |> Signal.singleton
-        )
+        );
+      h4 [pcdata "Protocol Client"];
+      div [
+        Markup_queries.markup_to_html (Protocol_client.markup t.protocol_client);
+      ];
+      h4 [pcdata "Cache"];
+      div [
+        Reactive_node.span Reactive.(
+            Source.signal t.target_ids
+            |> Signal.map ~f:(fun s ->
+                [pcdata (fmt "%d target-IDs" (Target_id_set.length s))]
+              )
+            |> Signal.list
+          );
+        pcdata ", ";
+        Reactive_node.span Reactive.(
+            Source.signal t.interesting_targets
+            |> Signal.map ~f:(fun s ->
+                [pcdata (fmt "%d “interesting” targets" (Target_id_set.length s))]
+              )
+            |> Signal.list
+          );
+        Markup_queries.markup_to_html
+          (Target_cache.markup_counts t.target_cache);
+        h4 [pcdata "Settings"];
+        Markup_queries.markup_to_html
+          Display_markup.(description_list [
+              "Target-query",
+              begin match t.default_target_query with
+              | `All -> textf "All"
+              | `Not_finished_before d ->
+                concat [textf "Not finished before "; date d]
+              | `Created_after d ->
+                concat [textf "Created after "; date d]
+              end;
+              "Block-time-request", time_span t.block_time_request;
+              "Default-protocol-timeout",
+              time_span t.default_protocol_client_timeout;
+              "Asynchronous-retry-wait",
+              time_span t.wait_before_retry_asynchronous_loop;
+            ]);
+      ];
     ]
 
   let target_status_badge ?(tiny = false) t ~id =
@@ -1119,7 +1167,7 @@ module Html = struct
                 | `Result (`Ok ()) ->
                   [Bootstrap.success_box [pcdata "Restarted OK"]]
                 | `Result (`Error e) ->
-                  [Bootstrap.error_box ~title:(pcdata "Restarting error") e]
+                  [Bootstrap.error_box_pre ~title:(pcdata "Restarting error") e]
               );
               div (
                 match kill with
@@ -1127,7 +1175,7 @@ module Html = struct
                 | `Result (`Ok ()) ->
                   [Bootstrap.success_box [pcdata "Killing in progress"]]
                 | `Result (`Error e) ->
-                  [Bootstrap.error_box ~title:(pcdata "Killing error") e]
+                  [Bootstrap.error_box_pre ~title:(pcdata "Killing error") e]
               );
             ])
         |> Signal.list
@@ -1327,7 +1375,7 @@ module Html = struct
                               let title =
                                 pcdata
                                   (fmt "Error while calling %s:" query) in
-                              [Bootstrap.error_box e ~title]
+                              [Bootstrap.error_box_pre e ~title]
                             )
                           |> Signal.list
                         )

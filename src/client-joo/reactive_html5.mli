@@ -133,11 +133,16 @@ module H5: sig
     Ketrew_pure.Internal_pervasives.String.t ->
     [> Html5_types.span ] Reactive_node.elt option * [> Html5_types.pre ] elt
     
-  val error_box : 
+  val success_box:
+    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
+  val warning_box:
+    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
+  val error_box:
+    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
+
+  val error_box_pre : 
     title:[< Html5_types.strong_content_fun ] elt ->
     string -> [> Html5_types.div ] elt
 
-  val success_box:
-    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
   end
 end

@@ -34,6 +34,17 @@ let jsonp_of_url ~protocol ~host ?port ~token () =
   in
   jsonp_of_raw_url url
 
+let markup {name; connection} =
+  let open Display_markup in
+  description_list [
+    "Name", textf "%s" name;
+    "Connection",
+    begin match connection with
+    | JSONP url ->
+      description "JSONP" (path url)
+    end; 
+  ]
+
 let log {connection} =
   Log.(braces
          (match connection with

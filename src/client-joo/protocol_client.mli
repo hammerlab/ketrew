@@ -9,6 +9,7 @@ val of_current: unit -> t option
 val of_window_object: unit -> t list
 
 val log: t -> Ketrew_pure.Internal_pervasives.Log.t
+val markup: t -> Ketrew_pure.Internal_pervasives.Display_markup.t
 
 val name: t -> string
 
