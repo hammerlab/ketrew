@@ -42,4 +42,4 @@ val log: t -> Log.t
 val to_string_hum: t -> string
 (** Get a display-friendly string of a program. *)
 
-val markup: t -> Display_markup.t
+val markup: ?flatten: bool -> t -> Display_markup.t

@@ -42,7 +42,16 @@ let rec log = function
 
 let to_string_hum p = Log.to_long_string (log p)
 
-
+let flatten p =
+  let rec to_leaves =
+    function
+    | `Exec _ | `Shell_command _ as leaf -> [leaf]
+    | `And l ->
+      List.concat_map l ~f:to_leaves
+  in
+  match p with
+  | `And l -> `And (to_leaves p)
+  | other -> other
 let rec markup =
   let open Display_markup in
   function
@@ -54,6 +63,7 @@ let rec markup =
     description "Sh" (command c)
   | `Exec tl ->
     description "Exec" (flat_list tl ~f:command)
-
-
+let flatten_program = flatten
+let markup ?(flatten = true) p =
+  if flatten then markup (flatten_program p) else markup p
 
