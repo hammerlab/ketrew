@@ -1364,11 +1364,19 @@ module Html = struct
                       | _ -> false)
                 )
               ~on_click:Reactive.(fun _ ->
-                  Source.set current_tab (`Target_page tp);
-                  (* let current_tabs = *)
-                  (*   Source.signal client.tabs |> Signal.value in *)
-                  (* if List.mem ~set:current_tabs (`Target_page id) *)
-                  (* then (Source.set current_tab (`Target_page id);); *)
+                  (* We need to check that the tabs is still in the
+                     list of tabs, if it is not, it means that the user
+                     just clicked on the `×`. This is due to bootstrap's
+                     way of creating tabs, I don't know how to avoid the
+                     event to be passed here. *)
+                  let current_tabs =
+                    Source.signal client.tabs |> Signal.value in
+                  begin match
+                    List.find current_tabs ~f:(Tab.eq (`Target_page tp))
+                  with
+                  | Some _ -> Source.set current_tab (`Target_page tp);
+                  | None -> ()
+                  end;
                   false)
               [
                 target_page_tab_title client ~id;
