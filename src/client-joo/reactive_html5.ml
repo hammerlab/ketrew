@@ -309,6 +309,10 @@ module H5 = struct
         strong [title];
         pre [pcdata content];
       ]
+    let success_box content =
+      div ~a:[
+        a_class ["alert"; "alert-success"];
+      ] content
 
   end
 end

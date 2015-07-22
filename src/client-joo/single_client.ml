@@ -655,6 +655,33 @@ let reload_query_result t ~id ~query =
   Target_cache.update_target_query_result t.target_cache ~id ~query `None;
   ()
 
+let call_unit_message ~name ~message t ~on_result ~id =
+  let go () =
+    Protocol_client.call ~timeout:t.default_protocol_client_timeout
+      t.protocol_client message
+    >>< begin function
+    | `Ok `Ok ->
+      on_result (`Ok ());
+      return ()
+    | `Ok other ->
+      on_result (`Error (Protocol.Down_message.serialize other));
+      return ()
+    | `Error (`Protocol_client e) ->
+      on_result (`Error (Protocol_client.Error.to_string e));
+      return ()
+    end
+  in
+  asynchronous_loop t ~name:(fmt "%s-%s" name id) go;
+  ()
+
+let restart_target t ~id ~on_result =
+  call_unit_message t ~id ~on_result
+    ~name:"restart" ~message:(`Restart_targets [id])
+
+let kill_target t ~id ~on_result =
+  call_unit_message t ~id ~on_result
+    ~name:"kill" ~message:(`Kill_targets [id])
+
 module Html = struct
 
   let status_icon t =
@@ -1040,6 +1067,64 @@ module Html = struct
       Reactive_node.span text;
     ]
 
+  let target_controls client ~id =
+    let open H5 in
+    let restarting = Reactive.Source.create `None in
+    let killing = Reactive.Source.create `None in
+    Reactive_node.div Reactive.(
+        Signal.tuple_2
+          (Source.signal restarting)
+          (Source.signal killing)
+        |> Signal.map ~f:(fun (rest, kill) ->
+            [
+              Bootstrap.button_group ~justified:false [
+                Bootstrap.button 
+                  ~enabled:(rest <> `In_progress)
+                  ~on_click:(fun _ ->
+                      Log.(s "Restart Target" @ verbose);
+                      Reactive.Source.set restarting `In_progress;
+                      restart_target client ~id
+                        ~on_result:(fun r ->
+                            Reactive.Source.set restarting (`Result r);
+                          );
+                      false)
+                  (match rest with
+                  | `None | `Result _ -> [pcdata "Restart"]
+                  | `In_progress ->
+                    [pcdata "Restarting "; Bootstrap.loader_gif ()]);
+                Bootstrap.button 
+                  ~enabled:(kill <> `In_progress)
+                  ~on_click:(fun _ ->
+                      Log.(s "Kill Target" @ verbose);
+                      Reactive.Source.set killing `In_progress;
+                      kill_target client ~id
+                        ~on_result:(fun r ->
+                            Reactive.Source.set killing (`Result r);
+                          );
+                      (* Reactive.Source.set showing_on_the_right `Flat_status; *)
+                      false)
+                  [pcdata "Kill"];
+              ];
+              div (
+                match rest with
+                | `None | `In_progress -> []
+                | `Result (`Ok ()) ->
+                  [Bootstrap.success_box [pcdata "Restarted OK"]]
+                | `Result (`Error e) ->
+                  [Bootstrap.error_box ~title:(pcdata "Restarting error") e]
+              );
+              div (
+                match kill with
+                | `None | `In_progress -> []
+                | `Result (`Ok ()) ->
+                  [Bootstrap.success_box [pcdata "Killing in progress"]]
+                | `Result (`Error e) ->
+                  [Bootstrap.error_box ~title:(pcdata "Killing error") e]
+              );
+            ])
+        |> Signal.list
+      )
+
   let target_summary_panel client ~id =
     let open H5 in
     Bootstrap.panel ~body:[
@@ -1085,6 +1170,7 @@ module Html = struct
                 ~body:[
                   simple_row "Name" [target_page_tab_title client ~id];
                   code_row "ID" (Target.Summary.id summary);
+                  simple_row "Controls" [target_controls client ~id];
                   begin
                     let potential_button, content =
                       Target.Summary.metadata summary

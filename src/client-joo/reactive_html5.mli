@@ -137,5 +137,7 @@ module H5: sig
     title:[< Html5_types.strong_content_fun ] elt ->
     string -> [> Html5_types.div ] elt
 
+  val success_box:
+    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
   end
 end
