@@ -234,7 +234,7 @@ module H5 = struct
       ]
 
     let collapsable_ul
-        ?(ul_kind = `Inline) ?(maxium_items = 4) items =
+        ?(ul_kind = `Inline) ?(maximum_items = 4) items =
       let make_ul_content items =
         List.map items ~f:(fun s -> li [s]) in
       let list_style =
@@ -243,7 +243,7 @@ module H5 = struct
         | `Inline -> ["list-inline"; "inline-items-separated"]
       in
       match List.length items with
-      | n when n <= maxium_items ->
+      | n when n <= maximum_items ->
         ul ~a:[a_class list_style] (make_ul_content items)
       | n ->
         let expanded = Reactive.Source.create false in
@@ -263,7 +263,7 @@ module H5 = struct
                 match expandedness with
                 | true -> (make_ul_content (items @ [button]))
                 | false ->
-                  let shown_items = List.take items maxium_items @ [button] in
+                  let shown_items = List.take items maximum_items @ [button] in
                   (make_ul_content shown_items)
               )
             |> Signal.list

@@ -125,7 +125,7 @@ module H5: sig
 
   val collapsable_ul :
     ?ul_kind:[ `Inline | `None ] ->
-    ?maxium_items:int ->
+    ?maximum_items:int ->
     [< Html5_types.li_content_fun > `A ] elt list -> [> Html5_types.ul ] elt
 
   val collapsable_pre :
