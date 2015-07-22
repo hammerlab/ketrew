@@ -102,10 +102,9 @@ module H5: sig
     [> Html5_types.div ] elt
 
   val button :
-    [ `Disabled of [< Html5_types.button_content_fun ] elt list_wrap
-     | `Enabled of
-         Xml.mouse_event_handler *
-         [< Html5_types.button_content_fun ] elt list_wrap ] ->
+    ?on_click:Xml.mouse_event_handler ->
+    ?enabled:bool ->
+    [< Html5_types.button_content_fun ] elt list_wrap ->
     [> Html5_types.div ] elt
 
   val pagination :

@@ -191,19 +191,18 @@ module H5 = struct
         ~a:[a_class ["btn-group";
                      if justified then "btn-group-justified" else "";]]
 
-    let button =
+    let button ?on_click ?(enabled = true) content =
       let in_group b = button_group ~justified:false [b] in
       (* buttons must be in a group for justification to work *)
-      function
-      | `Disabled content ->
-        button ~a:[ a_class ["btn"; "btn-default"; "disabled"]] content
-        |> in_group
-      | `Enabled (on_click, content) ->
-        button content
-          ~a:[ a_class ["btn"; "btn-default"; ];
-               a_onclick on_click;
-             ]
-        |> in_group
+      let a =
+        (Option.value_map ~default:[] ~f:(fun c ->
+             if enabled then [a_onclick c] else []) on_click)
+        @ [
+          a_class
+            ((if enabled then [] else ["disabled"])
+             @ ["btn"; "btn-default"; ]);
+        ] in
+      button ~a content |> in_group
 
 
     let pagination items =

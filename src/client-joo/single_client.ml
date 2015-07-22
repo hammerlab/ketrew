@@ -833,11 +833,8 @@ module Html = struct
           Signal.tuple_2 (Source.signal showing) (Source.signal t.target_ids)
           |> Signal.map ~f:(fun ((n_from, n_count), ids) ->
               let total = Target_id_set.length ids in
-              let enable_if cond on_click content =
-                if cond
-                then Bootstrap.button (`Enabled (on_click, content))
-                else Bootstrap.button (`Disabled content)
-              in
+              let enable_if enabled on_click content =
+                Bootstrap.button ~enabled ~on_click content in
               Bootstrap.button_group [
                 Bootstrap.dropdown_button
                   ~content:[
@@ -1104,26 +1101,23 @@ module Html = struct
     let on_display_right_now = Reactive.Source.create `Nothing in
     let control ~content ~help ~self current =
       Bootstrap.button
-        (if current = self
-         then `Disabled [span ~a:[a_class ["text-disabled"]; a_title help] content]
-         else `Enabled (
-             (fun _ -> Reactive.Source.set on_display_right_now self; false),
-             [span ~a:[a_title help] content])) in
+        ~enabled:(current <> self)
+        ~on_click:(fun _ -> Reactive.Source.set on_display_right_now self; false)
+        [span ~a:[a_title help] content]
+    in
     let raw_json_control current =
       control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
-        ~help:"Display the contents of the build-process" in
-    let query_additional_controls current =
-      [
+        ~help:"Display the JSON defined by the backend pluging" in
+    let query_additional_controls current = [
         Bootstrap.button
-          (`Enabled (
-              (fun _ ->
+          ~on_click:(fun _ ->
                  reload_available_queries client ~id;
                  begin match current with
                  | `Nothing | `Raw_json -> ()
                  | `Result_of query -> reload_query_result client ~id ~query;
                  end;
-                 false),
-              [Bootstrap.reload_icon ()]))
+                 false)
+          [Bootstrap.reload_icon ()];
       ]
     in
     let make_toolbar list_of_lists =
@@ -1263,23 +1257,19 @@ module Html = struct
         Reactive_node.div (
           Reactive.Source.signal showing_on_the_right
           |> Reactive.Signal.map ~f:(fun showing ->
-              let enable_if_not_shown thing ~on_click content =
-                if showing = thing
-                then `Disabled content
-                else `Enabled (on_click, content) in
               Bootstrap.button_group ~justified:true [
                 Bootstrap.button 
-                  (enable_if_not_shown `Flat_status
-                     ~on_click:(fun _ ->
-                         Reactive.Source.set showing_on_the_right `Flat_status;
-                         false)
-                     [pcdata "Status history"]);
+                  ~enabled:(showing <> `Flat_status)
+                  ~on_click:(fun _ ->
+                      Reactive.Source.set showing_on_the_right `Flat_status;
+                      false)
+                  [pcdata "Status history"];
                 Bootstrap.button 
-                  (enable_if_not_shown `Build_process_details
-                     ~on_click:(fun _ ->
-                         Reactive.Source.set showing_on_the_right `Build_process_details;
-                         false)
-                     [pcdata "Build-process details"]);
+                  ~enabled:(showing <> `Build_process_details)
+                  ~on_click:(fun _ ->
+                      Reactive.Source.set showing_on_the_right `Build_process_details;
+                      false)
+                  [pcdata "Build-process details"];
               ])
           |> Reactive.Signal.singleton);
         Reactive_node.div (
