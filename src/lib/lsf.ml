@@ -64,32 +64,36 @@ let create
                            wall_limit; project; processors}
                  |> serialize)
 
-let log =
-  let open Log in
+let markup =
+  let open Display_markup in
   let created {host; program; queue; name;
                wall_limit; project; processors} = [
-    "Host", Host.log host;
-    "Program", Program.log program;
-    "Queue", OCaml.option quote queue;
-    "Name", OCaml.option quote name;
-    "Wall-Limit", OCaml.option quote wall_limit;
-    "Project", OCaml.option quote project;
+    "Host", Host.markup host;
+    "Program", Program.markup program;
+    "Queue", option ~f:text queue;
+    "Name", option ~f:text name;
+    "Wall-Limit", option ~f:text wall_limit;
+    "Project", option ~f:text project;
     "Processors",
-    (match processors with
-     | None -> s "Default"
-     | Some (`Min min) -> s "≥ " % i min
-     | Some (`Min_max (min, max)) ->
-       s "∈ " % brakets (i min % s ", " % i max));
+    begin match processors with
+    | None -> text "Default"
+    | Some (`Min min) -> textf "≥ %d" min
+    | Some (`Min_max (min, max)) ->
+      textf "∈ [%d, %d]" min max
+    end
   ] in
   function
-  | `Created c -> ("Status", s "Created") :: created c
+  | `Created c ->
+    description_list @@ ("Status", text "Created") :: created c
   | `Running rp ->
-    List.concat [
-      ["Status", s "Running";];
-      created rp.created;
-      ["LSF-ID", i rp.lsf_id;
-       "Playground", s (Path.to_string rp.playground);]
+    description_list [
+      "Status", text "Running";
+      "Created as", description_list (created rp.created);
+      "LSF-ID", textf "%d" rp.lsf_id;
+      "Playground", path (Path.to_string rp.playground);
     ]
+
+let log rp = ["LSF", Display_markup.log (markup rp)]
 
 let parse_bsub_output s =
   (* Output looks like
@@ -107,9 +111,12 @@ let parse_bsub_output s =
   | _ -> None
 
 let additional_queries = function
-| `Created _ -> []
+| `Created _ -> [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
+  ]
 | `Running _ ->
   [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
     "stdout", Log.(s "LSF output file");
     "stderr", Log.(s "LSF error file");
     "log", Log.(s "Monitored-script `log` file");
@@ -120,9 +127,16 @@ let additional_queries = function
 
 let query run_parameters item =
   match run_parameters with
-  | `Created _ -> fail Log.(s "not running")
+  | `Created _ ->
+    begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
+    | other -> fail Log.(s "not running")
+    end
   | `Running rp ->
     begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
     | "log" ->
       let log_file = Monitored_script.log_file rp.script in
       Host_io.grab_file_or_log rp.created.host log_file

@@ -200,7 +200,8 @@ module Display_markup = struct
 
   let time_span s = Time_span s
 
-  let textf fmt = Printf.ksprintf (fun t -> Text t) fmt
+  let text t = Text t
+  let textf fmt = Printf.ksprintf text fmt
 
   let description_list l =
     Itemize (List.map l ~f:(fun (n, t) -> Description (n, t)))
