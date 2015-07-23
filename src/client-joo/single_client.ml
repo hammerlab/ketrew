@@ -37,10 +37,21 @@ module Markup_queries = struct
        | 0 -> ""
        | n -> "." ^ string_of_int n)
 
-  let rec markup_to_html ast =
+  let rec markup_to_html ?(collapse_descriptions = []) ast =
     let open Display_markup in
     let open H5 in
+    let continue ast = markup_to_html ~collapse_descriptions ast in
     let inline l = div ~a:[a_style "display: inline"] l in
+    let catches_description name =
+      List.exists collapse_descriptions ~f:(fun (n, _) -> n = name) in
+    let rec find_subcontent name ast =
+      match ast with
+      | Description (n, c) when n = name -> Some c
+      | Description (_, c) -> find_subcontent name c
+      | Itemize l
+      | Concat l -> List.find_map ~f:(find_subcontent name) l
+      | _ -> None
+    in
     match ast with
     | Date fl -> pcdata (date_to_string fl)
     | Time_span s -> pcdata (time_span_to_string s)
@@ -48,11 +59,51 @@ module Markup_queries = struct
     | Path p
     | Command p -> code [pcdata p]
     | Concat p ->
-      inline (List.map ~f:markup_to_html p)
+      inline (List.map ~f:continue p)
+    | Description (name, t) when catches_description name ->
+      let expanded = Reactive.Source.create false in
+      let button expandedness =
+        a ~a:[
+          a_onclick (fun _ ->
+              Reactive.Source.set expanded (not expandedness);
+              false);
+        ] [
+          pcdata (if expandedness then "⊖" else "⊕")
+        ] in
+      inline [
+        Reactive_node.div Reactive.(
+            Source.signal expanded
+            |> Signal.map
+              ~f:begin function
+              | true ->
+                [strong [pcdata name; pcdata ": "];
+                 button true; continue t]
+              | false ->
+                let d = ref [] in
+                let summary =
+                  Nonstd.Option.(
+                    begin
+                      List.find collapse_descriptions ~f:(fun (n, _) ->
+                          d := fmt "trying %S Vs %S, " n name :: !d;
+                          n = name)
+                      >>= fun (_, to_find) ->
+                      d := fmt "to_find : %s" to_find :: !d;
+                      find_subcontent to_find t
+                    end
+                    |> map ~f:continue
+                    |> value ~default:(pcdata " ")
+                      (* ~default:(pcdata (fmt "??? -> %s" (String.concat ~sep:", " !d))) *)
+                  )
+                in
+                [strong [pcdata name; pcdata ": "]; summary; button false]
+              end
+            |> Signal.list
+          );
+      ]
     | Description (name, t) ->
-      inline [strong [pcdata name; pcdata ": "]; markup_to_html t]
+      inline [strong [pcdata (fmt "%s: " name)]; continue t]
     | Itemize ts ->
-      ul (List.map ~f:(fun ast -> li [markup_to_html ast]) ts)
+      ul (List.map ~f:(fun ast -> li [continue ast]) ts)
 
   let render content =
     let open H5 in
@@ -1260,7 +1311,8 @@ module Html = struct
                     [Target.Summary.condition summary
                      |> Option.value_map ~default:(pcdata "") ~f:(fun c ->
                          Target.Condition.markup c
-                         |> Markup_queries.markup_to_html)];
+                         |> Markup_queries.markup_to_html
+                           ~collapse_descriptions:["Host", "Name"])];
                   code_row "Build-process"
                     (Target.Summary.build_process summary
                      |> function
