@@ -1271,6 +1271,36 @@ module Html = struct
           |> singleton)
     ]
 
+  let flat_status_display_div client ~id =
+    let open H5 in
+    Reactive_node.div (
+      Target_cache.get_target_flat_status_signal client.target_cache ~id
+      |> Reactive.Signal.map ~f:(fun state ->
+          let text_of_item item =
+            fmt "%s%s%s"
+              (Target.State.Flat.name item)
+              (Target.State.Flat.message item
+               |> Option.value_map ~default:""
+                 ~f:(fmt " (%s)"))
+              (Target.State.Flat.more_info item
+               |> function
+               | [] -> ""
+               | more -> ": " ^ String.concat ~sep:", " more)
+          in
+          let additional_info =
+            (state |> Target.State.Flat.history)
+            |> List.map ~f:(fun item ->
+                div [
+                  code [pcdata
+                          (Target.State.Flat.time item |> Time.to_filename)];
+                  br ();
+                  pcdata (text_of_item item);
+                ])
+          in
+          div additional_info
+        )
+      |> Reactive.Signal.singleton)
+
   let build_process_display_div client tp =
     let open H5 in
     let id = tp.Target_page.target_id in
@@ -1335,14 +1365,18 @@ module Html = struct
                           | `Descriptions qds ->
                             make_toolbar [
                               [raw_json_control current];
-                              List.map qds ~f:(fun (name, help) ->
-                                  match Markup_queries.discriminate name with
+                              List.map qds ~f:(fun (qname, help) ->
+                                  match Markup_queries.discriminate qname with
                                   | Some subname ->
-                                    control ~content:[pcdata subname] ~help
-                                      ~self:(`Result_of name) current
+                                    control
+                                      ~content:[pcdata subname]
+                                      ~help
+                                      ~self:(`Result_of qname) current
                                   | None ->
-                                    control ~content:[pcdata name] ~help
-                                      ~self:(`Result_of name) current);
+                                    control
+                                      ~content:[pcdata (fmt "%s:%s" name qname)]
+                                      ~help
+                                      ~self:(`Result_of qname) current);
                               query_additional_controls current;
                             ]
                         )
@@ -1387,36 +1421,6 @@ module Html = struct
             end)
         |> Reactive.Signal.singleton)
 
-  let flat_status_display_div client ~id =
-    let open H5 in
-    Reactive_node.div (
-      Target_cache.get_target_flat_status_signal client.target_cache ~id
-      |> Reactive.Signal.map ~f:(fun state ->
-          let text_of_item item =
-            fmt "%s%s%s"
-              (Target.State.Flat.name item)
-              (Target.State.Flat.message item
-               |> Option.value_map ~default:""
-                 ~f:(fmt " (%s)"))
-              (Target.State.Flat.more_info item
-               |> function
-               | [] -> ""
-               | more -> ": " ^ String.concat ~sep:", " more)
-          in
-          let additional_info =
-            (state |> Target.State.Flat.history)
-            |> List.map ~f:(fun item ->
-                div [
-                  code [pcdata
-                          (Target.State.Flat.time item |> Time.to_filename)];
-                  br ();
-                  pcdata (text_of_item item);
-                ])
-          in
-          div additional_info
-        )
-      |> Reactive.Signal.singleton)
-
   let target_page client tp =
     let id = tp.Target_page.target_id in
     let showing_on_the_right = tp.Target_page.showing_on_the_right in
@@ -1446,7 +1450,7 @@ module Html = struct
                   ~on_click:(fun _ ->
                       Reactive.Source.set showing_on_the_right `Build_process_details;
                       false)
-                  [pcdata "Build-process details"];
+                  [pcdata "Backend details/queries"];
               ])
           |> Reactive.Signal.singleton);
         Reactive_node.div (
