@@ -87,7 +87,7 @@ let markup =
     description_list @@ ("Status", text "Created") :: created c
   | `Running rp ->
     description_list [
-      "Status", text "Running";
+      "Status", text "Activated";
       "Created as", description_list (created rp.created);
       "LSF-ID", textf "%d" rp.lsf_id;
       "Playground", path (Path.to_string rp.playground);
