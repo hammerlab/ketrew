@@ -68,21 +68,38 @@ let create
               email_user; shell; wall_limit; processors}
     |> serialize)
 
-let log =
-  let open Log in
+let markup =
+  let open Display_markup in
+  let created {host; program; shell; queue; name;
+               email_user; wall_limit; processors} = [
+    "Host", Host.markup host;
+    "Program", Program.markup program;
+    "Shell", command shell;
+    "Queue", option ~f:text queue;
+    "Name", option ~f:text name;
+    "Email-user",
+    begin match email_user with
+    | `Never -> text "Never"
+    | `Always e -> textf "Always: %S" e
+    end;
+    "Wall-Limit",
+    begin match wall_limit with
+    | `Hours f -> time_span f
+    end;
+    "Processors", textf "%d" processors;
+  ] in
   function
-  | `Created c -> [
-      "Status", s "Created";
-      "Host", Host.log c.host;
-      "Program", Program.log c.program;
+  | `Created c ->
+    description_list @@ ("Status", text "Created") :: created c
+  | `Running rp ->
+    description_list [
+      "Status", text "Running";
+      "Created as", description_list (created rp.created);
+      "PBS-ID", text rp.pbs_job_id;
+      "Playground", path (Path.to_string rp.playground);
     ]
-| `Running rp -> [
-      "Status", s "Running";
-      "Host", Host.log rp.created.host;
-      "Program", Program.log rp.created.program;
-      "PSB-ID", s rp.pbs_job_id;
-      "Playground", s (Path.to_string rp.playground);
-  ]
+
+let log rp = ["PBS", Display_markup.log (markup rp)]
 
 let start: run_parameters -> (_, _) Deferred_result.t = function
 | `Running _ ->
@@ -136,9 +153,12 @@ let start: run_parameters -> (_, _) Deferred_result.t = function
   >>< classify_and_transform_errors
 
 let additional_queries = function
-| `Created _ -> []
+| `Created _ -> [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
+  ]
 | `Running _ ->
   [
+    "ketrew-markup/status", Log.(s "Get the status as Markup");
     "stdout", Log.(s "PBS output file");
     "stderr", Log.(s "PBS error file");
     "log", Log.(s "Monitored-script `log` file");
@@ -148,9 +168,16 @@ let additional_queries = function
 
 let query run_parameters item =
   match run_parameters with
-  | `Created _ -> fail Log.(s "not running")
+  | `Created _ ->
+    begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
+    | other -> fail Log.(s "not running")
+    end
   | `Running rp ->
     begin match item with
+    | "ketrew-markup/status" ->
+      return (markup run_parameters |> Display_markup.serialize)
     | "log" ->
       let log_file = Monitored_script.log_file rp.script in
       Host_io.grab_file_or_log rp.created.host log_file
