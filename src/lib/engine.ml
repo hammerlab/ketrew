@@ -32,12 +32,10 @@ module Database_error = Trakeva.Error
 type t = {
   mutable database_handle: Database.t option;
   configuration: Configuration.engine;
-  measurements: Measurement.Collection.t;
 }
 let create configuration =
   return {
     database_handle = None; configuration;
-    measurements = Measurement.Collection.create ();
   }
 
 let database t =
@@ -50,61 +48,9 @@ let database t =
     t.database_handle <- Some db;
     return db
 
-module Measurements = struct
-  let flush t =
-    database t
-    >>= fun db ->
-    let action =
-      let key = Unique_id.create () in
-      let value = Measurement.Collection.serialize t.measurements in
-      Trakeva.Action.(set ~collection:"measurements" ~key value)
-    in
-    begin Database.act db ~action
-      >>= function
-      | `Done ->
-        Measurement.Collection.clear t.measurements;
-        return ()
-      | `Not_done -> fail (`Database_unavailable "measurements")
-    end
-  let get_all t =
-    let collection = "measurements" in
-    database t
-    >>= fun db ->
-    Database.get_all db ~collection
-    >>= fun all_keys  ->
-    Deferred_list.while_sequential all_keys (fun key ->
-        Database.get db ~collection ~key
-        >>= function
-        | Some s ->
-          begin try
-            return (Measurement.Collection.deserialize_exn s)
-          with e -> fail (`Deserialization (e, s))
-          end
-        | None -> fail (`Missing_data (fmt "Missing measurement (from %s)" key)))
-    >>| Measurement.Collection.concat
-    >>= fun collection ->
-    return collection
-end
-
-module Measure = struct
-  open Measurement
-  let incomming_request t ~connection_id ~request =
-    Collection.add t.measurements
-      (Item.incoming_request (Item.make_http_request connection_id request))
-  let end_of_request t ~connection_id ~request ~response_log ~body_length =
-    Collection.add t.measurements
-      (Item.end_of_request
-         (Item.make_http_request connection_id request)
-         (Item.make_reponse_log response_log body_length))
-  let tag t s =
-    Collection.add t.measurements (Item.tag s)
-end
-
 let unload t =
   match t.database_handle with
   | Some s ->
-    Measurements.flush t
-    >>= fun () ->
     Database.close s
   | None -> return ()
 

@@ -530,21 +530,6 @@ let start_listening_on_command_pipe ~server_state =
               end
               >>= fun () ->
               read_loop ~error_count ()
-            | tag when String.sub tag ~index:0  ~length:3 = Some "tag" ->
-              let length = String.length tag - 3 in
-              Engine.Measure.tag server_state.state
-                (String.sub_exn tag ~index:3 ~length);
-              read_loop ~error_count ()
-            | "flush-measurements" ->
-              Engine.Measurements.flush server_state.state
-              >>= fun result ->
-              begin match result with
-              | `Ok () -> read_loop ~error_count ()
-              | `Error e ->
-                Log.(s "Could not flush the measurements: " 
-                     % s (Error.to_string e) @ error);
-                return ()
-              end
             |  other ->
               Log.(s "Cannot understand command: " % OCaml.string other @ error);
               read_loop ~error_count ())
@@ -618,11 +603,7 @@ let start_listening_on_connections ~server_state =
               `Crt_file_path certfile,
               `Key_file_path keyfile,
               `No_password, `Port port) in
-          (* let sockaddr = Lwt_unix.(ADDR_INET (Unix.inet_addr_any, port)) in *)
           let request_callback _ request body =
-            (* let connection_id = Unique_id.create () in *)
-            (* Engine.Measure.incomming_request *)
-            (*   server_state.state ~connection_id ~request; *)
             handle_request ~server_state ~body request 
             >>= fun high_level_answer ->
             let respond_string ?headers ~status ~body () =
@@ -653,21 +634,6 @@ let start_listening_on_connections ~server_state =
               respond_string ~status:`Not_found ~body ()
             end
             >>= fun ((response, body) as cohttp_answer) ->
-            (* let response_log = *)
-            (*   Cohttp.Response.sexp_of_t response *)
-            (*
-            (*   |> Sexplib.Sexp.to_string_hum ~indent:2 in *)
-            let body_length =
-              match body with
-              | `Stream s -> -1
-              | `String s -> String.length s
-              | `Strings l -> 
-                List.fold ~init:0 ~f:(fun a b -> a + String.length b) l
-              | `Empty -> 0
-            in
-               *)
-            (* Engine.Measure.end_of_request server_state.state *)
-            (*   ~connection_id ~request ~response_log ~body_length; *)
             return cohttp_answer
           in
           let conn_closed (_, conn_id) =

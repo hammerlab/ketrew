@@ -150,35 +150,3 @@ val restart_target: t -> Ketrew_pure.Target.id ->
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
 
-
-module Measure: sig
-
-  val incomming_request:
-    t ->
-    connection_id:string ->
-    request:Cohttp.Request.t ->
-    unit
-  val end_of_request:
-    t ->
-    connection_id:string ->
-    request:Cohttp.Request.t ->
-    response_log: string ->
-    body_length: int ->
-    unit
-  val tag: t -> string -> unit
-end
-module Measurements: sig
-
-  val flush: t ->
-    (unit, [>
-        | `Database of Trakeva.Error.t
-        | `Database_unavailable of Ketrew_pure.Target.id
-      ]) Deferred_result.t
-
-  val get_all: t ->
-    (Ketrew_pure.Measurement.Collection.t,
-     [> `Database of Trakeva.Error.t
-     | `Deserialization of exn * string
-     | `Missing_data of string]) Deferred_result.t
-
-end

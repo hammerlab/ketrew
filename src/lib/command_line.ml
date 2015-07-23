@@ -169,86 +169,6 @@ let kill ~client ~interactive ids =
       return ()
   end
 
-let inspect
-    ~(client:Client.t)
-    ~(in_dollar_editor: bool)
-    ~(format: [ `Tsv | `Csv ])
-    ?since (* String representing a date for lexicographic comparison *)
-    how (* list of strings: how to inspect *) =
-  let module Mtem = Measurement.Item in
-  let get_all () =
-    match Client.get_local_engine client with
-    | None ->
-      Log.(s "HTTP Client cannot inspect for now." @ error);
-      fail (`Not_implemented "inspect")
-    | Some engine ->
-      Engine.Measurements.get_all engine
-      >>| Measurement.Collection.to_list
-      >>= fun all ->
-      List.sort ~cmp:Mtem.compare_by_time
-        (match since with
-         | None -> all
-         | Some stime ->
-           List.filter ~f:(fun m -> Time.to_filename (Mtem.time m) >= stime) all)
-      |> return
-  in
-  let is s ~prefix_of =
-    String.(sub prefix_of ~index:0 ~length:(length s) = Some s) in
-  let display document =
-    match in_dollar_editor with
-    | true ->
-      let str =
-        match format with
-        | `Tsv ->
-          List.map document ~f:(fun row ->
-              (List.map row ~f:(String.map ~f:(function '\t' -> ' ' | c -> c))
-               |> String.concat ~sep:"\t") ^ "\n")
-          |> String.concat ~sep:""
-        | `Csv ->
-          List.map document ~f:(fun row ->
-              (List.map row ~f:(fun cell ->
-                   match String.index_of_character cell ',' with
-                   | Some _ -> fmt "%S" cell
-                   | None -> cell)
-               |> String.concat ~sep:",") ^ "\n")
-          |> String.concat ~sep:""
-      in
-      Interaction.view_in_dollar_editor str
-    | false ->
-      Log.(s "Measurements:" % n %
-           separate n
-             (List.map document ~f:(fun str ->
-                  separate (s "\t") (List.map ~f:s str)))
-           @ normal);
-      return ()
-  in
-  begin match how with
-  | [all; mea] when is all ~prefix_of:"all"
-                 && is mea ~prefix_of:"measurements" ->
-    get_all ()
-    >>= fun measurements ->
-    display (List.map ~f:Mtem.to_strings measurements)
-  | [ht; dur] when is ht ~prefix_of:"http-request"
-                && is dur ~prefix_of:"benchmark" ->
-    get_all ()
-    >>= fun measurements ->
-    let all_reqs =
-      Mtem.collect_http_requests measurements
-      |> List.sort ~cmp:(fun a b -> Float.compare b#duration a#duration)
-    in
-    let document =
-      List.map all_reqs ~f:(fun req ->
-          [Time.to_filename req#date;
-           req#uri;
-           Float.to_string req#duration;
-           Int.to_string req#body_length])
-    in
-    display document
-  | other ->
-    Log.(s "Don't know what to do with " % OCaml.list quote other @ error);
-    fail (`Failure "command line")
-  end
-
 
 (** The function behind [ketrew interact]. *)
 let interact ~client =
@@ -471,46 +391,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
-  let inspect_cmd =
-    sub_command
-      ~term:Term.(
-          pure (fun configuration in_dollar_editor csv since how ->
-              let in_dollar_editor = in_dollar_editor || csv in
-              let format = if csv then `Csv else `Tsv in
-              Client.as_client ~configuration
-                ~f:(inspect ~in_dollar_editor ~format ?since how))
-          $ config_file_argument
-          $ Arg.(value @@ flag
-                 @@ info ["e"; "view-in-editor"]
-                   ~doc:"Open stuff in $EDITOR (by default in TSV).")
-          $ Arg.(value @@ flag
-                 @@ info ["csv"]
-                   ~doc:"Output CSV instead of TSV (implies `--view-in-editor`).")
-          $ Arg.(value & opt (some string) None
-                 & info ["S"; "since"] ~docv:"TIME-STRING"
-                   ~doc:(fmt
-                           "Get measurements that are younger than $(docv); \
-                            the date-format is (any prefix of) `%s`"
-                           Time.(now () |> to_filename)))
-          $ Arg.(non_empty @@ pos_all string [] @@
-                 info [] ~docv:"HOW"
-                   ~doc:"How to do the inspection")
-        )
-      ~info:(
-        let man = [
-          `S "THE HOW ARGUMENT";
-          `P "The following $(b,HOW) arguments are possible:";
-          `I ("`all measurements`", "display all the known measurements");
-          `Noblank;
-          `I ("`http-request benchmark`",
-              "display durations and response-sizes of HTTP");
-          `P "Note that one can use unambiguous prefixes, e.g.:";
-          `P "    ketrew insp h b -e";
-          `P "to open all HTTP benchmarks in `$EDITOR`";
-        ] in
-        Term.info "inspect" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Run steps of the engine."  ~man)
-  in
   let run_cmd =
     let open Term in
     sub_command
@@ -655,7 +535,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
       init_cmd; status_cmd; start_gui; run_cmd; kill_cmd;
-      inspect_cmd;
       interact_cmd;
       explore_cmd;
       start_server_cmd; stop_server_cmd;
