@@ -264,7 +264,7 @@ end
 
 
 
-type status = [
+type status = Time.t * [
   | `Unknown
   | `Ok of Protocol.Server_status.t
   | `Problem of string
@@ -366,13 +366,14 @@ type t = {
   block_time_request: float;
   default_protocol_client_timeout: float;
   wait_before_retry_asynchronous_loop: float;
+  reload_status_condition: unit Lwt_condition.t;
 }
 
 
 let create ~protocol_client () =
   let target_ids = Reactive.Source.create Target_id_set.empty in
   let interesting_targets = Reactive.Source.create Target_id_set.empty in
-  let status = Reactive.Source.create `Unknown in
+  let status = Reactive.Source.create (Time.now (), `Unknown) in
   let current_tab = Reactive.Source.create ~eq:Tab.eq `Target_table in
   let table_showing = Reactive.Source.create (0, 10) in
   let table_columns = Reactive.Source.create default_columns in
@@ -402,6 +403,7 @@ let create ~protocol_client () =
     default_protocol_client_timeout = 20.;
     wait_before_retry_asynchronous_loop =
       (if !global_debug_level > 0 then 120. else 30.);
+    reload_status_condition = Lwt_condition.create ();
   }
 
 let log t =
@@ -430,7 +432,7 @@ let add_target_ids t l =
     (Target_id_set.add_list current l);
   ()
 
-let asynchronous_loop t ~name loop =
+let asynchronous_loop ?wake_up t ~name loop =
   Lwt.(
     async begin fun () ->
       let rec meta_loop () =
@@ -449,8 +451,25 @@ let asynchronous_loop t ~name loop =
           in
           Log.(s "Error in loop " % quote name % s ": " % problem @ error);
           Reactive.Source.set t.status
-            (`Problem (problem |> Log.to_long_string));
-          Lwt_js.sleep t.wait_before_retry_asynchronous_loop
+            (Time.now (), `Problem (problem |> Log.to_long_string));
+          let to_pick =
+            begin match wake_up with
+            | Some (name, (cond : unit Lwt_condition.t)) ->
+              [
+                begin
+                  Log.(s "asynchronous_loop waiting on " % quote name @ verbose);
+                  Lwt_condition.wait cond
+                  >>= fun () ->
+                  Log.(s "asynchronous_loop woken-up by " % quote name @ verbose);
+                  return ()
+                end
+              ]
+            | None -> []
+            end
+            @ [
+              Lwt_js.sleep t.wait_before_retry_asynchronous_loop
+            ] in
+          pick to_pick
           >>= fun () ->
           meta_loop ()
       in
@@ -466,9 +485,9 @@ let start_updating t =
         t.protocol_client `Get_server_status
       >>= begin function
       | `Server_status status ->
-        let previous_status =
+        let _, previous_status =
           Reactive.(Source.signal t.status |> Signal.value) in
-        Reactive.Source.set t.status (`Ok status);
+        Reactive.Source.set t.status (Time.now (), `Ok status);
         return (target_query_of_status t previous_status)
       | other ->
         fail (`Wrong_down_message other)
@@ -658,7 +677,8 @@ let start_updating t =
       (fun set -> update_flat_states (Target_id_set.to_list set))
       event
   in
-  asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
+  asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop
+    ~wake_up:("Reload-status-condition", t.reload_status_condition);
   ()
 
 let fetch_available_queries t ~id =
@@ -752,20 +772,21 @@ module Html = struct
 
   let status_icon t =
     let open H5 in
-    let display = function
-    | `Ok status ->
-      span ~a:[ a_class ["label"; "label-success"];
-                a_title (fmt "OK (%s)"
-                           (Protocol.Server_status.time status |> Time.to_filename));
-              ] [pcdata "✔"]
-    | `Unknown ->
-      span ~a:[ a_class ["label"; "label-warning"];
-                a_title "Unknown";
-              ] [pcdata "?"]
-    | `Problem problem ->
-      span ~a:[ a_class ["label"; "label-danger"];
-                a_title (fmt "Problem: %s" problem);
-              ] [pcdata "✖"]
+    let display (date, status) =
+      match status with
+      | `Ok status ->
+        span ~a:[ a_class ["label"; "label-success"];
+                  a_title (fmt "OK (%s)"
+                             (Protocol.Server_status.time status |> Time.to_filename));
+                ] [pcdata "✔"]
+      | `Unknown ->
+        span ~a:[ a_class ["label"; "label-warning"];
+                  a_title "Unknown";
+                ] [pcdata "?"]
+      | `Problem problem ->
+        span ~a:[ a_class ["label"; "label-danger"];
+                  a_title (fmt "Problem: %s" problem);
+                ] [pcdata "✖"]
     in
     Reactive_node.span
       Reactive.(
@@ -778,45 +799,62 @@ module Html = struct
     let open H5 in
     Bootstrap.panel ~body:[
       h3 [pcdata "Client"];
-      h4 [pcdata "Status"];
       Reactive_node.div Reactive.(
           Source.signal t.status
-          |> Signal.map ~f:(function
-            | `Ok status ->
-              Bootstrap.success_box
-                [span ~a:[a_style "color: green"] [pcdata "OK"];
-                 pcdata (fmt " (server-time: %s)"
-                           (Protocol.Server_status.time status
-                            |> Markup_queries.date_to_string))]
-            | `Unknown ->
-              Bootstrap.warning_box
-                [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
-            | `Problem problem ->
-              Bootstrap.error_box [
-                strong [pcdata "Problem: "];
-                br ();
-                code [pcdata problem];
-                br ();
-                pcdata "Cannot connect, and cannot get a decent \
-                        error message from the browser.";
-                br ();
-                pcdata "You should try \
-                        to open the following link in a new tab, and \
-                        investigate the problem ";
-                i [pcdata
-                        "(the most common issue being \
-                         self-signed TLS certificates, by accepting it \
-                         in the other tab \
-                         you may fix the problem for the current session)"];
-                pcdata ":";
-                br ();
-                a ~a:[
-                  a_href (Protocol_client.base_url t.protocol_client)
-                ] [
-                  pcdata (Protocol_client.base_url t.protocol_client)
-                ];
-              ])
-          |> Signal.singleton
+          |> Signal.map ~f:begin fun (date, status) ->
+            [
+              h4 [
+                pcdata (fmt "Status");
+              ];
+              pcdata (fmt "Last updated: %s."
+                        (Markup_queries.date_to_string date));
+              begin match status with
+              | `Ok server_status ->
+                Bootstrap.success_box
+                  [span ~a:[a_style "color: green"] [pcdata "OK"];
+                   pcdata (fmt " (server-time: %s)"
+                             (Protocol.Server_status.time server_status
+                              |> Markup_queries.date_to_string))]
+              | `Unknown ->
+                Bootstrap.warning_box
+                  [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
+              | `Problem problem ->
+                Bootstrap.error_box [
+                  strong [pcdata "Problem "];
+                  a ~a:[
+                    a_onclick (fun _ ->
+                        Lwt_condition.signal t.reload_status_condition ();
+                        false);
+                    a_class ["label"; "label-default"];
+                  ] [
+                    Bootstrap.reload_icon ()
+                  ];
+                  br ();
+                  code [pcdata problem];
+                  br ();
+                  pcdata "Cannot connect, and cannot get a decent \
+                          error message from the browser.";
+                  br ();
+                  pcdata "You should try \
+                          to open the following link in a new tab, and \
+                          investigate the problem ";
+                  i [pcdata
+                       "(the most common issue being \
+                        self-signed TLS certificates, by accepting it \
+                        in the other tab \
+                        you may fix the problem for the current session)"];
+                  pcdata ":";
+                  br ();
+                  a ~a:[
+                    a_href (Protocol_client.base_url t.protocol_client)
+                  ] [
+                    pcdata (Protocol_client.base_url t.protocol_client)
+                  ];
+                ]
+              end
+            ]
+          end
+          |> Signal.list
         );
       h4 [pcdata "Protocol Client"];
       div [
