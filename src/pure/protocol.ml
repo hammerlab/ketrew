@@ -23,9 +23,34 @@ open Internal_pervasives
 module Server_status = struct
   type t = {
     time: float;
+    tls: [`OpenSSL | `Native | `None ];
+    preemptive_bounds: int * int;
+    preemptive_queue: int;
+    libev: bool;
+    gc_minor_words : float;
+    gc_promoted_words : float;
+    gc_major_words : float;
+    gc_minor_collections : int;
+    gc_major_collections : int;
+    gc_heap_words : int;
+    gc_heap_chunks : int;
+    gc_compactions : int;
+    gc_top_heap_words : int;
+    gc_stack_size : int;
   } [@@deriving yojson]
-  let create ~time () = {time}
-  let time t = t.time
+  let create ~time ~tls ~preemptive_bounds ~preemptive_queue ~libev ~gc =
+    {time; tls; preemptive_bounds; preemptive_queue; libev;
+     gc_minor_words = gc.Gc.minor_words;
+     gc_promoted_words = gc.Gc.promoted_words;
+     gc_major_words = gc.Gc.major_words;
+     gc_minor_collections = gc.Gc.minor_collections;
+     gc_major_collections = gc.Gc.major_collections;
+     gc_heap_words = gc.Gc.heap_words;
+     gc_heap_chunks = gc.Gc.heap_chunks;
+     gc_compactions = gc.Gc.compactions;
+     gc_top_heap_words = gc.Gc.top_heap_words;
+     gc_stack_size = gc.Gc.stack_size;
+    }
 end
 
 module Down_message = struct

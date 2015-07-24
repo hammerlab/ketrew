@@ -419,7 +419,7 @@ let target_query_of_status client = function
 | `Unknown -> client.default_target_query
 | `Ok status ->
   (* Those 5 seconds actually generate traffic, but for know, who cares … *)
-  `Created_after (Protocol.Server_status.time status -. 5.)
+  `Created_after (status.Protocol.Server_status.time -. 5.)
 
 let add_interesting_targets t l =
   let current =
@@ -777,7 +777,7 @@ module Html = struct
       | `Ok status ->
         span ~a:[ a_class ["label"; "label-success"];
                   a_title (fmt "OK (%s)"
-                             (Protocol.Server_status.time status |> Time.to_filename));
+                             (status.Protocol.Server_status.time |> Time.to_filename));
                 ] [pcdata "✔"]
       | `Unknown ->
         span ~a:[ a_class ["label"; "label-warning"];
@@ -795,6 +795,80 @@ module Html = struct
         |> Signal.singleton
       )
 
+  let server_status t status =
+    let open Display_markup in
+    let {
+      Protocol.Server_status.
+      time (*  float *);
+      tls (*  [`OpenSSL | `Native | `None ] *);
+      preemptive_bounds (*  int * int *);
+      preemptive_queue (*  int *);
+      libev (*  bool *);
+      gc_minor_words  (*  float *);
+      gc_promoted_words  (*  float *);
+      gc_major_words  (*  float *);
+      gc_minor_collections  (*  int *);
+      gc_major_collections  (*  int *);
+      gc_heap_words  (*  int *);
+      gc_heap_chunks  (*  int *);
+      gc_compactions  (*  int *);
+      gc_top_heap_words  (*  int *);
+      gc_stack_size  (*  int *);
+    } = status in
+    let int64 i =
+      let open Int64 in
+      let (/) = Int64.div in
+      let (mod) = Int64.rem in
+      if i < 1000L then textf "%Ld" i
+      else if i < 1_000_000L
+      then textf "%Ld %03Ld" (i / 1000L) (i mod 1000L)
+      else if i < 1_000_000_000L
+      then textf "%Ld %03Ld %03Ld"
+          (i / 1_000_000L) ((i / 1000L) mod 1_000L) (i mod 1000L)
+      else
+        textf "%Ld %03Ld %03Ld %03Ld"
+          (i / 1_000_000_000L)
+          ((i / 1_000_000L) / 1_000_000L)
+          ((i / 1000L) mod 1_000L) (i mod 1000L)
+    in
+    let float f =
+      let dec, i = modf f in
+      concat [
+        int64 (Int64.of_float i);
+        if abs_float dec > 0.001 then
+          textf ".%d" (1000. *. dec |> int_of_float)
+        else text ""
+      ]
+    in
+    let int i = Int64.of_int i |> int64 in
+    description_list [
+      "Server-Time", date time;
+      "TLS",
+      begin match tls with
+      | `OpenSSL -> text "OpenSSL"
+      | `Native -> text "OCaml-SSL"
+      | `None -> text "None"
+      end;
+      begin
+        let m,n = preemptive_bounds in
+        "Preemptive → bounds", textf "[%d, %d]" m n
+      end;
+      "Preemptive → size of the waiting queue",  textf "%d" preemptive_queue;
+      "GC", description_list [
+        "minor_words", float gc_minor_words (*  float *);
+        "promoted_words", float gc_promoted_words (*  float *);
+        "major_words", float gc_major_words (*  float *);
+        "minor_collections", int gc_minor_collections (*  int *);
+        "major_collections", int gc_major_collections (*  int *);
+        "heap_words", int gc_heap_words (*  int *);
+        "heap_chunks", int gc_heap_chunks (*  int *);
+        "compactions", int gc_compactions (*  int *);
+        "top_heap_words", int gc_top_heap_words (*  int *);
+        "stack_size", int gc_stack_size (*  int *);
+      ]
+    ]
+    |> Markup_queries.markup_to_html
+
   let status t =
     let open H5 in
     Bootstrap.panel ~body:[
@@ -809,12 +883,11 @@ module Html = struct
               pcdata (fmt "Last updated: %s."
                         (Markup_queries.date_to_string date));
               begin match status with
-              | `Ok server_status ->
-                Bootstrap.success_box
-                  [span ~a:[a_style "color: green"] [pcdata "OK"];
-                   pcdata (fmt " (server-time: %s)"
-                             (Protocol.Server_status.time server_status
-                              |> Markup_queries.date_to_string))]
+              | `Ok server ->
+                Bootstrap.success_box [
+                  span ~a:[a_style "color: green"] [pcdata "OK"];
+                  server_status t server;
+                ]
               | `Unknown ->
                 Bootstrap.warning_box
                   [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
