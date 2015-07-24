@@ -599,7 +599,11 @@ let start_listening_on_connections ~server_state =
         | e -> `Start_server_error (Printexc.to_string e))
       Lwt.(fun () ->
           let mode =
-            `OpenSSL (
+            `TLS (
+              (* `TLS means that conduit will do:
+                 match Sys.getenv "CONDUIT_TLS" with
+                 | "native" | "Native" | "NATIVE" -> Native
+                 | _ -> OpenSSL *)
               `Crt_file_path certfile,
               `Key_file_path keyfile,
               `No_password, `Port port) in
