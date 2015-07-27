@@ -165,6 +165,9 @@ removes the reports and `_report_dir`.
 To remove the instrumentation just use `omake clean; omake` without
 `WITH_BISECT` set to `true`.
 
+**Note** that the Web-UI does not work when the code has been instrumented with
+Bisect (You'll see errors in the JS-Console: “`caml_mutex_new` not
+implemented”).
 
 How to Release
 --------------
