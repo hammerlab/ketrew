@@ -333,7 +333,22 @@ let answer_get_target_ids ~server_state (query, options) =
     ~send:(fun v -> return (`List_of_target_ids v))
 
 let answer_get_server_status ~server_state =
-  return (`Server_status (Protocol.Server_status.create ~time:Time.(now ()) ()))
+  let tls =
+    match !Conduit_lwt_unix.tls_library with
+    | Conduit_lwt_unix.OpenSSL  -> `OpenSSL
+    | Conduit_lwt_unix.Native  -> `Native
+    | Conduit_lwt_unix.No_tls -> `None
+  in
+  let status =
+    Protocol.Server_status.create
+      ~tls
+      ~time:Time.(now ())
+      ~preemptive_bounds:(Lwt_preemptive.get_bounds ()) 
+      ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ()) 
+      ~libev:(Lwt_sys.have `libev)
+      ~gc:(Gc.quick_stat ())
+  in
+  return (`Server_status status)
 
 let answer_get_target_flat_states ~server_state
     (time_constrain, target_ids, options) =
@@ -599,7 +614,11 @@ let start_listening_on_connections ~server_state =
         | e -> `Start_server_error (Printexc.to_string e))
       Lwt.(fun () ->
           let mode =
-            `OpenSSL (
+            `TLS (
+              (* `TLS means that conduit will do:
+                 match Sys.getenv "CONDUIT_TLS" with
+                 | "native" | "Native" | "NATIVE" -> Native
+                 | _ -> OpenSSL *)
               `Crt_file_path certfile,
               `Key_file_path keyfile,
               `No_password, `Port port) in

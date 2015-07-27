@@ -5,3 +5,5 @@ include Pvem.DEFERRED_RESULT
    and type ('ok, 'error) t = ('ok, 'error) Pvem.Result.t Lwt.t
 
 val sleep : float -> (unit, [> `Exn of exn ]) t
+
+val pick_and_cancel: ('a, 'error) t list -> ('a, 'error) t

@@ -95,35 +95,6 @@ public.OCamlProgramOfDirectory(appname, directory) =
             rm -f $(BINDIR)/$(appname)
     return $(targetname)
 
-public.OCamlProgramOfDirectory(appname, directory) =
-    mkdir -p _build/$(directory)
-    vmount(-l, $(directory), _build/$(directory))
-    protected.APP_FILES[] = $(ls $(directory))
-    protected.targetname = app-$(appname)
-    protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
-    .PHONY: $(targetname)
-    protected.best_app = $(if $(NATIVE_ENABLED), $(appname).opt,  $(appname).run)
-    $(appname): _build/$(directory)/$(best_app)
-        cp  _build/$(directory)/$(best_app) $(appname)
-    $(targetname): $(appname)
-    .SUBDIRS: _build/$(directory)
-        OCAMLINCLUDES += $(dirname $(local_deps))
-        OCAML_LIBS += $(removesuffix $(local_deps))
-        %.ml: $(local_deps)
-        %.mli: $(local_deps)
-        %.cmi: $(local_deps)
-        %.cmxa: $(local_deps)
-        protected.APP_MODULES[] =
-            $(removesuffix $(removesuffix $(basename $(APP_FILES))))
-            $(OCAML_GENERATED_MODULES)
-        OCamlProgram($(appname), $(APP_MODULES))
-        .PHONY: install-$(targetname) uninstall-$(targetname)
-        install-$(targetname): $(best_app)
-            cp $(best_app) $(BINDIR)/$(appname)
-        uninstall-$(targetname):
-            rm -f $(BINDIR)/$(appname)
-    return $(targetname)
-
 public.OCamlProgramOfFile(appname, path) =
     protected.src_directory = $(dirname $(path))
     protected.dst_directory = $(appname)

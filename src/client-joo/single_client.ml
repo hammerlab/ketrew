@@ -37,10 +37,21 @@ module Markup_queries = struct
        | 0 -> ""
        | n -> "." ^ string_of_int n)
 
-  let rec markup_to_html ast =
+  let rec markup_to_html ?(collapse_descriptions = []) ast =
     let open Display_markup in
     let open H5 in
+    let continue ast = markup_to_html ~collapse_descriptions ast in
     let inline l = div ~a:[a_style "display: inline"] l in
+    let catches_description name =
+      List.exists collapse_descriptions ~f:(fun (n, _) -> n = name) in
+    let rec find_subcontent name ast =
+      match ast with
+      | Description (n, c) when n = name -> Some c
+      | Description (_, c) -> find_subcontent name c
+      | Itemize l
+      | Concat l -> List.find_map ~f:(find_subcontent name) l
+      | _ -> None
+    in
     match ast with
     | Date fl -> pcdata (date_to_string fl)
     | Time_span s -> pcdata (time_span_to_string s)
@@ -48,11 +59,51 @@ module Markup_queries = struct
     | Path p
     | Command p -> code [pcdata p]
     | Concat p ->
-      inline (List.map ~f:markup_to_html p)
+      inline (List.map ~f:continue p)
+    | Description (name, t) when catches_description name ->
+      let expanded = Reactive.Source.create false in
+      let button expandedness =
+        a ~a:[
+          a_onclick (fun _ ->
+              Reactive.Source.set expanded (not expandedness);
+              false);
+        ] [
+          pcdata (if expandedness then "⊖" else "⊕")
+        ] in
+      inline [
+        Reactive_node.div Reactive.(
+            Source.signal expanded
+            |> Signal.map
+              ~f:begin function
+              | true ->
+                [strong [pcdata name; pcdata ": "];
+                 button true; continue t]
+              | false ->
+                let d = ref [] in
+                let summary =
+                  Nonstd.Option.(
+                    begin
+                      List.find collapse_descriptions ~f:(fun (n, _) ->
+                          d := fmt "trying %S Vs %S, " n name :: !d;
+                          n = name)
+                      >>= fun (_, to_find) ->
+                      d := fmt "to_find : %s" to_find :: !d;
+                      find_subcontent to_find t
+                    end
+                    |> map ~f:continue
+                    |> value ~default:(pcdata " ")
+                      (* ~default:(pcdata (fmt "??? -> %s" (String.concat ~sep:", " !d))) *)
+                  )
+                in
+                [strong [pcdata name; pcdata ": "]; summary; button false]
+              end
+            |> Signal.list
+          );
+      ]
     | Description (name, t) ->
-      inline [strong [pcdata name; pcdata ": "]; markup_to_html t]
+      inline [strong [pcdata (fmt "%s: " name)]; continue t]
     | Itemize ts ->
-      ul (List.map ~f:(fun ast -> li [markup_to_html ast]) ts)
+      ul (List.map ~f:(fun ast -> li [continue ast]) ts)
 
   let render content =
     let open H5 in
@@ -213,7 +264,7 @@ end
 
 
 
-type status = [
+type status = Time.t * [
   | `Unknown
   | `Ok of Protocol.Server_status.t
   | `Problem of string
@@ -315,13 +366,14 @@ type t = {
   block_time_request: float;
   default_protocol_client_timeout: float;
   wait_before_retry_asynchronous_loop: float;
+  reload_status_condition: unit Lwt_condition.t;
 }
 
 
 let create ~protocol_client () =
   let target_ids = Reactive.Source.create Target_id_set.empty in
   let interesting_targets = Reactive.Source.create Target_id_set.empty in
-  let status = Reactive.Source.create `Unknown in
+  let status = Reactive.Source.create (Time.now (), `Unknown) in
   let current_tab = Reactive.Source.create ~eq:Tab.eq `Target_table in
   let table_showing = Reactive.Source.create (0, 10) in
   let table_columns = Reactive.Source.create default_columns in
@@ -351,6 +403,7 @@ let create ~protocol_client () =
     default_protocol_client_timeout = 20.;
     wait_before_retry_asynchronous_loop =
       (if !global_debug_level > 0 then 120. else 30.);
+    reload_status_condition = Lwt_condition.create ();
   }
 
 let log t =
@@ -366,7 +419,7 @@ let target_query_of_status client = function
 | `Unknown -> client.default_target_query
 | `Ok status ->
   (* Those 5 seconds actually generate traffic, but for know, who cares … *)
-  `Created_after (Protocol.Server_status.time status -. 5.)
+  `Created_after (status.Protocol.Server_status.time -. 5.)
 
 let add_interesting_targets t l =
   let current =
@@ -379,7 +432,7 @@ let add_target_ids t l =
     (Target_id_set.add_list current l);
   ()
 
-let asynchronous_loop t ~name loop =
+let asynchronous_loop ?wake_up t ~name loop =
   Lwt.(
     async begin fun () ->
       let rec meta_loop () =
@@ -398,8 +451,25 @@ let asynchronous_loop t ~name loop =
           in
           Log.(s "Error in loop " % quote name % s ": " % problem @ error);
           Reactive.Source.set t.status
-            (`Problem (problem |> Log.to_long_string));
-          Lwt_js.sleep t.wait_before_retry_asynchronous_loop
+            (Time.now (), `Problem (problem |> Log.to_long_string));
+          let to_pick =
+            begin match wake_up with
+            | Some (name, (cond : unit Lwt_condition.t)) ->
+              [
+                begin
+                  Log.(s "asynchronous_loop waiting on " % quote name @ verbose);
+                  Lwt_condition.wait cond
+                  >>= fun () ->
+                  Log.(s "asynchronous_loop woken-up by " % quote name @ verbose);
+                  return ()
+                end
+              ]
+            | None -> []
+            end
+            @ [
+              Lwt_js.sleep t.wait_before_retry_asynchronous_loop
+            ] in
+          pick to_pick
           >>= fun () ->
           meta_loop ()
       in
@@ -415,9 +485,9 @@ let start_updating t =
         t.protocol_client `Get_server_status
       >>= begin function
       | `Server_status status ->
-        let previous_status =
+        let _, previous_status =
           Reactive.(Source.signal t.status |> Signal.value) in
-        Reactive.Source.set t.status (`Ok status);
+        Reactive.Source.set t.status (Time.now (), `Ok status);
         return (target_query_of_status t previous_status)
       | other ->
         fail (`Wrong_down_message other)
@@ -607,7 +677,8 @@ let start_updating t =
       (fun set -> update_flat_states (Target_id_set.to_list set))
       event
   in
-  asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop;
+  asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop
+    ~wake_up:("Reload-status-condition", t.reload_status_condition);
   ()
 
 let fetch_available_queries t ~id =
@@ -701,20 +772,21 @@ module Html = struct
 
   let status_icon t =
     let open H5 in
-    let display = function
-    | `Ok status ->
-      span ~a:[ a_class ["label"; "label-success"];
-                a_title (fmt "OK (%s)"
-                           (Protocol.Server_status.time status |> Time.to_filename));
-              ] [pcdata "✔"]
-    | `Unknown ->
-      span ~a:[ a_class ["label"; "label-warning"];
-                a_title "Unknown";
-              ] [pcdata "?"]
-    | `Problem problem ->
-      span ~a:[ a_class ["label"; "label-danger"];
-                a_title (fmt "Problem: %s" problem);
-              ] [pcdata "✖"]
+    let display (date, status) =
+      match status with
+      | `Ok status ->
+        span ~a:[ a_class ["label"; "label-success"];
+                  a_title (fmt "OK (%s)"
+                             (status.Protocol.Server_status.time |> Time.to_filename));
+                ] [pcdata "✔"]
+      | `Unknown ->
+        span ~a:[ a_class ["label"; "label-warning"];
+                  a_title "Unknown";
+                ] [pcdata "?"]
+      | `Problem problem ->
+        span ~a:[ a_class ["label"; "label-danger"];
+                  a_title (fmt "Problem: %s" problem);
+                ] [pcdata "✖"]
     in
     Reactive_node.span
       Reactive.(
@@ -723,49 +795,139 @@ module Html = struct
         |> Signal.singleton
       )
 
+  let server_status t status =
+    let open Display_markup in
+    let {
+      Protocol.Server_status.
+      time (*  float *);
+      tls (*  [`OpenSSL | `Native | `None ] *);
+      preemptive_bounds (*  int * int *);
+      preemptive_queue (*  int *);
+      libev (*  bool *);
+      gc_minor_words  (*  float *);
+      gc_promoted_words  (*  float *);
+      gc_major_words  (*  float *);
+      gc_minor_collections  (*  int *);
+      gc_major_collections  (*  int *);
+      gc_heap_words  (*  int *);
+      gc_heap_chunks  (*  int *);
+      gc_compactions  (*  int *);
+      gc_top_heap_words  (*  int *);
+      gc_stack_size  (*  int *);
+    } = status in
+    let int64 i =
+      let open Int64 in
+      let (/) = Int64.div in
+      let (mod) = Int64.rem in
+      if i < 1000L then textf "%Ld" i
+      else if i < 1_000_000L
+      then textf "%Ld %03Ld" (i / 1000L) (i mod 1000L)
+      else if i < 1_000_000_000L
+      then textf "%Ld %03Ld %03Ld"
+          (i / 1_000_000L) ((i / 1000L) mod 1_000L) (i mod 1000L)
+      else
+        textf "%Ld %03Ld %03Ld %03Ld"
+          (i / 1_000_000_000L)
+          ((i / 1_000_000L) / 1_000_000L)
+          ((i / 1000L) mod 1_000L) (i mod 1000L)
+    in
+    let float f =
+      let dec, i = modf f in
+      concat [
+        int64 (Int64.of_float i);
+        if abs_float dec > 0.001 then
+          textf ".%d" (1000. *. dec |> int_of_float)
+        else text ""
+      ]
+    in
+    let int i = Int64.of_int i |> int64 in
+    description_list [
+      "Server-Time", date time;
+      "TLS",
+      begin match tls with
+      | `OpenSSL -> text "OpenSSL"
+      | `Native -> text "OCaml-SSL"
+      | `None -> text "None"
+      end;
+      begin
+        let m,n = preemptive_bounds in
+        "Preemptive → bounds", textf "[%d, %d]" m n
+      end;
+      "Preemptive → size of the waiting queue",  textf "%d" preemptive_queue;
+      "GC", description_list [
+        "minor_words", float gc_minor_words (*  float *);
+        "promoted_words", float gc_promoted_words (*  float *);
+        "major_words", float gc_major_words (*  float *);
+        "minor_collections", int gc_minor_collections (*  int *);
+        "major_collections", int gc_major_collections (*  int *);
+        "heap_words", int gc_heap_words (*  int *);
+        "heap_chunks", int gc_heap_chunks (*  int *);
+        "compactions", int gc_compactions (*  int *);
+        "top_heap_words", int gc_top_heap_words (*  int *);
+        "stack_size", int gc_stack_size (*  int *);
+      ]
+    ]
+    |> Markup_queries.markup_to_html
+
   let status t =
     let open H5 in
     Bootstrap.panel ~body:[
       h3 [pcdata "Client"];
-      h4 [pcdata "Status"];
       Reactive_node.div Reactive.(
           Source.signal t.status
-          |> Signal.map ~f:(function
-            | `Ok status ->
-              Bootstrap.success_box
-                [span ~a:[a_style "color: green"] [pcdata "OK"];
-                 pcdata (fmt " (server-time: %s)"
-                           (Protocol.Server_status.time status
-                            |> Markup_queries.date_to_string))]
-            | `Unknown ->
-              Bootstrap.warning_box
-                [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
-            | `Problem problem ->
-              Bootstrap.error_box [
-                strong [pcdata "Problem: "];
-                br ();
-                code [pcdata problem];
-                br ();
-                pcdata "Cannot connect, and cannot get a decent \
-                        error message from the browser.";
-                br ();
-                pcdata "You should try \
-                        to open the following link in a new tab, and \
-                        investigate the problem ";
-                i [pcdata
-                        "(the most common issue being \
-                         self-signed TLS certificates, by accepting it \
-                         in the other tab \
-                         you may fix the problem for the current session)"];
-                pcdata ":";
-                br ();
-                a ~a:[
-                  a_href (Protocol_client.base_url t.protocol_client)
-                ] [
-                  pcdata (Protocol_client.base_url t.protocol_client)
-                ];
-              ])
-          |> Signal.singleton
+          |> Signal.map ~f:begin fun (date, status) ->
+            [
+              h4 [
+                pcdata (fmt "Status");
+              ];
+              pcdata (fmt "Last updated: %s."
+                        (Markup_queries.date_to_string date));
+              begin match status with
+              | `Ok server ->
+                Bootstrap.success_box [
+                  span ~a:[a_style "color: green"] [pcdata "OK"];
+                  server_status t server;
+                ]
+              | `Unknown ->
+                Bootstrap.warning_box
+                  [span ~a:[a_style "color: orange"] [pcdata "Unkown ???"]]
+              | `Problem problem ->
+                Bootstrap.error_box [
+                  strong [pcdata "Problem "];
+                  a ~a:[
+                    a_onclick (fun _ ->
+                        Lwt_condition.signal t.reload_status_condition ();
+                        false);
+                    a_class ["label"; "label-default"];
+                  ] [
+                    Bootstrap.reload_icon ()
+                  ];
+                  br ();
+                  code [pcdata problem];
+                  br ();
+                  pcdata "Cannot connect, and cannot get a decent \
+                          error message from the browser.";
+                  br ();
+                  pcdata "You should try \
+                          to open the following link in a new tab, and \
+                          investigate the problem ";
+                  i [pcdata
+                       "(the most common issue being \
+                        self-signed TLS certificates, by accepting it \
+                        in the other tab \
+                        you may fix the problem for the current session)"];
+                  pcdata ":";
+                  br ();
+                  a ~a:[
+                    a_href (Protocol_client.base_url t.protocol_client)
+                  ] [
+                    pcdata (Protocol_client.base_url t.protocol_client)
+                  ];
+                ]
+              end
+            ]
+          end
+          |> Signal.list
         );
       h4 [pcdata "Protocol Client"];
       div [
@@ -1260,7 +1422,8 @@ module Html = struct
                     [Target.Summary.condition summary
                      |> Option.value_map ~default:(pcdata "") ~f:(fun c ->
                          Target.Condition.markup c
-                         |> Markup_queries.markup_to_html)];
+                         |> Markup_queries.markup_to_html
+                           ~collapse_descriptions:["Host", "Name"])];
                   code_row "Build-process"
                     (Target.Summary.build_process summary
                      |> function

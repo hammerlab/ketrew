@@ -62,11 +62,11 @@ type server = {
 type client = {
   connection: string;
   token: string;
-  client_ui [@key "ui"]: ui;
+  client_ui : ui [@key "ui"];
 } [@@deriving yojson]
 type standalone = {
-  standalone_engine [@key "engine"]: engine;
-  standalone_ui [@key "ui"]: ui;
+  standalone_engine : engine [@key "engine"];
+  standalone_ui : ui [@key "ui"];
 } [@@deriving yojson]
 type mode = [
   | `Standalone of standalone
@@ -277,7 +277,7 @@ module File = struct
     configuration: configuration;
   } [@@deriving yojson]
   type t = [
-    | `Ketrew_configuration [@name "Ketrew"] of profile list
+    | `Ketrew_configuration of profile list [@name "Ketrew"]
   ] [@@deriving yojson]
 
   let parse_string_exn s =

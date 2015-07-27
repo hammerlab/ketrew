@@ -20,9 +20,28 @@
 
 open Internal_pervasives
 module Server_status : sig
-  type t
-  val create: time:float -> unit -> t
-  val time: t -> float
+  type t = {
+    time: float;
+    tls: [`OpenSSL | `Native | `None ];
+    preemptive_bounds: int * int;
+    preemptive_queue: int;
+    libev: bool;
+    gc_minor_words : float;
+    gc_promoted_words : float;
+    gc_major_words : float;
+    gc_minor_collections : int;
+    gc_major_collections : int;
+    gc_heap_words : int;
+    gc_heap_chunks : int;
+    gc_compactions : int;
+    gc_top_heap_words : int;
+    gc_stack_size : int;
+  }
+  val create:
+    time:float ->
+    tls:[ `Native | `OpenSSL | `None ] ->
+    preemptive_bounds:int * int ->
+    preemptive_queue:int -> libev:bool -> gc:Gc.stat -> t
 end
 
 module Down_message : sig
