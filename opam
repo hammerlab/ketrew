@@ -14,7 +14,7 @@ depends: [
   "omake" "ocamlfind" "ocamlify"
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
-  "ppx_deriving" "ppx_deriving_yojson" "ppx_include"
+  "ppx_deriving" "ppx_deriving_yojson"
   "cohttp" "lwt" "ssl"
   "conduit"
   "js_of_ocaml" "tyxml" "reactiveData"
