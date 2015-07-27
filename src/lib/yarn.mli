@@ -18,17 +18,37 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+(** Implementation of the {!LONG_RUNNING} API asking Aapache Yarn
+    for resources and using {!Ketrew_daemonize} to “keep” the
+    process group together. *)
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+(** This module implements {!Ketrew_long_running.LONG_RUNNING} plugin-API.
+*)
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+
+(** The “standard” plugin-API. *)
+include Long_running.LONG_RUNNING
+
+
+type distributed_shell_parameters
+
+val distributed_shell_program :
+  ?hadoop_bin:string ->
+  ?distributed_shell_shell_jar:string ->
+  container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
+  timeout:[ `Raw of string | `Seconds of int ] ->
+  application_name:string ->
+  Ketrew_pure.Program.t ->
+  [> `Distributed_shell of distributed_shell_parameters * Ketrew_pure.Program.t ]
+(** Create a value [`Distributed_shell _] to feed to {!create},
+    see {!Edsl.yarn_distributed_shell}. *)
+
+val create :
+  ?host:Ketrew_pure.Host.t ->
+  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
+  ?daemon_start_timeout: float ->
+  [ `Distributed_shell of distributed_shell_parameters * Ketrew_pure.Program.t
+  | `Yarn_application of Ketrew_pure.Program.t ] ->
+  [> `Long_running of string * string ]
+(** Create a “long-running” {!Ketrew_pure.Target.build_process} (run parameters
+    are already serialized), see {!Edsl.yarn_application}. *)

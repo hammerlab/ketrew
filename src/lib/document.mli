@@ -18,17 +18,19 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+open Internal_pervasives
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+(** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
+val build_process : ?with_details:bool ->
+    [< `Long_running of string * string | `No_operation ] ->
+    SmartPrint.t
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+val target_for_menu : Ketrew_pure.Target.t -> Log.t
+
+val metadata: full:bool -> [ `String of string ] -> Log.t
+
+val target : ?build_process_details:bool ->
+  ?condition_details:bool ->
+  ?metadata_details:bool ->
+  Ketrew_pure.Target.t ->
+  Log.t

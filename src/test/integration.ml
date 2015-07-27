@@ -799,7 +799,7 @@ let test =
 
 let () =
   let open Cmdliner in
-  let version = Lazy.force Ketrew_metadata.version in
+  let version = Lazy.force Ketrew_pure.Metadata.version in
   let sub_command ~info ~term = (term, info) in
   let sub_command_of_target ~name ~doc make_target =
     let the_name = name in
@@ -807,7 +807,7 @@ let () =
       ~info:Term.(info the_name ~version ~doc)
       ~term:Term.(
           pure (fun () ->
-              Ketrew_client.submit (
+              Ketrew.Client.submit (
                 make_target ()
               ))
           $ pure ()

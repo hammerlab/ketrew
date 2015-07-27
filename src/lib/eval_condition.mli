@@ -18,17 +18,29 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(*M
+(** Evaluation of {!Ketrew_target.Condition.t} values. *)
 
-This is a workflow script using `Dummy_plugin` to create a (local) target.
+open Ketrew_pure.Internal_pervasives
 
-M*)
-open Printf
-let () =
-  let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
-      ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
-               ~host:(Host.parse "/tmp")
-               (Program.sh Sys.argv.(1)))
-  )
+open Unix_io
+
+val bool: Ketrew_pure.Target.Condition.t ->
+    (bool,
+     [> `Host of
+          [> `Execution of
+               < host : string; message : string;
+                 stderr : string option; stdout : string option >
+          | `Non_zero of string * int
+          | `Ssh_failure of
+               [> `Wrong_log of string
+               | `Wrong_status of Unix_process.Exit_code.t ] *
+               string
+          | `System of [> `Sleep of float ] * [> `Exn of exn ]
+          | `Timeout of float
+          | `Unix_exec of string ]
+            Host_io.Error.execution
+     | `Volume of [> `No_size of Log.t ] ]) Deferred_result.t
+
+
+
+

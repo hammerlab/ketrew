@@ -108,9 +108,7 @@ cd ..
 
 echo "Now build Ketrew + tests"
 
-make gen
-make configure
-make
+omake build-all
 
 echo "Mini-test:"
 ./ketrew-test config-file
@@ -120,7 +118,7 @@ echo "Graph-test:"
 
 
 echo "Test-env:"
-make test-env
+omake test-env
 
 shopt -s expand_aliases
 . _test_env/env.env
@@ -135,7 +133,8 @@ kscli run loop > kscli_01.out
 echo "Output file kscli_01.out"
 tail -n 50 kscli_01.out
 
-echo "Try to compile Biokepi"
-opam pin add biokepi -k git --yes https://github.com/hammerlab/biokepi.git
-opam install --yes biokepi
+# Biokepi is now out of sync with master:
+# echo "Try to compile Biokepi"
+# opam pin add biokepi -k git --yes https://github.com/hammerlab/biokepi.git
+# opam install --yes biokepi
 
