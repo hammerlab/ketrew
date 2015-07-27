@@ -19,13 +19,14 @@ precise error types.
 parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
-- `ppx_blob`, `ppx_deriving_yojson`, `ppx_deriving`, `yojson`: JSON
+- `ppx_deriving_yojson`, `ppx_deriving`, `yojson`: JSON
   parsing/printing and other code generation
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
 - `trakeva` with the `sqlite` backend
+- `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
-and uses the `oasis` as a build system.
+and uses the `omake` as a build system.
 
 At runtime, Ketrew may use an `ssh` client (tested only with OpenSSH; but SSH
 calls are quite configurable).
@@ -33,21 +34,25 @@ calls are quite configurable).
 
 ### Build
 
-Then you may setup and build everything:
+Then you may setup and build the libraries and `ketrew` the command line
+application:
 
-     make configure # Generate the `_oasis`, call `oasis` and `configure`
-     make           # The actual compilation of the library
+     omake
 
+to build also all the tests, use:
+
+    omake build-all
 
 ### Install
 
-Ketrew is installed by Oasis:
+Ketrew is installed with:
 
-     ocaml setup.ml -install
+     omake install BINDIR=/path/to/bin
      
-(using the option `--prefix` at configure time).
+(it will use `ocamlfind` to install the library and copy the executable to
+`BINDIR`).
 
-There is an `opam` file in the repository:
+There is also an `opam` file in the repository:
 
      opam pin add ketrew .
 
@@ -58,7 +63,7 @@ will pick it (Opam ≥ *1.2.0*).
 
 The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 
-    make doc
+    omake doc
 
 and check-out `_doc/<branch>/index.html` (unless branch is `master`, then
 `_doc/index.html`).
@@ -90,17 +95,17 @@ are actually interactive tests (cf. `./ketrew-workflow-examples-test`).
 
 The [integration](../test/integration.ml) test uses Ketrew to build
 [Vagrant](https://github.com/mitchellh/vagrant) virtual machines and uses them
-to test further features: we test the PBS and LSF long-running backends by
-creating “one-node clusters”. For now, running the whole test as a single
-workflow is a bit “shaky” (see progress of
-[issue 62](https://github.com/hammerlab/ketrew/issues/62)), please use the
-commands `prepare`, `go`, and `clean-up` separately.
+to test further features: we test the PBS, LSF, and YARN long-running backends
+by creating small “virtual clusters”.
+You can use the commands `prepare`, `go`, and `clean-up` separately, or try
+`./ketrew-test integration` (which does them all).
 
 ### Dynamically Loaded Plugins
 
 The build-system creates a plugin and a workflow which uses it:
 
-- [`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml), and
+- [`src/test/dummy-plugin/dummy_plugin.ml`](src/test/dummy-plugin/dummy_plugin.ml),
+  and
 - [`src/test/dummy_plugin_user.ml`](src/test/dummy_plugin_user.ml).
 
 ### Generating a Test Environment
@@ -108,7 +113,7 @@ The build-system creates a plugin and a workflow which uses it:
 In order to not impact a potential “global” installation of Ketrew, one can
 use:
 
-    make test-env
+    omake test-env
 
 ```goodresult
 Using package lwt.react as findlin-plugin
@@ -143,20 +148,21 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
 
 ### Coverage
 
-To generate coverage reports you need to instrument the code byt
-reconfiguring/compiling from scratch using the environment variable
+To generate coverage reports you need to instrument the code by
+recompiling from scratch using the environment variable
 `WITH_BISECT` equal to `true`:
 
-    WITH_BISECT=true make distclean configure all
+    omake clean
+    WITH_BISECT=true omake
 
 Running the instrumented versions of the code will generate `bisect*.out` files
 when run.
 
-Then, `make bisect-report` will take these files
-and generate an html file in `_report_dir/index.html`. `make bisect-clean`
+Then, `omake bisect-report` will take these files
+and generate an html file in `_report_dir/index.html`. `omake bisect-clean`
 removes the reports and `_report_dir`.
 
-To remove the instrumentation just use `make distclean configure all` withou
+To remove the instrumentation just use `omake clean; omake` without
 `WITH_BISECT` set to `true`.
 
 
@@ -171,7 +177,7 @@ release workflow:
 - Release dependencies for which we are using unreleased features
 (e.g. [`trakeva`](https://github.com/smondet/trakeva),
 [`sosa`](https://github.com/smondet/sosa), etc.).
-- Set version string in `tools/please.ml`.
+- Set version string in `OMakeroot`
 - Update the introductory paragraph of the `README.md` file for the particular
 version.
 - Write a human-friendly change-log (go through git history and write important
