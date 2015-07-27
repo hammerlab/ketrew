@@ -12,13 +12,23 @@ VERSION = 1.1.0+master
 DESCRIPTION = Workflow Engine For The Trenches
 
 if $(test -e .git)
-  GIT_COMMIT = 'Some "$(shell git rev-parse HEAD)"'
-  export
+    GIT_COMMIT = 'Some "$(shell git rev-parse HEAD)"'
+    export
 else
-  GIT_COMMIT = 'None'
-  export
+    GIT_COMMIT = 'None'
+    export
 
-PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp ppx_deriving_yojson ppx_deriving.show
+if $(test $(getenv WITH_BISECT, "") = true)
+    echo "Using Bisect"
+    BISECT_PACKAGE= bisect_ppx
+    export
+else
+    echo "Not using Bisect: " $(getenv WITH_BISECT, "")
+    BISECT_PACKAGE=
+    export
+ 
+PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp \
+   ppx_deriving_yojson ppx_deriving.show $(BISECT_PACKAGE)
 
 LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_sqlite \
          pvem_lwt_unix cmdliner cohttp.lwt lwt ssl conduit dynlink findlib
