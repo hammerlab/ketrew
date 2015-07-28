@@ -201,11 +201,6 @@ module Target_cache  = struct
     let open Reactive in
     _get_target_knowledge t ~id
     |> Source.signal
-    |> Signal.bind ~f:(function
-      | `None -> Signal.constant None
-      | `Summary summary -> Signal.constant (Some summary)
-      | `Pointer id -> get_target_summary_signal t ~id
-      )
 
   let get_target_flat_status_signal t ~id =
     _get_target_flat_status t ~id
@@ -304,6 +299,72 @@ let insert_column columns col =
   List.filter all_columns
     (fun c -> c = col || List.mem c columns)
 
+
+module Target_id_set = struct
+  include Set.Make(struct
+      type t = string
+      let compare a b = String.compare b a
+    end)
+  let add_list t list =
+    List.fold ~init:t list ~f:(fun set elt ->
+        add elt set)
+  (* TODO: check whether (union (of_list list) t) is faster. *)
+  let length = cardinal
+  let to_list = elements
+end
+
+module Target_table = struct
+
+  type filter = [
+    | `None
+  ]
+  type t = {
+    target_ids: Target_id_set.t Reactive.Source.t;
+    mutable target_ids_last_updated: Time.t option; (* server-time *) 
+    showing: (int * int) Reactive.Source.t;
+    columns: column list Reactive.Source.t;
+    default_target_query: Protocol.Up_message.target_query;
+    filter_interface_visible: bool Reactive.Source.t;
+    filter: filter Reactive.Source.t;
+  }
+
+  let create () =
+    let target_ids = Reactive.Source.create Target_id_set.empty in
+    let showing = Reactive.Source.create (0, 10) in
+    let columns = Reactive.Source.create default_columns in
+    let filter_interface_visible = Reactive.Source.create false in
+    let default_target_query =
+      if !global_debug_level > 0 then
+        `All
+      else
+        (* Two weeks *)
+        `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.))
+    in
+    let filter = Reactive.Source.create `None in
+    {target_ids;
+     target_ids_last_updated = None;
+     filter_interface_visible;
+     showing; columns; default_target_query; filter}
+
+  let target_query t =
+    match t.target_ids_last_updated with
+    | Some t ->
+      (* Those 5 seconds actually generate traffic, but for know, who cares … *)
+      `Created_after (t -. 5.)
+    | None -> t.default_target_query
+
+  let add_target_ids t ?server_time l =
+    let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
+    begin match server_time with
+    | Some s -> t.target_ids_last_updated <- Some s
+    | None -> ()
+    end;
+    Reactive.Source.set t.target_ids
+      (Target_id_set.add_list current l);
+    ()
+
+end
+
 module Target_page = struct
   type t = {
     target_id: string;
@@ -335,24 +396,10 @@ module Tab = struct
     | _, _ -> a = b
 end
 
-module Target_id_set = struct
-  include Set.Make(struct
-      type t = string
-      let compare a b = String.compare b a
-    end)
-  let add_list t list =
-    List.fold ~init:t list ~f:(fun set elt ->
-        add elt set)
-  (* TODO: check whether (union (of_list list) t) is faster. *)
-  let length = cardinal
-  let to_list = elements
-
-end
-
 type t = {
   protocol_client: Protocol_client.t;
   target_cache: Target_cache.t;
-  target_ids: Target_id_set.t Reactive.Source.t;
+
 
   interesting_targets: Target_id_set.t Reactive.Source.t;
   (* TODO split into priority and prefetching *)
@@ -360,45 +407,31 @@ type t = {
   status: status Reactive.Source.t;
   tabs: Tab.t list Reactive.Source.t;
   current_tab: Tab.t Reactive.Source.t;
-  table_showing: (int * int) Reactive.Source.t;
-  table_columns: column list Reactive.Source.t;
-  default_target_query: Protocol.Up_message.target_query;
   block_time_request: float;
   default_protocol_client_timeout: float;
   wait_before_retry_asynchronous_loop: float;
   reload_status_condition: unit Lwt_condition.t;
+  target_table: Target_table.t;
 }
 
 
 let create ~protocol_client () =
-  let target_ids = Reactive.Source.create Target_id_set.empty in
   let interesting_targets = Reactive.Source.create Target_id_set.empty in
   let status = Reactive.Source.create (Time.now (), `Unknown) in
   let current_tab = Reactive.Source.create ~eq:Tab.eq `Target_table in
-  let table_showing = Reactive.Source.create (0, 10) in
-  let table_columns = Reactive.Source.create default_columns in
+  let target_table = Target_table.create () in
   let tabs =
     Reactive.Source.create
       ~eq:(fun la lb -> try List.for_all2 ~f:Tab.eq la lb with _ -> false)
       [ `Status; `Target_table ] in
-  let default_target_query =
-    if !global_debug_level > 0 then
-      `All
-    else
-      (* Two weeks *)
-      `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.))
-  in
   {
     protocol_client;
     target_cache = Target_cache.create ();
-    target_ids; 
     interesting_targets;
     status;
     tabs;
     current_tab;
-    table_showing;
-    table_columns;
-    default_target_query;
+    target_table;
     block_time_request = 255.; (* the server will cut at 300. anyway *)
     default_protocol_client_timeout = 20.;
     wait_before_retry_asynchronous_loop =
@@ -414,23 +447,12 @@ let log t =
 
 let name {protocol_client; _ } = Protocol_client.name protocol_client
 
-let target_query_of_status client = function
-| `Problem _
-| `Unknown -> client.default_target_query
-| `Ok status ->
-  (* Those 5 seconds actually generate traffic, but for know, who cares … *)
-  `Created_after (status.Protocol.Server_status.time -. 5.)
 
 let add_interesting_targets t l =
   let current =
     Reactive.Source.signal t.interesting_targets |> Reactive.Signal.value in
   Reactive.Source.set t.interesting_targets (Target_id_set.add_list current l)
 
-let add_target_ids t l =
-  let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
-  Reactive.Source.set t.target_ids
-    (Target_id_set.add_list current l);
-  ()
 
 let asynchronous_loop ?wake_up t ~name loop =
   Lwt.(
@@ -485,10 +507,11 @@ let start_updating t =
         t.protocol_client `Get_server_status
       >>= begin function
       | `Server_status status ->
-        let _, previous_status =
-          Reactive.(Source.signal t.status |> Signal.value) in
+        (* let _, previous_status = *)
+        (*   Reactive.(Source.signal t.status |> Signal.value) in *)
         Reactive.Source.set t.status (Time.now (), `Ok status);
-        return (target_query_of_status t previous_status)
+        return ()
+      (* return (Target_table.target_query t.target_table previous_status) *)
       | other ->
         fail (`Wrong_down_message other)
       end
@@ -504,14 +527,21 @@ let start_updating t =
           (*
           Log.(log t % s " got " % i (List.length l) % s " new IDs at "
                % Time.(log (now ())) @ verbose); *)
-        add_target_ids t l;
+        let server_time =
+          match snd Reactive.(Source.signal t.status |> Signal.value) with
+          | `Ok s -> Some s.Protocol.Server_status.time
+          | _ -> None
+        in
+        Target_table.add_target_ids ?server_time t.target_table l;
         return ()
       | other ->
         fail (`Wrong_down_message other)
       end
     in
     update_server_status ()
-    >>= fun query ->
+    >>= fun () ->
+    (* >>= fun query -> *)
+    let query = Target_table.target_query t.target_table in
     update_list_of_ids query
     >>= fun () ->
     list_of_ids_loop ()
@@ -538,16 +568,11 @@ let start_updating t =
           | `List_of_target_summaries l ->
             Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
             List.iter l ~f:(fun (id, value) ->
-                (* We add all the dependencies to make sur we get values
-                   for all the pointers. *)
-                add_target_ids t
-                  Target.Summary.(depends_on value
-                                  @ on_success_activate value
-                                  @ on_failure_activate value);
                 begin match Target.Summary.id value with
                 | i when id = i ->
                   Target_cache.update_target t.target_cache ~id (`Summary value)
                 | p ->
+                  add_interesting_targets t [p];
                   Target_cache.update_target t.target_cache ~id (`Pointer p)
                 end
               );
@@ -564,8 +589,8 @@ let start_updating t =
               Target_cache.get_target_summary_signal t.target_cache id
               |> Reactive.Signal.value
             with
-            | Some _ -> false
-            | None -> true)
+            | `None -> true
+            | _ -> false)
       in
       asynchronous_loop t ~name:"fetch-summaries" (fun () ->
           fetch_summaries missing_ids)
@@ -936,9 +961,10 @@ module Html = struct
       h4 [pcdata "Cache"];
       div [
         Reactive_node.span Reactive.(
-            Source.signal t.target_ids
+            Source.signal t.target_table.Target_table.target_ids
             |> Signal.map ~f:(fun s ->
-                [pcdata (fmt "%d target-IDs" (Target_id_set.length s))]
+                [pcdata (fmt "%d target-IDs in the table"
+                           (Target_id_set.length s))]
               )
             |> Signal.list
           );
@@ -956,7 +982,7 @@ module Html = struct
         Markup_queries.markup_to_html
           Display_markup.(description_list [
               "Target-query",
-              begin match t.default_target_query with
+              begin match t.target_table.Target_table.default_target_query with
               | `All -> textf "All"
               | `Not_finished_before d ->
                 concat [textf "Not finished before "; date d]
@@ -1097,13 +1123,36 @@ module Html = struct
            ] [pcdata tag]))
 
 
+  let filter_ui t =
+    let open H5 in
+    div ~a:[
+      Reactive_node.a_style Reactive.(
+          (Source.signal t.target_table.Target_table.filter_interface_visible)
+          |> Signal.map ~f:(function
+            | true -> "display: block"
+            | false -> "display: none")
+        );
+    ] [
+      h3 [pcdata "Filters"];
+      Reactive_node.div Reactive.(
+          (Source.signal t.target_table.Target_table.filter)
+          |> Signal.map ~f:(function
+            | `None -> pcdata "Current: None"
+            )
+          |> Signal.singleton
+        );
+    ]
+
   let target_table t =
     let open H5 in
-    let showing = t.table_showing in
+    let showing = t.target_table.Target_table.showing in
     let controls =
       Reactive_node.div Reactive.(
-          Signal.tuple_2 (Source.signal showing) (Source.signal t.target_ids)
-          |> Signal.map ~f:(fun ((n_from, n_count), ids) ->
+          Signal.tuple_3
+            (Source.signal showing)
+            (Source.signal t.target_table.Target_table.target_ids)
+          (Source.signal t.target_table.Target_table.filter_interface_visible)
+          |> Signal.map ~f:(fun ((n_from, n_count), ids, filters_visible) ->
               let total = Target_id_set.length ids in
               let enable_if enabled on_click content =
                 Bootstrap.button ~enabled ~on_click content in
@@ -1122,24 +1171,34 @@ module Html = struct
                               Source.set showing (n_from, new_count);
                               false), content)
                      ));
+                Bootstrap.button ~enabled:true
+                  ~on_click:(fun _ ->
+                      Source.set
+                        t.target_table.Target_table.filter_interface_visible
+                        (not filters_visible);
+                      false)
+                  (if filters_visible
+                   then [pcdata "Hide filters"]
+                   else [pcdata "Show filters"]);
                 Bootstrap.dropdown_button
                   ~content:[
                     pcdata (fmt "Columns")
                   ]
                   (`Close ((fun _ ->
-                       Source.set t.table_columns all_columns;
+                       Source.set t.target_table.Target_table.columns all_columns;
                        false), [pcdata "ALL"])
                    :: List.map all_columns ~f:(fun col ->
                        let content = column_name col in
                        let signal =
-                         Source.signal t.table_columns 
+                         Source.signal t.target_table.Target_table.columns 
                          |> Signal.map ~f:(fun current ->
                              List.mem ~set:current col)
                        in
                        let on_click _ =
                          let current = 
-                           Source.signal t.table_columns |> Signal.value in
-                         Source.set t.table_columns
+                           Source.signal t.target_table.Target_table.columns
+                           |> Signal.value in
+                         Source.set t.target_table.Target_table.columns
                            (if List.mem ~set:current col
                             then List.filter current ((<>) col)
                             else insert_column current col);
@@ -1180,14 +1239,21 @@ module Html = struct
           Target_cache.get_target_summary_signal t.target_cache ~id in
         Reactive_node.tr Reactive.Signal.(
             map target_signal ~f:(function
-              | None ->
+              | `None ->
                 [
                   td ~a:[
                     a_colspan (List.length columns);
                   ] [Bootstrap.muted_text (pcdata (fmt "Still fetching %s " id));
                      Bootstrap.loader_gif ();];
                 ]
-              | Some trgt ->
+              | `Pointer p ->
+                [ (* This should not show, as the table is supposed to
+                     avoid target-pointers *)
+                  td ~a:[
+                    a_colspan (List.length columns);
+                  ] [pcdata (fmt "Pointer to %s" p)]
+                ]
+              | `Summary trgt ->
                 List.map columns ~f:(function
                   | `Controls ->
                     td [
@@ -1219,10 +1285,10 @@ module Html = struct
       Reactive_node.div
         Reactive.(
           Signal.tuple_3 
-            (Source.signal t.target_ids
+            (Source.signal t.target_table.Target_table.target_ids
              |> Signal.map ~f:Target_id_set.to_list)
             (Source.signal showing)
-            (Source.signal t.table_columns)
+            (Source.signal t.target_table.Target_table.columns)
           |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
             let ids = List.take (List.drop target_ids index) count in
             add_interesting_targets t
@@ -1240,6 +1306,7 @@ module Html = struct
     (* div ~a:[a_class ["container"]] [ *)
     Bootstrap.panel ~body:[
       controls;
+      filter_ui t;
       target_table
     ]
 
@@ -1266,13 +1333,15 @@ module Html = struct
             [text_class]
           )
       ) in
-    let text =
+    let rec text id =
       let open Reactive.Signal in
       Target_cache.get_target_summary_signal client.target_cache ~id
       |> map ~f:(function
-        | None ->
+        | `None ->
           span ~a:[a_title "Not yet fetched"] [pcdata (summarize_id id)]
-        | Some summary ->
+        | `Pointer id ->
+          Reactive_node.span ~a:[a_title "Pointer"] (text id)
+        | `Summary summary ->
           span ~a:[
             a_title id;
           ] [
@@ -1282,7 +1351,7 @@ module Html = struct
     span ~a:[
       Reactive_node.a_class colorize_classes;
     ] [
-      Reactive_node.span text;
+      Reactive_node.span (text id);
     ]
 
   let target_controls client ~id =
@@ -1345,16 +1414,19 @@ module Html = struct
 
   let target_summary_panel client ~id =
     let open H5 in
-    Bootstrap.panel ~body:[
+    let rec make_body id =
       Reactive_node.div Reactive.Signal.(
           Target_cache.get_target_summary_signal client.target_cache ~id
           |> map ~f:(function
-            | None ->
+            | `None ->
               div ~a:[a_title "Not yet fetched"] [
                 pcdata "Still fetching summary for ";
                 pcdata (summarize_id id)
               ]
-            | Some summary ->
+            | `Pointer pid ->
+              div ~a:[a_title (fmt "Pointer %s → %s" id pid)]
+                [make_body pid]
+            | `Summary summary ->
               let row head content =
                 tr [
                   th head;
@@ -1432,7 +1504,8 @@ module Html = struct
                 ]
             )
           |> singleton)
-    ]
+        in
+    Bootstrap.panel ~body:[make_body id]
 
   let flat_status_display_div client ~id =
     let open H5 in
@@ -1478,111 +1551,116 @@ module Html = struct
       control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
         ~help:"Display the JSON defined by the backend pluging" in
     let query_additional_controls current = [
-        Bootstrap.button
-          ~on_click:(fun _ ->
-                 reload_available_queries client ~id;
-                 begin match current with
-                 | `Nothing | `Raw_json -> ()
-                 | `Result_of query -> reload_query_result client ~id ~query;
-                 end;
-                 false)
-          [Bootstrap.reload_icon ()];
-      ]
+      Bootstrap.button
+        ~on_click:(fun _ ->
+            reload_available_queries client ~id;
+            begin match current with
+            | `Nothing | `Raw_json -> ()
+            | `Result_of query -> reload_query_result client ~id ~query;
+            end;
+            false)
+        [Bootstrap.reload_icon ()];
+    ]
     in
     let make_toolbar list_of_lists =
       div  ~a:[a_class ["btn-toolbar"]]
         (List.filter_map list_of_lists ~f:(function
            | [] -> None
            | more -> Some (Bootstrap.button_group ~justified:false more))) in
-    Reactive_node.div Reactive.Signal.(
-        Target_cache.get_target_summary_signal client.target_cache ~id
-        |> map ~f:(function
-          | None ->
-            div ~a:[a_title "Not yet fetched"] [
-              pcdata "Still fetching summary for ";
-              pcdata (summarize_id id)
-            ]
-          | Some summary ->
-            begin match Target.Summary.build_process summary with
-            | `No_operation -> div [h3 [pcdata "No-operation"]]
-            | `Long_running (name, init) ->
-              div [
-                h3 [pcdata (fmt "Using %s" name)];
-                Reactive_node.div Reactive.(
-                    Signal.tuple_2
-                      (Source.signal on_display_right_now)
-                      (get_available_queries client ~id)
-                    |> Signal.map
-                      ~f:(fun (current, query_descriptions) ->
-                          match query_descriptions with
-                          | `None ->
-                            make_toolbar [
-                              [raw_json_control current];
-                              [
-                                control
-                                  ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
-                                  ~help:"Fetching query descriptions …"
-                                  ~self:`Nothing `Nothing
+    let rec make_div id =
+      Reactive_node.div Reactive.Signal.(
+          Target_cache.get_target_summary_signal client.target_cache ~id
+          |> map ~f:(function
+            | `None ->
+              div ~a:[a_title "Not yet fetched"] [
+                pcdata "Still fetching summary for ";
+                pcdata (summarize_id id)
+              ]
+            | `Pointer pid ->
+              div ~a:[a_title "Pointer"] [make_div pid]
+            | `Summary summary ->
+              begin match Target.Summary.build_process summary with
+              | `No_operation -> div [h3 [pcdata "No-operation"]]
+              | `Long_running (name, init) ->
+                div [
+                  h3 [pcdata (fmt "Using %s" name)];
+                  Reactive_node.div Reactive.(
+                      Signal.tuple_2
+                        (Source.signal on_display_right_now)
+                        (get_available_queries client ~id)
+                      |> Signal.map
+                        ~f:(fun (current, query_descriptions) ->
+                            match query_descriptions with
+                            | `None ->
+                              make_toolbar [
+                                [raw_json_control current];
+                                [
+                                  control
+                                    ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
+                                    ~help:"Fetching query descriptions …"
+                                    ~self:`Nothing `Nothing
+                                ]
                               ]
-                            ]
-                          | `Descriptions qds ->
-                            make_toolbar [
-                              [raw_json_control current];
-                              List.map qds ~f:(fun (qname, help) ->
-                                  match Markup_queries.discriminate qname with
-                                  | Some subname ->
-                                    control
-                                      ~content:[pcdata subname]
-                                      ~help
-                                      ~self:(`Result_of qname) current
-                                  | None ->
-                                    control
-                                      ~content:[pcdata (fmt "%s:%s" name qname)]
-                                      ~help
-                                      ~self:(`Result_of qname) current);
-                              query_additional_controls current;
-                            ]
-                        )
-                    |> Signal.singleton);
-                Reactive_node.div Reactive.(
-                    Source.signal on_display_right_now
-                    |> Signal.map ~f: begin function
-                    | `Nothing -> pcdata "Nothing here"
-                    | `Raw_json ->
-                      pre [
-                        pcdata (
-                          let pretty_json =
-                            Yojson.Safe.(from_string init
-                                         |> pretty_to_string ~std:true) in
-                          pretty_json
-                        );
-                      ]
-                    | `Result_of query ->
-                      Reactive_node.div Reactive.(
-                          get_query_result client ~id ~query
-                          |> Signal.map ~f:(function
-                            | `None -> [pcdata (fmt "Calling “%s”" query);
-                                        Bootstrap.loader_gif ()]
-                            | `String r ->
-                              begin match Markup_queries.discriminate query with
-                              | Some _ ->
-                                [Markup_queries.render r]
-                              | None -> [pre [pcdata r]]
-                              end
-                            | `Error e ->
-                              let title =
-                                pcdata
-                                  (fmt "Error while calling %s:" query) in
-                              [Bootstrap.error_box_pre e ~title]
-                            )
-                          |> Signal.list
-                        )
+                            | `Descriptions qds ->
+                              make_toolbar [
+                                [raw_json_control current];
+                                List.map qds ~f:(fun (qname, help) ->
+                                    match Markup_queries.discriminate qname with
+                                    | Some subname ->
+                                      control
+                                        ~content:[pcdata subname]
+                                        ~help
+                                        ~self:(`Result_of qname) current
+                                    | None ->
+                                      control
+                                        ~content:[pcdata (fmt "%s:%s" name qname)]
+                                        ~help
+                                        ~self:(`Result_of qname) current);
+                                query_additional_controls current;
+                              ]
+                          )
+                      |> Signal.singleton);
+                  Reactive_node.div Reactive.(
+                      Source.signal on_display_right_now
+                      |> Signal.map ~f: begin function
+                      | `Nothing -> pcdata "Nothing here"
+                      | `Raw_json ->
+                        pre [
+                          pcdata (
+                            let pretty_json =
+                              Yojson.Safe.(from_string init
+                                           |> pretty_to_string ~std:true) in
+                            pretty_json
+                          );
+                        ]
+                      | `Result_of query ->
+                        Reactive_node.div Reactive.(
+                            get_query_result client ~id ~query
+                            |> Signal.map ~f:(function
+                              | `None -> [pcdata (fmt "Calling “%s”" query);
+                                          Bootstrap.loader_gif ()]
+                              | `String r ->
+                                begin match Markup_queries.discriminate query with
+                                | Some _ ->
+                                  [Markup_queries.render r]
+                                | None -> [pre [pcdata r]]
+                                end
+                              | `Error e ->
+                                let title =
+                                  pcdata
+                                    (fmt "Error while calling %s:" query) in
+                                [Bootstrap.error_box_pre e ~title]
+                              )
+                            |> Signal.list
+                          )
 
                     end
                     |> Signal.singleton);
               ]
             end)
         |> Reactive.Signal.singleton)
+    in
+    make_div id
 
   let target_page client tp =
     let id = tp.Target_page.target_id in
@@ -1646,8 +1724,8 @@ module Html = struct
               [Reactive_node.pcdata
                  Reactive.(
                    Signal.tuple_2
-                     (Source.signal client.table_showing)
-                     (Source.signal client.target_ids
+                     (Source.signal client.target_table.Target_table.showing)
+                     (Source.signal client.target_table.Target_table.target_ids
                       |> Signal.map ~f:Target_id_set.length)
                    |> Signal.map ~f:(fun ((n_from, n_count), total) ->
                        (fmt "Target-table ([%d, %d] of %d)"
