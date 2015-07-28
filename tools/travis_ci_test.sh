@@ -15,8 +15,8 @@ travis_install_on_linux () {
         4.01.0,1.2.0) ppa=avsm/ocaml41+opam12; export opam_pin_add="add" ;;
         4.02.0,1.1.0) ppa=avsm/ocaml42+opam11 ;;
         4.02.0,1.2.0) ppa=avsm/ocaml42+opam12; export opam_pin_add="add" ;;
-        4.02.1,1.1.0) ppa=avsm/ocaml42+opam11 ;;
-        4.02.1,1.2.0) ppa=avsm/ocaml42+opam12; export opam_pin_add="add" ;;
+        4.02.2,1.1.0) ppa=avsm/ocaml42+opam11 ;;
+        4.02.2,1.2.0) ppa=avsm/ocaml42+opam12; export opam_pin_add="add" ;;
       *) echo Unknown $OCAML_VERSION,$OPAM_VERSION; exit 1 ;;
     esac
 
@@ -31,7 +31,8 @@ travis_install_on_linux () {
     sudo apt-get install sqlite3=3.7.15.1-1~travis1
     sudo sqlite3 -version
 
-    sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra opam time git
+    export opam_init_options="--comp=$OCAML_VERSION"
+    sudo apt-get install -qq  opam time git
 }
 
 travis_install_on_osx () {
