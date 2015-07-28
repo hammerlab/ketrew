@@ -13,13 +13,13 @@ module Markup_queries = struct
     end
 
   let date_to_string ?(style = `UTC) fl =
-    let obj = jsnew Js.date_fromTimeValue (1000. *. fl) in
+    let obj = new%js Js.date_fromTimeValue (1000. *. fl) in
     Js.to_string
       begin match style with
-      | `ISO -> obj ## toISOString ()
-      | `Javascript -> obj ## toString ()
-      | `Locale -> obj ## toLocaleString ()
-      | `UTC -> obj ## toUTCString ()
+      | `ISO -> obj##toISOString
+      | `Javascript -> obj##toString
+      | `Locale -> obj##toLocaleString
+      | `UTC -> obj##toUTCString
       end
 
   let time_span_to_string fl =
@@ -1047,7 +1047,7 @@ module Html = struct
                 a_class ["label"; label];
                 a_onmouseover (fun ev ->
                     let mx, my =
-                      Js.Optdef.case (ev##toElement)
+                      Js.Optdef.case ev##.toElement
                         (fun () ->
                            Log.(s "toElement undefined !!" @ error);
                            (200, 200))
@@ -1057,9 +1057,9 @@ module Html = struct
                                 Log.(s "toElement defined but null!!" @ error);
                                 (200, 200))
                              (fun elt ->
-                                let rect = elt##getBoundingClientRect() in
-                                (int_of_float rect##left,
-                                 int_of_float rect##top)))
+                                let rect = elt##getBoundingClientRect in
+                                (int_of_float rect##.left,
+                                 int_of_float rect##.top)))
                     in
                     Log.(s "Mouseover: " % parens (i mx % s ", " % i my)
                          @ verbose);

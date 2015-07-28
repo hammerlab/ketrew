@@ -33,7 +33,7 @@ PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp \
 LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_sqlite \
          pvem_lwt_unix cmdliner cohttp.lwt lwt ssl conduit dynlink findlib
 
-JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.syntax js_of_ocaml.tyxml
+JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml
 
 
 OCAMLFLAGS = -bin-annot -thread -short-paths
@@ -50,8 +50,6 @@ section # Pure library
 section # Javascript client code
     OCAMLPACKS[] = $(JOO_PACKAGES)
     OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
-    OCAMLDEPFLAGS += -syntax camlp4o
-    OCAMLFLAGS += -syntax camlp4o
     NATIVE_ENABLED = false
     _build/client.js: $(file _build/src/client-joo/ketrew-client-joo.run)
         js_of_ocaml --pretty --no-inline --debug-info +weak.js +toplevel.js  $< -o $@

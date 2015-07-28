@@ -125,7 +125,9 @@ let call ?(timeout = 20.) t msg =
     >>= fun result ->
     begin match result with
     | `String content ->
-      let content = (Js.to_string (content##message)) in
+      (* The property “message” is set by the Server module (function
+         `handle_request`): *)
+      let content = (Js.to_string (content##.message)) in
       (* Log.(s "Received string: " % big_byte_sequence content @ verbose); *)
       (* used the example in toplevel.ml:
          https://github.com/ocsigen/js_of_ocaml/commit/65fcc49cfe9d4df8fd193eb5330953923a001618 *)

@@ -143,4 +143,4 @@ let _ =
     Printf.ksprintf (fun s -> Firebug.console##log(Js.string s)) f in
   global_log_print_string := (debug "%s%!");
   global_with_color := false;
-  Dom_html.window##onload <- Dom_html.handler go
+  Dom_html.window##.onload := Dom_html.handler go
