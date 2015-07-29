@@ -401,6 +401,60 @@ module Tab = struct
     | _, _ -> a = b
 end
 
+module Error_log = struct
+
+  type item = {
+    timestamp: Time.t;
+    content: [
+      | `Async_error of string * Display_markup.t
+    ];
+  }
+  type t = item list Reactive.Source.t
+      let create () = Reactive.Source.create []
+
+  let append t v =
+    let open Reactive in
+    let current = Source.signal t |> Signal.value in
+    Source.set t (current @ [v])
+
+  let append_async_error t (n, e) =
+    let item = {
+      timestamp = Time.now ();
+      content =
+        `Async_error (n,
+          let open Display_markup in
+          match e with
+          | `Exn e -> textf "Exception: %s" (Printexc.to_string e)
+          | `Protocol_client pc ->
+            textf "Protocol_client: %s" (Protocol_client.Error.to_string pc)
+          | `Wrong_down_message d -> text "Wrong down-message"
+        )
+    } in
+    append t item
+
+  let markup_signal t =
+    let open Reactive in
+    Source.signal t |> Signal.map ~f:(function
+      | [] -> None
+      | more ->
+        Some Display_markup.(
+            List.map more ~f:(fun {timestamp; content} ->
+                "Async-error",
+                begin match content with
+                | `Async_error (n, m) ->
+                  description_list [
+                    "Timestamp", Date timestamp;
+                    "Name", text n;
+                    "Content", m
+                  ]
+                end
+              ) |> description_list
+          )
+      )
+
+
+end
+
 type t = {
   protocol_client: Protocol_client.t;
   target_cache: Target_cache.t;
@@ -417,6 +471,8 @@ type t = {
   wait_before_retry_asynchronous_loop: float;
   reload_status_condition: unit Lwt_condition.t;
   target_table: Target_table.t;
+
+  error_log: Error_log.t
 }
 
 
@@ -442,6 +498,7 @@ let create ~protocol_client () =
     wait_before_retry_asynchronous_loop =
       (if !global_debug_level > 0 then 120. else 30.);
     reload_status_condition = Lwt_condition.create ();
+    error_log = Error_log.create ();
   }
 
 let log t =
@@ -476,6 +533,7 @@ let asynchronous_loop ?wake_up t ~name loop =
               Protocol_client.Error.to_string pc |> s
             | `Wrong_down_message d -> s "Wrong down-message"
           in
+          Error_log.append_async_error t.error_log (name, e);
           Log.(s "Error in loop " % quote name % s ": " % problem @ error);
           Reactive.Source.set t.status
             (Time.now (), `Problem (problem |> Log.to_long_string));
@@ -504,7 +562,7 @@ let asynchronous_loop ?wake_up t ~name loop =
     end
   )
 
-let start_updating t =
+let start_server_status_loop t =
   let rec update_server_status () =
     Protocol_client.call
       ~timeout:t.default_protocol_client_timeout
@@ -521,8 +579,13 @@ let start_updating t =
       fail (`Wrong_down_message other)
     end
   in
-  asynchronous_loop t ~name:"list-of-ids" update_server_status
+  asynchronous_loop t ~name:"update-server-status" update_server_status
     ~wake_up:("Reload-status-condition", t.reload_status_condition);
+  ()
+  
+
+let start_updating t =
+  start_server_status_loop t;
   let (_ : unit React.E.t) =
     let update_list_of_ids query ~and_block =
       let timeout, options =
@@ -1022,6 +1085,19 @@ module Html = struct
             |> Signal.singleton
           );
       ];
+      h4 [pcdata "Errors"];
+      Reactive_node.div Reactive.(
+          Error_log.markup_signal t.error_log
+          |> Signal.map ~f:(function
+            | None -> Bootstrap.success_box [pcdata "All good!"]
+            | Some m ->
+              Bootstrap.error_box [
+                strong [pcdata "Errors"];
+                Markup.to_html m;
+              ]
+            )
+          |> Signal.singleton
+        );
     ]
 
   let target_status_badge ?(tiny = false) t ~id =
