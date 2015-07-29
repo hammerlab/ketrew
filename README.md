@@ -19,14 +19,13 @@ the documentation for the
 Build & Install
 ---------------
 
-Ketrew requires at least OCaml **4.02.0** and should be able to build & work on
+Ketrew requires at least OCaml **4.02.2** and should be able to build & work on
 any Unix platform.
 
 ### From Opam
 
 If you have `opam` up and running:
 
-    opam remote add -k git smondet https://github.com/smondet/dev-opam-repo
     opam install ketrew
 
 Then you need at runtime `ssh` in the `$PATH`.
