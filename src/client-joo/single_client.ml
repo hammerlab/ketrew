@@ -315,48 +315,102 @@ end
 
 module Target_table = struct
 
-  type filter = [
-    | `None
-  ]
-  type t = {
-    target_ids: Target_id_set.t Reactive.Source.t;
-    mutable target_ids_last_updated: Time.t option; (* server-time *) 
-    showing: (int * int) Reactive.Source.t;
-    columns: column list Reactive.Source.t;
-    default_target_query: Protocol.Up_message.target_query;
-    filter_interface_visible: bool Reactive.Source.t;
-    filter: filter Reactive.Source.t;
-  }
+  module Filter = struct
+    type t = {
+      time_query: Protocol.Up_message.target_query;
+      summary_filter: [ `None ];
+    }
+    let create () = {
+      time_query =
+        (if !global_debug_level > 0 then `All
+         else (* Two weeks *)
+           `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.)));
+      summary_filter = `None
+    }
+
+    let target_query ?last_updated filter =
+      match last_updated with
+      | Some t ->
+        (* Those 5 seconds actually generate traffic, but for know, who cares … *)
+        `Created_after (t -. 5.)
+      | None ->
+        filter.time_query
+
+    let to_lisp { time_query; summary_filter } =
+      match time_query with
+      | `All -> "(all)"
+      | `Not_finished_before f -> fmt "(not-finished-before %f)" f
+      | `Created_after f -> fmt "(created-after %f)" f
+
+    let of_lisp v =
+      begin try
+        let sexp =
+          Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+        let rec parse_sexp =
+          let open Sexplib.Sexp in
+          function
+          | List [List _ as l] -> parse_sexp l
+          | List [Atom "all"] -> `All
+          | List [Atom "not-finished-before";
+                  Atom f] ->
+            `Not_finished_before (float_of_string f)
+          | List [Atom "created-for";
+                  Atom f] ->
+            `Created_after (
+              Time.now () -. (float_of_string f))
+          | other -> failwith "Syntax error"
+        in
+        let time_query = parse_sexp sexp in
+        `Ok {time_query; summary_filter = `None}
+      with
+      | e -> 
+        (`Error (Printexc.to_string e))
+      end
+
+      end
+    type t = {
+      target_ids: Target_id_set.t Reactive.Source.t;
+      target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
+      showing: (int * int) Reactive.Source.t;
+      columns: column list Reactive.Source.t;
+      (* default_target_query: Protocol.Up_message.target_query; *)
+      filter_interface_visible: bool Reactive.Source.t;
+      filter: Filter.t Reactive.Source.t;
+    }
 
   let create () =
     let target_ids = Reactive.Source.create Target_id_set.empty in
     let showing = Reactive.Source.create (0, 10) in
     let columns = Reactive.Source.create default_columns in
     let filter_interface_visible = Reactive.Source.create false in
-    let default_target_query =
-      if !global_debug_level > 0 then
-        `All
-      else
-        (* Two weeks *)
-        `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.))
+    let filter = Filter.create () |> Reactive.Source.create in
+    let target_ids_last_updated = Reactive.Source.create None in
+    let (_ : unit React.E.t) =
+      let event = Reactive.Source.signal filter |> React.S.changes in
+      React.E.map (fun _ ->
+          Reactive.Source.set target_ids_last_updated None;
+          Reactive.Source.set target_ids Target_id_set.empty;
+          ())
+        event
     in
-    let filter = Reactive.Source.create `None in
     {target_ids;
-     target_ids_last_updated = None;
+     target_ids_last_updated;
      filter_interface_visible;
-     showing; columns; default_target_query; filter}
+     showing; columns; filter}
 
-  let target_query t =
-    match t.target_ids_last_updated with
-    | Some t ->
-      (* Those 5 seconds actually generate traffic, but for know, who cares … *)
-      `Created_after (t -. 5.)
-    | None -> t.default_target_query
+  let target_query t : Protocol.Up_message.target_query Reactive.Signal.t  =
+    Reactive.(
+      Signal.tuple_2
+        (Source.signal t.filter)
+        (Source.signal t.target_ids_last_updated)
+      |> Signal.map ~f:(fun (filter, last_updated) ->
+          Filter.target_query ?last_updated filter)
+    )
 
   let add_target_ids t ?server_time l =
     let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
     begin match server_time with
-    | Some s -> t.target_ids_last_updated <- Some s
+    | Some s -> Reactive.Source.set t.target_ids_last_updated (Some s)
     | None -> ()
     end;
     Reactive.Source.set t.target_ids
@@ -500,22 +554,26 @@ let asynchronous_loop ?wake_up t ~name loop =
   )
 
 let start_updating t =
-  let rec list_of_ids_loop () =
-    let update_server_status () =
-      Protocol_client.call
-        ~timeout:t.default_protocol_client_timeout
-        t.protocol_client `Get_server_status
-      >>= begin function
-      | `Server_status status ->
-        (* let _, previous_status = *)
-        (*   Reactive.(Source.signal t.status |> Signal.value) in *)
-        Reactive.Source.set t.status (Time.now (), `Ok status);
-        return ()
-      (* return (Target_table.target_query t.target_table previous_status) *)
-      | other ->
-        fail (`Wrong_down_message other)
-      end
-    in
+  let rec update_server_status () =
+    Protocol_client.call
+      ~timeout:t.default_protocol_client_timeout
+      t.protocol_client `Get_server_status
+    >>= begin function
+    | `Server_status status ->
+      (* let _, previous_status = *)
+      (*   Reactive.(Source.signal t.status |> Signal.value) in *)
+      Reactive.Source.set t.status (Time.now (), `Ok status);
+      sleep 30.
+      >>= fun () ->
+      update_server_status ()
+    (* return (Target_table.target_query t.target_table previous_status) *)
+    | other ->
+      fail (`Wrong_down_message other)
+    end
+  in
+  asynchronous_loop t ~name:"list-of-ids" update_server_status
+    ~wake_up:("Reload-status-condition", t.reload_status_condition);
+  let (_ : unit React.E.t) =
     let update_list_of_ids query =
       let blocking_time = t.block_time_request in
       Protocol_client.call
@@ -538,13 +596,20 @@ let start_updating t =
         fail (`Wrong_down_message other)
       end
     in
-    update_server_status ()
-    >>= fun () ->
-    (* >>= fun query -> *)
-    let query = Target_table.target_query t.target_table in
-    update_list_of_ids query
-    >>= fun () ->
-    list_of_ids_loop ()
+    let event =
+      Target_table.target_query t.target_table |> React.S.changes
+    in
+    (* a first time then with the event *)
+    asynchronous_loop t ~name:"list-of-ids" (fun () ->
+        let query =
+          Target_table.target_query t.target_table |> Reactive.Signal.value
+        in
+        update_list_of_ids query);
+    React.E.map (fun query -> 
+        asynchronous_loop t ~name:"list-of-ids" (fun () ->
+            update_list_of_ids query)
+      )
+      event
   in
   let (_ : unit React.E.t) =
     let get_all_missing_summaries targets_ids =
@@ -702,8 +767,6 @@ let start_updating t =
       (fun set -> update_flat_states (Target_id_set.to_list set))
       event
   in
-  asynchronous_loop t ~name:"list-of-ids" list_of_ids_loop
-    ~wake_up:("Reload-status-condition", t.reload_status_condition);
   ()
 
 let fetch_available_queries t ~id =
@@ -979,22 +1042,28 @@ module Html = struct
         Markup_queries.markup_to_html
           (Target_cache.markup_counts t.target_cache);
         h4 [pcdata "Settings"];
-        Markup_queries.markup_to_html
-          Display_markup.(description_list [
-              "Target-query",
-              begin match t.target_table.Target_table.default_target_query with
-              | `All -> textf "All"
-              | `Not_finished_before d ->
-                concat [textf "Not finished before "; date d]
-              | `Created_after d ->
-                concat [textf "Created after "; date d]
-              end;
-              "Block-time-request", time_span t.block_time_request;
-              "Default-protocol-timeout",
-              time_span t.default_protocol_client_timeout;
-              "Asynchronous-retry-wait",
-              time_span t.wait_before_retry_asynchronous_loop;
-            ]);
+        Reactive_node.div Reactive.(
+            Target_table.target_query t.target_table
+            |> Signal.map ~f:(fun tquery ->
+                Markup_queries.markup_to_html
+                  Display_markup.(description_list [
+                      "Target-table-query",
+                      begin match tquery with
+                      | `All -> textf "All"
+                      | `Not_finished_before d ->
+                        concat [textf "Not finished before "; date d]
+                      | `Created_after d ->
+                        concat [textf "Created after "; date d]
+                      end;
+                      "Block-time-request", time_span t.block_time_request;
+                      "Default-protocol-timeout",
+                      time_span t.default_protocol_client_timeout;
+                      "Asynchronous-retry-wait",
+                      time_span t.wait_before_retry_asynchronous_loop;
+                    ])
+              )
+            |> Signal.singleton
+          );
       ];
     ]
 
@@ -1133,11 +1202,52 @@ module Html = struct
             | false -> "display: none")
         );
     ] [
-      h3 [pcdata "Filters"];
       Reactive_node.div Reactive.(
           (Source.signal t.target_table.Target_table.filter)
-          |> Signal.map ~f:(function
-            | `None -> pcdata "Current: None"
+          |> Signal.map ~f:(fun filter ->
+              let status = Reactive.Source.create (`Ok filter) in
+              div ~a:[a_class ["input-group"]] [
+                div ~a:[a_class ["input-group-addon"]]
+                  [pcdata "Write your filtering query: "];
+                input () ~a:[
+                  a_class ["form-control"];
+                  a_input_type `Text;
+                  (* a_size 100; *)
+                  a_autocomplete `Off;
+                  a_value (Target_table.Filter.to_lisp filter);
+                  a_oninput (fun ev ->
+                      Js.Opt.iter ev##.target (fun input ->
+                          Js.Opt.iter (Dom_html.CoerceTo.input input) (fun input ->
+                              let v = input##.value |> Js.to_string in
+                              Log.(s "input inputs: " % s v @ verbose);
+                              Reactive.Source.set status
+                                (Target_table.Filter.of_lisp v)
+                            );
+                        );
+                      false);
+                ];
+                Reactive_node.div ~a:[a_class ["input-group-btn"]]
+                  Reactive.(
+                    Source.signal status
+                    |> Signal.map ~f:(function
+                      | `Ok v ->
+                        Bootstrap.button
+                          ~on_click:(fun _ ->
+                              Reactive.Source.set
+                                t.target_table.Target_table.filter v;
+                              false)
+                          [pcdata "Submit"]
+                      | `Error e ->
+                        div ~a:[
+                          a_class ["input-group-addon"];
+                        ] [
+                          span ~a:[
+                            a_class ["text-danger"];
+                          ] [pcdata (fmt "Error: %s" e)]
+                        ]
+                      )
+                    |> Signal.singleton);
+              ]
             )
           |> Signal.singleton
         );
