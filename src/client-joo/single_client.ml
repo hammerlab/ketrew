@@ -1199,6 +1199,7 @@ module Html = struct
                       |> Signal.map ~f:(function
                         | `Ok v ->
                           Bootstrap.button
+                            ~enabled:(v <> filter)
                             ~on_click:(fun _ ->
                                 Reactive.Source.set
                                   t.target_table.Target_table.filter v;
