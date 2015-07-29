@@ -318,7 +318,6 @@ module Target_table = struct
     target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
     showing: (int * int) Reactive.Source.t;
     columns: column list Reactive.Source.t;
-    (* default_target_query: Protocol.Up_message.target_query; *)
     filter_interface_visible: bool Reactive.Source.t;
     filter_interface_showing_help: bool Reactive.Source.t;
     filter: Filter.t Reactive.Source.t;
@@ -346,13 +345,14 @@ module Target_table = struct
      filter_interface_showing_help;
      showing; columns; filter}
 
-  let target_query t : Protocol.Up_message.target_query Reactive.Signal.t  =
+  let target_query t :
+    (Protocol.Up_message.target_query * bool) Reactive.Signal.t =
     Reactive.(
       Signal.tuple_2
         (Source.signal t.filter)
         (Source.signal t.target_ids_last_updated)
       |> Signal.map ~f:(fun (filter, last_updated) ->
-          Filter.target_query ?last_updated filter)
+          Filter.target_query ?last_updated filter, (last_updated <> None))
     )
 
   let add_target_ids t ?server_time l =
@@ -517,7 +517,6 @@ let start_updating t =
       sleep 30.
       >>= fun () ->
       update_server_status ()
-    (* return (Target_table.target_query t.target_table previous_status) *)
     | other ->
       fail (`Wrong_down_message other)
     end
@@ -525,12 +524,17 @@ let start_updating t =
   asynchronous_loop t ~name:"list-of-ids" update_server_status
     ~wake_up:("Reload-status-condition", t.reload_status_condition);
   let (_ : unit React.E.t) =
-    let update_list_of_ids query =
-      let blocking_time = t.block_time_request in
-      Protocol_client.call
-        ~timeout:(blocking_time +. t.default_protocol_client_timeout)
-        t.protocol_client (`Get_target_ids
-                             (query, [`Block_if_empty_at_most blocking_time]))
+    let update_list_of_ids query ~and_block =
+      let timeout, options =
+        if and_block then
+          let blocking_time = t.block_time_request in
+          (blocking_time +. t.default_protocol_client_timeout,
+           [`Block_if_empty_at_most blocking_time])
+        else
+          (t.default_protocol_client_timeout, [])
+      in
+      Protocol_client.call ~timeout
+        t.protocol_client (`Get_target_ids (query, options))
       >>= begin function
       | `List_of_target_ids l ->
           (*
@@ -552,13 +556,13 @@ let start_updating t =
     in
     (* a first time then with the event *)
     asynchronous_loop t ~name:"list-of-ids" (fun () ->
-        let query =
+        let query, and_block =
           Target_table.target_query t.target_table |> Reactive.Signal.value
         in
-        update_list_of_ids query);
-    React.E.map (fun query -> 
+        update_list_of_ids query ~and_block);
+    React.E.map (fun (query, and_block) -> 
         asynchronous_loop t ~name:"list-of-ids" (fun () ->
-            update_list_of_ids query)
+            update_list_of_ids query ~and_block)
       )
       event
   in
@@ -997,7 +1001,7 @@ module Html = struct
         h4 [pcdata "Settings"];
         Reactive_node.div Reactive.(
             Target_table.target_query t.target_table
-            |> Signal.map ~f:(fun tquery ->
+            |> Signal.map ~f:(fun (tquery, _) ->
                 Markup.to_html
                   Display_markup.(description_list [
                       "Target-table-query",
