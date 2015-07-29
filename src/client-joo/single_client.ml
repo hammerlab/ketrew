@@ -12,104 +12,11 @@ module Markup_queries = struct
     | other -> None
     end
 
-  let date_to_string ?(style = `UTC) fl =
-    let obj = new%js Js.date_fromTimeValue (1000. *. fl) in
-    Js.to_string
-      begin match style with
-      | `ISO -> obj##toISOString
-      | `Javascript -> obj##toString
-      | `Locale -> obj##toLocaleString
-      | `UTC -> obj##toUTCString
-      end
-
-  let time_span_to_string fl =
-    let subsecond, seconds_f = modf fl in
-    let seconds = int_of_float seconds_f in
-    let seconds, minutes = seconds mod 60, seconds / 60 in
-    let minutes, hours = minutes mod 60, minutes / 60 in
-    fmt "%s%s%d%s s"
-      (if hours <> 0 then fmt "%d h " hours  else "")
-      (if minutes <> 0 then fmt "%d m " minutes else
-         (if hours = 0 then "" else "00 m "))
-      seconds
-      (subsecond *. 1000. |> int_of_float
-       |> function
-       | 0 -> ""
-       | n -> "." ^ string_of_int n)
-
-  let rec markup_to_html ?(collapse_descriptions = []) ast =
-    let open Display_markup in
-    let open H5 in
-    let continue ast = markup_to_html ~collapse_descriptions ast in
-    let inline l = div ~a:[a_style "display: inline"] l in
-    let catches_description name =
-      List.exists collapse_descriptions ~f:(fun (n, _) -> n = name) in
-    let rec find_subcontent name ast =
-      match ast with
-      | Description (n, c) when n = name -> Some c
-      | Description (_, c) -> find_subcontent name c
-      | Itemize l
-      | Concat l -> List.find_map ~f:(find_subcontent name) l
-      | _ -> None
-    in
-    match ast with
-    | Date fl -> pcdata (date_to_string fl)
-    | Time_span s -> pcdata (time_span_to_string s)
-    | Text s -> pcdata s
-    | Path p
-    | Command p -> code [pcdata p]
-    | Concat p ->
-      inline (List.map ~f:continue p)
-    | Description (name, t) when catches_description name ->
-      let expanded = Reactive.Source.create false in
-      let button expandedness =
-        a ~a:[
-          a_onclick (fun _ ->
-              Reactive.Source.set expanded (not expandedness);
-              false);
-        ] [
-          pcdata (if expandedness then "⊖" else "⊕")
-        ] in
-      inline [
-        Reactive_node.div Reactive.(
-            Source.signal expanded
-            |> Signal.map
-              ~f:begin function
-              | true ->
-                [strong [pcdata name; pcdata ": "];
-                 button true; continue t]
-              | false ->
-                let d = ref [] in
-                let summary =
-                  Nonstd.Option.(
-                    begin
-                      List.find collapse_descriptions ~f:(fun (n, _) ->
-                          d := fmt "trying %S Vs %S, " n name :: !d;
-                          n = name)
-                      >>= fun (_, to_find) ->
-                      d := fmt "to_find : %s" to_find :: !d;
-                      find_subcontent to_find t
-                    end
-                    |> map ~f:continue
-                    |> value ~default:(pcdata " ")
-                      (* ~default:(pcdata (fmt "??? -> %s" (String.concat ~sep:", " !d))) *)
-                  )
-                in
-                [strong [pcdata name; pcdata ": "]; summary; button false]
-              end
-            |> Signal.list
-          );
-      ]
-    | Description (name, t) ->
-      inline [strong [pcdata (fmt "%s: " name)]; continue t]
-    | Itemize ts ->
-      ul (List.map ~f:(fun ast -> li [continue ast]) ts)
-
   let render content =
     let open H5 in
     begin try
       let ast = Display_markup.deserialize_exn content in
-      markup_to_html ast
+      Markup.to_html ast
     with
     | e ->
       let title =
@@ -117,8 +24,6 @@ module Markup_queries = struct
           (fmt "Error parsing query-result: %s" (Printexc.to_string e)) in
       Bootstrap.error_box_pre ~title content
     end
-
-
 
 end
 
@@ -985,7 +890,7 @@ module Html = struct
         "stack_size", int gc_stack_size (*  int *);
       ]
     ]
-    |> Markup_queries.markup_to_html
+    |> H5.Markup.to_html
 
   let status t =
     let open H5 in
@@ -999,7 +904,7 @@ module Html = struct
                 pcdata (fmt "Status");
               ];
               pcdata (fmt "Last updated: %s."
-                        (Markup_queries.date_to_string date));
+                        (Markup.date_to_string date));
               begin match status with
               | `Ok server ->
                 Bootstrap.success_box [
@@ -1049,7 +954,7 @@ module Html = struct
         );
       h4 [pcdata "Protocol Client"];
       div [
-        Markup_queries.markup_to_html (Protocol_client.markup t.protocol_client);
+        Markup.to_html (Protocol_client.markup t.protocol_client);
       ];
       h4 [pcdata "Cache"];
       div [
@@ -1069,13 +974,13 @@ module Html = struct
               )
             |> Signal.list
           );
-        Markup_queries.markup_to_html
+        Markup.to_html
           (Target_cache.markup_counts t.target_cache);
         h4 [pcdata "Settings"];
         Reactive_node.div Reactive.(
             Target_table.target_query t.target_table
             |> Signal.map ~f:(fun tquery ->
-                Markup_queries.markup_to_html
+                Markup.to_html
                   Display_markup.(description_list [
                       "Target-table-query",
                       begin match tquery with
@@ -1634,7 +1539,7 @@ module Html = struct
                     [Target.Summary.condition summary
                      |> Option.value_map ~default:(pcdata "") ~f:(fun c ->
                          Target.Condition.markup c
-                         |> Markup_queries.markup_to_html
+                         |> Markup.to_html
                            ~collapse_descriptions:["Host", "Name"])];
                   code_row "Build-process"
                     (Target.Summary.build_process summary

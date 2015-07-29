@@ -116,4 +116,18 @@ module H5: sig
     string -> [> Html5_types.div ] elt
 
   end
+
+  module Markup: sig
+    val date_to_string :
+      ?style:[ `ISO | `Javascript | `Locale | `UTC ] -> float -> string
+    val time_span_to_string : float -> string
+    val to_html :
+      ?collapse_descriptions:(string * string) list ->
+      Ketrew_pure.Internal_pervasives.Display_markup.t ->
+      [< Html5_types.div_content_fun
+           > `A `Code `Div `PCDATA `Strong `Ul ]
+        elt
+  end
+
+
 end
