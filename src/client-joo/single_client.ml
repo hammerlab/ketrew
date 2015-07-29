@@ -316,17 +316,37 @@ end
 module Target_table = struct
 
   module Filter = struct
+
+    type time_span = [
+      | `Hours of float
+      | `Days of float
+      | `Weeks of float
+    ]
+    type ast = [
+      | `All
+      | `Created_in_the_past of time_span
+    ]
+
     type t = {
-      time_query: Protocol.Up_message.target_query;
-      summary_filter: [ `None ];
+      ast: ast;
     }
     let create () = {
-      time_query =
+      ast =
         (if !global_debug_level > 0 then `All
-         else (* Two weeks *)
-           `Created_after (Time.now () -. (60. *. 60. *. 24. *. 15.)));
-      summary_filter = `None
+         else `Created_in_the_past (`Weeks 2.));
     }
+
+    let to_server_query ast =
+      let to_seconds =
+        function
+        | `Hours f -> f *. 60. *. 60.
+        | `Days f -> f *. 60. *. 60. *. 24.
+        | `Weeks f -> f *. 60. *. 60. *. 24. *. 7.
+      in
+      match ast with
+      | `All -> `All
+      | `Created_in_the_past time ->
+        `Created_after (Time.now () -. (to_seconds time))
 
     let target_query ?last_updated filter =
       match last_updated with
@@ -334,49 +354,59 @@ module Target_table = struct
         (* Those 5 seconds actually generate traffic, but for know, who cares … *)
         `Created_after (t -. 5.)
       | None ->
-        filter.time_query
+        to_server_query filter.ast
 
-    let to_lisp { time_query; summary_filter } =
-      match time_query with
+    let to_lisp { ast } =
+      let time_span =
+        function
+        | `Hours h -> fmt "(hours %g)" h
+        | `Days h -> fmt "(days %g)" h
+        | `Weeks h -> fmt "(weeks %g)" h
+      in
+      match ast with
       | `All -> "(all)"
-      | `Not_finished_before f -> fmt "(not-finished-before %f)" f
-      | `Created_after f -> fmt "(created-after %f)" f
+      | `Created_in_the_past time ->
+        fmt "(created-in-the-past %s)" (time_span time)
 
     let of_lisp v =
       begin try
-        let sexp =
-          Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
-        let rec parse_sexp =
+        let rec parse_sexp sexp =
           let open Sexplib.Sexp in
-          function
+          let time_span =
+            function
+            | List [Atom "hours"; Atom f] -> `Hours (float_of_string f)
+            | List [Atom "days"; Atom f] -> `Days (float_of_string f)
+            | List [Atom "weeks"; Atom f] -> `Weeks (float_of_string f)
+            | other ->
+              failwith "Syntax error while parsing time-span"
+          in
+          match sexp with
           | List [List _ as l] -> parse_sexp l
           | List [Atom "all"] -> `All
-          | List [Atom "not-finished-before";
-                  Atom f] ->
-            `Not_finished_before (float_of_string f)
-          | List [Atom "created-for";
-                  Atom f] ->
-            `Created_after (
-              Time.now () -. (float_of_string f))
+          | List [Atom "created-in-the-past"; time] ->
+            `Created_in_the_past (time_span time)
           | other -> failwith "Syntax error"
         in
-        let time_query = parse_sexp sexp in
-        `Ok {time_query; summary_filter = `None}
+        let sexp =
+          Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+        let ast = parse_sexp sexp in
+        `Ok {ast}
       with
       | e -> 
         (`Error (Printexc.to_string e))
       end
 
-      end
-    type t = {
-      target_ids: Target_id_set.t Reactive.Source.t;
-      target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
-      showing: (int * int) Reactive.Source.t;
-      columns: column list Reactive.Source.t;
-      (* default_target_query: Protocol.Up_message.target_query; *)
-      filter_interface_visible: bool Reactive.Source.t;
-      filter: Filter.t Reactive.Source.t;
-    }
+  end
+
+  type t = {
+    target_ids: Target_id_set.t Reactive.Source.t;
+    target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
+    showing: (int * int) Reactive.Source.t;
+    columns: column list Reactive.Source.t;
+    (* default_target_query: Protocol.Up_message.target_query; *)
+    filter_interface_visible: bool Reactive.Source.t;
+    filter: Filter.t Reactive.Source.t;
+  }
 
   let create () =
     let target_ids = Reactive.Source.create Target_id_set.empty in
