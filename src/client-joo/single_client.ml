@@ -314,7 +314,7 @@ module Target_table = struct
   end
 
   type t = {
-    target_ids: Target_id_set.t Reactive.Source.t;
+    target_ids: Target_id_set.t option Reactive.Source.t;
     target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
     showing: (int * int) Reactive.Source.t;
     columns: column list Reactive.Source.t;
@@ -325,7 +325,7 @@ module Target_table = struct
   }
 
   let create () =
-    let target_ids = Reactive.Source.create Target_id_set.empty in
+    let target_ids = Reactive.Source.create None in
     let showing = Reactive.Source.create (0, 10) in
     let columns = Reactive.Source.create default_columns in
     let filter_interface_visible = Reactive.Source.create false in
@@ -336,7 +336,7 @@ module Target_table = struct
       let event = Reactive.Source.signal filter |> React.S.changes in
       React.E.map (fun _ ->
           Reactive.Source.set target_ids_last_updated None;
-          Reactive.Source.set target_ids Target_id_set.empty;
+          Reactive.Source.set target_ids None;
           ())
         event
     in
@@ -356,13 +356,16 @@ module Target_table = struct
     )
 
   let add_target_ids t ?server_time l =
-    let current = Reactive.(Source.signal t.target_ids |> Signal.value) in
+    let current =
+      Reactive.(Source.signal t.target_ids |> Signal.value)
+      |> Option.value ~default:Target_id_set.empty
+    in
     begin match server_time with
     | Some s -> Reactive.Source.set t.target_ids_last_updated (Some s)
     | None -> ()
     end;
     Reactive.Source.set t.target_ids
-      (Target_id_set.add_list current l);
+      (Some (Target_id_set.add_list current l));
     ()
 
 end
@@ -973,9 +976,11 @@ module Html = struct
       div [
         Reactive_node.span Reactive.(
             Source.signal t.target_table.Target_table.target_ids
-            |> Signal.map ~f:(fun s ->
+            |> Signal.map ~f:(function
+              | Some s ->
                 [pcdata (fmt "%d target-IDs in the table"
                            (Target_id_set.length s))]
+              | None -> [pcdata "Fetching fresh target-IDs"]
               )
             |> Signal.list
           );
@@ -1257,8 +1262,10 @@ module Html = struct
           Signal.tuple_3
             (Source.signal showing)
             (Source.signal t.target_table.Target_table.target_ids)
-          (Source.signal t.target_table.Target_table.filter_interface_visible)
-          |> Signal.map ~f:(fun ((n_from, n_count), ids, filters_visible) ->
+            (Source.signal t.target_table.Target_table.filter_interface_visible)
+          |> Signal.map ~f:(fun ((n_from, n_count), ids_option, filters_visible) ->
+              let ids =
+                Nonstd.Option.value ids_option ~default:Target_id_set.empty in
               let total = Target_id_set.length ids in
               let enable_if enabled on_click content =
                 Bootstrap.button ~enabled ~on_click content in
@@ -1391,20 +1398,29 @@ module Html = struct
       Reactive_node.div
         Reactive.(
           Signal.tuple_3 
-            (Source.signal t.target_table.Target_table.target_ids
-             |> Signal.map ~f:Target_id_set.to_list)
+            (Source.signal t.target_table.Target_table.target_ids)
+            (* |> Signal.map ~f:Target_id_set.to_list) *)
             (Source.signal showing)
             (Source.signal t.target_table.Target_table.columns)
-          |> Signal.map ~f:begin fun (target_ids, (index, count), columns) ->
-            let ids = List.take (List.drop target_ids index) count in
-            add_interesting_targets t
-              (let greedy_index = max 0 (index - count) in
-               let greedy_count = count + count + (index - greedy_index) in
-               List.take (List.drop target_ids greedy_index) greedy_count);
-            Bootstrap.table_responsive
-              ~head:(table_head columns)
-              ~body:(List.mapi ids
-                       ~f:(fun ind id -> row_of_id columns (index + ind) id))
+          |> Signal.map ~f:begin fun (target_ids_opt, (index, count), columns) ->
+            begin match target_ids_opt with
+            | Some tids ->
+              let target_ids = Target_id_set.to_list tids in
+              let ids = List.take (List.drop target_ids index) count in
+              add_interesting_targets t
+                (let greedy_index = max 0 (index - count) in
+                 let greedy_count = count + count + (index - greedy_index) in
+                 List.take (List.drop target_ids greedy_index) greedy_count);
+              Bootstrap.table_responsive
+                ~head:(table_head columns)
+                ~body:(List.mapi ids
+                         ~f:(fun ind id -> row_of_id columns (index + ind) id))
+            | None ->
+              div ~a:[a_class ["alert"; "alert-warning"]] [
+                strong [pcdata "Fetching targets "];
+                Bootstrap.loader_gif ();
+              ]
+            end
           end
           |> Signal.singleton
         )
@@ -1831,13 +1847,16 @@ module Html = struct
                  Reactive.(
                    Signal.tuple_2
                      (Source.signal client.target_table.Target_table.showing)
-                     (Source.signal client.target_table.Target_table.target_ids
-                      |> Signal.map ~f:Target_id_set.length)
-                   |> Signal.map ~f:(fun ((n_from, n_count), total) ->
-                       (fmt "Target-table ([%d, %d] of %d)"
-                          (min total (n_from + 1))
-                          (min (n_from + n_count) total)
-                          total)))]
+                     (Source.signal client.target_table.Target_table.target_ids)
+                   |> Signal.map ~f:(fun ((n_from, n_count), target_ids) ->
+                       match target_ids with
+                       | None -> "Fetching targets"
+                       | Some tids ->
+                         let total = Target_id_set.length tids in
+                         (fmt "Target-table ([%d, %d] of %d)"
+                            (min total (n_from + 1))
+                            (min (n_from + n_count) total)
+                            total)))]
           | `Status ->
             Bootstrap.tab_item
               ~active:Reactive.(
