@@ -241,6 +241,16 @@ module Target_table = struct
          else `Created_in_the_past (`Weeks 2.));
     }
 
+    let examples = [
+      { ast = `All }, "Get all the targets known to the server.";
+      { ast = `Created_in_the_past (`Hours 5.) },
+      "Get all the targets created in the past 5 hours.";
+      { ast = `Created_in_the_past (`Days 0.5) },
+      "Get all the targets created in the past half day.";
+      { ast = `Created_in_the_past (`Weeks 2.5) },
+      "Get all the targets created in the past 2.5 weeks.";
+    ]
+
     let to_server_query ast =
       let to_seconds =
         function
@@ -310,6 +320,7 @@ module Target_table = struct
     columns: column list Reactive.Source.t;
     (* default_target_query: Protocol.Up_message.target_query; *)
     filter_interface_visible: bool Reactive.Source.t;
+    filter_interface_showing_help: bool Reactive.Source.t;
     filter: Filter.t Reactive.Source.t;
   }
 
@@ -320,6 +331,7 @@ module Target_table = struct
     let filter_interface_visible = Reactive.Source.create false in
     let filter = Filter.create () |> Reactive.Source.create in
     let target_ids_last_updated = Reactive.Source.create None in
+    let filter_interface_showing_help = Reactive.Source.create false in
     let (_ : unit React.E.t) =
       let event = Reactive.Source.signal filter |> React.S.changes in
       React.E.map (fun _ ->
@@ -331,6 +343,7 @@ module Target_table = struct
     {target_ids;
      target_ids_last_updated;
      filter_interface_visible;
+     filter_interface_showing_help;
      showing; columns; filter}
 
   let target_query t : Protocol.Up_message.target_query Reactive.Signal.t  =
@@ -1129,61 +1142,109 @@ module Html = struct
 
   let filter_ui t =
     let open H5 in
-    div ~a:[
-      Reactive_node.a_style Reactive.(
-          (Source.signal t.target_table.Target_table.filter_interface_visible)
-          |> Signal.map ~f:(function
-            | true -> "display: block"
-            | false -> "display: none")
-        );
-    ] [
+    hide_show_div
+      ~signal:(Reactive.Source.signal
+                 t.target_table.Target_table.filter_interface_visible) [
       Reactive_node.div Reactive.(
           (Source.signal t.target_table.Target_table.filter)
           |> Signal.map ~f:(fun filter ->
               let status = Reactive.Source.create (`Ok filter) in
-              div ~a:[a_class ["input-group"]] [
-                div ~a:[a_class ["input-group-addon"]]
-                  [pcdata "Write your filtering query: "];
-                input () ~a:[
-                  a_class ["form-control"];
-                  a_input_type `Text;
-                  (* a_size 100; *)
-                  a_autocomplete `Off;
-                  a_value (Target_table.Filter.to_lisp filter);
-                  a_oninput (fun ev ->
-                      Js.Opt.iter ev##.target (fun input ->
-                          Js.Opt.iter (Dom_html.CoerceTo.input input) (fun input ->
-                              let v = input##.value |> Js.to_string in
-                              Log.(s "input inputs: " % s v @ verbose);
-                              Reactive.Source.set status
-                                (Target_table.Filter.of_lisp v)
-                            );
-                        );
-                      false);
-                ];
-                Reactive_node.div ~a:[a_class ["input-group-btn"]]
-                  Reactive.(
-                    Source.signal status
-                    |> Signal.map ~f:(function
-                      | `Ok v ->
-                        Bootstrap.button
-                          ~on_click:(fun _ ->
-                              Reactive.Source.set
-                                t.target_table.Target_table.filter v;
-                              false)
-                          [pcdata "Submit"]
-                      | `Error e ->
-                        div ~a:[
-                          a_class ["input-group-addon"];
+              div [
+                div ~a:[a_class ["input-group"]] [
+                  div ~a:[a_class ["input-group-addon"]] [
+                    pcdata "Write your filtering query ";
+                    local_anchor
+                      ~on_click:(fun _ ->
+                          Reactive.(
+                            let src =
+                              t.target_table.Target_table.
+                                filter_interface_showing_help in
+                            let current = Source.signal src |> Signal.value in
+                            Source.set src (not current);
+                            false))
+                      [
+                        span ~a:[
+                          a_class ["label"; "label-default"]
                         ] [
-                          span ~a:[
-                            a_class ["text-danger"];
-                          ] [pcdata (fmt "Error: %s" e)]
-                        ]
-                      )
-                    |> Signal.singleton);
-              ]
-            )
+                          pcdata "?"
+                        ];
+                      ];
+                    pcdata ": ";
+                  ];
+                  input () ~a:[
+                    a_class ["form-control"];
+                    a_input_type `Text;
+                    (* a_size 100; *)
+                    a_autocomplete `Off;
+                    a_value (Target_table.Filter.to_lisp filter);
+                    a_oninput (fun ev ->
+                        Js.Opt.iter ev##.target (fun input ->
+                            Js.Opt.iter (Dom_html.CoerceTo.input input) (fun input ->
+                                let v = input##.value |> Js.to_string in
+                                Log.(s "input inputs: " % s v @ verbose);
+                                Reactive.Source.set status
+                                  (Target_table.Filter.of_lisp v)
+                              );
+                          );
+                        false);
+                  ];
+                  Reactive_node.div ~a:[a_class ["input-group-btn"]]
+                    Reactive.(
+                      Source.signal status
+                      |> Signal.map ~f:(function
+                        | `Ok v ->
+                          Bootstrap.button
+                            ~on_click:(fun _ ->
+                                Reactive.Source.set
+                                  t.target_table.Target_table.filter v;
+                                false)
+                            [pcdata "Submit"]
+                        | `Error e ->
+                          div ~a:[
+                            a_class ["input-group-addon"];
+                          ] [
+                            span ~a:[
+                              a_class ["text-danger"];
+                            ] [pcdata (fmt "Error: %s" e)]
+                          ]
+                        )
+                      |> Signal.singleton);
+                ];
+                let signal =
+                  Source.signal
+                    t.target_table.Target_table.filter_interface_showing_help in
+                let current_filter = filter in
+                hide_show_div ~signal [
+                  div ~a:[a_class ["alert"; "alert-info"]] [
+                    h3 [pcdata "Help"];
+                    p [
+                      pcdata "The language is based on S-Expressions \
+                              (Like Lisp or Scheme), but you can omit the \
+                              outermost parentheses.";
+                    ];
+                    p [pcdata "Here are some examples:"];
+                    ul (List.map Target_table.Filter.examples
+                          ~f:(fun (filter, description) ->
+                              li [
+                                code [pcdata (Target_table.Filter.to_lisp filter)];
+                                strong [pcdata " → "];
+                                span [pcdata description];
+                                pcdata " ";
+                                begin match current_filter = filter with
+                                | true ->
+                                  pcdata "It's the current one."
+                                | false ->
+                                  local_anchor
+                                    ~on_click:(fun _ ->
+                                        Reactive.Source.set
+                                          t.target_table.Target_table.filter filter;
+                                        false)
+                                    [pcdata "Try it now!"]
+                                end;
+                              ]));
+                  ];
+                ];
+              ])
           |> Signal.singleton
         );
     ]
