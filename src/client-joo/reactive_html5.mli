@@ -21,6 +21,11 @@ module H5: sig
     ?a:[< Html5_types.a_attrib > `Href `OnClick ] attrib list_wrap ->
     'a elt list_wrap -> [> `A of 'a ] elt
 
+  val hide_show_div:
+    ?a:'a list ->
+    signal:bool Reactive.Signal.t ->
+    [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
+
   module Bootstrap: sig
 
     val loader_gif : unit -> [> Html5_types.img ] elt

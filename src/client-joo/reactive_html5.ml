@@ -16,7 +16,17 @@ module H5 = struct
         a_onclick on_click;
       ]
       @ a)
-      content;
+      content
+
+  let hide_show_div ?(a=[]) ~signal content =
+    div ~a:[
+      Reactive_node.a_style Reactive.(
+          signal
+          |> Signal.map ~f:(function
+            | true -> "display: block"
+            | false -> "display: none")
+        );
+    ] content
 
   module Bootstrap = struct
 
