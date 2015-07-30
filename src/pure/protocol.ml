@@ -87,6 +87,7 @@ module Up_message = struct
       | `Status of [
           | `Simple of Target.State.simple
         ]
+      | `Has_tag of [`Equals of string] 
     ] [@@deriving yojson]
     type target_query = {
       time_constraint : time_constraint;
@@ -138,6 +139,8 @@ module Up_message = struct
             end;
           text ")";
         ]
+      | `Has_tag (`Equals s) ->
+        textf "(tag-equals %S)" s
     in
     description_list [
       "Time-constraint",

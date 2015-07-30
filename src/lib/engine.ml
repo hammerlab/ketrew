@@ -712,6 +712,9 @@ let get_list_of_target_ids t query =
           | `Status (`Simple s) ->
             let simple = Target.State.simplify (Target.state target) in
             s = simple
+          | `Has_tag (`Equals t) ->
+            let tags = Target.tags target in
+            List.exists tags ~f:((=) t)
         in
         if apply_filter query.filter then wins () else None
       )

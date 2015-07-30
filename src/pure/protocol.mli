@@ -77,6 +77,7 @@ module Up_message : sig
     | `Status of [
         | `Simple of Target.State.simple
       ]
+    | `Has_tag of [`Equals of string] 
   ]
   type target_query = {
     time_constraint : time_constraint;
