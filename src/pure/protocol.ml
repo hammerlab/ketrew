@@ -74,11 +74,24 @@ end
 
 module Up_message = struct
   module V0 = struct
-    type target_query = [
+    type time_constraint = [
       | `All
       | `Not_finished_before of float
       | `Created_after of float
     ] [@@deriving yojson]
+    type filter = [
+      | `True
+      | `False
+      | `And of filter list
+      | `Or of filter list
+      | `Status of [
+          | `Simple of Target.State.simple
+        ]
+    ] [@@deriving yojson]
+    type target_query = {
+      time_constraint : time_constraint;
+      filter : filter;
+    } [@@deriving yojson]
     type query_option = [
       | `Block_if_empty_at_most of float
     ] [@@deriving yojson]
@@ -87,7 +100,7 @@ module Up_message = struct
       | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
       | `Get_target_flat_states of
           [`All | `Since of float] * string list * (query_option list)
-          (* List of Ids, empty means “all” *)
+      (* List of Ids, empty means “all” *)
       | `Get_available_queries of string (* Id of the target *)
       | `Call_query of (string * string) (* target-id × query-name *)
       | `Submit_targets of Target.t list
@@ -100,11 +113,40 @@ module Up_message = struct
   include Json.Versioned.Of_v0(V0)
   include V0
 
-  let target_query_markup =
+  let target_query_markup {time_constraint; filter }  =
     let open Display_markup in
-    function
-    | `All -> text "All"
-    | `Not_finished_before t -> description "Not-finished-before" (date t)
-    | `Created_after t -> description "Created-after" (date t)
+    let rec markup_filter =
+      let func n l =
+        concat [textf "(%s " n;
+                concat ~sep:(text " ") (List.map l ~f:markup_filter);
+                text ")"]
+      in
+      function
+      | `True -> text "True"
+      | `False -> text "False"
+      | `And l -> func "And" l
+      | `Or l -> func "Or" l
+      | `Status (`Simple s) ->
+        concat [
+          text "(Status-is ";
+          text
+            begin match s with
+            | `Activable -> "activable"
+            | `In_progress ->  "in-progress"
+            | `Successful -> "successful"
+            | `Failed -> "failed"
+            end;
+          text ")";
+        ]
+    in
+    description_list [
+      "Time-constraint",
+      begin match time_constraint with
+      | `All -> text "All"
+      | `Not_finished_before t -> description "Not-finished-before" (date t)
+      | `Created_after t -> description "Created-after" (date t)
+      end;
+      "Filter",  markup_filter filter
+    ]
 end
 

@@ -88,7 +88,7 @@ val all_targets :
 (** Get the list of targets currently handled. *)
 
 val get_list_of_target_ids: t ->
-  [ `All | `Not_finished_before of Time.t | `Created_after of Time.t ] ->
+  Ketrew_pure.Protocol.Up_message.target_query ->
   (Ketrew_pure.Target.id list,
    [> `Database of Trakeva.Error.t
    | `Missing_data of string

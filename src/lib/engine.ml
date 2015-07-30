@@ -681,22 +681,40 @@ let get_list_of_target_ids t query =
   all_targets t
   >>= fun targets ->
   let list_of_ids =
-    match query with
-    | `All -> List.map targets ~f:Target.id
-    | `Not_finished_before time ->
-      Log.(s "Getting targets not-finished-before: " % Time.log time @ verbose);
-      List.filter_map targets ~f:(fun t ->
-          let st = Target.state t in
-          match Target.State.finished_time st with
-          | Some t when t < time -> None
-          | _ -> Some (Target.id t))
-    | `Created_after time ->
-      Log.(s "Getting targets created after: " % Time.log time @ verbose);
-      List.filter_map targets ~f:(fun t ->
-          let pt = Target.(state t |> State.passive_time) in
-          match pt < time with
-          | true -> None
-          | false -> Some (Target.id t))
+    let open Protocol.Up_message in
+    List.filter_map targets ~f:(fun target ->
+        let wins () = Some (Target.id target) in
+        let open Option in
+        begin match query.time_constraint with
+        | `All -> wins ()
+        | `Not_finished_before time ->
+          begin
+            let st = Target.state target in
+            match Target.State.finished_time st with
+            | Some t when t < time -> None
+            | _ -> wins ()
+          end
+        | `Created_after time ->
+          begin
+            let pt = Target.(state target |> State.passive_time) in
+            match pt < time with
+            | true -> None
+            | false -> wins ()
+          end
+        end
+        >>= fun _ ->
+        let rec apply_filter =
+          function
+          | `True -> true
+          | `False -> false
+          | `And l -> List.for_all l ~f:apply_filter
+          | `Or l -> List.exists l ~f:apply_filter
+          | `Status (`Simple s) ->
+            let simple = Target.State.simplify (Target.state target) in
+            s = simple
+        in
+        if apply_filter query.filter then wins () else None
+      )
   in
   return list_of_ids
 

@@ -90,12 +90,15 @@ let create ~client () =
 
 let reload_list_of_ids explorer =
   let query =
-    match explorer.request_targets_ids with
-    | `All -> `All
-    | `Younger_than (`Days days) ->
-      let now_in_seconds = Time.now () in
-      let limit_in_seconds = 60. *. 60. *. 24. *. days in
-      `Created_after (now_in_seconds -. limit_in_seconds)
+    let time_constraint =
+      match explorer.request_targets_ids with
+      | `All -> `All
+      | `Younger_than (`Days days) ->
+        let now_in_seconds = Time.now () in
+        let limit_in_seconds = 60. *. 60. *. 24. *. days in
+        `Created_after (now_in_seconds -. limit_in_seconds)
+    in
+    {Protocol.Up_message. time_constraint; filter = `True}
   in
   Client.get_list_of_target_ids explorer.ketrew_client query 
   >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)

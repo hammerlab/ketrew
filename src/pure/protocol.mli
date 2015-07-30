@@ -64,11 +64,24 @@ module Down_message : sig
 end
 
 module Up_message : sig
-  type target_query = [
+  type time_constraint = [
     | `All
     | `Not_finished_before of float
     | `Created_after of float
   ]
+  type filter = [
+    | `True
+    | `False
+    | `And of filter list
+    | `Or of filter list
+    | `Status of [
+        | `Simple of Target.State.simple
+      ]
+  ]
+  type target_query = {
+    time_constraint : time_constraint;
+    filter : filter;
+  }
   type query_option = [
     | `Block_if_empty_at_most of float
   ]
@@ -78,7 +91,7 @@ module Up_message : sig
     | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
     | `Get_target_flat_states of
         [`All | `Since of float] * string list * (query_option list)
-        (* List of Ids, empty means “all” *)
+    (* List of Ids, empty means “all” *)
     | `Call_query of (string * string) (* target-id × query-name *)
     | `Submit_targets of Target.t list
     | `Kill_targets of string list (* List of Ids *)

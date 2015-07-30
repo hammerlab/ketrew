@@ -97,6 +97,9 @@ module Target_table = struct
     type ast = [
       | `All
       | `Created_in_the_past of time_span
+      | `And of ast list
+      | `Or of ast list
+      | `Status of [`Simple of Target.State.simple]
     ]
 
     type t = {
@@ -116,6 +119,15 @@ module Target_table = struct
       "Get all the targets created in the past half day.";
       { ast = `Created_in_the_past (`Weeks 2.5) },
       "Get all the targets created in the past 2.5 weeks.";
+      { ast = `And [
+            `Created_in_the_past (`Weeks 5.);
+            `Or [
+              `Status (`Simple `In_progress);
+              `Status (`Simple `Successful);
+            ];
+          ] },
+      "Get all the targets created in the past 5 weeks and \
+       either successful or still in progress.";
     ]
 
     let to_server_query ast =
@@ -125,18 +137,53 @@ module Target_table = struct
         | `Days f -> f *. 60. *. 60. *. 24.
         | `Weeks f -> f *. 60. *. 60. *. 24. *. 7.
       in
-      match ast with
-      | `All -> `All
-      | `Created_in_the_past time ->
-        `Created_after (Time.now () -. (to_seconds time))
+      let rec to_filter =
+        function
+        | `All -> None
+        | `Created_in_the_past time ->
+          None
+        | `And l -> Some (`And (List.filter_map l ~f:to_filter))
+        | `Or l -> Some (`Or (List.filter_map l ~f:to_filter))
+        | `Status s -> Some (`Status s)
+      in
+      let rec to_time =
+        function
+        | `All -> Some `All
+        | `Status _ -> None
+        | `Created_in_the_past time ->
+           Some (`Created_after (Time.now () -. (to_seconds time)))
+        | `And l ->
+          List.fold l ~init:None ~f:(fun prev v ->
+              match prev, to_time v with
+              | old, None -> old
+              | None, new_one -> new_one
+              | Some `All, Some new_one -> Some new_one
+              | Some old, Some `All -> Some old
+              | Some (`Created_after t1), Some (`Created_after t2) ->
+                Some (`Created_after (max t1 t2)))
+        | `Or l ->
+          List.fold l ~init:None ~f:(fun prev v ->
+              match prev, to_time v with
+              | old, None -> old
+              | None, new_one -> new_one
+              | Some `All, Some new_one -> Some `All
+              | Some old, Some `All -> Some `All
+              | Some (`Created_after t1), Some (`Created_after t2) ->
+                Some (`Created_after (min t1 t2)))
+      in
+      let time_constraint :> Protocol.Up_message.time_constraint =
+        Option.value (to_time ast) ~default:(`Created_after 42.) in
+      let filter = to_filter ast |> Option.value ~default:`True in
+      { Protocol.Up_message. time_constraint ; filter }
 
     let target_query ?last_updated filter =
+      let query = to_server_query filter.ast in
       match last_updated with
       | Some t ->
         (* Those 5 seconds actually generate traffic, but for know, who cares … *)
-        `Created_after (t -. 5.)
-      | None ->
-        to_server_query filter.ast
+        { query with
+          Protocol.Up_message.time_constraint = `Created_after (t -. 5.)}
+      | None -> query
 
     let to_lisp { ast } =
       let time_span =
@@ -145,10 +192,24 @@ module Target_table = struct
         | `Days h -> fmt "(days %g)" h
         | `Weeks h -> fmt "(weeks %g)" h
       in
-      match ast with
-      | `All -> "(all)"
-      | `Created_in_the_past time ->
-        fmt "(created-in-the-past %s)" (time_span time)
+      let rec ast_to_lisp =
+        function
+        | `All -> "(all)"
+        | `Created_in_the_past time ->
+          fmt "(created-in-the-past %s)" (time_span time)
+        | `And l ->
+          fmt "(and %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
+        | `Or l ->
+          fmt "(or %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
+        | `Status (`Simple simp) ->
+          begin match simp with
+          | `Activable -> "(is-activable)"
+          | `In_progress -> "(is-in-progress)"
+          | `Successful -> "(is-successful)"
+          | `Failed -> "(is-failed)"
+          end
+      in
+      ast_to_lisp ast
 
     let of_lisp v =
       begin try
@@ -165,8 +226,14 @@ module Target_table = struct
           match sexp with
           | List [List _ as l] -> parse_sexp l
           | List [Atom "all"] -> `All
+          | List [Atom "is-activable"] -> `Status (`Simple `Activable)
+          | List [Atom "is-in-progress"] -> `Status (`Simple `In_progress)
+          | List [Atom "is-successful"] -> `Status (`Simple `Successful)
+          | List [Atom "is-failed"] -> `Status (`Simple `Failed)
           | List [Atom "created-in-the-past"; time] ->
             `Created_in_the_past (time_span time)
+          | List (Atom "or" :: time) -> `Or (List.map time ~f:parse_sexp)
+          | List (Atom "and" :: time) -> `And (List.map time ~f:parse_sexp)
           | other -> failwith "Syntax error"
         in
         let sexp =
@@ -1012,13 +1079,7 @@ module Html = struct
                 Markup.to_html
                   Display_markup.(description_list [
                       "Target-table-query",
-                      begin match tquery with
-                      | `All -> textf "All"
-                      | `Not_finished_before d ->
-                        concat [textf "Not finished before "; date d]
-                      | `Created_after d ->
-                        concat [textf "Created after "; date d]
-                      end;
+                      Protocol.Up_message.target_query_markup tquery;
                       "Block-time-request", time_span t.block_time_request;
                       "Default-protocol-timeout",
                       time_span t.default_protocol_client_timeout;
