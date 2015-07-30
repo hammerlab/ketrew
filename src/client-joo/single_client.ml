@@ -455,6 +455,61 @@ module Error_log = struct
 
 end
 
+module Async_task_log = struct
+
+  type item = {
+    uid: string;
+    name: Display_markup.t;
+    start: Time.t;
+    finish: Time.t option;
+  }
+
+  type t = item list Reactive.Source.t
+
+  let create () : t = Reactive.Source.create []
+
+  let add t name =
+    let uid = Unique_id.create () in
+    let open Reactive in
+    let current = Source.signal t |> Signal.value in
+    let item = {uid; name; start = Time.now (); finish = None} in
+    Source.set t (current @ [item]);
+    uid
+
+  let declare_finished t uid =
+    let open Reactive in
+    let current = Source.signal t |> Signal.value in
+    Source.set t
+      (List.map current ~f:(fun i ->
+           if i.uid = uid
+           then { i with finish = Some (Time.now ())}
+           else i))
+
+  let markup_signal t =
+    let open Reactive in
+    let open Display_markup in
+    Source.signal t |> Signal.map ~f:(fun items ->
+        description_list (List.map items ~f:(fun {uid; name; start; finish} ->
+            (match finish with None -> "Active-task" | Some _ -> "Finished-Task"),
+            description_list [
+              "ID", command uid;
+              "Name", name;
+              "Started-on", date start;
+              "Finished",
+              begin match finish with
+              | None -> text "Not yet"
+              | Some d -> date d
+              end;
+            ]
+          )))
+
+
+
+
+end
+
+
+
 type t = {
   protocol_client: Protocol_client.t;
   target_cache: Target_cache.t;
@@ -472,7 +527,9 @@ type t = {
   reload_status_condition: unit Lwt_condition.t;
   target_table: Target_table.t;
 
-  error_log: Error_log.t
+  error_log: Error_log.t;
+
+  async_task_log: Async_task_log.t;
 }
 
 
@@ -499,6 +556,7 @@ let create ~protocol_client () =
       (if !global_debug_level > 0 then 120. else 30.);
     reload_status_condition = Lwt_condition.create ();
     error_log = Error_log.create ();
+    async_task_log = Async_task_log.create ();
   }
 
 let log t =
@@ -516,13 +574,21 @@ let add_interesting_targets t l =
   Reactive.Source.set t.interesting_targets (Target_id_set.add_list current l)
 
 
-let asynchronous_loop ?wake_up t ~name loop =
+let asynchronous_loop ?wake_up ?more_info t ~name loop =
+  let uid =
+    let big_name =
+      let open Display_markup in
+      match more_info with
+      | Some m -> description name m
+      | None -> text name in
+    Async_task_log.add t.async_task_log big_name in
   Lwt.(
     async begin fun () ->
       let rec meta_loop () =
         loop () >>= function
         | `Ok () ->
           Log.(s "Loop ended with OK: " % quote name @ normal);
+          Async_task_log.declare_finished t.async_task_log uid;
           return ()
         | `Error e ->
           let problem =
@@ -618,14 +684,21 @@ let start_updating t =
       Target_table.target_query t.target_table |> React.S.changes
     in
     (* a first time then with the event *)
-    asynchronous_loop t ~name:"list-of-ids" (fun () ->
-        let query, and_block =
-          Target_table.target_query t.target_table |> Reactive.Signal.value
-        in
-        update_list_of_ids query ~and_block);
+    let more_info query and_block =
+      let open Display_markup in
+      description_list [
+        "Query", Protocol.Up_message.target_query_markup query;
+        "Block", text (if and_block then "Yes" else "No");
+      ] in
+    let query, and_block =
+      Target_table.target_query t.target_table |> Reactive.Signal.value in
+    asynchronous_loop t ~name:"list-of-ids"
+      ~more_info:(more_info query and_block)
+      (fun () -> update_list_of_ids query ~and_block);
     React.E.map (fun (query, and_block) -> 
-        asynchronous_loop t ~name:"list-of-ids" (fun () ->
-            update_list_of_ids query ~and_block)
+        asynchronous_loop t ~name:"list-of-ids"
+          (fun () -> update_list_of_ids query ~and_block)
+          ~more_info:(more_info query and_block)
       )
       event
   in
@@ -1085,6 +1158,12 @@ module Html = struct
             |> Signal.singleton
           );
       ];
+      h4 [pcdata "Asynchronous Tasks"];
+      Reactive_node.div Reactive.(
+          Async_task_log.markup_signal t.async_task_log
+          |> Signal.map ~f:Markup.to_html
+          |> Signal.singleton
+        );
       h4 [pcdata "Errors"];
       Reactive_node.div Reactive.(
           Error_log.markup_signal t.error_log

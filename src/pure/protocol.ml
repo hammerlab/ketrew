@@ -100,5 +100,11 @@ module Up_message = struct
   include Json.Versioned.Of_v0(V0)
   include V0
 
+  let target_query_markup =
+    let open Display_markup in
+    function
+    | `All -> text "All"
+    | `Not_finished_before t -> description "Not-finished-before" (date t)
+    | `Created_after t -> description "Created-after" (date t)
 end
 

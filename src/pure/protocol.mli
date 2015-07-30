@@ -88,4 +88,5 @@ module Up_message : sig
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
+  val target_query_markup: target_query -> Display_markup.t
 end
