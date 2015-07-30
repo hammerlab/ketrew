@@ -100,6 +100,7 @@ module Target_table = struct
       | `And of ast list
       | `Or of ast list
       | `Status of [`Simple of Target.State.simple]
+      | `Has_tags of string list
     ]
 
     type t = {
@@ -128,6 +129,12 @@ module Target_table = struct
           ] },
       "Get all the targets created in the past 5 weeks and \
        either successful or still in progress.";
+      { ast = `And [
+            `Created_in_the_past (`Weeks 5.);
+            `Has_tags ["workflow-examples"];
+          ] },
+      "Get all the targets created in the past 5 weeks that \
+       have the \"workflow-examples\" tag.";
     ]
 
     let to_server_query ast =
@@ -145,10 +152,13 @@ module Target_table = struct
         | `And l -> Some (`And (List.filter_map l ~f:to_filter))
         | `Or l -> Some (`Or (List.filter_map l ~f:to_filter))
         | `Status s -> Some (`Status s)
+        | `Has_tags sl ->
+          Some (`And (List.map sl ~f:(fun s -> `Has_tag (`Equals s))))
       in
       let rec to_time =
         function
         | `All -> Some `All
+        | `Has_tags _
         | `Status _ -> None
         | `Created_in_the_past time ->
            Some (`Created_after (Time.now () -. (to_seconds time)))
@@ -201,6 +211,8 @@ module Target_table = struct
           fmt "(and %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
         | `Or l ->
           fmt "(or %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
+        | `Has_tags sl ->
+          fmt "(tags %s)" (List.map ~f:(fmt "%S") sl |> String.concat ~sep:" ")
         | `Status (`Simple simp) ->
           begin match simp with
           | `Activable -> "(is-activable)"
@@ -232,12 +244,16 @@ module Target_table = struct
           | List [Atom "is-failed"] -> `Status (`Simple `Failed)
           | List [Atom "created-in-the-past"; time] ->
             `Created_in_the_past (time_span time)
-          | List (Atom "or" :: time) -> `Or (List.map time ~f:parse_sexp)
-          | List (Atom "and" :: time) -> `And (List.map time ~f:parse_sexp)
+          | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
+          | List (Atom "and" :: tl) -> `And (List.map tl ~f:parse_sexp)
+          | List (Atom "tags" :: tl) ->
+            `Has_tags (List.map tl ~f:(function
+              | Atom l -> l
+              | List [Atom l] -> l
+              | other -> failwith "syntax error while parsing tags"))
           | other -> failwith "Syntax error"
         in
-        let sexp =
-          Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+        let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
         let ast = parse_sexp sexp in
         `Ok {ast}
       with
