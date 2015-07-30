@@ -223,8 +223,17 @@ module Target_table = struct
       in
       ast_to_lisp ast
 
+    exception Syntax_error of string
     let of_lisp v =
       begin try
+        let fail ?sexp ffmt =
+          Printf.ksprintf (fun s ->
+              failwith (fmt "%s%s" s
+                          (match sexp with
+                          | Some sx ->
+                            fmt "\nOn: %s" (Sexplib.Sexp.to_string_hum sx)
+                          | None -> ""))
+            ) ffmt in
         let rec parse_sexp sexp =
           let open Sexplib.Sexp in
           let time_span =
@@ -232,8 +241,8 @@ module Target_table = struct
             | List [Atom "hours"; Atom f] -> `Hours (float_of_string f)
             | List [Atom "days"; Atom f] -> `Days (float_of_string f)
             | List [Atom "weeks"; Atom f] -> `Weeks (float_of_string f)
-            | other ->
-              failwith "Syntax error while parsing time-span"
+            | sexp ->
+              fail ~sexp "Syntax error while parsing time-span"
           in
           match sexp with
           | List [List _ as l] -> parse_sexp l
@@ -250,13 +259,17 @@ module Target_table = struct
             `Has_tags (List.map tl ~f:(function
               | Atom l -> l
               | List [Atom l] -> l
-              | other -> failwith "syntax error while parsing tags"))
-          | other -> failwith "Syntax error"
+              | sexp ->
+                fail ~sexp "syntax error while parsing tags"))
+          | other ->
+            fail ~sexp "Syntax error while parsing top-level expression"
         in
         let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
         let ast = parse_sexp sexp in
         `Ok {ast}
       with
+      | Syntax_error s -> `Error s
+      | Failure s -> `Error s
       | e -> 
         (`Error (Printexc.to_string e))
       end
@@ -1390,17 +1403,20 @@ module Html = struct
                                   t.target_table.Target_table.filter v;
                                 false)
                             [pcdata "Submit"]
-                        | `Error e ->
-                          div ~a:[
-                            a_class ["input-group-addon"];
-                          ] [
-                            span ~a:[
-                              a_class ["text-danger"];
-                            ] [pcdata (fmt "Error: %s" e)]
-                          ]
+                        | `Error e -> div []
                         )
                       |> Signal.singleton);
                 ];
+                Reactive_node.div Reactive.(
+                    Source.signal status
+                    |> Signal.map ~f:(
+                      function
+                      | `Ok _ -> div []
+                      | `Error e ->
+                        Bootstrap.error_box_pre ~title:(pcdata "Error") e
+                    )
+                    |> Signal.singleton
+                  );
                 let signal =
                   Source.signal
                     t.target_table.Target_table.filter_interface_showing_help in
