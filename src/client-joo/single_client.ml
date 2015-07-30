@@ -485,23 +485,27 @@ module Async_task_log = struct
            then { i with finish = Some (Time.now ())}
            else i))
 
-  let markup_signal t =
+  let markup_signal ?(only_non_finished = true) t =
     let open Reactive in
     let open Display_markup in
     Source.signal t |> Signal.map ~f:(fun items ->
-        description_list (List.map items ~f:(fun {uid; name; start; finish} ->
-            (match finish with None -> "Active-task" | Some _ -> "Finished-Task"),
-            description_list [
-              "ID", command uid;
-              "Name", name;
-              "Started-on", date start;
-              "Finished",
-              begin match finish with
-              | None -> text "Not yet"
-              | Some d -> date d
-              end;
-            ]
-          )))
+        description_list (List.filter_map items ~f:(fun {uid; name; start; finish} ->
+            match finish with
+            | Some _ when only_non_finished -> None
+            | _ ->
+              Some (
+                (match finish with None -> "Active-task" | Some _ -> "Finished-Task"),
+                description_list [
+                  "ID", command uid;
+                  "Name", name;
+                  "Started-on", date start;
+                  "Finished",
+                  begin match finish with
+                  | None -> text "Not yet"
+                  | Some d -> date d
+                  end;
+                ]
+              ))))
 
 
 
