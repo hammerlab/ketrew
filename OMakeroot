@@ -41,7 +41,9 @@ OCAMLFLAGS = -bin-annot -thread -short-paths
 section # Pure library
     OCAMLPACKS[] = $(PURE_LIB_PACKAGES)
     _build/src/pure/metadata.ml: :value: $(VERSION)
+        echo "(** Metadata generated at compile-time *)" > $@
         echo "let version = lazy \"$(VERSION)\"" >> $@
+        echo "let git_commit = $(GIT_COMMIT)" >> $@
         echo "let findlib_packages = lazy [ $(addprefix \",$(addsuffix \";, $(LWT_UNIX_LIB_PACKAGES))) ]" >> $@
     OCAML_GENERATED_MODULES[] = metadata
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew_pure, src/pure)

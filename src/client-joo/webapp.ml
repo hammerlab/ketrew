@@ -80,8 +80,18 @@ module Application_state = struct
                 | `Client (_, client) ->
                   Single_client.Html.render client
                 | `About ->
+                  let open Ketrew_pure.Metadata in
                   Bootstrap.panel ~body:[
                     pcdata "This is Ketrew's GUI."; br ();
+                    ul [
+                      li [pcdata "Version: ";
+                          code [pcdata (version |> Lazy.force)]];
+                      li [pcdata "Git-commit: ";
+                          begin match git_commit with
+                          | Some g -> code [pcdata g]
+                          | None -> pcdata "N/A"
+                          end];
+                    ];
                     pcdata "See the ";
                     a ~a:[
                       a_href "http://seb.mondet.org/software/ketrew/";
