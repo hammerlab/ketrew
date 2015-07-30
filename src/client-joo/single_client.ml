@@ -99,7 +99,13 @@ module Target_table = struct
       | `Created_in_the_past of time_span
       | `And of ast list
       | `Or of ast list
-      | `Status of [`Simple of Target.State.simple]
+      | `Not of ast
+      | `Status of [
+          | `Simple of Target.State.simple
+          | `Really_running
+          | `Killable
+          | `Dead_because_of_dependencies
+        ]
       | `Has_tags of string list
     ]
 
@@ -135,6 +141,15 @@ module Target_table = struct
           ] },
       "Get all the targets created in the past 5 weeks that \
        have the \"workflow-examples\" tag.";
+      { ast = `And [
+            `Created_in_the_past (`Weeks 4.2);
+            `Status (`Simple `Failed);
+            `Not (`Status `Dead_because_of_dependencies);
+          ] },
+      "Get all the targets created in the past 4.2 weeks that \
+       died but not because of some their dependencies dying.";
+      { ast = `Status `Killable },
+      "Get all the targets that can be killed.";
     ]
 
     let to_server_query ast =
@@ -154,6 +169,8 @@ module Target_table = struct
         | `Status s -> Some (`Status s)
         | `Has_tags sl ->
           Some (`And (List.map sl ~f:(fun s -> `Has_tag (`Equals s))))
+        | `Not s ->
+          Option.(to_filter s >>= fun n -> return (`Not n))
       in
       let rec to_time =
         function
@@ -180,10 +197,13 @@ module Target_table = struct
               | Some old, Some `All -> Some `All
               | Some (`Created_after t1), Some (`Created_after t2) ->
                 Some (`Created_after (min t1 t2)))
+        | `Not _ ->
+          None (* we reach the limits of this weird logic … *)
       in
       let time_constraint :> Protocol.Up_message.time_constraint =
         Option.value (to_time ast) ~default:(`Created_after 42.) in
-      let filter = to_filter ast |> Option.value ~default:`True in
+      let filter :> Protocol.Up_message.filter =
+        to_filter ast |> Option.value ~default:`True in
       { Protocol.Up_message. time_constraint ; filter }
 
     let target_query ?last_updated filter =
@@ -213,12 +233,16 @@ module Target_table = struct
           fmt "(or %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
         | `Has_tags sl ->
           fmt "(tags %s)" (List.map ~f:(fmt "%S") sl |> String.concat ~sep:" ")
-        | `Status (`Simple simp) ->
-          begin match simp with
-          | `Activable -> "(is-activable)"
-          | `In_progress -> "(is-in-progress)"
-          | `Successful -> "(is-successful)"
-          | `Failed -> "(is-failed)"
+        | `Not l -> fmt "(not %s)" (ast_to_lisp l)
+        | `Status s ->
+          begin match s with
+          | `Simple `Activable -> "(is-activable)"
+          | `Simple `In_progress -> "(is-in-progress)"
+          | `Simple `Successful -> "(is-successful)"
+          | `Simple `Failed -> "(is-failed)"
+          | `Really_running -> "(is-really-running)"
+          | `Killable -> "(is-killable)"
+          | `Dead_because_of_dependencies -> "(is-dependency-dead)"
           end
       in
       ast_to_lisp ast
@@ -251,10 +275,15 @@ module Target_table = struct
           | List [Atom "is-in-progress"] -> `Status (`Simple `In_progress)
           | List [Atom "is-successful"] -> `Status (`Simple `Successful)
           | List [Atom "is-failed"] -> `Status (`Simple `Failed)
+          | List [Atom "is-really-running"] -> `Status `Really_running
+          | List [Atom "is-killable"] -> `Status `Killable
+          | List [Atom "is-dependency-dead"] ->
+            `Status `Dead_because_of_dependencies
           | List [Atom "created-in-the-past"; time] ->
             `Created_in_the_past (time_span time)
           | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
           | List (Atom "and" :: tl) -> `And (List.map tl ~f:parse_sexp)
+          | List [Atom "not"; tl] -> `Not (parse_sexp tl)
           | List (Atom "tags" :: tl) ->
             `Has_tags (List.map tl ~f:(function
               | Atom l -> l

@@ -709,9 +709,19 @@ let get_list_of_target_ids t query =
           | `False -> false
           | `And l -> List.for_all l ~f:apply_filter
           | `Or l -> List.exists l ~f:apply_filter
-          | `Status (`Simple s) ->
-            let simple = Target.State.simplify (Target.state target) in
-            s = simple
+          | `Not f -> not (apply_filter f)
+          | `Status status ->
+            let state = Target.state target in
+            let open Target.State in
+            begin match status with
+            | `Simple s -> simplify state = s
+            | `Really_running ->
+              Is.started_running state || Is.still_running state
+              || Is.ran_successfully state
+            | `Killable -> Is.killable state
+            | `Dead_because_of_dependencies ->
+              Is.finished_because_dependencies_died state
+            end
           | `Has_tag (`Equals t) ->
             let tags = Target.tags target in
             List.exists tags ~f:((=) t)

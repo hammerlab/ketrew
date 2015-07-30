@@ -84,8 +84,12 @@ module Up_message = struct
       | `False
       | `And of filter list
       | `Or of filter list
+      | `Not of filter
       | `Status of [
           | `Simple of Target.State.simple
+          | `Really_running
+          | `Killable
+          | `Dead_because_of_dependencies
         ]
       | `Has_tag of [`Equals of string] 
     ] [@@deriving yojson]
@@ -127,15 +131,19 @@ module Up_message = struct
       | `False -> text "False"
       | `And l -> func "And" l
       | `Or l -> func "Or" l
-      | `Status (`Simple s) ->
+      | `Not f -> func "Not" [f]
+      | `Status  s ->
         concat [
           text "(Status-is ";
           text
             begin match s with
-            | `Activable -> "activable"
-            | `In_progress ->  "in-progress"
-            | `Successful -> "successful"
-            | `Failed -> "failed"
+            | `Simple `Activable -> "activable"
+            | `Simple `In_progress ->  "in-progress"
+            | `Simple `Successful -> "successful"
+            | `Simple `Failed -> "failed"
+            | `Really_running -> "really-running"
+            | `Killable -> "killable"
+            | `Dead_because_of_dependencies -> "dead-because-of-dependencies"
             end;
           text ")";
         ]

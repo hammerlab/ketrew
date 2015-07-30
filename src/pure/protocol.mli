@@ -74,8 +74,12 @@ module Up_message : sig
     | `False
     | `And of filter list
     | `Or of filter list
+    | `Not of filter
     | `Status of [
         | `Simple of Target.State.simple
+        | `Really_running
+        | `Killable
+        | `Dead_because_of_dependencies
       ]
     | `Has_tag of [`Equals of string] 
   ]
