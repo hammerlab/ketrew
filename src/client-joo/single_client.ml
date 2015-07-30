@@ -279,15 +279,6 @@ module Target_table = struct
      filter_interface_showing_help;
      showing; columns; filter}
 
-  let target_query t :
-    (Protocol.Up_message.target_query * bool) Reactive.Signal.t =
-    Reactive.(
-      Signal.tuple_2
-        (Source.signal t.filter)
-        (Source.signal t.target_ids_last_updated)
-      |> Signal.map ~f:(fun (filter, last_updated) ->
-          Filter.target_query ?last_updated filter, (last_updated <> None))
-    )
 
   let add_target_ids t ?server_time l =
     let current =
@@ -468,6 +459,8 @@ type t = {
   error_log: Error_log.t;
 
   async_task_log: Async_task_log.t;
+
+  list_of_ids_log: Display_markup.t list Reactive.Source.t;
 }
 
 
@@ -495,6 +488,7 @@ let create ~protocol_client () =
     reload_status_condition = Lwt_condition.create ();
     error_log = Error_log.create ();
     async_task_log = Async_task_log.create ();
+    list_of_ids_log = Reactive.Source.create [];
   }
 
 let log t =
@@ -511,6 +505,15 @@ let add_interesting_targets t l =
     Reactive.Source.signal t.interesting_targets |> Reactive.Signal.value in
   Reactive.Source.set t.interesting_targets (Target_id_set.add_list current l)
 
+let error_markup e =
+  let open Display_markup in
+  match e with
+  | `Exn e -> description "Exception" (text (Printexc.to_string e))
+  | `Protocol_client pc ->
+    description "Protocol-client" (text (Protocol_client.Error.to_string pc))
+  | `Wrong_down_message d ->
+    description "Wrong-down-message"
+      (Protocol.Down_message.serialize d |> text)
 
 let asynchronous_loop ?wake_up ?more_info t ~name loop =
   let uid =
@@ -588,58 +591,135 @@ let start_server_status_loop t =
   ()
   
 
+let start_list_of_ids_loop t =
+  let add_log the_log =
+    Reactive.(
+      let current = Source.signal t.list_of_ids_log |> Signal.value in
+      let with_ts =
+        Display_markup.(concat [date Time.(now ()); text ": "; the_log]) in
+      Source.set t.list_of_ids_log (with_ts :: current)
+    ) in
+  let update_list_of_ids query ~and_block =
+    let timeout, options =
+      if and_block then
+        let blocking_time = t.block_time_request in
+        (blocking_time +. t.default_protocol_client_timeout,
+         [`Block_if_empty_at_most blocking_time])
+      else
+        (t.default_protocol_client_timeout, [])
+    in
+    add_log Display_markup.(
+        concat [
+          textf "Calling server: ";
+          description_list [
+            "Query", Protocol.Up_message.target_query_markup query;
+            "Options",
+            concat ~sep:(text ", ")
+              (List.map options ~f:(function
+                 | `Block_if_empty_at_most t ->
+                   concat [text "[block-if-empty-at-most "; time_span t; text "]"]
+                 ));
+          ];
+        ]);
+    Protocol_client.call ~timeout
+      t.protocol_client (`Get_target_ids (query, options))
+    >>= begin function
+    | `List_of_target_ids l ->
+      let server_time =
+        match snd Reactive.(Source.signal t.status |> Signal.value) with
+        | `Ok s -> Some s.Protocol.Server_status.time
+        | _ -> None
+      in
+      add_log Display_markup.(
+          concat [
+            textf "Got %d ids, server_time: " (List.length l);
+            option server_time date;
+          ]
+        );
+      Target_table.add_target_ids ?server_time t.target_table l;
+      return ()
+    | other ->
+      fail (`Wrong_down_message other)
+    end
+  in
+  let condition = Lwt_condition.create () in
+  let woken_up = ref false in
+  let rec loop () =
+    (* add_log Display_markup.(text "Loop starts"); *)
+    let query, and_block =
+      Reactive.(
+        let open Target_table in
+        let tab = t.target_table in
+        let last_updated_signal =
+          Reactive.Source.signal tab.Target_table.target_ids_last_updated in
+        let filter = Source.signal tab.filter |> Signal.value in
+        let last_updated = Signal.value last_updated_signal in
+        (Filter.target_query ?last_updated filter, (last_updated <> None))
+      ) in
+    Lwt.pick [
+      begin try
+        begin
+          update_list_of_ids query ~and_block
+        end
+        >>< function
+        | `Ok () ->
+          (* add_log Display_markup.(textf "update_list_of_ids ends ok"); *)
+          return ()
+        | `Error e ->
+          add_log Display_markup.(
+              concat [
+                textf "update_list_of_ids ends with error: ";
+                error_markup e;
+                textf " woken-up: "; command (string_of_bool !woken_up);
+              ]
+            );
+          (if !woken_up then
+             (woken_up := false;
+              return ())
+           else
+             (sleep t.wait_before_retry_asynchronous_loop
+              >>< fun _ -> return ()))
+      with
+      | e ->
+        add_log Display_markup.(
+            textf "update_list_of_ids exception: %s" (Printexc.to_string e));
+        return ()
+      end;
+      Lwt.(Lwt_condition.wait condition
+           >>= fun () ->
+           add_log Display_markup.(textf "Loop waken-up");
+           return (`Ok ()));
+    ]
+    >>< function
+    | `Ok () -> loop ()
+    | `Error () -> (* making sure all errors were treated above *) loop ()
+  in
+  asynchronous_loop t ~name:"list-of-ids" loop
+    ~wake_up:("query-changes", condition);
+  let (_ : unit React.E.t) =
+    let event =
+      Reactive.Source.signal t.target_table.Target_table.filter
+      |> React.S.changes in
+    React.E.map (fun fil ->
+        add_log Display_markup.(
+            concat [
+              textf "Filter changes, waking-up";
+              command (Target_table.Filter.to_lisp fil)
+            ]
+          );
+        woken_up := true;
+        Reactive.Source.set
+          t.target_table.Target_table.target_ids_last_updated None;
+        Lwt_condition.broadcast condition ()
+      ) event
+  in
+  ()
+
+
+
 let start_updating t =
   start_server_status_loop t;
-  let (_ : unit React.E.t) =
-    let update_list_of_ids query ~and_block =
-      let timeout, options =
-        if and_block then
-          let blocking_time = t.block_time_request in
-          (blocking_time +. t.default_protocol_client_timeout,
-           [`Block_if_empty_at_most blocking_time])
-        else
-          (t.default_protocol_client_timeout, [])
-      in
-      Protocol_client.call ~timeout
-        t.protocol_client (`Get_target_ids (query, options))
-      >>= begin function
-      | `List_of_target_ids l ->
-          (*
-          Log.(log t % s " got " % i (List.length l) % s " new IDs at "
-               % Time.(log (now ())) @ verbose); *)
-        let server_time =
-          match snd Reactive.(Source.signal t.status |> Signal.value) with
-          | `Ok s -> Some s.Protocol.Server_status.time
-          | _ -> None
-        in
-        Target_table.add_target_ids ?server_time t.target_table l;
-        return ()
-      | other ->
-        fail (`Wrong_down_message other)
-      end
-    in
-    let event =
-      Target_table.target_query t.target_table |> React.S.changes
-    in
-    (* a first time then with the event *)
-    let more_info query and_block =
-      let open Display_markup in
-      description_list [
-        "Query", Protocol.Up_message.target_query_markup query;
-        "Block", text (if and_block then "Yes" else "No");
-      ] in
-    let query, and_block =
-      Target_table.target_query t.target_table |> Reactive.Signal.value in
-    asynchronous_loop t ~name:"list-of-ids"
-      ~more_info:(more_info query and_block)
-      (fun () -> update_list_of_ids query ~and_block);
-    React.E.map (fun (query, and_block) -> 
-        asynchronous_loop t ~name:"list-of-ids"
-          (fun () -> update_list_of_ids query ~and_block)
-          ~more_info:(more_info query and_block)
-      )
-      event
-  in
+  start_list_of_ids_loop t;
   let (_ : unit React.E.t) =
     let get_all_missing_summaries targets_ids =
       Log.(s "get_all_missing_summaries TRIGGERED !" %n
@@ -1072,24 +1152,22 @@ module Html = struct
           );
         Markup.to_html
           (Target_cache.markup_counts t.target_cache);
-        h4 [pcdata "Settings"];
-        Reactive_node.div Reactive.(
-            Target_table.target_query t.target_table
-            |> Signal.map ~f:(fun (tquery, _) ->
-                Markup.to_html
-                  Display_markup.(description_list [
-                      "Target-table-query",
-                      Protocol.Up_message.target_query_markup tquery;
-                      "Block-time-request", time_span t.block_time_request;
-                      "Default-protocol-timeout",
-                      time_span t.default_protocol_client_timeout;
-                      "Asynchronous-retry-wait",
-                      time_span t.wait_before_retry_asynchronous_loop;
-                    ])
-              )
-            |> Signal.singleton
-          );
       ];
+      h4 [pcdata "Settings"];
+      Markup.to_html
+        Display_markup.(description_list [
+            "Block-time-request", time_span t.block_time_request;
+            "Default-protocol-timeout",
+            time_span t.default_protocol_client_timeout;
+            "Asynchronous-retry-wait",
+            time_span t.wait_before_retry_asynchronous_loop;
+          ]);
+      h4 [pcdata "List-of-IDs Loop"];
+      Reactive_node.ul Reactive.(
+          Source.signal t.list_of_ids_log
+          |> Signal.map ~f:(List.map ~f:(fun log -> li [Markup.to_html log]))
+          |> Signal.list
+        );
       h4 [pcdata "Asynchronous Tasks"];
       Reactive_node.div Reactive.(
           Async_task_log.markup_signal t.async_task_log
