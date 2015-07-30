@@ -303,7 +303,8 @@ module H5 = struct
         | Description (n, c) when n = name -> Some c
         | Description (_, c) -> find_subcontent name c
         | Itemize l
-        | Concat l -> List.find_map ~f:(find_subcontent name) l
+        | Concat (_, l) ->
+          List.find_map ~f:(find_subcontent name) l
         | _ -> None
       in
       match ast with
@@ -312,8 +313,16 @@ module H5 = struct
       | Text s -> pcdata s
       | Path p
       | Command p -> code [pcdata p]
-      | Concat p ->
+      | Concat (None, p) ->
         inline (List.map ~f:continue p)
+      | Concat (Some sep, p) ->
+        let rec interleave =
+          function
+          | [] -> []
+          | [one] -> [continue one]
+          | one :: more -> continue one :: continue sep :: interleave more
+        in
+        inline (interleave p)
       | Description (name, t) when catches_description name ->
         let expanded = Reactive.Source.create false in
         let button expandedness =

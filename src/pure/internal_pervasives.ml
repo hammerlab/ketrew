@@ -180,7 +180,7 @@ module Display_markup = struct
       | Text of string
       | Path of string
       | Command of string
-      | Concat of t list
+      | Concat of (t option) * (t list)
       | Description of string * t
       | Itemize of t list
     [@@deriving yojson]
@@ -194,9 +194,9 @@ module Display_markup = struct
   let description name v = Description (name, v)
   let itemize l = Itemize l
 
-  let concat l = Concat l
+  let concat ?sep l = Concat (sep, l)
   let flat_list l ~f =
-    Concat (List.map l ~f:(fun item -> Concat [f item]))
+    concat (List.map l ~f:(fun item -> concat [f item]))
 
   let time_span s = Time_span s
 
@@ -218,7 +218,8 @@ module Display_markup = struct
     | Time_span span -> Log.(f span % nbsp % s "s.") 
     | Text s -> Log.s s
     | Path c | Command c -> Log.quote c
-    | Concat l -> Log.concat (List.map l ~f:log)
+    | Concat (None, l) -> Log.concat (List.map l ~f:log)
+    | Concat (Some sep, l) -> Log.separate (log sep) (List.map l ~f:log)
     | Description (name, content) ->
       Log.(s name % s ":" %
            begin match content with
