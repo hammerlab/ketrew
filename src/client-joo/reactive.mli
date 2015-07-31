@@ -14,6 +14,8 @@ module Source: sig
   val signal: 'a t -> 'a signal
   val value: 'a t -> 'a
   val modify: 'a t -> f:('a -> 'a) -> unit
+  val map_signal: 'a t -> f:('a -> 'b) -> 'b signal
+
 end
 module Signal: sig
   type 'a t = 'a signal

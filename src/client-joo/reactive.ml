@@ -4,32 +4,6 @@
 type 'a signal = 'a React.S.t
 type 'a signal_list_wrap = 'a ReactiveData.RList.t
 
-module Source = struct
-  type 'a t = {
-    signal: 'a React.S.t;
-    set: 'a -> unit;
-  }
-
-  let create ?eq v =
-    let signal, set = React.S.create ?eq v in
-    {signal; set}
-
-  let set t v = t.set v
-
-  let signal t = t.signal
-
-  let value t = t.signal |> React.S.value
-
-  let modify_opt t ~f =
-    match f (value t) with
-    | Some s -> t.set s
-    | None -> ()
-
-  let modify t ~f = modify_opt t ~f:(fun v -> Some (f v))
-
-
-end
-
 module Signal = struct
 
   type 'a t = 'a React.S.t
@@ -57,6 +31,35 @@ module Signal = struct
 
   let tuple_3 a b c =
     React.S.l3 (fun a b c -> (a, b, c)) a b c
+end
+
+
+module Source = struct
+  type 'a t = {
+    signal: 'a React.S.t;
+    set: 'a -> unit;
+  }
+
+  let create ?eq v =
+    let signal, set = React.S.create ?eq v in
+    {signal; set}
+
+  let set t v = t.set v
+
+  let signal t = t.signal
+
+  let value t = t.signal |> React.S.value
+
+  let modify_opt t ~f =
+    match f (value t) with
+    | Some s -> t.set s
+    | None -> ()
+
+  let modify t ~f = modify_opt t ~f:(fun v -> Some (f v))
+
+  let map_signal t ~f = Signal.map t.signal ~f
+
+
 end
 
 module Option = struct
