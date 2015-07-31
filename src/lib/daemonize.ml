@@ -30,7 +30,7 @@ module Run_parameters = struct
     using: [ `Nohup_setsid | `Python_daemon ];
     starting_timeout: Time.t;
     shell_command: string list;
-    no_log_is_ok: bool [@default false];
+    no_log_is_ok: (bool [@default false]);
   } [@@deriving yojson]
 
   type running = {

@@ -29,9 +29,9 @@ type plugin = [ `Compiled of string | `OCamlfind of string ]
 
 type engine = {
   database_parameters: string;
-  turn_unix_ssh_failure_into_target_failure: bool [@default false];
-  host_timeout_upper_bound: float option [@default None];
-  maximum_successive_attempts: int [@default 10];
+  turn_unix_ssh_failure_into_target_failure: (bool [@default false]);
+  host_timeout_upper_bound: (float option [@default None]);
+  maximum_successive_attempts: (int [@default 10]);
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -56,8 +56,8 @@ type server = {
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
-  max_blocking_time: float [@default 300.];
-  block_step_time: float [@default 3.];
+  max_blocking_time: (float [@default 300.]);
+  block_step_time: (float [@default 3.]);
 } [@@deriving yojson]
 type client = {
   connection: string;
@@ -76,7 +76,7 @@ type mode = [
 
 type t = {
   debug_level: int;
-  plugins: plugin list [@default []];
+  plugins: (plugin list [@default []]);
   mode: mode;
 } [@@deriving yojson]
 
