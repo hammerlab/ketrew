@@ -655,7 +655,7 @@ let start_list_of_ids_loop t =
       let current = Source.signal t.list_of_ids_log |> Signal.value in
       let with_ts =
         Display_markup.(concat [date Time.(now ()); text ": "; the_log]) in
-      Source.set t.list_of_ids_log (with_ts :: current)
+      Source.set t.list_of_ids_log (with_ts :: List.take current 41)
     ) in
   let update_list_of_ids query ~and_block =
     let timeout, options =
