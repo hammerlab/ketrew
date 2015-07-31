@@ -886,32 +886,24 @@ let start_updating t =
           end
       in
       let rec keep_fetching_for_active_targets tids =
-        let to_fetch, some_in_progress =
-          (* we want to fetch all the ones that can still change,
-             if there are some active targets that “can” make them
-             change. *)
-          let in_progress = ref false in
-          let filtered =
-            List.filter tids ~f:(fun id ->
-                let signal =
-                  Target_cache.get_target_flat_status_signal t.target_cache id in
-                let latest =
-                  Reactive.Signal.value signal |> Target.State.Flat.latest in
-                let not_finished =
-                  not (Option.value_map ~default:false
-                         ~f:Target.State.Flat.finished latest) in
-                match Option.map ~f:Target.State.Flat.simple latest with
-                | None
-                | Some `In_progress -> in_progress := true; true
-                | Some `Activable -> true
-                | Some `Successful
-                | Some `Failed -> not_finished)
-          in
-          (filtered, !in_progress)
+        let to_fetch =
+          List.filter tids ~f:(fun id ->
+              let signal =
+                Target_cache.get_target_flat_status_signal t.target_cache id in
+              let latest =
+                Reactive.Signal.value signal |> Target.State.Flat.latest in
+              let not_finished =
+                not (Option.value_map ~default:false
+                       ~f:Target.State.Flat.finished latest) in
+              match Option.map ~f:Target.State.Flat.simple latest with
+              | None
+              | Some `In_progress
+              | Some `Activable -> true
+              | Some `Successful
+              | Some `Failed -> not_finished)
         in
         match to_fetch with
         | [] -> return ()
-        | some when not some_in_progress -> return ()
         | more  ->
           Log.(s "Batch fetching state for "
                % (match List.length to_fetch > 14 with
@@ -924,8 +916,18 @@ let start_updating t =
           >>= fun () ->
           keep_fetching_for_active_targets to_fetch
       in
-      asynchronous_loop t ~name:"fetch-summaries" (fun () ->
-          keep_fetching_for_active_targets targets_ids)
+      asynchronous_loop t ~name:"fetch-flat-statuses"
+        (fun () -> keep_fetching_for_active_targets targets_ids)
+        ~more_info:Display_markup.(
+            let lids =
+              let max_ids = 25 in
+              match List.length targets_ids with
+              | n when n <= max_ids -> targets_ids
+              | _ -> List.take targets_ids max_ids @ ["…"]
+            in
+            description "Target-IDs"
+              (concat ~sep:(text ", ") (List.map lids ~f:command))
+          )
     in
     let event =
       Reactive.Source.signal t.interesting_targets
