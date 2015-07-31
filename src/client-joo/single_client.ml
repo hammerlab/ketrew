@@ -313,6 +313,7 @@ module Target_table = struct
     filter_interface_visible: bool Reactive.Source.t;
     filter_interface_showing_help: bool Reactive.Source.t;
     filter: Filter.t Reactive.Source.t;
+    saved_filters: Filter.t list Reactive.Source.t;
   }
 
   let create () =
@@ -323,6 +324,7 @@ module Target_table = struct
     let filter = Filter.create () |> Reactive.Source.create in
     let target_ids_last_updated = Reactive.Source.create None in
     let filter_interface_showing_help = Reactive.Source.create false in
+    let saved_filters = Reactive.Source.create [] in
     let (_ : unit React.E.t) =
       let event = Reactive.Source.signal filter |> React.S.changes in
       React.E.map (fun _ ->
@@ -336,7 +338,7 @@ module Target_table = struct
      target_ids_last_updated;
      filter_interface_visible;
      filter_interface_showing_help;
-     showing; columns; filter}
+     showing; columns; filter; saved_filters}
 
 
   let add_target_ids t ?server_time l =
@@ -1427,17 +1429,24 @@ module Html = struct
                     Reactive.(
                       Source.signal status
                       |> Signal.map ~f:(function
-                        | `Ok v ->
-                          Bootstrap.button
-                            ~enabled:(v <> filter)
-                            ~on_click:(fun _ ->
-                                Reactive.Source.set
-                                  t.target_table.Target_table.filter v;
-                                false)
-                            [pcdata "Submit"]
-                        | `Error e -> div []
+                        | `Ok v -> [
+                            Bootstrap.button
+                              ~enabled:(v <> filter)
+                              ~on_click:(fun _ ->
+                                  Reactive.Source.set
+                                    t.target_table.Target_table.filter v;
+                                  false)
+                              [pcdata "Submit"];
+                            Bootstrap.button [pcdata "Save for later"]
+                              ~on_click:(fun _ ->
+                                  Reactive.Source.modify
+                                    t.target_table.Target_table.saved_filters
+                                    (fun l -> v :: l);
+                                  false);
+                          ]
+                        | `Error e -> []
                         )
-                      |> Signal.singleton);
+                      |> Signal.list);
                 ];
                 Reactive_node.div Reactive.(
                     Source.signal status
@@ -1447,6 +1456,45 @@ module Html = struct
                       | `Error e ->
                         Bootstrap.error_box_pre ~title:(pcdata "Error") e
                     )
+                    |> Signal.singleton
+                  );
+                Reactive_node.div Reactive.(
+                    Source.map_signal t.target_table.Target_table.saved_filters
+                      ~f:(function
+                        | [] -> div []
+                        | more ->
+                          div ~a:[a_class ["alert"; "alert-success"]] [
+                            h3 [pcdata "Saved Filters"];
+                            ul (List.map more ~f:(fun fil ->
+                                li [
+                                  code [pcdata
+                                          (Target_table.Filter.to_lisp fil)];
+                                  pcdata ": ";
+                                  begin match filter = fil with
+                                  | true ->
+                                    pcdata "It's the current one"
+                                  | false ->
+                                    local_anchor
+                                      ~on_click:(fun _ ->
+                                          Reactive.Source.set
+                                            t.target_table.Target_table.filter
+                                            fil;
+                                          false)
+                                      [pcdata "Load"]
+                                  end;
+                                  pcdata ", ";
+                                  local_anchor
+                                    ~on_click:(fun _ ->
+                                        Reactive.Source.modify
+                                          t.target_table.Target_table.saved_filters
+                                          (List.filter ~f:((<>) fil));
+                                        false)
+                                    [pcdata "Remove"];
+                                  pcdata "."
+                                ]
+                              ))
+                          ]
+                        )
                     |> Signal.singleton
                   );
                 let signal =
