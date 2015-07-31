@@ -22,6 +22,7 @@ open Internal_pervasives
 module Server_status : sig
   type t = {
     time: float;
+    read_only: bool;
     tls: [`OpenSSL | `Native | `None ];
     preemptive_bounds: int * int;
     preemptive_queue: int;
@@ -38,7 +39,7 @@ module Server_status : sig
     gc_stack_size : int;
   }
   val create:
-    time:float ->
+    time:float -> read_only:bool ->
     tls:[ `Native | `OpenSSL | `None ] ->
     preemptive_bounds:int * int ->
     preemptive_queue:int -> libev:bool -> gc:Gc.stat -> t

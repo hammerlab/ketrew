@@ -345,6 +345,7 @@ let answer_get_server_status ~server_state =
     Protocol.Server_status.create
       ~tls
       ~time:Time.(now ())
+      ~read_only:(Configuration.read_only_mode server_state.server_configuration)
       ~preemptive_bounds:(Lwt_preemptive.get_bounds ()) 
       ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ()) 
       ~libev:(Lwt_sys.have `libev)

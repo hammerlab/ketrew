@@ -1055,6 +1055,7 @@ module Html = struct
     let {
       Protocol.Server_status.
       time (*  float *);
+      read_only (* bool *);
       tls (*  [`OpenSSL | `Native | `None ] *);
       preemptive_bounds (*  int * int *);
       preemptive_queue (*  int *);
@@ -1098,6 +1099,7 @@ module Html = struct
     let int i = Int64.of_int i |> int64 in
     description_list [
       "Server-Time", date time;
+      "Access", (if read_only then text "Read-only" else text "Read-write");
       "TLS",
       begin match tls with
       | `OpenSSL -> text "OpenSSL"
