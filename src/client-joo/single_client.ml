@@ -328,6 +328,7 @@ module Target_table = struct
       React.E.map (fun _ ->
           Reactive.Source.set target_ids_last_updated None;
           Reactive.Source.set target_ids None;
+          Reactive.Source.modify showing (fun (_, c) -> (0, c));
           ())
         event
     in
