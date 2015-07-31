@@ -144,6 +144,7 @@ val server:
   ?log_path: string ->
   ?max_blocking_time: float ->
   ?block_step_time: float ->
+  ?read_only_mode: bool ->
   [ `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
@@ -168,6 +169,8 @@ val server:
     - [block_step_time]: 
       granularity of the checking for blocking conditions (this will
       hopefully disapear soon) (seconds, default [3.]).
+    - [read_only_mode]:
+      run the server in read-only mode (default [false]).
     - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
       server to listen on [port].
 *)
@@ -284,6 +287,7 @@ val targets_to_prefetch: t -> int
 
 val max_blocking_time: server -> float
 val block_step_time:   server -> float
+val read_only_mode:    server -> bool
 
 val use_cbreak: unit -> bool
 (** See the documentation of [with_cbreak]. *)

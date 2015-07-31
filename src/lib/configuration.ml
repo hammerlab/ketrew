@@ -58,6 +58,7 @@ type server = {
   server_ui: ui;
   max_blocking_time: (float [@default 300.]);
   block_step_time: (float [@default 3.]);
+  read_only_mode: (bool [@default false]);
 } [@@deriving yojson]
 type client = {
   connection: string;
@@ -223,12 +224,13 @@ let server
     ?command_pipe ?(daemon=false) ?log_path
     ?(max_blocking_time = 300.)
     ?(block_step_time = 3.)
+    ?(read_only_mode = false)
     listen_to =
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path;
-            max_blocking_time; block_step_time;})
+            max_blocking_time; block_step_time; read_only_mode;})
 
 
 let plugins t = t.plugins
@@ -253,6 +255,7 @@ let connection c = c.connection
 let token c = c.token
 let max_blocking_time s = s.max_blocking_time
 let block_step_time s = s.block_step_time
+let read_only_mode s = s.read_only_mode
 
 let standalone_of_server s =
   {standalone_ui = s.server_ui;

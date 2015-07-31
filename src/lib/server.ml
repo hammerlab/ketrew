@@ -88,22 +88,24 @@ module Authentication = struct
 
   let reload {authentication_input; _} = load authentication_input
 
-  let can t ?token do_stuff =
+  let can t ~read_only_mode ?token do_stuff =
     let token_is_valid tok =
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
     begin match token, do_stuff with
     | Some tok, `Browse_gui
     | Some tok, `See_server_status
     | Some tok, `See_targets
-    | Some tok, `Query_targets
+    | Some tok, `Query_targets ->
+      return (token_is_valid tok)
     | Some tok, `Kill_targets
     | Some tok, `Restart_targets
-    | Some tok, `Submit_targets -> return (token_is_valid tok)
+    | Some tok, `Submit_targets ->
+      return (not read_only_mode && token_is_valid tok)
     | None, _ -> return false
     end
 
-  let ensure_can t ?token do_stuff =
-    can t ?token do_stuff
+  let ensure_can t ~read_only_mode ?token do_stuff =
+    can t ?token do_stuff ~read_only_mode
     >>= function
     | true -> return ()
     | false -> wrong_request "Authentication" "Insufficient credentials"
@@ -383,7 +385,10 @@ let answer_get_target_flat_states ~server_state
 
 let answer_message ~server_state ?token msg =
   let with_capability cap =
+    let read_only_mode =
+      Configuration.read_only_mode server_state.server_configuration in
     Authentication.ensure_can server_state.authentication ?token cap
+      ~read_only_mode
   in
   match msg with
   | `Get_targets l ->
@@ -441,6 +446,8 @@ let html_page () = Client_html.gui_page
 let gui_service ~server_state ~body req =
   let token = token_parameter req in
   Authentication.ensure_can server_state.authentication ?token `Browse_gui
+    ~read_only_mode:(Configuration.read_only_mode
+                       server_state.server_configuration)
   >>= fun () ->
   return (`Page (html_page ()))
 
