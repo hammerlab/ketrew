@@ -14,6 +14,7 @@ module Source: sig
   val signal: 'a t -> 'a signal
   val value: 'a t -> 'a
   val modify: 'a t -> f:('a -> 'a) -> unit
+  val modify_opt: 'a t -> f:('a -> 'a option) -> unit
   val map_signal: 'a t -> f:('a -> 'b) -> 'b signal
 
 end

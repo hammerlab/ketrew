@@ -400,8 +400,7 @@ module Error_log = struct
 
   let append t v =
     let open Reactive in
-    let current = Source.signal t |> Signal.value in
-    Source.set t (current @ [v])
+    Source.modify t (fun current -> current @ [v])
 
   let append_async_error t (n, e) =
     let item = {
@@ -456,20 +455,19 @@ module Async_task_log = struct
 
   let add t name =
     let uid = Unique_id.create () in
-    let open Reactive in
-    let current = Source.signal t |> Signal.value in
-    let item = {uid; name; start = Time.now (); finish = None} in
-    Source.set t (current @ [item]);
+    Reactive.Source.modify t (fun current ->
+        let item = {uid; name; start = Time.now (); finish = None} in
+        current @ [item]);
     uid
 
   let declare_finished t uid =
-    let open Reactive in
-    let current = Source.signal t |> Signal.value in
-    Source.set t
-      (List.map current ~f:(fun i ->
-           if i.uid = uid
-           then { i with finish = Some (Time.now ())}
-           else i))
+    Reactive.Source.modify t (fun current ->
+        List.map current ~f:(fun i ->
+            if i.uid = uid
+            then { i with finish = Some (Time.now ())}
+            else i
+          )
+      )
 
   let markup_signal ?(only_non_finished = true) t =
     let open Reactive in
@@ -562,9 +560,8 @@ let name {protocol_client; _ } = Protocol_client.name protocol_client
 
 
 let add_interesting_targets t l =
-  let current =
-    Reactive.Source.signal t.interesting_targets |> Reactive.Signal.value in
-  Reactive.Source.set t.interesting_targets (Target_id_set.add_list current l)
+  Reactive.Source.modify t.interesting_targets (fun current ->
+      Target_id_set.add_list current l)
 
 let error_markup e =
   let open Display_markup in
@@ -654,12 +651,11 @@ let start_server_status_loop t =
 
 let start_list_of_ids_loop t =
   let add_log the_log =
-    Reactive.(
-      let current = Source.signal t.list_of_ids_log |> Signal.value in
-      let with_ts =
-        Display_markup.(concat [date Time.(now ()); text ": "; the_log]) in
-      Source.set t.list_of_ids_log (with_ts :: List.take current 41)
-    ) in
+    Reactive.Source.modify t.list_of_ids_log (fun current ->
+        let with_ts =
+          Display_markup.(concat [date Time.(now ()); text ": "; the_log]) in
+        (with_ts :: List.take current 41)
+      ) in
   let update_list_of_ids query ~and_block =
     let timeout, options =
       if and_block then
@@ -711,10 +707,9 @@ let start_list_of_ids_loop t =
       Reactive.(
         let open Target_table in
         let tab = t.target_table in
-        let last_updated_signal =
-          Reactive.Source.signal tab.Target_table.target_ids_last_updated in
-        let filter = Source.signal tab.filter |> Signal.value in
-        let last_updated = Signal.value last_updated_signal in
+        let last_updated =
+          Source.value tab.Target_table.target_ids_last_updated in
+        let filter = Source.value tab.filter in
         (Filter.target_query ?last_updated filter, (last_updated <> None))
       ) in
     Lwt.pick [
@@ -1357,7 +1352,7 @@ module Html = struct
 
   let target_link_on_click_handler t ~id =
     let open Reactive in
-    let current = Source.signal t.tabs |> Signal.value in
+    let current = Source.value t.tabs in
     begin match List.find current ~f:(Tab.is_target_page ~id) with
     | Some tp -> Source.set t.current_tab tp
     | None ->
@@ -1393,11 +1388,9 @@ module Html = struct
                     local_anchor
                       ~on_click:(fun _ ->
                           Reactive.(
-                            let src =
+                            Source.modify ~f:not
                               t.target_table.Target_table.
-                                filter_interface_showing_help in
-                            let current = Source.signal src |> Signal.value in
-                            Source.set src (not current);
+                                filter_interface_showing_help;
                             false))
                       [
                         span ~a:[
@@ -1590,13 +1583,11 @@ module Html = struct
                              List.mem ~set:current col)
                        in
                        let on_click _ =
-                         let current = 
-                           Source.signal t.target_table.Target_table.columns
-                           |> Signal.value in
-                         Source.set t.target_table.Target_table.columns
-                           (if List.mem ~set:current col
-                            then List.filter current ((<>) col)
-                            else insert_column current col);
+                         Source.modify  t.target_table.Target_table.columns
+                           (fun current -> 
+                              if List.mem ~set:current col
+                              then List.filter current ((<>) col)
+                              else insert_column current col);
                          false in
                        `Checkbox (signal, on_click, content)
                      ));
@@ -2162,8 +2153,8 @@ module Html = struct
                   (* We need to check that the tabs is still in the
                      list of tabs, if it is not, it means that the user
                      just clicked on the `×`. This is due to bootstrap's
-                     way of creating tabs, I don't know how to avoid the
-                     event to be passed here. *)
+                     way of creating tabs, I don't know how to prevent the
+                     event from being passed here. *)
                   let current_tabs =
                     Source.signal client.tabs |> Signal.value in
                   begin match
