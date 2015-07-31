@@ -12,6 +12,8 @@ module Source: sig
   val create: ?eq:('a -> 'a -> bool) -> 'a -> 'a t
   val set: 'a t -> 'a -> unit
   val signal: 'a t -> 'a signal
+  val value: 'a t -> 'a
+  val modify: 'a t -> f:('a -> 'a) -> unit
 end
 module Signal: sig
   type 'a t = 'a signal

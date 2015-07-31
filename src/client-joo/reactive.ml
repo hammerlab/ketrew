@@ -18,6 +18,16 @@ module Source = struct
 
   let signal t = t.signal
 
+  let value t = t.signal |> React.S.value
+
+  let modify_opt t ~f =
+    match f (value t) with
+    | Some s -> t.set s
+    | None -> ()
+
+  let modify t ~f = modify_opt t ~f:(fun v -> Some (f v))
+
+
 end
 
 module Signal = struct
