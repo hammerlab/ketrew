@@ -150,6 +150,12 @@ module Target_table = struct
        died but not because of some their dependencies dying.";
       { ast = `Status `Killable },
       "Get all the targets that can be killed.";
+      { ast = `And [
+            `Created_in_the_past (`Days 1.);
+            `Status (`Really_running);
+          ] },
+      "Get all the targets created in the past day that \
+       are in-progress and not waiting for a dependency."
     ]
 
     let to_server_query ast =
