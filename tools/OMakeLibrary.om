@@ -71,6 +71,7 @@ public.OCamlProgramOfDirectory(appname, directory) =
     vmount(-l, $(directory), _build/$(directory))
     protected.APP_FILES[] = $(ls $(directory))
     protected.targetname = app-$(appname)
+    protected.local_includes = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
     protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS)))) \
         $(file $(addprefix _build/,$(addsuffix .cmo, $(OCAML_LOCAL_LIBS)))) 
     .PHONY: $(targetname)
@@ -79,8 +80,8 @@ public.OCamlProgramOfDirectory(appname, directory) =
         cp  _build/$(directory)/$(best_app) $(appname)
     $(targetname): $(appname)
     .SUBDIRS: _build/$(directory)
-        OCAMLINCLUDES += $(dirname $(local_deps))
-        OCAML_LIBS += $(removesuffix $(local_deps))
+        OCAMLINCLUDES += $(dirname $(local_includes)) # $(set ..) deduplicates but sorts
+        OCAML_LIBS +=  $(removesuffix $(local_includes))
         %.ml: $(local_deps)
         %.mli: $(local_deps)
         %.cmi: $(local_deps)
