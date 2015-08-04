@@ -71,7 +71,8 @@ public.OCamlProgramOfDirectory(appname, directory) =
     vmount(-l, $(directory), _build/$(directory))
     protected.APP_FILES[] = $(ls $(directory))
     protected.targetname = app-$(appname)
-    protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
+    protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS)))) \
+        $(file $(addprefix _build/,$(addsuffix .cmo, $(OCAML_LOCAL_LIBS)))) 
     .PHONY: $(targetname)
     protected.best_app = $(if $(NATIVE_ENABLED), $(appname).opt,  $(appname).run)
     $(appname): _build/$(directory)/$(best_app)
