@@ -728,7 +728,6 @@ let status ~configuration =
 
 
 let start ~configuration  =
-  Log.(s "Start-Server: Checking status" @ verbose);
   begin
     status ~configuration
     >>= function

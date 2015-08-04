@@ -547,10 +547,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
 
 
 let run_main ?argv ?override_configuration ?additional_commands () =
+  Log.(s "Set preemptive bounds: 10, 52" @ verbose);
+  Lwt_preemptive.init 10 52 (fun str ->
+      Log.(s" Lwt_preemptive error: " % s str @ error);
+      );
   let main_lwt_thread =
     cmdliner_main ?argv ?override_configuration ?additional_commands ()
   in
-  Log.(s "Calling Lwt_main.run" @ very_verbose);
+  (* Log.(s "Calling Lwt_main.run" @ very_verbose); *)
   match Lwt_main.run (main_lwt_thread >>< Return_code.transform_error) with
   | `Ok () -> exit 0
   | `Error n -> exit n
