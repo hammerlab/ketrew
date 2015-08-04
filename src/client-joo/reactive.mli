@@ -29,9 +29,3 @@ module Signal: sig
   val tuple_2: 'a t -> 'b t -> ('a * 'b) t
   val tuple_3: 'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
 end
-module Option: sig
-  type 'a t = 'a option Source.t
-  val create : unit -> 'a t
-  val switch : 'a t -> 'a -> unit
-  val singleton_or_empty : 'a t -> 'a signal_list_wrap
-end

@@ -62,21 +62,3 @@ module Source = struct
 
 end
 
-module Option = struct
-  type 'a t =  'a option Source.t 
-  open Source
-  let create () = create None
-  let switch t v =
-    match signal t |> React.S.value with
-    | None -> t.set (Some v)
-    | Some v -> t.set None
-  let singleton_or_empty (t : _ t) =
-    let open ReactiveData.RList in
-    let s = signal t in
-    make_from
-      (match React.S.value s with None -> [] | Some e -> [e])
-      (React.E.map (function
-         | Some e -> Set [e]
-         | None -> Set []
-         ) (React.S.changes s))
-end
