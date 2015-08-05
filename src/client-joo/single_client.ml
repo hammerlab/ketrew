@@ -346,6 +346,19 @@ module Target_table = struct
      filter_interface_showing_help;
      showing; columns; filter; saved_filters}
 
+  let visible_target_ids t =
+    Reactive.(
+      Signal.tuple_2
+        (Source.signal t.target_ids)
+        (Source.signal t.showing)
+      |> Signal.map  ~f:(fun (ids, (index, count)) ->
+          match ids with
+          | None -> None
+          | Some tids ->
+            let target_ids = Target_id_set.to_list tids in
+            let ids = List.take (List.drop target_ids index) count in
+            Some ids)
+    )
 
   let add_target_ids t ?server_time l =
     let current =
@@ -564,6 +577,32 @@ let log t =
 
 let name {protocol_client; _ } = Protocol_client.name protocol_client
 
+let interesting_target_ids t =
+  Reactive.(
+    Signal.tuple_2
+      (Target_table.visible_target_ids t.target_table
+       |> Signal.map ~f:(Option.value ~default:[]))
+      (Source.signal t.tabs
+       |> Signal.map ~f:(List.filter_map ~f:(function
+         | `Target_page tp -> Some tp.Target_page.target_id
+         | `Status -> None
+         | `Target_table -> None)))
+    |> Signal.map  ~f:(fun (from_table, from_pages) ->
+        let with_deps id =
+          match
+            Target_cache.get_target_summary_signal t.target_cache ~id
+            |> Signal.value 
+          with
+          | `None -> [id]
+          | `Pointer (_, summary)
+          | `Summary summary ->
+            id :: Target.Summary.(depends_on summary
+                                  @ on_success_activate summary
+                                  @ on_failure_activate summary)
+        in
+        let transitively_from_pages = List.concat_map from_pages ~f:with_deps in
+        List.dedup (List.rev_append transitively_from_pages from_table))
+  )
 
 let add_interesting_targets t l =
   Reactive.Source.modify t.interesting_targets (fun current ->
@@ -633,6 +672,65 @@ let asynchronous_loop ?wake_up ?more_info t ~name loop =
     end
   )
 
+let preemptible_asynchronous_loop t ~name ~body =
+  let condition = Lwt_condition.create () in
+  let loop_log = Reactive.Source.create [] in
+  let add_log the_log =
+    Reactive.Source.modify loop_log (fun current ->
+        let with_ts =
+          Display_markup.(concat [command name;
+                                  date Time.(now ());
+                                  text ": "; the_log]) in
+        (with_ts :: List.take current 41)
+      ) in
+  let woken_up = ref false in
+  let rec loop () =
+    Lwt.pick [
+      begin try
+        begin body () end
+        >>< function
+        | `Ok () ->
+          add_log Display_markup.(textf "ends ok");
+          return ()
+        | `Error e ->
+          add_log Display_markup.(
+              concat [
+                textf "ends with error: ";
+                error_markup e;
+                textf " woken-up: "; command (string_of_bool !woken_up);
+              ]
+            );
+          (if !woken_up then
+             (woken_up := false;
+              return ())
+           else
+             (sleep t.wait_before_retry_asynchronous_loop
+              >>< fun _ -> return ()))
+      with
+      | e ->
+        add_log Display_markup.(
+            textf "exception: %s" (Printexc.to_string e));
+        Log.(s "exception in preemptible_asynchronous_loop" % sp
+             % quote name % s ": " % exn e @ error);
+        return ()
+      end;
+      Lwt.(Lwt_condition.wait condition
+           >>= fun () ->
+           add_log Display_markup.(textf "Loop waken-up");
+           return (`Ok ()));
+    ]
+    >>< function
+    | `Ok () -> loop ()
+    | `Error () -> (* making sure all errors were treated above *) loop ()
+  in
+  asynchronous_loop t ~name loop ~wake_up:(name, condition);
+  (object
+    method wake_up = 
+      woken_up := true;
+      Lwt_condition.broadcast condition ()
+    method log = loop_log
+  end)
+
 let start_server_status_loop t =
   let rec update_server_status () =
     Protocol_client.call
@@ -653,7 +751,7 @@ let start_server_status_loop t =
   asynchronous_loop t ~name:"update-server-status" update_server_status
     ~wake_up:("Reload-status-condition", t.reload_status_condition);
   ()
-  
+
 
 let start_list_of_ids_loop t =
   let add_log the_log =
@@ -705,59 +803,19 @@ let start_list_of_ids_loop t =
       fail (`Wrong_down_message other)
     end
   in
-  let condition = Lwt_condition.create () in
-  let woken_up = ref false in
-  let rec loop () =
-    (* add_log Display_markup.(text "Loop starts"); *)
-    let query, and_block =
-      Reactive.(
-        let open Target_table in
-        let tab = t.target_table in
-        let last_updated =
-          Source.value tab.Target_table.target_ids_last_updated in
-        let filter = Source.value tab.filter in
-        (Filter.target_query ?last_updated filter, (last_updated <> None))
-      ) in
-    Lwt.pick [
-      begin try
-        begin
-          update_list_of_ids query ~and_block
-        end
-        >>< function
-        | `Ok () ->
-          (* add_log Display_markup.(textf "update_list_of_ids ends ok"); *)
-          return ()
-        | `Error e ->
-          add_log Display_markup.(
-              concat [
-                textf "update_list_of_ids ends with error: ";
-                error_markup e;
-                textf " woken-up: "; command (string_of_bool !woken_up);
-              ]
-            );
-          (if !woken_up then
-             (woken_up := false;
-              return ())
-           else
-             (sleep t.wait_before_retry_asynchronous_loop
-              >>< fun _ -> return ()))
-      with
-      | e ->
-        add_log Display_markup.(
-            textf "update_list_of_ids exception: %s" (Printexc.to_string e));
-        return ()
-      end;
-      Lwt.(Lwt_condition.wait condition
-           >>= fun () ->
-           add_log Display_markup.(textf "Loop waken-up");
-           return (`Ok ()));
-    ]
-    >>< function
-    | `Ok () -> loop ()
-    | `Error () -> (* making sure all errors were treated above *) loop ()
+  let loop_handle =
+    preemptible_asynchronous_loop t ~name:"List-of-IDS" ~body:(fun () ->
+        let query, and_block =
+          Reactive.(
+            let open Target_table in
+            let tab = t.target_table in
+            let last_updated =
+              Source.value tab.Target_table.target_ids_last_updated in
+            let filter = Source.value tab.filter in
+            (Filter.target_query ?last_updated filter, (last_updated <> None))
+          ) in
+        update_list_of_ids query ~and_block)
   in
-  asynchronous_loop t ~name:"list-of-ids" loop
-    ~wake_up:("query-changes", condition);
   let (_ : unit React.E.t) =
     let event =
       Reactive.Source.signal t.target_table.Target_table.filter
@@ -769,10 +827,112 @@ let start_list_of_ids_loop t =
               command (Target_table.Filter.to_lisp fil)
             ]
           );
-        woken_up := true;
         Reactive.Source.set
           t.target_table.Target_table.target_ids_last_updated None;
-        Lwt_condition.broadcast condition ()
+        loop_handle#wake_up
+      ) event
+  in
+  ()
+
+let start_getting_flat_statuses t =
+  let update_flat_states target_ids =
+    Log.(s "get_all_missing_states TRIGGERED !" %n
+         % s "targets_ids has " % i (List.length target_ids)
+         % s " elements" @ verbose);
+    let at_once = 10 in
+    let sleep_time = 0.3 in
+    let rec batch_fetching ids =
+      match ids with
+      | [] ->
+        (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" *)
+        (*      @ verbose); *)
+        return ()
+      | more ->
+        let now, later = List.split_n more at_once in
+        let status_query =
+          (* if we find a `None` then we ask for `` `All``, if not
+             we ask for `` `Since minimal_date``: *)
+          List.fold now ~init:(Some (Time.now ())) ~f:(fun prev id ->
+              match
+                prev,
+                Target_cache.get_target_flat_status_last_retrieved_time
+                  t.target_cache ~id
+              with
+              | None, _ -> None
+              | Some pr, None -> None
+              | Some pr, Some nw -> Some (min pr nw))
+          |> function
+          | Some t -> `Since (t -. 1.)
+          | None -> `All in
+        Protocol_client.call t.protocol_client
+          ~timeout:(t.block_time_request
+                    +. t.default_protocol_client_timeout)
+          (`Get_target_flat_states (status_query, now, 
+                                    [`Block_if_empty_at_most
+                                       t.block_time_request]))
+        >>= fun msg_down ->
+        begin match msg_down with
+        | `List_of_target_flat_states l ->
+          (* Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states" *)
+          (*      @ verbose); *)
+          List.iter l ~f:begin fun (id, value) ->
+            Target_cache.update_flat_state t.target_cache ~id value
+          end;
+          sleep sleep_time
+          >>= fun () ->
+          batch_fetching later
+        | other ->
+          fail (`Wrong_down_message other)
+        end
+    in
+    batch_fetching target_ids
+  in
+  (* We use this reference because 
+     `interesting_target_ids t |> Reactive.Signal.value` was throwing
+     React exceptions. The reference gets the “current” value from 
+     the `React.event` below. *)
+  let ref_to_changed_id_list = ref [] in
+  let body () =
+    let to_fetch =
+      let tids = !ref_to_changed_id_list in
+      List.filter tids ~f:(fun id ->
+          let signal =
+            Target_cache.get_target_flat_status_signal t.target_cache id in
+          let latest =
+            try
+              Reactive.Signal.value signal |> Target.State.Flat.latest
+            with e ->
+              Log.(s "Reactive.Signal.value flat-status -> " % exn e @ error);
+              raise e
+          in
+          let not_finished =
+            not (Option.value_map ~default:false
+                   ~f:Target.State.Flat.finished latest) in
+          match Option.map ~f:Target.State.Flat.simple latest with
+          | None
+          | Some `In_progress
+          | Some `Activable -> true
+          | Some `Successful
+          | Some `Failed -> not_finished)
+    in
+    match to_fetch with
+    | [] -> sleep 42. (* We wait to be interupted *)
+    | more  ->
+      Log.(s "Batch fetching state for "
+           % (match List.length to_fetch > 14 with
+             | true -> i (List.length to_fetch) % s " targets"
+             | false -> OCaml.list quote to_fetch)
+           @ verbose);
+      update_flat_states to_fetch
+  in
+  let loop_handle =
+    preemptible_asynchronous_loop t ~name:"Flat-statuses" ~body in
+  let (_ : unit React.E.t) =
+    let event = interesting_target_ids t |> React.S.changes in
+    React.E.map (fun ids ->
+        Log.(s "waking up falt-statuses" @ verbose);
+        ref_to_changed_id_list := ids;
+        loop_handle#wake_up
       ) event
   in
   ()
@@ -782,6 +942,7 @@ let start_list_of_ids_loop t =
 let start_updating t =
   start_server_status_loop t;
   start_list_of_ids_loop t;
+  start_getting_flat_statuses t;
   let (_ : unit React.E.t) =
     let get_all_missing_summaries targets_ids =
       Log.(s "get_all_missing_summaries TRIGGERED !" %n
@@ -828,15 +989,24 @@ let start_updating t =
             | `None -> true
             | _ -> false)
       in
-      asynchronous_loop t ~name:"fetch-summaries" (fun () ->
-          fetch_summaries missing_ids)
+      asynchronous_loop t ~name:"fetch-summaries"
+        ~more_info:Display_markup.(
+            let lids =
+              let max_ids = 25 in
+              match List.length targets_ids with
+              | n when n <= max_ids -> targets_ids
+              | _ -> List.take targets_ids max_ids @ ["…"]
+            in
+            description "Target-IDs"
+              (concat ~sep:(text ", ") (List.map lids ~f:command))
+          )
+        (fun () ->
+           fetch_summaries missing_ids)
     in
-    let event =
-      Reactive.Source.signal t.interesting_targets |> React.S.changes in
-    React.E.map
-      (fun set -> get_all_missing_summaries (Target_id_set.to_list set))
-      event
+    let event = interesting_target_ids t |> React.S.changes in
+    React.E.map get_all_missing_summaries event
   in
+  (*
   let (_ : unit React.E.t) =
     let update_flat_states targets_ids =
       Log.(s "get_all_missing_states TRIGGERED !" %n
@@ -940,6 +1110,7 @@ let start_updating t =
       (fun set -> update_flat_states (Target_id_set.to_list set))
       event
   in
+     *)
   ()
 
 let fetch_available_queries t ~id =
@@ -1228,6 +1399,11 @@ module Html = struct
             "Asynchronous-retry-wait",
             time_span t.wait_before_retry_asynchronous_loop;
           ]);
+      h4 [pcdata "Currently Interesting Targets"];
+      Reactive_node.ul Reactive.(
+          interesting_target_ids t
+          |> Signal.map ~f:(List.map ~f:(fun id ->li [code [pcdata id]]))
+          |> Signal.list);
       h4 [pcdata "List-of-IDs Loop"];
       Reactive_node.ul Reactive.(
           Source.signal t.list_of_ids_log
