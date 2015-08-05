@@ -809,7 +809,7 @@ let start_updating t =
                   Target_cache.update_target t.target_cache ~id (`Summary value)
                 | p ->
                   add_interesting_targets t [p];
-                  Target_cache.update_target t.target_cache ~id (`Pointer p)
+                  Target_cache.update_target t.target_cache ~id (`Pointer (p, value))
                 end
               );
             sleep sleep_time
@@ -1548,7 +1548,7 @@ module Html = struct
             (Source.signal t.target_table.Target_table.filter_interface_visible)
           |> Signal.map ~f:(fun ((n_from, n_count), ids_option, filters_visible) ->
               let ids =
-                Nonstd.Option.value ids_option ~default:Target_id_set.empty in
+                Option.value ids_option ~default:Target_id_set.empty in
               let total = Target_id_set.length ids in
               let enable_if enabled on_click content =
                 Bootstrap.button ~enabled ~on_click content in
@@ -1640,13 +1640,13 @@ module Html = struct
                   ] [Bootstrap.muted_text (pcdata (fmt "Still fetching %s " id));
                      Bootstrap.loader_gif ();];
                 ]
-              | `Pointer p ->
-                [ (* This should not show, as the table is supposed to
-                     avoid target-pointers *)
-                  td ~a:[
-                    a_colspan (List.length columns);
-                  ] [pcdata (fmt "Pointer to %s" p)]
-                ]
+              | `Pointer (_, trgt)
+                (* [ (\* This should not show, as the table is supposed to *)
+                (*      avoid target-pointers *\) *)
+                (*   td ~a:[ *)
+                (*     a_colspan (List.length columns); *)
+                (*   ] [pcdata (fmt "Pointer to %s" p)] *)
+                (* ] *)
               | `Summary trgt ->
                 List.map columns ~f:(function
                   | `Controls ->
@@ -1742,8 +1742,8 @@ module Html = struct
       |> map ~f:(function
         | `None ->
           span ~a:[a_title "Not yet fetched"] [pcdata (summarize_id id)]
-        | `Pointer id ->
-          Reactive_node.span ~a:[a_title "Pointer"] (text id)
+        | `Pointer (_, summary)
+          (* Reactive_node.span ~a:[a_title "Pointer"] (text id) *)
         | `Summary summary ->
           span ~a:[
             a_title id;
@@ -1826,9 +1826,7 @@ module Html = struct
                 pcdata "Still fetching summary for ";
                 pcdata (summarize_id id)
               ]
-            | `Pointer pid ->
-              div ~a:[a_title (fmt "Pointer %s → %s" id pid)]
-                [make_body pid]
+            | `Pointer (_, summary)
             | `Summary summary ->
               let row head content =
                 tr [
@@ -1970,100 +1968,97 @@ module Html = struct
         (List.filter_map list_of_lists ~f:(function
            | [] -> None
            | more -> Some (Bootstrap.button_group ~justified:false more))) in
-    let rec make_div id =
-      Reactive_node.div Reactive.Signal.(
-          Target_cache.get_target_summary_signal client.target_cache ~id
-          |> map ~f:(function
-            | `None ->
-              div ~a:[a_title "Not yet fetched"] [
-                pcdata "Still fetching summary for ";
-                pcdata (summarize_id id)
-              ]
-            | `Pointer pid ->
-              div ~a:[a_title "Pointer"] [make_div pid]
-            | `Summary summary ->
-              begin match Target.Summary.build_process summary with
-              | `No_operation -> div [h3 [pcdata "No-operation"]]
-              | `Long_running (name, init) ->
-                div [
-                  h3 [pcdata (fmt "Using %s" name)];
-                  Reactive_node.div Reactive.(
-                      Signal.tuple_2
-                        (Source.signal on_display_right_now)
-                        (get_available_queries client ~id)
-                      |> Signal.map
-                        ~f:(fun (current, query_descriptions) ->
-                            match query_descriptions with
-                            | `None ->
-                              make_toolbar [
-                                [raw_json_control current];
-                                [
-                                  control
-                                    ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
-                                    ~help:"Fetching query descriptions …"
-                                    ~self:`Nothing `Nothing
-                                ]
+    Reactive_node.div Reactive.Signal.(
+        Target_cache.get_target_summary_signal client.target_cache ~id
+        |> map ~f:(function
+          | `None ->
+            div ~a:[a_title "Not yet fetched"] [
+              pcdata "Still fetching summary for ";
+              pcdata (summarize_id id)
+            ]
+          | `Pointer (_, summary)
+          (* div ~a:[a_title "Pointer"] [make_div pid] *)
+          | `Summary summary ->
+            begin match Target.Summary.build_process summary with
+            | `No_operation -> div [h3 [pcdata "No-operation"]]
+            | `Long_running (name, init) ->
+              div [
+                h3 [pcdata (fmt "Using %s" name)];
+                Reactive_node.div Reactive.(
+                    Signal.tuple_2
+                      (Source.signal on_display_right_now)
+                      (get_available_queries client ~id)
+                    |> Signal.map
+                      ~f:(fun (current, query_descriptions) ->
+                          match query_descriptions with
+                          | `None ->
+                            make_toolbar [
+                              [raw_json_control current];
+                              [
+                                control
+                                  ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
+                                  ~help:"Fetching query descriptions …"
+                                  ~self:`Nothing `Nothing
                               ]
-                            | `Descriptions qds ->
-                              make_toolbar [
-                                [raw_json_control current];
-                                List.map qds ~f:(fun (qname, help) ->
-                                    match Markup_queries.discriminate qname with
-                                    | Some subname ->
-                                      control
-                                        ~content:[pcdata subname]
-                                        ~help
-                                        ~self:(`Result_of qname) current
-                                    | None ->
-                                      control
-                                        ~content:[pcdata (fmt "%s:%s" name qname)]
-                                        ~help
-                                        ~self:(`Result_of qname) current);
-                                query_additional_controls current;
-                              ]
-                          )
-                      |> Signal.singleton);
-                  Reactive_node.div Reactive.(
-                      Source.signal on_display_right_now
-                      |> Signal.map ~f: begin function
-                      | `Nothing -> pcdata "Nothing here"
-                      | `Raw_json ->
-                        pre [
-                          pcdata (
-                            let pretty_json =
-                              Yojson.Safe.(from_string init
-                                           |> pretty_to_string ~std:true) in
-                            pretty_json
-                          );
-                        ]
-                      | `Result_of query ->
-                        Reactive_node.div Reactive.(
-                            get_query_result client ~id ~query
-                            |> Signal.map ~f:(function
-                              | `None -> [pcdata (fmt "Calling “%s”" query);
-                                          Bootstrap.loader_gif ()]
-                              | `String r ->
-                                begin match Markup_queries.discriminate query with
-                                | Some _ ->
-                                  [Markup_queries.render r]
-                                | None -> [pre [pcdata r]]
-                                end
-                              | `Error e ->
-                                let title =
-                                  pcdata
-                                    (fmt "Error while calling %s:" query) in
-                                [Bootstrap.error_box_pre e ~title]
-                              )
-                            |> Signal.list
-                          )
-
-                    end
+                            ]
+                          | `Descriptions qds ->
+                            make_toolbar [
+                              [raw_json_control current];
+                              List.map qds ~f:(fun (qname, help) ->
+                                  match Markup_queries.discriminate qname with
+                                  | Some subname ->
+                                    control
+                                      ~content:[pcdata subname]
+                                      ~help
+                                      ~self:(`Result_of qname) current
+                                  | None ->
+                                    control
+                                      ~content:[pcdata (fmt "%s:%s" name qname)]
+                                      ~help
+                                      ~self:(`Result_of qname) current);
+                              query_additional_controls current;
+                            ]
+                        )
                     |> Signal.singleton);
-              ]
-            end)
-        |> Reactive.Signal.singleton)
-    in
-    make_div id
+                Reactive_node.div Reactive.(
+                    Source.signal on_display_right_now
+                    |> Signal.map ~f: begin function
+                    | `Nothing -> pcdata "Nothing here"
+                    | `Raw_json ->
+                      pre [
+                        pcdata (
+                          let pretty_json =
+                            Yojson.Safe.(from_string init
+                                         |> pretty_to_string ~std:true) in
+                          pretty_json
+                        );
+                      ]
+                    | `Result_of query ->
+                      Reactive_node.div Reactive.(
+                          get_query_result client ~id ~query
+                          |> Signal.map ~f:(function
+                            | `None -> [pcdata (fmt "Calling “%s”" query);
+                                        Bootstrap.loader_gif ()]
+                            | `String r ->
+                              begin match Markup_queries.discriminate query with
+                              | Some _ ->
+                                [Markup_queries.render r]
+                              | None -> [pre [pcdata r]]
+                              end
+                            | `Error e ->
+                              let title =
+                                pcdata
+                                  (fmt "Error while calling %s:" query) in
+                              [Bootstrap.error_box_pre e ~title]
+                            )
+                          |> Signal.list
+                        )
+
+                      end
+                      |> Signal.singleton);
+                ]
+              end)
+          |> Reactive.Signal.singleton)
 
   let target_page client tp =
     let id = tp.Target_page.target_id in

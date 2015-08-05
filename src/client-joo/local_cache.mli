@@ -5,7 +5,7 @@ module Target_cache: sig
   type target_knowledge = [
     | `None
     | `Summary of Target.Summary.t
-    | `Pointer of Target.id
+    | `Pointer of Target.id * Target.Summary.t
   ]
   type flat_state = {
     retrieved: Time.t option;
