@@ -129,5 +129,9 @@ module H5: sig
         elt
   end
 
+  module Custom_data : sig
+    val display_list_of_tags : string list -> [> Html5_types.ul ] elt
+    val summarize_id : string -> string
+  end
 
 end

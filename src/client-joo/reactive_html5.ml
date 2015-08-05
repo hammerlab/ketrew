@@ -368,7 +368,21 @@ module H5 = struct
       | Itemize ts ->
         ul (List.map ~f:(fun ast -> li [continue ast]) ts)
 
+  end
 
+  module Custom_data = struct
+
+    let display_list_of_tags tags =
+      Bootstrap.collapsable_ul
+        (List.map tags ~f:(fun tag ->
+             small ~a:[
+               a_class ["text-info"]
+             ] [pcdata tag]))
+
+
+    let summarize_id id =
+      String.sub id ~index:10 ~length:(String.length id - 10)
+      |> Option.value_map ~default:id ~f:(fmt "…%s")
 
 
   end
