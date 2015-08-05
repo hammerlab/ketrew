@@ -521,10 +521,6 @@ type t = {
   protocol_client: Protocol_client.t;
   target_cache: Target_cache.t;
 
-
-  interesting_targets: Target_id_set.t Reactive.Source.t;
-  (* TODO split into priority and prefetching *)
-
   status: status Reactive.Source.t;
   tabs: Tab.t list Reactive.Source.t;
   current_tab: Tab.t Reactive.Source.t;
@@ -543,7 +539,6 @@ type t = {
 
 
 let create ~protocol_client () =
-  let interesting_targets = Reactive.Source.create Target_id_set.empty in
   let status = Reactive.Source.create (Time.now (), `Unknown) in
   let current_tab = Reactive.Source.create ~eq:Tab.eq `Target_table in
   let target_table = Target_table.create () in
@@ -554,7 +549,6 @@ let create ~protocol_client () =
   {
     protocol_client;
     target_cache = Target_cache.create ();
-    interesting_targets;
     status;
     tabs;
     current_tab;
@@ -603,10 +597,6 @@ let interesting_target_ids t =
         let transitively_from_pages = List.concat_map from_pages ~f:with_deps in
         List.dedup (List.rev_append transitively_from_pages from_table))
   )
-
-let add_interesting_targets t l =
-  Reactive.Source.modify t.interesting_targets (fun current ->
-      Target_id_set.add_list current l)
 
 let error_markup e =
   let open Display_markup in
@@ -969,7 +959,6 @@ let start_updating t =
                 | i when id = i ->
                   Target_cache.update_target t.target_cache ~id (`Summary value)
                 | p ->
-                  add_interesting_targets t [p];
                   Target_cache.update_target t.target_cache ~id (`Pointer (p, value))
                 end
               );
@@ -1379,14 +1368,7 @@ module Html = struct
               )
             |> Signal.list
           );
-        pcdata ", ";
-        Reactive_node.span Reactive.(
-            Source.signal t.interesting_targets
-            |> Signal.map ~f:(fun s ->
-                [pcdata (fmt "%d “interesting” targets" (Target_id_set.length s))]
-              )
-            |> Signal.list
-          );
+        pcdata ".";
         Markup.to_html
           (Target_cache.markup_counts t.target_cache);
       ];
@@ -1817,12 +1799,6 @@ module Html = struct
                      Bootstrap.loader_gif ();];
                 ]
               | `Pointer (_, trgt)
-                (* [ (\* This should not show, as the table is supposed to *)
-                (*      avoid target-pointers *\) *)
-                (*   td ~a:[ *)
-                (*     a_colspan (List.length columns); *)
-                (*   ] [pcdata (fmt "Pointer to %s" p)] *)
-                (* ] *)
               | `Summary trgt ->
                 List.map columns ~f:(function
                   | `Controls ->
@@ -1864,10 +1840,6 @@ module Html = struct
             | Some tids ->
               let target_ids = Target_id_set.to_list tids in
               let ids = List.take (List.drop target_ids index) count in
-              add_interesting_targets t
-                (let greedy_index = max 0 (index - count) in
-                 let greedy_count = count + count + (index - greedy_index) in
-                 List.take (List.drop target_ids greedy_index) greedy_count);
               Bootstrap.table_responsive
                 ~head:(table_head columns)
                 ~body:(List.mapi ids
@@ -1919,7 +1891,6 @@ module Html = struct
         | `None ->
           span ~a:[a_title "Not yet fetched"] [pcdata (summarize_id id)]
         | `Pointer (_, summary)
-          (* Reactive_node.span ~a:[a_title "Pointer"] (text id) *)
         | `Summary summary ->
           span ~a:[
             a_title id;
@@ -2028,10 +1999,6 @@ module Html = struct
                          ]))
                 ]
               in
-              add_interesting_targets client
-                Target.Summary.(depends_on summary
-                                @ on_success_activate summary
-                                @ on_failure_activate summary);
               Bootstrap.table_responsive
                 ~head:(thead [])
                 ~body:[
@@ -2153,7 +2120,6 @@ module Html = struct
               pcdata (summarize_id id)
             ]
           | `Pointer (_, summary)
-          (* div ~a:[a_title "Pointer"] [make_div pid] *)
           | `Summary summary ->
             begin match Target.Summary.build_process summary with
             | `No_operation -> div [h3 [pcdata "No-operation"]]
@@ -2239,7 +2205,6 @@ module Html = struct
   let target_page client tp =
     let id = tp.Target_page.target_id in
     let showing_on_the_right = tp.Target_page.showing_on_the_right in
-    add_interesting_targets client [id];
     let open H5 in
     let two_columns ~left ~right =
       div ~a:[a_class ["row"]] [
