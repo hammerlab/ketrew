@@ -6,29 +6,6 @@ open Reactive_html5
 
 open Local_cache
 
-module Markup_queries = struct
-
-  let discriminate query =
-    begin match String.split ~on:(`Character '/') query with
-    | "ketrew-markup" :: more -> Some (String.concat ~sep:"/" more)
-    | other -> None
-    end
-
-  let render content =
-    let open H5 in
-    begin try
-      let ast = Display_markup.deserialize_exn content in
-      Markup.to_html ast
-    with
-    | e ->
-      let title =
-        pcdata
-          (fmt "Error parsing query-result: %s" (Printexc.to_string e)) in
-      Bootstrap.error_box_pre ~title content
-    end
-
-end
-
 
 type status = Time.t * [
     | `Unknown
@@ -36,21 +13,6 @@ type status = Time.t * [
     | `Problem of string
   ]
 
-module Target_page = struct
-  type t = {
-    target_id: string;
-    showing_on_the_right: [`Flat_status | `Build_process_details ] Reactive.Source.t;
-    build_process_on_display:
-      [ `Nothing | `Result_of of string | `Raw_json ] Reactive.Source.t;
-  }
-  let create target_id = {
-    target_id;
-    showing_on_the_right = Reactive.Source.create `Flat_status;
-    build_process_on_display = Reactive.Source.create `Nothing;
-  }
-  let eq a b =
-    a.target_id = b.target_id
-end
 module Tab = struct
   type t = [
     | `Status
@@ -59,7 +21,7 @@ module Tab = struct
   ]
   let is_target_page ~id =
     function
-    | `Target_page t -> (String.compare t.Target_page.target_id id = 0)
+    | `Target_page t -> (String.compare (Target_page.target_id t) id = 0)
     | `Status | `Target_table -> false
   let eq a b =
     match a, b with
@@ -239,7 +201,7 @@ let interesting_target_ids t =
        |> Signal.map ~f:(Option.value ~default:[]))
       (Source.signal t.tabs
        |> Signal.map ~f:(List.filter_map ~f:(function
-         | `Target_page tp -> Some tp.Target_page.target_id
+         | `Target_page tp -> Some (Target_page.target_id tp)
          | `Status -> None
          | `Target_table -> None)))
     |> Signal.map  ~f:(fun (from_table, from_pages) ->
@@ -952,400 +914,29 @@ module Html = struct
     ]
 
 
-  let target_link_on_click_handler t ~id =
+  let rec target_link_on_click_handler t ~id =
     let open Reactive in
     let current = Source.value t.tabs in
     begin match List.find current ~f:(Tab.is_target_page ~id) with
     | Some tp -> Source.set t.current_tab tp
     | None ->
-      let new_tp = Target_page.create id in
+      let new_tp =
+        Target_page.create ~id ~target_cache:t.target_cache
+          ~restart_target:(restart_target t ~id)
+          ~kill_target:(kill_target t ~id)
+          ~target_link_on_click_handler:(target_link_on_click_handler t)
+          ~reload_query_result:(reload_query_result t ~id)
+          ~reload_available_queries:(fun () -> reload_available_queries t ~id)
+          ~available_queries:(get_available_queries t ~id)
+          ~get_query_result:(get_query_result t ~id)
+      in
       Log.(s "Created TP for " % quote id @ verbose);
       Source.set t.tabs (current @ [`Target_page new_tp])
     end;
     Log.(s "end of target_link_on_click_handler " % quote id @ verbose);
     ()
 
-  let target_page_tab_title client ~id =
-    let open H5 in
-    let colorize_classes =
-      Reactive.Signal.(
-        Target_cache.get_target_flat_status_signal client.target_cache ~id
-        |> map ~f:Target.State.Flat.latest
-        |> map ~f:(function
-          | None -> ["text-warning"]
-          | Some item ->
-            let text_class =
-              match Target.State.Flat.simple item with
-              | `Failed -> "text-danger"
-              | `In_progress -> "text-info"
-              | `Activable -> "text-muted"
-              | `Successful -> "text-success"
-            in
-            [text_class]
-          )
-      ) in
-    let rec text id =
-      let open Reactive.Signal in
-      Target_cache.get_target_summary_signal client.target_cache ~id
-      |> map ~f:(function
-        | `None ->
-          span ~a:[a_title "Not yet fetched"]
-            [pcdata (Custom_data.summarize_id id)]
-        | `Pointer (_, summary)
-        | `Summary summary ->
-          span ~a:[
-            a_title id;
-          ] [
-            pcdata (Target.Summary.name summary);
-          ])
-      |> singleton in
-    span ~a:[
-      Reactive_node.a_class colorize_classes;
-    ] [
-      Reactive_node.span (text id);
-    ]
 
-  let target_controls client ~id =
-    let open H5 in
-    let restarting = Reactive.Source.create `None in
-    let killing = Reactive.Source.create `None in
-    Reactive_node.div Reactive.(
-        Signal.tuple_2
-          (Source.signal restarting)
-          (Source.signal killing)
-        |> Signal.map ~f:(fun (rest, kill) ->
-            [
-              Bootstrap.button_group ~justified:false [
-                Bootstrap.button 
-                  ~enabled:(rest <> `In_progress)
-                  ~on_click:(fun _ ->
-                      Log.(s "Restart Target" @ verbose);
-                      Reactive.Source.set restarting `In_progress;
-                      restart_target client ~id
-                        ~on_result:(fun r ->
-                            Reactive.Source.set restarting (`Result r);
-                          );
-                      false)
-                  (match rest with
-                  | `None | `Result _ -> [pcdata "Restart"]
-                  | `In_progress ->
-                    [pcdata "Restarting "; Bootstrap.loader_gif ()]);
-                Bootstrap.button 
-                  ~enabled:(kill <> `In_progress)
-                  ~on_click:(fun _ ->
-                      Log.(s "Kill Target" @ verbose);
-                      Reactive.Source.set killing `In_progress;
-                      kill_target client ~id
-                        ~on_result:(fun r ->
-                            Reactive.Source.set killing (`Result r);
-                          );
-                      (* Reactive.Source.set showing_on_the_right `Flat_status; *)
-                      false)
-                  [pcdata "Kill"];
-              ];
-              div (
-                match rest with
-                | `None | `In_progress -> []
-                | `Result (`Ok ()) ->
-                  [Bootstrap.success_box [pcdata "Restarted OK"]]
-                | `Result (`Error e) ->
-                  [Bootstrap.error_box_pre ~title:(pcdata "Restarting error") e]
-              );
-              div (
-                match kill with
-                | `None | `In_progress -> []
-                | `Result (`Ok ()) ->
-                  [Bootstrap.success_box [pcdata "Killing in progress"]]
-                | `Result (`Error e) ->
-                  [Bootstrap.error_box_pre ~title:(pcdata "Killing error") e]
-              );
-            ])
-        |> Signal.list
-      )
-
-  let target_summary_panel client ~id =
-    let open H5 in
-    let rec make_body id =
-      Reactive_node.div Reactive.Signal.(
-          Target_cache.get_target_summary_signal client.target_cache ~id
-          |> map ~f:(function
-            | `None ->
-              div ~a:[a_title "Not yet fetched"] [
-                pcdata "Still fetching summary for ";
-                pcdata (Custom_data.summarize_id id)
-              ]
-            | `Pointer (_, summary)
-            | `Summary summary ->
-              let row head content =
-                tr [
-                  th head;
-                  td content;
-                ] in
-              let simple_row head content =
-                tr [
-                  th [pcdata head];
-                  td content;
-                ] in
-              let code_row n v = simple_row n [code [pcdata v]] in
-              let list_of_ids_row name ids =
-                simple_row name [
-                  ul
-                    (List.map ids ~f:(fun id ->
-                         li [
-                           local_anchor
-                             ~on_click:Reactive.(fun _ ->
-                                 target_link_on_click_handler client ~id;
-                                 false)
-                             [target_page_tab_title client ~id]
-                         ]))
-                ]
-              in
-              Bootstrap.table_responsive
-                ~head:(thead [])
-                ~body:[
-                  simple_row "Name" [target_page_tab_title client ~id];
-                  code_row "ID" (Target.Summary.id summary);
-                  simple_row "Controls" [target_controls client ~id];
-                  begin
-                    let potential_button, content =
-                      Target.Summary.metadata summary
-                      |> Option.value_map
-                        ~default:(None, pcdata "None")
-                        ~f:(fun (`String s) -> Bootstrap.collapsable_pre s) in
-                    let head =
-                      pcdata "Metadata"
-                      ::
-                      (match potential_button with
-                      | None -> []
-                      | Some b -> [pcdata " ";b]) in
-                    row head [content]
-                  end;
-                  row
-                    [pcdata "Tags"]
-                    [Custom_data.display_list_of_tags (Target.Summary.tags summary)];
-                  list_of_ids_row "Depends on"
-                    (Target.Summary.depends_on summary);
-                  list_of_ids_row "On failure activates"
-                    (Target.Summary.on_failure_activate summary);
-                  list_of_ids_row "On success activates"
-                    (Target.Summary.on_success_activate summary);
-                  code_row "Equivalence"
-                    (Target.Summary.equivalence summary
-                     |> function
-                     | `None -> "None"
-                     | `Same_active_condition -> "Same-active-condition");
-                  simple_row "Condition"
-                    [Target.Summary.condition summary
-                     |> Option.value_map ~default:(pcdata "") ~f:(fun c ->
-                         Target.Condition.markup c
-                         |> Markup.to_html
-                           ~collapse_descriptions:["Host", "Name"])];
-                  code_row "Build-process"
-                    (Target.Summary.build_process summary
-                     |> function
-                     | `No_operation -> "No-op"
-                     | `Long_running (name, init) -> "Backend: " ^ name);
-                ]
-            )
-          |> singleton)
-        in
-    Bootstrap.panel ~body:[make_body id]
-
-  let flat_status_display_div client ~id =
-    let open H5 in
-    Reactive_node.div (
-      Target_cache.get_target_flat_status_signal client.target_cache ~id
-      |> Reactive.Signal.map ~f:(fun state ->
-          let text_of_item item =
-            fmt "%s%s%s"
-              (Target.State.Flat.name item)
-              (Target.State.Flat.message item
-               |> Option.value_map ~default:""
-                 ~f:(fmt " (%s)"))
-              (Target.State.Flat.more_info item
-               |> function
-               | [] -> ""
-               | more -> ": " ^ String.concat ~sep:", " more)
-          in
-          let additional_info =
-            (state |> Target.State.Flat.history)
-            |> List.map ~f:(fun item ->
-                div [
-                  code [pcdata
-                          (Target.State.Flat.time item |> Time.to_filename)];
-                  br ();
-                  pcdata (text_of_item item);
-                ])
-          in
-          div additional_info
-        )
-      |> Reactive.Signal.singleton)
-
-  let build_process_display_div client tp =
-    let open H5 in
-    let id = tp.Target_page.target_id in
-    let on_display_right_now = tp.Target_page.build_process_on_display in
-    let control ~content ~help ~self current =
-      Bootstrap.button
-        ~enabled:(current <> self)
-        ~on_click:(fun _ -> Reactive.Source.set on_display_right_now self; false)
-        [span ~a:[a_title help] content]
-    in
-    let raw_json_control current =
-      control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
-        ~help:"Display the JSON defined by the backend pluging" in
-    let query_additional_controls current = [
-      Bootstrap.button
-        ~on_click:(fun _ ->
-            reload_available_queries client ~id;
-            begin match current with
-            | `Nothing | `Raw_json -> ()
-            | `Result_of query -> reload_query_result client ~id ~query;
-            end;
-            false)
-        [Bootstrap.reload_icon ()];
-    ]
-    in
-    let make_toolbar list_of_lists =
-      div  ~a:[a_class ["btn-toolbar"]]
-        (List.filter_map list_of_lists ~f:(function
-           | [] -> None
-           | more -> Some (Bootstrap.button_group ~justified:false more))) in
-    Reactive_node.div Reactive.Signal.(
-        Target_cache.get_target_summary_signal client.target_cache ~id
-        |> map ~f:(function
-          | `None ->
-            div ~a:[a_title "Not yet fetched"] [
-              pcdata "Still fetching summary for ";
-              pcdata (Custom_data.summarize_id id)
-            ]
-          | `Pointer (_, summary)
-          | `Summary summary ->
-            begin match Target.Summary.build_process summary with
-            | `No_operation -> div [h3 [pcdata "No-operation"]]
-            | `Long_running (name, init) ->
-              div [
-                h3 [pcdata (fmt "Using %s" name)];
-                Reactive_node.div Reactive.(
-                    Signal.tuple_2
-                      (Source.signal on_display_right_now)
-                      (get_available_queries client ~id)
-                    |> Signal.map
-                      ~f:(fun (current, query_descriptions) ->
-                          match query_descriptions with
-                          | `None ->
-                            make_toolbar [
-                              [raw_json_control current];
-                              [
-                                control
-                                  ~content:[pcdata "Loading"; Bootstrap.loader_gif ()]
-                                  ~help:"Fetching query descriptions …"
-                                  ~self:`Nothing `Nothing
-                              ]
-                            ]
-                          | `Descriptions qds ->
-                            make_toolbar [
-                              [raw_json_control current];
-                              List.map qds ~f:(fun (qname, help) ->
-                                  match Markup_queries.discriminate qname with
-                                  | Some subname ->
-                                    control
-                                      ~content:[pcdata subname]
-                                      ~help
-                                      ~self:(`Result_of qname) current
-                                  | None ->
-                                    control
-                                      ~content:[pcdata (fmt "%s:%s" name qname)]
-                                      ~help
-                                      ~self:(`Result_of qname) current);
-                              query_additional_controls current;
-                            ]
-                        )
-                    |> Signal.singleton);
-                Reactive_node.div Reactive.(
-                    Source.signal on_display_right_now
-                    |> Signal.map ~f: begin function
-                    | `Nothing -> pcdata "Nothing here"
-                    | `Raw_json ->
-                      pre [
-                        pcdata (
-                          let pretty_json =
-                            Yojson.Safe.(from_string init
-                                         |> pretty_to_string ~std:true) in
-                          pretty_json
-                        );
-                      ]
-                    | `Result_of query ->
-                      Reactive_node.div Reactive.(
-                          get_query_result client ~id ~query
-                          |> Signal.map ~f:(function
-                            | `None -> [pcdata (fmt "Calling “%s”" query);
-                                        Bootstrap.loader_gif ()]
-                            | `String r ->
-                              begin match Markup_queries.discriminate query with
-                              | Some _ ->
-                                [Markup_queries.render r]
-                              | None -> [pre [pcdata r]]
-                              end
-                            | `Error e ->
-                              let title =
-                                pcdata
-                                  (fmt "Error while calling %s:" query) in
-                              [Bootstrap.error_box_pre e ~title]
-                            )
-                          |> Signal.list
-                        )
-
-                      end
-                      |> Signal.singleton);
-                ]
-              end)
-          |> Reactive.Signal.singleton)
-
-  let target_page client tp =
-    let id = tp.Target_page.target_id in
-    let showing_on_the_right = tp.Target_page.showing_on_the_right in
-    let open H5 in
-    let two_columns ~left ~right =
-      div ~a:[a_class ["row"]] [
-        div ~a:[a_class ["col-md-4"]] left;
-        (* div ~a:[a_class ["col-md-4"]] middle; *)
-        div ~a:[a_class ["col-md-8"]] right;
-      ] in
-    let target_sumary = target_summary_panel client ~id in
-    let target_status =
-      Bootstrap.panel ~body:[
-        Reactive_node.div (
-          Reactive.Source.signal showing_on_the_right
-          |> Reactive.Signal.map ~f:(fun showing ->
-              Bootstrap.button_group ~justified:true [
-                Bootstrap.button 
-                  ~enabled:(showing <> `Flat_status)
-                  ~on_click:(fun _ ->
-                      Reactive.Source.set showing_on_the_right `Flat_status;
-                      false)
-                  [pcdata "Status history"];
-                Bootstrap.button 
-                  ~enabled:(showing <> `Build_process_details)
-                  ~on_click:(fun _ ->
-                      Reactive.Source.set showing_on_the_right `Build_process_details;
-                      false)
-                  [pcdata "Backend details/queries"];
-              ])
-          |> Reactive.Signal.singleton);
-        Reactive_node.div (
-          Reactive.Source.signal showing_on_the_right
-          |> Reactive.Signal.map ~f:(fun showing ->
-              begin match showing with
-              | `Flat_status -> flat_status_display_div client ~id
-              | `Build_process_details -> build_process_display_div client tp
-              end)
-          |> Reactive.Signal.singleton)
-      ]
-    in
-    two_columns
-      ~left:[target_sumary]
-      ~right:[target_status]
 
   let render client =
     let open H5 in
@@ -1370,14 +961,14 @@ module Html = struct
               ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
               [pcdata "Status"]
           | `Target_page tp ->
-            let id = tp.Target_page.target_id in
+            let id = Target_page.target_id tp in
             Bootstrap.tab_item
               ~active:Reactive.(
                   Source.signal current_tab
                   |> Signal.map
                     ~f:(function
-                      | `Target_page {Target_page.target_id; _} ->
-                        target_id = id
+                      | `Target_page tp ->
+                        Target_page.target_id tp = id
                       | _ -> false)
                 )
               ~on_click:Reactive.(fun _ ->
@@ -1396,7 +987,7 @@ module Html = struct
                   end;
                   false)
               [
-                target_page_tab_title client ~id;
+                Target_page.Html.title tp;
                 pcdata " ";
                 span ~a:[ a_class ["label"; "label-default"];
                           a_title (fmt "Close: %s" id);
@@ -1437,7 +1028,7 @@ module Html = struct
                                 Target_cache.get_target_flat_status_signal
                                   client.target_cache ~id)
                         | `Status -> status client
-                        | `Target_page tp -> target_page client tp)
+                        | `Target_page tp -> Target_page.Html.render tp)
                       |> Signal.singleton)
         );
     ]
