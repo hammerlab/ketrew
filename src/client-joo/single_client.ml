@@ -833,10 +833,7 @@ let start_getting_flat_statuses t =
     let sleep_time = 0.3 in
     let rec batch_fetching ids =
       match ids with
-      | [] ->
-        (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" *)
-        (*      @ verbose); *)
-        return ()
+      | [] -> return ()
       | more ->
         let now, later = List.split_n more at_once in
         let status_query =
@@ -995,111 +992,6 @@ let start_updating t =
     let event = interesting_target_ids t |> React.S.changes in
     React.E.map get_all_missing_summaries event
   in
-  (*
-  let (_ : unit React.E.t) =
-    let update_flat_states targets_ids =
-      Log.(s "get_all_missing_states TRIGGERED !" %n
-           % s "targets_ids has " % i (List.length targets_ids)
-           % s " elements" @ verbose);
-      let at_once = 10 in
-      let sleep_time = 0.3 in
-      let rec batch_fetching ids =
-        match ids with
-        | [] ->
-          (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" *)
-          (*      @ verbose); *)
-          return ()
-        | more ->
-          let now, later = List.split_n more at_once in
-          let status_query =
-            (* if we find a `None` then we ask for `` `All``, if not
-               we ask for `` `Since minimal_date``: *)
-            List.fold now ~init:(Some (Time.now ())) ~f:(fun prev id ->
-                match
-                  prev,
-                  Target_cache.get_target_flat_status_last_retrieved_time
-                    t.target_cache ~id
-                with
-                | None, _ -> None
-                | Some pr, None -> None
-                | Some pr, Some nw -> Some (min pr nw))
-            |> function
-            | Some t -> `Since (t -. 1.)
-            | None -> `All in
-          Protocol_client.call t.protocol_client
-            ~timeout:(t.block_time_request
-                      +. t.default_protocol_client_timeout)
-            (`Get_target_flat_states (status_query, now, 
-                                      [`Block_if_empty_at_most
-                                         t.block_time_request]))
-          >>= fun msg_down ->
-          begin match msg_down with
-          | `List_of_target_flat_states l ->
-            (* Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states" *)
-            (*      @ verbose); *)
-            List.iter l ~f:begin fun (id, value) ->
-              Target_cache.update_flat_state t.target_cache ~id value
-            end;
-            sleep sleep_time
-            >>= fun () ->
-            batch_fetching later
-          | other ->
-            fail (`Wrong_down_message other)
-          end
-      in
-      let rec keep_fetching_for_active_targets tids =
-        let to_fetch =
-          List.filter tids ~f:(fun id ->
-              let signal =
-                Target_cache.get_target_flat_status_signal t.target_cache id in
-              let latest =
-                Reactive.Signal.value signal |> Target.State.Flat.latest in
-              let not_finished =
-                not (Option.value_map ~default:false
-                       ~f:Target.State.Flat.finished latest) in
-              match Option.map ~f:Target.State.Flat.simple latest with
-              | None
-              | Some `In_progress
-              | Some `Activable -> true
-              | Some `Successful
-              | Some `Failed -> not_finished)
-        in
-        match to_fetch with
-        | [] -> return ()
-        | more  ->
-          Log.(s "Batch fetching state for "
-               % (match List.length to_fetch > 14 with
-                 | true -> i (List.length to_fetch) % s " targets"
-                 | false -> OCaml.list quote to_fetch)
-               @ verbose);
-          batch_fetching to_fetch
-          >>= fun () ->
-          sleep 3.
-          >>= fun () ->
-          keep_fetching_for_active_targets to_fetch
-      in
-      asynchronous_loop t ~name:"fetch-flat-statuses"
-        (fun () -> keep_fetching_for_active_targets targets_ids)
-        ~more_info:Display_markup.(
-            let lids =
-              let max_ids = 25 in
-              match List.length targets_ids with
-              | n when n <= max_ids -> targets_ids
-              | _ -> List.take targets_ids max_ids @ ["…"]
-            in
-            description "Target-IDs"
-              (concat ~sep:(text ", ") (List.map lids ~f:command))
-          )
-    in
-    let event =
-      Reactive.Source.signal t.interesting_targets
-      |> React.S.diff (fun set1 set2 -> Target_id_set.diff set1 set2)
-    in
-    React.E.map
-      (fun set -> update_flat_states (Target_id_set.to_list set))
-      event
-  in
-     *)
   ()
 
 let fetch_available_queries t ~id =
