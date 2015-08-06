@@ -544,74 +544,74 @@ let start_getting_flat_statuses t =
   in
   ()
 
+let start_getting_summaries t =
+  let get_all_missing_summaries targets_ids =
+    Log.(s "get_all_missing_summaries TRIGGERED !" %n
+         % s "targets_ids has " % i (List.length targets_ids)
+         % s " elements" @ verbose);
+    let at_once = 50 in
+    let sleep_time = 0.1 in
+    let rec fetch_summaries ids =
+      match ids with
+      | [] ->
+        (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" @ verbose); *)
+        sleep 42.
+      | more ->
+        let now, later = List.split_n more at_once in
+        Protocol_client.call
+          ~timeout:t.default_protocol_client_timeout
+          t.protocol_client (`Get_target_summaries now)
+        >>= fun msg_down ->
+        begin match msg_down with
+        | `List_of_target_summaries l ->
+          Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
+          List.iter l ~f:(fun (id, value) ->
+              begin match Target.Summary.id value with
+              | i when id = i ->
+                Target_cache.update_target t.target_cache ~id (`Summary value)
+              | p ->
+                Target_cache.update_target t.target_cache ~id (`Pointer (p, value))
+              end
+            );
+          sleep sleep_time
+          >>= fun () ->
+          fetch_summaries later
+        | other ->
+          fail (`Wrong_down_message other)
+        end
+    in
+    let missing_ids =
+      List.filter targets_ids ~f:(fun id ->
+          match
+            Target_cache.get_target_summary_signal t.target_cache id
+            |> Reactive.Signal.value
+          with
+          | `None -> true
+          | _ -> false)
+    in
+    fetch_summaries missing_ids
+  in
+  let ref_to_changed_id_list = ref [] in
+  let loop_handle =
+    preemptible_asynchronous_loop t ~name:"Target-summaries" ~body:(fun () ->
+        get_all_missing_summaries !ref_to_changed_id_list)
+  in
+  let (_ : unit React.E.t) =
+    let event = interesting_target_ids t |> React.S.changes in
+    React.E.map (fun ids ->
+        Log.(s "waking up target-summaries" @ verbose);
+        ref_to_changed_id_list := ids;
+        loop_handle#wake_up
+      ) event
+  in
+  ()
 
 
 let start_updating t =
   start_server_status_loop t;
   start_list_of_ids_loop t;
   start_getting_flat_statuses t;
-  let (_ : unit React.E.t) =
-    let get_all_missing_summaries targets_ids =
-      Log.(s "get_all_missing_summaries TRIGGERED !" %n
-           % s "targets_ids has " % i (List.length targets_ids)
-           % s " elements" @ verbose);
-      let at_once = 50 in
-      let sleep_time = 0.1 in
-      let rec fetch_summaries ids =
-        match ids with
-        | [] ->
-          (* Log.(s "fill_cache_loop.fetch_summaries nothing left to do" @ verbose); *)
-          return ()
-        | more ->
-          let now, later = List.split_n more at_once in
-          Protocol_client.call
-            ~timeout:t.default_protocol_client_timeout
-            t.protocol_client (`Get_target_summaries now)
-          >>= fun msg_down ->
-          begin match msg_down with
-          | `List_of_target_summaries l ->
-            Log.(s "fill_cache_loop got " % i (List.length l) % s " targets" @ verbose);
-            List.iter l ~f:(fun (id, value) ->
-                begin match Target.Summary.id value with
-                | i when id = i ->
-                  Target_cache.update_target t.target_cache ~id (`Summary value)
-                | p ->
-                  Target_cache.update_target t.target_cache ~id (`Pointer (p, value))
-                end
-              );
-            sleep sleep_time
-            >>= fun () ->
-            fetch_summaries later
-          | other ->
-            fail (`Wrong_down_message other)
-          end
-      in
-      let missing_ids =
-        List.filter targets_ids ~f:(fun id ->
-            match
-              Target_cache.get_target_summary_signal t.target_cache id
-              |> Reactive.Signal.value
-            with
-            | `None -> true
-            | _ -> false)
-      in
-      asynchronous_loop t ~name:"fetch-summaries"
-        ~more_info:Display_markup.(
-            let lids =
-              let max_ids = 25 in
-              match List.length targets_ids with
-              | n when n <= max_ids -> targets_ids
-              | _ -> List.take targets_ids max_ids @ ["…"]
-            in
-            description "Target-IDs"
-              (concat ~sep:(text ", ") (List.map lids ~f:command))
-          )
-        (fun () ->
-           fetch_summaries missing_ids)
-    in
-    let event = interesting_target_ids t |> React.S.changes in
-    React.E.map get_all_missing_summaries event
-  in
+  start_getting_summaries t;
   ()
 
 let fetch_available_queries t ~id =
