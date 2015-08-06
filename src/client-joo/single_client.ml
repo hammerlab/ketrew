@@ -449,7 +449,10 @@ let start_getting_flat_statuses t =
     Log.(s "get_all_missing_states TRIGGERED !" %n
          % s "targets_ids has " % i (List.length target_ids)
          % s " elements" @ verbose);
-    let at_once = 10 in
+    let at_once = 200 in
+    (* if the number of targets goes above 200, we have the problem
+       that 100 first ones have to go through before the next ones are
+       explored. *)
     let sleep_time = 0.3 in
     let rec batch_fetching ids =
       match ids with
