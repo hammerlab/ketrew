@@ -104,6 +104,8 @@ let add_or_update_targets t target_list =
     ~msg:(fmt "add_or_update_targets [%s]"
             (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
+let update_target t trgt = add_or_update_targets t [trgt]
+
 let get_stored_target t key =
   database t >>= fun db ->
   Database.get db ~collection:active_targets_collection ~key
@@ -275,7 +277,7 @@ end
 
 module Adding_targets = struct
   let targets_to_add_collection = "targets-to-add"
-  let store_targets_to_add t t_list =
+  let register_targets_to_add t t_list =
     let action =
       let open Database_action in
       List.map t_list ~f:(fun trgt ->
@@ -373,4 +375,3 @@ module Adding_targets = struct
 
 
 end
-let add_targets = Adding_targets.store_targets_to_add

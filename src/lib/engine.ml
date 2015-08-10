@@ -295,7 +295,7 @@ module Run_automaton = struct
           _process_automaton_transition t target
           >>< function
           | `Ok (new_target, progress) ->
-            Persistent_data.add_or_update_targets t.data [new_target]
+            Persistent_data.update_target t.data new_target
             >>= fun () ->
             Log.(s "Transition for target: "
                  % Target.log target
@@ -403,7 +403,8 @@ let restart_target engine target_id =
     re
   in
   let this_new_target = new_target target in
-  Persistent_data.add_targets engine.data [this_new_target]
+  Persistent_data.Adding_targets.register_targets_to_add
+    engine.data [this_new_target]
   >>= fun () ->
   let id = Target.id this_new_target in
   return id
@@ -413,6 +414,6 @@ let all_targets t =
 let get_target t id =
   Persistent_data.get_target t.data id
 let add_targets t l =
-  Persistent_data.add_targets t.data l
+  Persistent_data.Adding_targets.register_targets_to_add t.data l
 
   

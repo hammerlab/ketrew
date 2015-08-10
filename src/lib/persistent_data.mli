@@ -90,18 +90,9 @@ val move_target_to_finished_collection :
    | `Database_unavailable of string ])
     Deferred_result.t
 
-val add_or_update_targets :
+val update_target :
   t ->
-  Ketrew_pure.Target.t list ->
-  (unit,
-   [> `Database of
-        [> `Act of Trakeva.Action.t | `Load of string ] * string
-   | `Database_unavailable of string ])
-    Deferred_result.t
-
-val add_targets :
-  t ->
-  Target.t list ->
+  Target.t ->
   (unit,
    [> `Database of
         [> `Act of Trakeva.Action.t | `Load of string ] * string
@@ -134,6 +125,14 @@ module Killing_targets: sig
 end
 
 module Adding_targets: sig
+  val register_targets_to_add :
+    t ->
+    Target.t list ->
+    (unit,
+     [> `Database of
+          [> `Act of Trakeva.Action.t | `Load of string ] * string
+     | `Database_unavailable of string ])
+      Deferred_result.t
   val check_and_really_add_targets :
     t ->
     (bool,
