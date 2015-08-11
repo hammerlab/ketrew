@@ -359,7 +359,9 @@ let answer_get_target_flat_states ~server_state
     ~get_values:(fun () ->
         get_targets_from_ids ~server_state target_ids
         >>= fun targets ->
-        Log.(s "answer_get_target_flat_states computing states " @ verbose);
+        Log.(s "answer_get_target_flat_states computing states for "
+             % OCaml.list s target_ids
+             @ verbose);
         let states =
           List.filter_map targets ~f:(fun (id, trgt) ->
               let flat_state = Target.State.Flat.of_state (Target.state trgt) in

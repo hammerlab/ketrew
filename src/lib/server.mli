@@ -31,14 +31,19 @@ open Unix_io
 val start: configuration:Configuration.server ->
   (unit,
    [> `Database of Trakeva.Error.t
-   | `Dyn_plugin of [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
-   | `Failure of string
-   | `IO of [> `Read_file_exn of Unix_io.IO.path * exn ]
-   | `Server_status_error of string
-   | `Start_server_error of string
+   | `Dyn_plugin of
+        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+   | `Failure of bytes
+   | `IO of [> `Read_file_exn of bytes * exn ]
+   | `Missing_data of bytes
+   | `Server_status_error of bytes
+   | `Start_server_error of bytes
    | `System of
-        [> `File_info of string | `List_directory of string | `Remove of string ] *
-        [> `Exn of exn ] ]) Deferred_result.t
+        [> `File_info of bytes
+        | `List_directory of bytes
+        | `Remove of bytes ] *
+        [> `Exn of exn ]
+   | `Target of [> `Deserilization of bytes ] ]) Deferred_result.t
 (** Start the server according to its configuration.  *)
 
 

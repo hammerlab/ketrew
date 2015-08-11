@@ -24,7 +24,17 @@ open Unix_io
 
 type t
 
-val create: database_parameters: string -> (t, 'a) Deferred_result.t
+val create :
+  database_parameters:string ->
+  (t,
+   [> `Database of
+        [> `Get of Trakeva.Key_in_collection.t
+        | `Get_all of string
+        | `Load of string ] *
+        string
+   | `Missing_data of string
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
 
 val unload: t ->
   (unit, [> `Database of [> `Close ] * string ]) Deferred_result.t
@@ -81,7 +91,7 @@ val fold_active_targets :
        Deferred_result.t) ->
   ('a, 'combined_errors) Deferred_result.t
 
-val move_target_to_finished_collection :
+val move_target_to_finished_collection : (* TODO: rename to “declare_finished” or something *)
   t ->
   target:Target.t ->
   (unit,

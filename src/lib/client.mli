@@ -55,15 +55,19 @@ val as_client:
   f:(client:t ->
      (unit,
       [> `Database of Trakeva.Error.t
-      | `Database_unavailable of Ketrew_pure.Target.id
-      | `Dyn_plugin of [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
-      | `Failure of string
-      | `Wrong_configuration of [> `Found of string ] * [> `Exn of exn ] ]
+      | `Database_unavailable of bytes
+      | `Dyn_plugin of
+           [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
+      | `Failure of bytes
+      | `Missing_data of bytes
+      | `Target of [> `Deserilization of bytes ]
+      | `Wrong_configuration of
+           [> `Found of bytes ] * [> `Exn of exn ] ]
       as 'a)
        Deferred_result.t) ->
   (unit, 'a) Deferred_result.t
 (** Run the function [f] with a fresh-client created with the [configuration].
-    
+
     If the configuration can be for an HTTP client, for a standalone
     engine, or for a server (the client behaves like a local standalone
     engine, using {!Configuration.standalone_of_server}).

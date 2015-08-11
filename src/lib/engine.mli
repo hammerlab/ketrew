@@ -31,7 +31,9 @@ val with_engine:
   (engine:t ->
    (unit, [> `Database of Trakeva.Error.t
           | `Failure of string
+          | `Missing_data of bytes
           | `Database_unavailable of Ketrew_pure.Target.id
+          | `Target of [> `Deserilization of bytes ]
           | `Dyn_plugin of
                [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
           ] as 'merge_error) Deferred_result.t) ->
@@ -43,6 +45,8 @@ val load:
   (t,
    [> `Database of Trakeva.Error.t
    | `Failure of string
+   | `Missing_data of bytes
+   | `Target of [> `Deserilization of bytes ]
    | `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
    ]) Deferred_result.t
