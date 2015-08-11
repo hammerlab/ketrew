@@ -21,15 +21,22 @@ val call :
   Ketrew_pure.Protocol.Up_message.t ->
   (Ketrew_pure.Protocol.Down_message.t,
    [> `Protocol_client of
-        [> `JSONP of
-             [> `Exn of exn
-             | `Parsing_message of bytes * exn
-             | `Timeout ] ] ]) Pvem_js.t
+        [> `JSONP of [> `Exn of exn | `Timeout ]
+        | `Parsing_message of bytes * exn
+        | `Wrong_xhr_status of bytes
+        | `Xhr_timeout
+        ] ])
+    Pvem_js.t
 
 
 module Error: sig
   val to_string :
-    [< `JSONP of
-         [< `Exn of exn | `Parsing_message of 'a * exn | `Timeout ] ] ->
+    [<
+      | `JSONP of
+          [< `Exn of exn | `Timeout ]
+      | `Parsing_message of string * exn
+      | `Wrong_xhr_status of bytes 
+      | `Xhr_timeout
+    ] ->
     string
 end

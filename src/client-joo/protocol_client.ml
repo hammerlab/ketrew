@@ -2,8 +2,48 @@ open Ketrew_pure
 open Internal_pervasives
 open Pvem_js
 
+module Custom_xml_http_request = struct
+
+  let post url ~body =
+    let task, condition = Lwt.task () in
+    let open XmlHttpRequest in
+    let xhr = create () in
+    xhr##_open
+      (Js.string "POST") (Js.string url) (Js._true);
+    Log.(s "Custom_xml_http_request.post " % s url @ verbose);
+    xhr##.onreadystatechange :=  Js.wrap_callback
+        (fun _ ->
+           begin match xhr##.readyState with
+           | DONE ->
+             (*
+             Log.(s "READY !! status: " % i xhr##.status % n
+                  % s " status text: " % s (xhr##.statusText |> Js.to_string) % n
+                  % s " resp text: " % s (xhr##.responseText |> Js.to_string) % n
+                  @ normal);
+                *)
+             begin match xhr##.status with
+             | 200 ->
+               Lwt.wakeup condition (`Ok (Js.to_string xhr##.responseText))
+             | other ->
+               Lwt.wakeup condition
+                 (`Error (`Protocol_client
+                            (`Wrong_xhr_status (Js.to_string xhr##.statusText))))
+             end
+           | other -> Log.(s "READY other !! " @ normal);
+           end);
+    xhr##.ontimeout := Dom.handler (fun _ ->
+        Lwt.wakeup condition (`Error (`Protocol_client (`Xhr_timeout)));
+        Js._false);
+    xhr##send (Js.Opt.return (Js.string body));
+    Lwt.on_cancel task (fun () -> xhr##abort);
+    task
+
+end
+
+
 type connection =
   | JSONP of string
+  | XHR of [`Token of string]
 
 (* (Protocol.Up_message.t -> string (\* callback for json functions *\) -> string) *)
 
@@ -18,7 +58,7 @@ let name {name; _} = name
 
 let jsonp_of_raw_url ~name url = create ~name (JSONP url)
 
-let jsonp_call {connection = JSONP url; _} =
+let jsonp_call url =
   (fun msg callback_name ->
      fmt "%s&callback=%s&message=%s"
        url
@@ -42,13 +82,17 @@ let markup {name; connection} =
     begin match connection with
     | JSONP url ->
       description "JSONP" (path url)
+    | XHR (`Token tok) ->
+      description "XHR" (description "Token" (command tok))
     end; 
   ]
 
 let log {connection} =
   Log.(braces
          (match connection with
-         | JSONP url -> s "JSONP→" % s url))
+         | JSONP url -> s "JSONP→" % s url
+         | XHR (`Token tok) -> s "XHR (token: " % s tok % s ")"
+         ))
 
 
 let of_current () : t option =
@@ -67,11 +111,12 @@ let of_current () : t option =
   in
   match token_opt, Url.Current.protocol with
   | Some token, not_file when not_file <> "file:" ->
-    Some (jsonp_of_url ~name:"Main"
-            ~protocol:Url.Current.protocol
-            ~host:Url.Current.host
-            ?port:Url.Current.port
-            ~token ())
+    (* Some (jsonp_of_url ~name:"Main" *)
+    (*         ~protocol:Url.Current.protocol *)
+    (*         ~host:Url.Current.host *)
+    (*         ?port:Url.Current.port *)
+    (*         ~token ()) *)
+    Some {name = "XHR"; connection = XHR (`Token token)}
   | Some tok, prot ->
     Log.(s "There is a token (" % quote tok % s ") but protocol is "
          % quote prot @ warning);
@@ -81,6 +126,7 @@ let of_current () : t option =
 let base_url {connection; _} =
   match connection with
   | JSONP url -> url
+  | XHR (`Token tok)  -> fmt "/api?token=%s" tok
 
 
 let of_window_object () =
@@ -106,13 +152,26 @@ let of_window_object () =
 
 let call ?(timeout = 20.) t msg =
   match t.connection with
+  | XHR (`Token tok) ->
+    Custom_xml_http_request.post (fmt "/api?token=%s" tok)
+      (Protocol.Up_message.serialize msg)
+    >>= fun str ->
+    begin try
+      return (Protocol.Down_message.deserialize_exn str)
+    with e -> 
+      Log.(s "Deserializing message "
+           % big_byte_sequence ~max_length:200 str
+           %sp % s "Exn: " % exn e
+           @ verbose);
+      fail (`Protocol_client (`Parsing_message (str, e)))
+    end
   | JSONP url ->
     wrap_deferred
       ~on_exn:(fun e -> `Protocol_client (`JSONP (`Exn e)))
       Lwt.(fun () ->
           pick [
             begin
-              Jsonp.call_custom_url (jsonp_call t msg)
+              Jsonp.call_custom_url (jsonp_call url msg)
               >>= fun msg ->
               return (`String msg)
             end;
@@ -142,7 +201,7 @@ let call ?(timeout = 20.) t msg =
              % big_byte_sequence ~max_length:200 got
              %sp % s "Exn: " % exn e
              @ verbose);
-        fail (`Protocol_client (`JSONP (`Parsing_message (got, e))))
+        fail (`Protocol_client (`Parsing_message (got, e)))
       end
     | `Timeout ->
       fail (`Protocol_client (`JSONP `Timeout))
@@ -152,6 +211,9 @@ module Error = struct
   let to_string = function
   | `JSONP (`Timeout) -> fmt "JSONP Timeout"
   | `JSONP (`Exn e) -> fmt "JSONP Exception: %s" (Printexc.to_string e)
-  | `JSONP (`Parsing_message (_, e)) ->
+  | `Parsing_message (_, e) ->
     fmt "JSONP Parsing Exception: %s" (Printexc.to_string e)
+  | `Wrong_xhr_status s ->
+    fmt "XHR Wrong status: %S" s
+  | `Xhr_timeout -> "XHR timeout"
 end
