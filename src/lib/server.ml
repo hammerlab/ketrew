@@ -120,6 +120,10 @@ module Server_state = struct
     server_configuration: Configuration.server;
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
+    all_connections:
+      (string,
+       [`Open of Time.t | `Request of Time.t | `Closed of Time.t] list)
+        Hashtbl.t;
   }
 (*M
 The `loop_traffic_light` is “red” for the server  by default but some services
@@ -130,7 +134,8 @@ the targets and not wait for the next “loop timeout.”
 M*)
   let create ~state ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
-    {state; authentication; server_configuration; loop_traffic_light;}
+    {state; authentication; server_configuration; loop_traffic_light;
+     all_connections = Hashtbl.create 42}
 
 
 end
@@ -555,6 +560,36 @@ let start_listening_on_command_pipe ~server_state =
               end
               >>= fun () ->
               read_loop ~error_count ()
+            | "dump-all-connections" ->
+              let uniq = Unique_id.create () in
+              Deferred_result.(
+                IO.with_out_channel
+                  (`Overwrite_file ("all-connections-" ^ uniq))
+                  ~f:(fun o ->
+                      Hashtbl.fold (fun id status prev ->
+                          prev >>= fun () ->
+                          IO.write o (fmt "%s:\n" id)
+                          >>= fun () ->
+                          List.fold (List.rev status) ~init:(return ())
+                            ~f:(fun prev status ->
+                                prev >>= fun () ->
+                                let ti = Time.to_filename in
+                                IO.write o
+                                  (fmt "    %s\n"
+                                     begin match status with
+                                     | `Open t -> fmt "Open %s" (ti t)
+                                     | `Request t -> fmt "Request %s" (ti t)
+                                     | `Closed t -> fmt "Closed %s" (ti t)
+                                                       end))
+                            )
+                        server_state.all_connections
+                        (return ()))
+                >>< function
+                | `Ok () -> return ()
+                | `Error _ -> return ()
+              )
+              >>= fun _ ->
+              read_loop ~error_count ()
             |  other ->
               Log.(s "Cannot understand command: " % OCaml.string other @ error);
               read_loop ~error_count ())
@@ -632,7 +667,16 @@ let start_listening_on_connections ~server_state =
               `Crt_file_path certfile,
               `Key_file_path keyfile,
               `No_password, `Port port) in
-          let request_callback _ request body =
+          let request_callback (_, conn_id) request body =
+            let id = Cohttp.Connection.to_string conn_id in
+            begin match Hashtbl.find server_state.all_connections id with
+            | some ->
+              Hashtbl.replace server_state.all_connections
+                id (`Request Time.(now ()) :: some);
+            | exception _ ->
+              Hashtbl.replace server_state.all_connections 
+                id (`Request Time.(now ()) :: []);
+            end;
             handle_request ~server_state ~body request 
             >>= fun high_level_answer ->
             begin match high_level_answer with
@@ -656,6 +700,15 @@ let start_listening_on_connections ~server_state =
             return cohttp_answer
           in
           let conn_closed (_, conn_id) =
+            let id = Cohttp.Connection.to_string conn_id in
+            begin match Hashtbl.find server_state.all_connections id with
+            | some ->
+              Hashtbl.replace server_state.all_connections
+                id (`Open Time.(now ()) :: some);
+            | exception _ ->
+              Hashtbl.replace server_state.all_connections 
+                id (`Open Time.(now ()) :: []);
+            end;
             Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
                  @ verbose);
           in
