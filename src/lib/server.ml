@@ -635,24 +635,14 @@ let start_listening_on_connections ~server_state =
           let request_callback _ request body =
             handle_request ~server_state ~body request 
             >>= fun high_level_answer ->
-            let respond_string ?headers ~status ~body () =
-              (* Cohttp's `respond_string` function does not flush in `0.12.0`
-                 so here it is pasted and fixed.
-                 See <https://github.com/mirage/ocaml-cohttp/issues/205>.  *)
-              let res = Cohttp.Response.make ~status ~flush:true
-                  ~encoding:(Cohttp.Transfer.Fixed (Int64.of_int (String.length body)))
-                  ?headers () in
-              let body = Cohttp_lwt_body.of_string body in
-              return (res,body)
-            in
             begin match high_level_answer with
             | `Ok `Unit ->
-              respond_string ~status:`OK  ~body:"" ()
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
             | `Ok (`Message (`Json, msg)) ->
               let body = Protocol.Down_message.serialize msg in
-              respond_string ~status:`OK  ~body ()
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
             | `Ok (`Page body) ->
-              respond_string ~status:`OK  ~body ()
+              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
             | `Error e ->
               Log.(s "Error while handling the request: "
                    % s (Error.to_string e) @ error);
@@ -660,7 +650,7 @@ let start_listening_on_connections ~server_state =
                 if return_error_messages
                 then "Error: " ^ (Error.to_string e)
                 else "Undisclosed server error" in
-              respond_string ~status:`Not_found ~body ()
+              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
             end
             >>= fun ((response, body) as cohttp_answer) ->
             return cohttp_answer
