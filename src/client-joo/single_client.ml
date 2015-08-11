@@ -552,8 +552,8 @@ let start_getting_summaries t =
     Log.(s "get_all_missing_summaries TRIGGERED !" %n
          % s "targets_ids has " % i (List.length targets_ids)
          % s " elements" @ verbose);
-    let at_once = 50 in
-    let sleep_time = 0.1 in
+    let at_once = 20 in
+    let sleep_time = 0.01 in
     let rec fetch_summaries ids =
       match ids with
       | [] ->
