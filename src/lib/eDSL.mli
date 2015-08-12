@@ -169,6 +169,7 @@ class type user_target =
     method depends_on: user_target list
     method on_failure_activate: user_target list
     method on_success_activate: user_target list
+    method add_tags: string list -> unit
     (**/**)
   end
 
@@ -347,3 +348,5 @@ val to_display_string :
   user_target ->
   string
 (** Build a display-friendly string summarizing the workflow. *)
+
+

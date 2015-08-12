@@ -95,6 +95,7 @@ class type user_target =
     method on_success_activate: user_target list
     method metadata: [`String of string ] option
     method product: user_artifact
+    method add_tags: string list -> unit
   end
 
 
@@ -109,12 +110,13 @@ let user_target_internal
     ?metadata
     ?product
     ?equivalence
-    ?tags
+    ?(tags = [])
     ()
   =
   let id = Unique_id.create () in
   object (self)
     val mutable active = active
+    val mutable additional_tags = []
     method name = 
       match name with
       | None -> id
@@ -126,6 +128,8 @@ let user_target_internal
     method activate = active <- true
     method is_active = active
     method metadata = metadata
+    method add_tags tags =
+      additional_tags <- additional_tags @ tags |> List.dedup
     method render =
       Target.create ?metadata
         ~id:self#id
@@ -133,7 +137,7 @@ let user_target_internal
         ~on_failure_activate:(List.map on_failure_activate ~f:(fun t -> t#id))
         ~on_success_activate:(List.map on_success_activate ~f:(fun t -> t#id))
         ~name:self#name ?condition:done_when
-        ?equivalence ?tags
+        ?equivalence ~tags:(tags @ additional_tags)
         ~make ()
       |> (fun x ->
           if active then Target.activate_exn ~reason:`User x else x)
@@ -225,3 +229,4 @@ let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =
       (sublist ut#on_success_activate ~kind:`OSA)
   in
   dump_workflow ut
+

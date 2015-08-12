@@ -150,7 +150,12 @@ val restart: t ->
 
 val submit:
   ?override_configuration:Configuration.t ->
+  ?add_tags: string list ->
   EDSL.user_target ->
   unit
 (** Submit a high-level workflow description to the engine; this
-    function calls [Lwt_main.run]. *)
+    function calls [Lwt_main.run].
+
+    One can add tags to all the targets in the workflow before
+    submitting with the [add_tags] option.
+*)

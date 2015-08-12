@@ -322,7 +322,17 @@ let user_command_list t =
   | first :: more -> (first, more)
   | [] -> assert false (* there is at least the argument one *)
 
-let submit ?override_configuration t =
+let rec add_tags_to_workflow (t : EDSL.user_target) ~tags =
+  t#add_tags tags;
+  List.iter t#depends_on (add_tags_to_workflow ~tags);
+  List.iter t#on_success_activate (add_tags_to_workflow ~tags);
+  List.iter t#on_failure_activate (add_tags_to_workflow ~tags);
+  ()
+
+let submit ?override_configuration ?add_tags t =
+  begin match add_tags with
+  | None -> () | Some tags -> add_tags_to_workflow t ~tags
+  end;
   let active, dependencies = user_command_list t in
   let configuration =
     Configuration.load_exn
