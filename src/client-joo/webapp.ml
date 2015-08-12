@@ -88,9 +88,25 @@ module Application_state = struct
                           code [pcdata (version |> Lazy.force)]];
                       li [pcdata "Git-commit: ";
                           begin match git_commit with
-                          | Some g -> code [pcdata g]
+                          | Some g ->
+                            a ~a:[
+                              a_href (fmt "https://github.com/hammerlab/ketrew/\
+                                           commit/%s" g)
+                            ] [
+                              code [pcdata g]
+                            ]
                           | None -> pcdata "N/A"
                           end];
+                      li [pcdata "Template-assembled-on: ";
+                          code [
+                            pcdata
+                              begin try
+                                Js.Unsafe.get Dom_html.window
+                                  (Js.string "template_assembly_time")
+                                |> Js.to_string
+                              with _ -> "N/A"
+                              end
+                          ]]
                     ];
                     pcdata "See the ";
                     a ~a:[

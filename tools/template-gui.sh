@@ -45,6 +45,7 @@ ul.inline-items-separated {
     <div class="container-fluid" id="ketrew-gui"></div>
     <script>
       window.ketrew_debug_level = "$DEBUG_LEVEL";
+      window.template_assembly_time = "$(date)";
       window.ketrew_connections = [
 EOBLOB
 if [ -f "$MORE_SERVERS" ]; then
