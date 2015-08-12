@@ -384,6 +384,12 @@ let get_list_of_target_ids t query =
           | `Has_tag (`Equals t) ->
             let tags = Target.tags target in
             List.exists tags ~f:((=) t)
+          | `Has_tag (`Matches rex_str) ->
+            let tags = Target.tags target in
+            begin match Re_posix.compile_pat rex_str with
+            | rex -> List.exists tags ~f:(Re.execp rex)
+            | exception _ -> false
+            end
         in
         if apply_filter query.filter then wins () else None
       )

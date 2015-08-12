@@ -82,7 +82,7 @@ module Up_message : sig
         | `Killable
         | `Dead_because_of_dependencies
       ]
-    | `Has_tag of [`Equals of string] 
+    | `Has_tag of [`Equals of string | `Matches of string] 
   ]
   type target_query = {
     time_constraint : time_constraint;

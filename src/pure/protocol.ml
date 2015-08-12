@@ -93,7 +93,7 @@ module Up_message = struct
           | `Killable
           | `Dead_because_of_dependencies
         ]
-      | `Has_tag of [`Equals of string] 
+      | `Has_tag of [`Equals of string | `Matches of string] 
     ] [@@deriving yojson]
     type target_query = {
       time_constraint : time_constraint;
@@ -149,8 +149,12 @@ module Up_message = struct
             end;
           text ")";
         ]
-      | `Has_tag (`Equals s) ->
-        textf "(tag-equals %S)" s
+      | `Has_tag that  ->
+        textf "(tag %s)"
+          begin match that with
+          | `Equals s -> fmt "(equals %S)" s
+          | `Matches s -> fmt "(matches %S" s
+          end
     in
     description_list [
       "Time-constraint",
