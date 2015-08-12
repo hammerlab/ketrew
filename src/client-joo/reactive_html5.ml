@@ -372,6 +372,8 @@ module H5 = struct
 
   module Custom_data = struct
 
+    open Ketrew_pure
+
     let display_list_of_tags tags =
       Bootstrap.collapsable_ul
         (List.map tags ~f:(fun tag ->
@@ -379,10 +381,55 @@ module H5 = struct
                a_class ["text-info"]
              ] [pcdata tag]))
 
-
     let summarize_id id =
       String.sub id ~index:10 ~length:(String.length id - 10)
       |> Option.value_map ~default:id ~f:(fmt "…%s")
+
+    let class_of_simple_status =
+      function
+      | `Failed -> "text-danger"
+      | `In_progress -> "text-info"
+      | `Activable -> "text-muted"
+      | `Successful -> "text-success"
+
+    let full_flat_state_ul ?(max_items=1000) state =
+      let history = state |> Target.State.Flat.history in
+      let li_list =
+        List.take history max_items
+        |> List.map ~f:(fun item ->
+            li [
+              strong [
+                pcdata (Target.State.Flat.time item
+                        |> Markup.date_to_string);
+                pcdata ": "];
+              span  ~a:[
+                a_class [Target.State.Flat.simple item
+                         |> class_of_simple_status]
+              ] [pcdata (Target.State.Flat.name item)];
+              begin match Target.State.Flat.more_info item with
+              | [] -> span []
+              | more ->
+                span [
+                  br ();
+                  pcdata (String.concat ~sep:", " more);
+                ]
+              end;
+              begin match Target.State.Flat.message item with
+              | None -> span []
+              | Some m ->
+                span [
+                  br ();
+                  pcdata m
+                ]
+              end;
+            ])
+      in
+      ul (
+        li_list
+        @ (if List.length history > max_items
+           then [li [code [pcdata "..."]]]
+           else [])
+      )
 
 
   end

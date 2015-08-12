@@ -400,41 +400,12 @@ module Html = struct
             span ~a:[a_class ["label"; "label-warning"]]
               [pcdata "Unknown … yet"]
           | Some item ->
-            let text_of_item item =
-              fmt "%s%s%s"
-                (Target.State.Flat.name item)
-                (Target.State.Flat.message item
-                 |> Option.value_map ~default:""
-                   ~f:(fmt " (%s)"))
-                (Target.State.Flat.more_info item
-                 |> function
-                 | [] -> ""
-                 | more -> ": " ^ String.concat ~sep:", " more)
-            in
             let label =
               match Target.State.Flat.simple item with
               | `Activable ->  "label-default"
               | `In_progress -> "label-info"
               | `Successful -> "label-success"
               | `Failed -> "label-danger"
-            in
-            let additional_info =
-              List.take (
-                Reactive.Signal.value target_status_signal
-                |> Target.State.Flat.history
-              ) 10
-              |> List.map ~f:(fun item ->
-                  div [
-                    code [pcdata
-                            (Target.State.Flat.time item |> Time.to_filename)];
-                    br ();
-                    pcdata (text_of_item item);
-                  ])
-              |> fun l ->
-              if List.length l > 10 then
-                l @ [div [code [pcdata "..."]]]
-              else
-                l
             in
             let visible_popover = Reactive.Source.create None in
             let popover =
@@ -451,7 +422,10 @@ module Html = struct
                            (x - width - 100) width width);
                     ] [
                       h3 ~a:[a_class ["popover-title"]] [pcdata "State History"];
-                      div ~a:[a_class ["popover-content"]] additional_info;
+                      div ~a:[a_class ["popover-content"]] [
+                        Custom_data.full_flat_state_ul ~max_items:10 
+                          (Reactive.Signal.value target_status_signal)
+                      ]
                     ]
                   | None -> div [])
                 |> Signal.singleton

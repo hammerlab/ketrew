@@ -84,12 +84,8 @@ module Html = struct
           | None -> ["text-warning"]
           | Some item ->
             let text_class =
-              match Target.State.Flat.simple item with
-              | `Failed -> "text-danger"
-              | `In_progress -> "text-info"
-              | `Activable -> "text-muted"
-              | `Successful -> "text-success"
-            in
+              Target.State.Flat.simple item |>
+              Custom_data.class_of_simple_status in
             [text_class]
           )
       ) in
@@ -269,28 +265,10 @@ module Html = struct
     Reactive_node.div (
       Target_cache.get_target_flat_status_signal t.target_cache ~id:t.target_id
       |> Reactive.Signal.map ~f:(fun state ->
-          let text_of_item item =
-            fmt "%s%s%s"
-              (Target.State.Flat.name item)
-              (Target.State.Flat.message item
-               |> Option.value_map ~default:""
-                 ~f:(fmt " (%s)"))
-              (Target.State.Flat.more_info item
-               |> function
-               | [] -> ""
-               | more -> ": " ^ String.concat ~sep:", " more)
-          in
-          let additional_info =
-            (state |> Target.State.Flat.history)
-            |> List.map ~f:(fun item ->
-                div [
-                  code [pcdata
-                          (Target.State.Flat.time item |> Time.to_filename)];
-                  br ();
-                  pcdata (text_of_item item);
-                ])
-          in
-          div additional_info
+          div [
+            h3 [pcdata "History"];
+            Custom_data.full_flat_state_ul state;
+          ]
         )
       |> Reactive.Signal.singleton)
 

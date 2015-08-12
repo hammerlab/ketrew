@@ -130,8 +130,14 @@ module H5: sig
   end
 
   module Custom_data : sig
+    open Ketrew_pure
+        
     val display_list_of_tags : string list -> [> Html5_types.ul ] elt
     val summarize_id : string -> string
+
+    val class_of_simple_status: Target.State.simple -> string
+    val full_flat_state_ul:
+      ?max_items:int -> Target.State.Flat.t -> [> Html5_types.ul ] elt
   end
 
 end
