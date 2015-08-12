@@ -72,7 +72,7 @@ module Filter = struct
         | `Killable
         | `Dead_because_of_dependencies
       ]
-    | `Has_tags of string list
+    | `Has_tags of [`Equals of string | `Matches of string ] list
   ]
 
   type t = {
@@ -103,10 +103,18 @@ module Filter = struct
      either successful or still in progress.";
     { ast = `And [
           `Created_in_the_past (`Weeks 5.);
-          `Has_tags ["workflow-examples"];
+          `Has_tags [`Equals "workflow-examples"];
         ] },
     "Get all the targets created in the past 5 weeks that \
      have the \"workflow-examples\" tag.";
+    { ast = 
+        `Has_tags [
+          (* `Equals "workflow-examples"; *)
+          `Matches "^in[0-9]*tegr[a-z]tion$";
+        ]
+         },
+    "Get all the targets that have tag matching the given 
+     regular expression (POSIX syntax).";
     { ast = `And [
           `Created_in_the_past (`Weeks 4.2);
           `Status (`Simple `Failed);
@@ -140,7 +148,7 @@ module Filter = struct
       | `Or l -> Some (`Or (List.filter_map l ~f:to_filter))
       | `Status s -> Some (`Status s)
       | `Has_tags sl ->
-        Some (`And (List.map sl ~f:(fun s -> `Has_tag (`Equals s))))
+        Some (`And (List.map sl ~f:(fun s -> `Has_tag s)))
       | `Not s ->
         Option.(to_filter s >>= fun n -> return (`Not n))
     in
@@ -204,7 +212,10 @@ module Filter = struct
       | `Or l ->
         fmt "(or %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
       | `Has_tags sl ->
-        fmt "(tags %s)" (List.map ~f:(fmt "%S") sl |> String.concat ~sep:" ")
+        fmt "(tags %s)"
+          (List.map ~f:(function
+             | `Equals s -> fmt "%S" s
+             | `Matches s -> fmt "(re %S)" s) sl |> String.concat ~sep:" ")
       | `Not l -> fmt "(not %s)" (ast_to_lisp l)
       | `Status s ->
         begin match s with
@@ -258,8 +269,18 @@ module Filter = struct
         | List [Atom "not"; tl] -> `Not (parse_sexp tl)
         | List (Atom "tags" :: tl) ->
           `Has_tags (List.map tl ~f:(function
-            | Atom l -> l
-            | List [Atom l] -> l
+            | Atom l
+            | List [Atom "equals"; Atom l]
+            | List [Atom l] -> `Equals l
+            | List [Atom "re"; Atom l]
+            | List [Atom "matches"; Atom l] as sexp ->
+              let _ =
+                try Re_posix.compile_pat l
+                with e ->
+                  fail ~sexp "Trouble with Posix regular expression: %s"
+                    (Printexc.to_string e)
+              in
+              `Matches l
             | sexp ->
               fail ~sexp "syntax error while parsing tags"))
         | other ->
