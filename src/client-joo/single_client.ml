@@ -653,7 +653,7 @@ let get_query_result t ~id ~query =
     >>= begin function
     | `Query_result result ->
       Target_cache.update_target_query_result t.target_cache ~id ~query
-        (`String result);
+        (`String (Time.now (), result));
       return ()
     | `Query_error error ->
       Target_cache.update_target_query_result t.target_cache ~id ~query

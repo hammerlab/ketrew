@@ -17,7 +17,7 @@ module Target_cache: sig
   ]
   type query_result = [
     | `None
-    | `String of string
+    | `String of (Time.t * string)
     | `Error of string
   ]
   type t

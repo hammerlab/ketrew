@@ -47,7 +47,7 @@ type t = {
   reload_query_result: query:string -> unit;
   reload_available_queries: unit -> unit;
   get_query_result: query:string ->
-    [ `Error of bytes | `None | `String of bytes ] Reactive.Signal.t;
+    [ `Error of bytes | `None | `String of (Time.t * bytes) ] Reactive.Signal.t;
 }
 let create ~target_cache ~id
     ~restart_target ~kill_target ~target_link_on_click_handler
@@ -305,7 +305,7 @@ module Html = struct
         [span ~a:[a_title help] content]
     in
     let raw_json_control current =
-      control ~content:[pcdata "Raw JSON"] ~self:`Raw_json current
+      control ~content:[pcdata "Initial Raw JSON"] ~self:`Raw_json current
         ~help:"Display the JSON defined by the backend pluging" in
     let query_additional_controls current = [
       Bootstrap.button
@@ -378,7 +378,7 @@ module Html = struct
                 Reactive_node.div Reactive.(
                     Source.signal on_display_right_now
                     |> Signal.map ~f: begin function
-                    | `Nothing -> pcdata "Nothing here"
+                    | `Nothing -> span []
                     | `Raw_json ->
                       pre [
                         pcdata (
@@ -394,12 +394,19 @@ module Html = struct
                           |> Signal.map ~f:(function
                             | `None -> [pcdata (fmt "Calling “%s”" query);
                                         Bootstrap.loader_gif ()]
-                            | `String r ->
-                              begin match Markup_queries.discriminate query with
-                              | Some _ ->
-                                [Markup_queries.render r]
-                              | None -> [pre [pcdata r]]
-                              end
+                            | `String (date, r) ->
+                              [
+                                Bootstrap.success_box [
+                                  strong [pcdata "Result of "; code [pcdata query]];
+                                  pcdata (fmt " fetched on %s:" (Markup.date_to_string date));
+                                  div 
+                                    begin match Markup_queries.discriminate query with
+                                    | Some _ ->
+                                      [Markup_queries.render r]
+                                    | None -> [pre [pcdata r]]
+                                    end;
+                                ]
+                              ]
                             | `Error e ->
                               let title =
                                 pcdata

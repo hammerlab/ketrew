@@ -18,7 +18,7 @@ module Target_cache  = struct
   ]
   type query_result = [
     | `None
-    | `String of string
+    | `String of (Time.t * string)
     | `Error of string
   ]
   type t = {
