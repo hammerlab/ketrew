@@ -131,5 +131,11 @@ _report_dir:
     mkdir _report_dir
 
 bisect-report: _report_dir
-    bisect-report -I _build -html _report_dir $(shell ls -t bisect*.out | head -1)
+    bisect-ppx-report -I _build/src/pure/ -I _build/src/lib/ \
+                        -I _build/src/app/ -I _build/src/test/  \
+                        -I _build/ketrew-dummy-plugin-user \
+                        -I _build/ketrew-integration-test \
+                        -I _build/ketrew-test \
+                        -I _build/ketrew-workflow-examples \
+                        -verbose  -html _report_dir  bisect*.out
     
