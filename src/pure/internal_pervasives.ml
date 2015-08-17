@@ -180,6 +180,7 @@ module Display_markup = struct
       | Text of string
       | Path of string
       | Command of string
+      | Uri of string
       | Concat of (t option) * (t list)
       | Description of string * t
       | Itemize of t list
@@ -193,6 +194,8 @@ module Display_markup = struct
   let command p = Command p
   let description name v = Description (name, v)
   let itemize l = Itemize l
+
+  let uri i = Uri i
 
   let concat ?sep l = Concat (sep, l)
   let flat_list l ~f =
@@ -217,7 +220,7 @@ module Display_markup = struct
     | Date f -> Time.log f
     | Time_span span -> Log.(f span % nbsp % s "s.") 
     | Text s -> Log.s s
-    | Path c | Command c -> Log.quote c
+    | Uri c | Path c | Command c -> Log.quote c
     | Concat (None, l) -> Log.concat (List.map l ~f:log)
     | Concat (Some sep, l) -> Log.separate (log sep) (List.map l ~f:log)
     | Description (name, content) ->

@@ -142,8 +142,11 @@ let additional_queries run_param =
   | `Running rp ->
     always_there
     @ [
-      ("status", Log.(s "Get the Yarn application status"));
-      ("logs", Log.(s "Get the Yarn application logs"));
+      ("status", Log.(s "Get the YARN application status"));
+      ("logs", Log.(s "Get the YARN application logs"));
+      ("api-app-raw", Log.(s "Call the YARN API and retrieve the JSON blob"));
+      ("ketrew-markup/api-app",
+       Log.(s "Call the YARN API and format the result"));
     ]
     @ (Daemonize.additional_queries rp.daemonized_script
        |> List.filter ~f:(fun (n, _) -> n <> "ketrew-markup/status"))
@@ -170,12 +173,43 @@ let find_application_id stdout_stderr =
               % quote "stdout ^ stderr" % s ":" % n % indent (s stdout_stderr))
   end
 
+let re_find_rm_url =
+  Re_posix.compile_pat
+    ~opts:[`ICase; `Newline] "appTrackingUrl=([-a-zA-Z0-9:/_\\.]+)"
+
+let find_resource_manager_url stdout_stderr =
+  begin try
+    let subs = Re.exec re_find_rm_url  stdout_stderr |> Re.get_all in
+    let url = Uri.of_string subs.(1) in
+    let scheme = Uri.scheme url in
+    let host = Uri.host url in
+    let port = Uri.port url in
+    let userinfo = Uri.userinfo url in
+    return (Uri.make ?scheme ?host ?port ?userinfo ())
+  with e ->
+    fail Log.(s "Could not find application ID" % n
+              % quote "stdout ^ stderr" % s ":" % n % indent (s stdout_stderr))
+  end
+
+
 let get_application_id daemonize_run_param =
   Daemonize.query daemonize_run_param "stdout"
   >>= fun stdout ->
   Daemonize.query daemonize_run_param "stderr"
   >>= fun stderr ->
   find_application_id (stdout ^ stderr)
+
+let get_application_id_and_rm_url daemonize_run_param =
+  Daemonize.query daemonize_run_param "stdout"
+  >>= fun stdout ->
+  Daemonize.query daemonize_run_param "stderr"
+  >>= fun stderr ->
+  let both = stdout ^ stderr in
+  find_application_id  both
+  >>= fun appid ->
+  find_resource_manager_url both
+  >>= fun url ->
+  return (appid, url)
 
 let parse_status str =
   let lines = String.split ~on:(`Character '\n') str in
@@ -191,6 +225,70 @@ let parse_status str =
   | Some (_ :: "FAILED" :: _)
   | Some (_ :: "KILLED" :: _) -> `Failed
   | Some _ | None -> `Unknown
+
+let yarn_api_get_app_raw rp =
+  get_application_id_and_rm_url rp.daemonized_script
+  >>= fun (appid, rm_url) ->
+  Log.(s "Got app id: " % quote appid
+       % s " and url: " % uri rm_url @ verbose);
+  let to_call = Uri.with_path rm_url ("/ws/v1/cluster/apps/" ^ appid) in
+  wrap_deferred 
+    ~on_exn:(fun e -> Log.(s "Cohttp_lwt_unix.Client.get: " % exn e))
+    Lwt.(fun () ->
+        Cohttp_lwt_unix.Client.get to_call
+        >>= fun (resp, body) ->
+        Cohttp_lwt_body.to_string body)
+
+let parse_yarn_api_app_json s =
+  begin try
+    let json = Yojson.Basic.from_string s in
+    return json
+  with e ->
+    fail Log.(s "Parsing of the JSON form YARN's API failed: " % exn e)
+  end
+
+  
+let yarn_api_get_app_markup rp =
+  yarn_api_get_app_raw rp
+  >>= fun json_string ->
+  parse_yarn_api_app_json json_string
+  >>= fun json ->
+  let rec json_to_markup : Yojson.Basic.json -> Display_markup.t  =
+    let open Display_markup in
+    function
+    | `Assoc l ->
+      description_list 
+        (List.map l ~f:(function
+           | "trackingUrl", `String url ->
+             "Trarcking-URL", uri url
+           | "amContainerLogs", `String url ->
+             "AM-Container-Logs-URL", uri url
+           | "startedTime", `Int t ->
+             "Started-time", (date (float t /. 1000.))
+           | "finishedTime", `Int t ->
+             "Finished-time", (date (float t /. 1000.))
+           | "elapsedTime", `Int t ->
+             "Elapsed-time", (time_span (float t /. 1000.))
+           | "app", json ->
+             "YARN-Application",
+             description_list [
+               "Documentation",
+               uri "http://hadoop.apache.org/docs/r2.7.0/hadoop-yarn/\
+                    hadoop-yarn-site/ResourceManagerRest.html\
+                    #Elements_of_the_app_Application_object";
+               "Content", json_to_markup json
+             ]
+           | (name, content) ->
+             name, json_to_markup content))
+    | `Bool b -> textf "%b" b
+    | `Float f -> textf "%g" f
+    | `Int d -> textf "%d" d
+    | `List l ->
+      concat ~sep:(text ", ") (List.map l ~f:json_to_markup)
+    | `Null -> text "null"
+    | `String s -> text s
+  in
+  return (json_to_markup json |> Display_markup.serialize)
 
 let query run_param item =
   match run_param with
@@ -215,6 +313,10 @@ let query run_param item =
         (fmt "yarn logs -applicationId %s > %s" app_id tmp_file)
       >>= fun (_ : string) ->
       Host_io.grab_file_or_log host (Path.absolute_file_exn tmp_file)
+    | "api-app-raw" ->
+      yarn_api_get_app_raw rp
+    | "ketrew-markup/api-app" ->
+      yarn_api_get_app_markup rp
     | "ketrew-markup/status" ->
       return (markup run_param |> Display_markup.serialize)
     | other -> Daemonize.query rp.daemonized_script other

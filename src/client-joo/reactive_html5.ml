@@ -313,6 +313,10 @@ module H5 = struct
       | Text s -> pcdata s
       | Path p
       | Command p -> code [pcdata p]
+      | Uri u ->
+        a ~a:[
+          a_href u
+        ] [code [pcdata u]]
       | Concat (None, p) ->
         inline (List.map ~f:continue p)
       | Concat (Some sep, p) ->
