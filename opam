@@ -1,7 +1,16 @@
-opam-version: "1"
+opam-version: "1.2"
 maintainer: "seb@mondet.org"
-ocaml-version: [ >= "4.02.2" ]
-build: [
+authors : [
+  "Sebastien Mondet <seb@mondet.org>"
+  "Leonid Rozenberg <leonidr@gmail.com>"
+  "Ahuja <aahuja11@gmail.com>"
+  "Jeff Hammerbacher <jeff.hammerbacher@gmail.com>"
+]
+homepage: "http://seb.mondet.org/software/ketrew"
+dev-repo: "https://github.com/hammerlab/ketrew"
+bug-reports: "https://github.com/hammerlab/ketrew/issues"
+available : [ ocaml-version >= "4.02.2" ]
+install: [
   ["omake"]
   ["omake" "install" "BINDIR=%{bin}%"]
 ]
@@ -14,9 +23,9 @@ depends: [
   "omake" "ocamlfind" "ocamlify"
   "trakeva" "sqlite3" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
-  "ppx_deriving" "ppx_deriving_yojson"
-  "cohttp" "lwt" "ssl"
+  "ppx_deriving" "ppx_deriving_yojson" {>= "2.3"}
+  "cohttp" {>= "0.17.0" } "lwt" "ssl"
   "conduit"
-  "js_of_ocaml" "tyxml" "reactiveData"
+  "js_of_ocaml" {>= "2.6" } "tyxml" "reactiveData"
   ]
 
