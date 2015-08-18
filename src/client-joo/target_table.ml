@@ -86,12 +86,8 @@ module Filter = struct
 
   let examples = [
     { ast = `All }, "Get all the targets known to the server.";
-    { ast = `Created_in_the_past (`Hours 5.) },
-    "Get all the targets created in the past 5 hours.";
     { ast = `Created_in_the_past (`Days 0.5) },
     "Get all the targets created in the past half day.";
-    { ast = `Created_in_the_past (`Weeks 2.5) },
-    "Get all the targets created in the past 2.5 weeks.";
     { ast = `And [
           `Created_in_the_past (`Weeks 5.);
           `Or [
@@ -229,6 +225,63 @@ module Filter = struct
         end
     in
     ast_to_lisp ast
+
+  let lisp_help () =
+    let open H5 in
+    let describe_function name blob =
+      li [
+        code [pcdata (fmt "(%s)" name)]; pcdata ": "; pcdata blob; pcdata "."
+      ] in
+    div [
+      p [
+        pcdata "The language is based on S-Expressions \
+                (Like Lisp or Scheme), but you can omit the \
+                outermost parentheses.";
+      ];
+      p [pcdata "You may use the following ";
+         code [pcdata "filter"];
+         pcdata " “boolean functions:”"];
+      ul [
+        describe_function "all" "All the known targets.";
+        describe_function "is-activable" "The “passive” targets.";
+        describe_function "is-in-progress" "The activated or running targets.";
+        describe_function "is-successful" "The finished and successful targets.";
+        describe_function "is-failed" "The finished and failed targets.";
+        describe_function "is-really-running" "The targets that are running \
+                                               but not waiting on some \
+                                               dependency.";
+        describe_function "is-killable" "The targets that can be killed.";
+        describe_function "is-dependency-dead" "The targets that failed \
+                                                because some of  their \
+                                                dependencies died.";
+        describe_function "created-in-the-past <time-span>"
+          "The targets that were created between now and “time-span ago.”";
+        describe_function "or <...filters...>"
+          "Logical “or” of a list of expressions.";
+        describe_function "and <...filters...>"
+          "Logical “and” of a list of expressions.";
+        describe_function "not <filter>" "Logical “not” of an expression.";
+        describe_function "tags <...string-matching-predicates...>"
+          "Give list of conditions that the tags of a target should match \
+           (it's an “and”.)"
+      ];
+      p [pcdata "Where a "; code [pcdata "time-span"]; pcdata " is:"];
+      ul [
+        describe_function "hours <float>" "A given number of hours.";
+        describe_function "days <float>" "A given number of days.";
+        describe_function "weeks <float>" "A given number of weeks.";
+      ];
+      p [pcdata "And a "; code [pcdata "string-matching-predicate"]; pcdata " is:"];
+      ul [
+        describe_function "equals <string-literal>"
+          "Exact string equality (using just the string-literal is a \
+           valid alias).";
+        describe_function "re <regular-expression>"
+          "Match a POSIX regular expression \
+           (the function `matches` is a valid alias); partial matches are \
+           allowed use \"^...$\" to force the match of the full string.";
+      ];
+    ]
 
   exception Syntax_error of string
   let of_lisp v =
@@ -592,11 +645,7 @@ module Html = struct
                 hide_show_div ~signal [
                   div ~a:[a_class ["alert"; "alert-info"]] [
                     h3 [pcdata "Help"];
-                    p [
-                      pcdata "The language is based on S-Expressions \
-                              (Like Lisp or Scheme), but you can omit the \
-                              outermost parentheses.";
-                    ];
+                    Filter.lisp_help ();
                     p [pcdata "Here are some examples:"];
                     ul (List.map Filter.examples
                           ~f:(fun (filter, description) ->
