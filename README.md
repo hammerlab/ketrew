@@ -14,7 +14,7 @@ Ketrew can be a standalone application, or use a client-server architecture.
 
 This is the development version of Ketrew, see also
 the documentation for the
-[`1.1.0`](http://seb.mondet.org/software/ketrew/doc.1.1.0/index.html) release.
+[`1.1.1`](http://seb.mondet.org/software/ketrew/doc.1.1.1/index.html) release.
 
 Build & Install
 ---------------
