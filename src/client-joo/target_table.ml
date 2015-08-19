@@ -389,6 +389,32 @@ module Filter = struct
       ];
     ]
 
+  let create_new_url v =
+    Url.Current.get ()
+    |> Option.map ~f:(fun url ->
+        let new_one =
+          let new_arg = "filter", to_lisp  v in
+          let change_arg l =
+            new_arg
+            :: List.filter l ~f:(fun (arg, _) ->
+                arg <> "filter" && arg <> "?filter")
+          in
+          let open Url in
+          begin match url with
+          | Https u ->
+            Https { u with
+                    hu_arguments = change_arg u.hu_arguments }
+          | Http u ->
+            Http { u with
+                   hu_arguments = change_arg u.hu_arguments }
+          | File u ->
+            File { u with
+                   fu_arguments = change_arg u.fu_arguments}
+          end
+          |> string_of_url
+        in
+        new_one)
+
 
 end
 
@@ -648,29 +674,8 @@ module Html = struct
                 Reactive_node.div Reactive.(
                     Source.map_signal url_box ~f:(function
                       | Some v ->
-                        begin match Url.Current.get () with
-                        | Some url ->
-                          let new_one =
-                            let new_arg = "filter", Filter.to_lisp  v in
-                            let change_arg l =
-                              new_arg
-                              :: List.filter l ~f:(fun (arg, _) ->
-                                  arg <> "filter" && arg <> "?filter")
-                            in
-                            let open Url in
-                            begin match url with
-                            | Https u ->
-                              Https { u with
-                                      hu_arguments = change_arg u.hu_arguments }
-                            | Http u ->
-                              Http { u with
-                                      hu_arguments = change_arg u.hu_arguments }
-                            | File u ->
-                              File { u with
-                                     fu_arguments = change_arg u.fu_arguments}
-                            end
-                            |> string_of_url
-                          in
+                        begin match Filter.create_new_url v with
+                        | Some new_one ->
                           Bootstrap.success_box [
                             pcdata "→ ";
                             a ~a:[a_href new_one] [pcdata new_one];
@@ -867,12 +872,31 @@ module Html = struct
               | `Summary trgt ->
                 List.map columns ~f:(function
                   | `Controls ->
+                    let this_one_filter = { Filter.ast = `Id (`Equals id) } in
                     td [
                       local_anchor ~on_click:Reactive.(fun _ ->
                           target_link_on_click id;
                           false) [
                         Bootstrap.north_east_arrow_label ();
-                      ]
+                      ] ~a:[a_title "Inspect target (in a tab)"];
+                      pcdata " ";
+                      local_anchor ~on_click:Reactive.(fun _ ->
+                          Reactive.Source.set target_table.filter
+                            this_one_filter;
+                          false) [
+                        Bootstrap.label_default [pcdata "1"]
+                      ] ~a:[a_title
+                              (fmt "Set filter to only this one:\n(id %s)" id)];
+                      pcdata " ";
+                      (match Filter.create_new_url this_one_filter with
+                      | Some url ->
+                        a ~a:[a_href url;
+                              a_title "Link to this page with the filter set \
+                                       to only this target (shareable link).";]
+                          [Bootstrap.label_default [pcdata "∞"]]
+                          (* [pcdata "🔗"] → does not render well *)
+                      | None ->
+                        span []);
                     ]
                   | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
                   | `Name -> td [pcdata (Target.Summary.name trgt)]

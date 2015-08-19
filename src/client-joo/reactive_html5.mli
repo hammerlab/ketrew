@@ -35,6 +35,12 @@ module H5: sig
 
     val wrench_icon : unit -> [> Html5_types.span ] elt
 
+    val label_default :
+      ?a:[< Html5_types.span_attrib > `Class ] attrib list_wrap ->
+      [< Html5_types.span_content_fun ] elt list_wrap ->
+      [> Html5_types.span ] elt
+
+
     val north_east_arrow_label: unit -> [> Html5_types.span ] elt
 
     val reload_icon: unit -> [> Html5_types.span ] elt

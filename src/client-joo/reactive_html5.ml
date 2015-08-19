@@ -47,12 +47,11 @@ module H5 = struct
         a_class ["label"; "label-default"];
       ] [pcdata "🔧"]
 
+    let label_default ?(a=[]) c =
+      span ~a:(a_class ["label"; "label-default"] :: a) c
+
     let north_east_arrow_label () =
-      span ~a:[
-        a_class ["label"; "label-default"]
-      ] [
-        pcdata "➚"
-      ]
+      label_default [pcdata "➚"]
 
     let reload_icon () =
       span ~a:[a_title "Reload"] [pcdata "↻"]
