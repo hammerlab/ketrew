@@ -564,6 +564,7 @@ module Html = struct
           (Source.signal target_table.filter)
           |> Signal.map ~f:(fun filter ->
               let status = Reactive.Source.create (`Ok filter) in
+              let url_box = Reactive.Source.create None in
               div [
                 div ~a:[a_class ["input-group"]] [
                   div ~a:[a_class ["input-group-addon"]] [
@@ -619,6 +620,10 @@ module Html = struct
                                     target_table.saved_filters
                                     (fun l -> v :: l);
                                   false);
+                            Bootstrap.button [pcdata "Make URL"]
+                              ~on_click:(fun _ ->
+                                  Reactive.Source.set url_box (Some v);
+                                  false);
                           ]
                         | `Error e -> []
                         )
@@ -632,6 +637,45 @@ module Html = struct
                       | `Error e ->
                         Bootstrap.error_box_pre ~title:(pcdata "Error") e
                     )
+                    |> Signal.singleton
+                  );
+                Reactive_node.div Reactive.(
+                    Source.map_signal url_box ~f:(function
+                      | Some v ->
+                        begin match Url.Current.get () with
+                        | Some url ->
+                          let new_one =
+                            let new_arg = "filter", Filter.to_lisp  v in
+                            let change_arg l =
+                              new_arg
+                              :: List.filter l ~f:(fun (arg, _) ->
+                                  arg <> "filter" && arg <> "?filter")
+                            in
+                            let open Url in
+                            begin match url with
+                            | Https u ->
+                              Https { u with
+                                      hu_arguments = change_arg u.hu_arguments }
+                            | Http u ->
+                              Http { u with
+                                      hu_arguments = change_arg u.hu_arguments }
+                            | File u ->
+                              File { u with
+                                     fu_arguments = change_arg u.fu_arguments}
+                            end
+                            |> string_of_url
+                          in
+                          Bootstrap.success_box [
+                            pcdata "→ ";
+                            a ~a:[a_href new_one] [pcdata new_one];
+                          ]
+                        | None ->
+                          Bootstrap.error_box [
+                            pcdata "Can't get the current URL"
+                          ]
+                        end
+                      | None -> div []
+                      )
                     |> Signal.singleton
                   );
                 Reactive_node.div Reactive.(
