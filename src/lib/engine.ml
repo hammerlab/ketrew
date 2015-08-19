@@ -389,6 +389,8 @@ let get_list_of_target_ids t query =
             | `Killable -> Is.killable state
             | `Dead_because_of_dependencies ->
               Is.finished_because_dependencies_died state
+            | `Activated_by_user ->
+              Is.activated_by_user state
             end
           | `Has_tag pred ->
             let tags = Target.tags target in

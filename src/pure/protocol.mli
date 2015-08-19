@@ -82,6 +82,7 @@ module Up_message : sig
         | `Really_running
         | `Killable
         | `Dead_because_of_dependencies
+        | `Activated_by_user
       ]
     | `Has_tag of string_predicate
     | `Name of string_predicate

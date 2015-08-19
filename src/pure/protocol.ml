@@ -94,6 +94,7 @@ module Up_message = struct
           | `Really_running
           | `Killable
           | `Dead_because_of_dependencies
+          | `Activated_by_user
         ]
       | `Has_tag of string_predicate
       | `Name of string_predicate
@@ -155,6 +156,7 @@ module Up_message = struct
             | `Really_running -> "really-running"
             | `Killable -> "killable"
             | `Dead_because_of_dependencies -> "dead-because-of-dependencies"
+            | `Activated_by_user -> "activated-by-user"
             end;
           text ")";
         ]
