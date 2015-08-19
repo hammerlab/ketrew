@@ -81,6 +81,8 @@ module Up_message = struct
       | `Not_finished_before of float
       | `Created_after of float
     ] [@@deriving yojson]
+    type string_predicate = [`Equals of string | `Matches of string]
+        [@@deriving yojson]
     type filter = [
       | `True
       | `False
@@ -93,7 +95,9 @@ module Up_message = struct
           | `Killable
           | `Dead_because_of_dependencies
         ]
-      | `Has_tag of [`Equals of string | `Matches of string] 
+      | `Has_tag of string_predicate
+      | `Name of string_predicate
+      | `Id of string_predicate
     ] [@@deriving yojson]
     type target_query = {
       time_constraint : time_constraint;
@@ -122,6 +126,11 @@ module Up_message = struct
 
   let target_query_markup {time_constraint; filter }  =
     let open Display_markup in
+    let string_predicate =
+      function
+      | `Equals s -> fmt "(equals %S)" s
+      | `Matches s -> fmt "(matches %S" s
+    in
     let rec markup_filter =
       let func n l =
         concat [textf "(%s " n;
@@ -150,11 +159,11 @@ module Up_message = struct
           text ")";
         ]
       | `Has_tag that  ->
-        textf "(tag %s)"
-          begin match that with
-          | `Equals s -> fmt "(equals %S)" s
-          | `Matches s -> fmt "(matches %S" s
-          end
+        textf "(Has-tag-that %s)" (string_predicate that)
+      | `Name that  ->
+        textf "(Name %s)" (string_predicate that)
+      | `Id that  ->
+        textf "(Id %s)" (string_predicate that)
     in
     description_list [
       "Time-constraint",

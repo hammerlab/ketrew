@@ -70,6 +70,7 @@ module Up_message : sig
     | `Not_finished_before of float
     | `Created_after of float
   ]
+  type string_predicate = [`Equals of string | `Matches of string]
   type filter = [
     | `True
     | `False
@@ -82,7 +83,9 @@ module Up_message : sig
         | `Killable
         | `Dead_because_of_dependencies
       ]
-    | `Has_tag of [`Equals of string | `Matches of string] 
+    | `Has_tag of string_predicate
+    | `Name of string_predicate
+    | `Id of string_predicate
   ]
   type target_query = {
     time_constraint : time_constraint;

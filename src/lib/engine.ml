@@ -362,6 +362,15 @@ let get_list_of_target_ids t query =
           end
         end
         >>= fun _ ->
+        let string_predicate ~p string =
+          match p with
+          | `Equals s -> String.compare s string = 0
+          | `Matches rex_str ->
+            begin match Re_posix.compile_pat rex_str with
+            | rex -> Re.execp rex string
+            | exception _ -> false
+            end
+        in
         let rec apply_filter =
           function
           | `True -> true
@@ -381,15 +390,13 @@ let get_list_of_target_ids t query =
             | `Dead_because_of_dependencies ->
               Is.finished_because_dependencies_died state
             end
-          | `Has_tag (`Equals t) ->
+          | `Has_tag pred ->
             let tags = Target.tags target in
-            List.exists tags ~f:((=) t)
-          | `Has_tag (`Matches rex_str) ->
-            let tags = Target.tags target in
-            begin match Re_posix.compile_pat rex_str with
-            | rex -> List.exists tags ~f:(Re.execp rex)
-            | exception _ -> false
-            end
+            List.exists tags ~f:(string_predicate ~p:pred)
+          | `Name p ->
+            Target.name target |> string_predicate ~p
+          | `Id p ->
+            Target.id target |> string_predicate ~p
         in
         if apply_filter query.filter then wins () else None
       )
