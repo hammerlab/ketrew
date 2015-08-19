@@ -214,7 +214,7 @@ module Filter = struct
     { ast = `Status `Killable },
     "Get all the targets that can be killed.";
     { ast = `Status `Activated_by_user },
-    "Get all the targets that activated by the user, usually they're the \
+    "Get all the targets that were activated by the user, usually, they're the \
      roots of the workflow trees or the restarted targets.";
     { ast = `And [
           `Created_in_the_past (`Days 1.);
@@ -331,9 +331,7 @@ module Filter = struct
   let lisp_help () =
     let open H5 in
     let describe_function name blob =
-      li [
-        code [pcdata (fmt "(%s)" name)]; pcdata ": "; pcdata blob; pcdata "."
-      ] in
+      li [code [pcdata (fmt "(%s)" name)]; pcdata ": "; pcdata blob] in
     div [
       p [
         pcdata "The language is based on S-Expressions \
@@ -366,12 +364,12 @@ module Filter = struct
           "Logical “and” of a list of expressions.";
         describe_function "not <filter>" "Logical “not” of an expression.";
         describe_function "name <string-matching-predicate>"
-          "The targets whose name satisfies the condition";
+          "The targets whose name satisfies the condition.";
         describe_function "id <string-matching-predicate>"
-          "The targets whose id satisfies the condition";
+          "The targets whose id satisfies the condition.";
         describe_function "tags <...string-matching-predicates...>"
           "Give list of conditions that the tags of a target should match \
-           (it's an “and”.)"
+           (it's an “and”)."
       ];
       p [pcdata "Where a "; code [pcdata "time-span"]; pcdata " is:"];
       ul [
