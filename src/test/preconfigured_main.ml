@@ -31,12 +31,15 @@ Overriding the configuration from a main file:
 
 M*)
 let override_configuration =
-  let open Ketrew_configuration in
+  let open Ketrew.Configuration in
   let engine =
     engine ~database_parameters:"/tmp/somepath" ()
   in
   let server =
-    server ~authorized_tokens_path:"/tmp/tokens"
+    server
+      ~authorized_tokens:[
+        authorized_tokens_path "/tmp/tokens"
+      ]
       ~return_error_messages:false
       ?command_pipe:None
       ~engine
@@ -56,7 +59,8 @@ interface:
 
 M*)
 let additional_cmdliner_command =
-  let open Ketrew_pervasives in
+  let open Ketrew_pure.Internal_pervasives in
+  let open Ketrew.Unix_io.Deferred_result in
   let open Cmdliner in
   let open Term in
   let term =

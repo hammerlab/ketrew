@@ -97,10 +97,11 @@ section # Test that uses the above plugin
 section # Executable tests
     OCAML_LOCAL_LIBS += src/pure/ketrew_pure src/lib/ketrew
     OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
-    .PHONY: main-test workflow-examples integration-test
+    .PHONY: main-test workflow-examples integration-test preconfigured-main-test
     main-test: $(OCamlProgramOfFile ketrew-test, $(file src/test/main.ml))
     workflow-examples: $(OCamlProgramOfFile ketrew-workflow-examples, $(file src/test/Workflow_Examples.ml))
     integration-test: $(OCamlProgramOfFile ketrew-integration-test, $(file src/test/integration.ml))
+    preconfigured-main-test: $(OCamlProgramOfFile ketrew-preconfigured-test, $(file src/test/preconfigured_main.ml))
 
 
 DotMerlin(./src, $(LWT_UNIX_LIB_PACKAGES) $(JOO_PACKAGES))
@@ -109,7 +110,7 @@ install: install-lib-ketrew_pure install-lib-ketrew install-app-ketrew
 uninstall: uninstall-lib-ketrew_pure uninstall-lib-ketrew uninstall-app-ketrew
 
 build-all: lib-ketrew_pure lib-ketrew app-ketrew app-ketrew-client-joo main-test \
-    workflow-examples integration-test test-plugin test-plugin-user
+    workflow-examples integration-test test-plugin test-plugin-user preconfigured-main-test
 
 .PHONY: doc test-env bisect-report bisect-clean
 
