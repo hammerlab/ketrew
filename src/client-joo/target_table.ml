@@ -78,11 +78,96 @@ module Filter = struct
   type t = {
     ast: ast;
   }
-  let create () = {
-    ast =
-      (if !global_debug_level > 0 then `All
-       else `Created_in_the_past (`Weeks 2.));
-  }
+
+
+  exception Syntax_error of string
+  let of_lisp v =
+    begin try
+      let fail ?sexp ffmt =
+        Printf.ksprintf (fun s ->
+            failwith (fmt "%s%s" s
+                        (match sexp with
+                        | Some sx ->
+                          fmt "\nOn: %s" (Sexplib.Sexp.to_string_hum sx)
+                        | None -> ""))
+          ) ffmt in
+      let rec parse_sexp sexp =
+        let open Sexplib.Sexp in
+        let time_span =
+          function
+          | List [Atom "hours"; Atom f] -> `Hours (float_of_string f)
+          | List [Atom "days"; Atom f] -> `Days (float_of_string f)
+          | List [Atom "weeks"; Atom f] -> `Weeks (float_of_string f)
+          | sexp ->
+            fail ~sexp "Syntax error while parsing time-span"
+        in
+        match sexp with
+        | List [List _ as l] -> parse_sexp l
+        | List [Atom "all"] -> `All
+        | List [Atom "is-activable"] -> `Status (`Simple `Activable)
+        | List [Atom "is-in-progress"] -> `Status (`Simple `In_progress)
+        | List [Atom "is-successful"] -> `Status (`Simple `Successful)
+        | List [Atom "is-failed"] -> `Status (`Simple `Failed)
+        | List [Atom "is-really-running"] -> `Status `Really_running
+        | List [Atom "is-killable"] -> `Status `Killable
+        | List [Atom "is-dependency-dead"] ->
+          `Status `Dead_because_of_dependencies
+        | List [Atom "created-in-the-past"; time] ->
+          `Created_in_the_past (time_span time)
+        | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
+        | List (Atom "and" :: tl) -> `And (List.map tl ~f:parse_sexp)
+        | List [Atom "not"; tl] -> `Not (parse_sexp tl)
+        | List (Atom "tags" :: tl) ->
+          `Has_tags (List.map tl ~f:(function
+            | Atom l
+            | List [Atom "equals"; Atom l]
+            | List [Atom l] -> `Equals l
+            | List [Atom "re"; Atom l]
+            | List [Atom "matches"; Atom l] as sexp ->
+              let _ =
+                try Re_posix.compile_pat l
+                with e ->
+                  fail ~sexp "Trouble with Posix regular expression: %s"
+                    (Printexc.to_string e)
+              in
+              `Matches l
+            | sexp ->
+              fail ~sexp "syntax error while parsing tags"))
+        | other ->
+          fail ~sexp "Syntax error while parsing top-level expression"
+      in
+      let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+      let ast = parse_sexp sexp in
+      `Ok {ast}
+    with
+    | Syntax_error s -> `Error s
+    | Failure s -> `Error s
+    | e -> 
+      (`Error (Printexc.to_string e))
+    end
+
+  let create () =
+    let default () =
+      let ast =
+        (if !global_debug_level > 0 then `All
+         else `Created_in_the_past (`Weeks 2.))
+      in
+      {ast} in
+    List.find_map Url.Current.arguments  ~f:(function
+      | ("?filter", t)
+      (* this weird case bypasses https://github.com/ocsigen/js_of_ocaml/issues/272 *)
+      | ("filter", t) ->  Some t
+      | _ -> None)
+    |> function
+    | Some t ->
+      begin match of_lisp t with
+      | `Ok t -> t
+      | `Error e ->
+        Log.(s "Found filter but could not load it: " % s e @ error);
+        default ()
+      end
+    | None ->
+      default ()
 
   let examples = [
     { ast = `All }, "Get all the targets known to the server.";
@@ -283,71 +368,6 @@ module Filter = struct
       ];
     ]
 
-  exception Syntax_error of string
-  let of_lisp v =
-    begin try
-      let fail ?sexp ffmt =
-        Printf.ksprintf (fun s ->
-            failwith (fmt "%s%s" s
-                        (match sexp with
-                        | Some sx ->
-                          fmt "\nOn: %s" (Sexplib.Sexp.to_string_hum sx)
-                        | None -> ""))
-          ) ffmt in
-      let rec parse_sexp sexp =
-        let open Sexplib.Sexp in
-        let time_span =
-          function
-          | List [Atom "hours"; Atom f] -> `Hours (float_of_string f)
-          | List [Atom "days"; Atom f] -> `Days (float_of_string f)
-          | List [Atom "weeks"; Atom f] -> `Weeks (float_of_string f)
-          | sexp ->
-            fail ~sexp "Syntax error while parsing time-span"
-        in
-        match sexp with
-        | List [List _ as l] -> parse_sexp l
-        | List [Atom "all"] -> `All
-        | List [Atom "is-activable"] -> `Status (`Simple `Activable)
-        | List [Atom "is-in-progress"] -> `Status (`Simple `In_progress)
-        | List [Atom "is-successful"] -> `Status (`Simple `Successful)
-        | List [Atom "is-failed"] -> `Status (`Simple `Failed)
-        | List [Atom "is-really-running"] -> `Status `Really_running
-        | List [Atom "is-killable"] -> `Status `Killable
-        | List [Atom "is-dependency-dead"] ->
-          `Status `Dead_because_of_dependencies
-        | List [Atom "created-in-the-past"; time] ->
-          `Created_in_the_past (time_span time)
-        | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
-        | List (Atom "and" :: tl) -> `And (List.map tl ~f:parse_sexp)
-        | List [Atom "not"; tl] -> `Not (parse_sexp tl)
-        | List (Atom "tags" :: tl) ->
-          `Has_tags (List.map tl ~f:(function
-            | Atom l
-            | List [Atom "equals"; Atom l]
-            | List [Atom l] -> `Equals l
-            | List [Atom "re"; Atom l]
-            | List [Atom "matches"; Atom l] as sexp ->
-              let _ =
-                try Re_posix.compile_pat l
-                with e ->
-                  fail ~sexp "Trouble with Posix regular expression: %s"
-                    (Printexc.to_string e)
-              in
-              `Matches l
-            | sexp ->
-              fail ~sexp "syntax error while parsing tags"))
-        | other ->
-          fail ~sexp "Syntax error while parsing top-level expression"
-      in
-      let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
-      let ast = parse_sexp sexp in
-      `Ok {ast}
-    with
-    | Syntax_error s -> `Error s
-    | Failure s -> `Error s
-    | e -> 
-      (`Error (Printexc.to_string e))
-    end
 
 end
 
