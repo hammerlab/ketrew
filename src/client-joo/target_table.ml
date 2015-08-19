@@ -72,7 +72,9 @@ module Filter = struct
         | `Killable
         | `Dead_because_of_dependencies
       ]
-    | `Has_tags of [`Equals of string | `Matches of string ] list
+    | `Has_tags of Protocol.Up_message.string_predicate list
+    | `Name of  Protocol.Up_message.string_predicate
+    | `Id of  Protocol.Up_message.string_predicate
   ]
 
   type t = {
@@ -101,6 +103,23 @@ module Filter = struct
           | sexp ->
             fail ~sexp "Syntax error while parsing time-span"
         in
+        let string_predicate =
+          function
+          | Atom l
+          | List [Atom "equals"; Atom l]
+          | List [Atom l] -> `Equals l
+          | List [Atom "re"; Atom l]
+          | List [Atom "matches"; Atom l] as sexp ->
+            let _ =
+              try Re_posix.compile_pat l
+              with e ->
+                fail ~sexp "Trouble with Posix regular expression: %s"
+                  (Printexc.to_string e)
+            in
+            `Matches l
+          | sexp ->
+            fail ~sexp "syntax error while parsing tags"
+        in
         match sexp with
         | List [List _ as l] -> parse_sexp l
         | List [Atom "all"] -> `All
@@ -117,22 +136,9 @@ module Filter = struct
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
         | List (Atom "and" :: tl) -> `And (List.map tl ~f:parse_sexp)
         | List [Atom "not"; tl] -> `Not (parse_sexp tl)
-        | List (Atom "tags" :: tl) ->
-          `Has_tags (List.map tl ~f:(function
-            | Atom l
-            | List [Atom "equals"; Atom l]
-            | List [Atom l] -> `Equals l
-            | List [Atom "re"; Atom l]
-            | List [Atom "matches"; Atom l] as sexp ->
-              let _ =
-                try Re_posix.compile_pat l
-                with e ->
-                  fail ~sexp "Trouble with Posix regular expression: %s"
-                    (Printexc.to_string e)
-              in
-              `Matches l
-            | sexp ->
-              fail ~sexp "syntax error while parsing tags"))
+        | List (Atom "tags" :: tl) -> `Has_tags (List.map tl ~f:string_predicate)
+        | List (Atom "name" :: pred :: []) -> `Name (string_predicate pred)
+        | List (Atom "id" :: pred :: []) -> `Id (string_predicate pred)
         | other ->
           fail ~sexp "Syntax error while parsing top-level expression"
       in
@@ -232,11 +238,14 @@ module Filter = struct
         Some (`And (List.map sl ~f:(fun s -> `Has_tag s)))
       | `Not s ->
         Option.(to_filter s >>= fun n -> return (`Not n))
+      | `Name _ | `Id _ as name_or_id ->
+        Some name_or_id
     in
     let rec to_time =
       function
       | `All -> Some `All
       | `Has_tags _
+      | `Name _ | `Id _
       | `Status _ -> None
       | `Created_in_the_past time ->
         Some (`Created_after (Time.now () -. (to_seconds time)))
@@ -283,6 +292,9 @@ module Filter = struct
       | `Days h -> fmt "(days %g)" h
       | `Weeks h -> fmt "(weeks %g)" h
     in
+    let pred = (function
+      | `Equals s -> fmt "%S" s
+      | `Matches s -> fmt "(re %S)" s) in
     let rec ast_to_lisp =
       function
       | `All -> "(all)"
@@ -293,10 +305,9 @@ module Filter = struct
       | `Or l ->
         fmt "(or %s)" (List.map ~f:ast_to_lisp l |> String.concat ~sep:" ")
       | `Has_tags sl ->
-        fmt "(tags %s)"
-          (List.map ~f:(function
-             | `Equals s -> fmt "%S" s
-             | `Matches s -> fmt "(re %S)" s) sl |> String.concat ~sep:" ")
+        fmt "(tags %s)" (List.map ~f:pred sl |> String.concat ~sep:" ")
+      | `Name p -> fmt "(name %s)" (pred p)
+      | `Id p -> fmt "(id %s)" (pred p)
       | `Not l -> fmt "(not %s)" (ast_to_lisp l)
       | `Status s ->
         begin match s with
@@ -346,6 +357,10 @@ module Filter = struct
         describe_function "and <...filters...>"
           "Logical “and” of a list of expressions.";
         describe_function "not <filter>" "Logical “not” of an expression.";
+        describe_function "name <string-matching-predicate>"
+          "The targets whose name satisfies the condition";
+        describe_function "id <string-matching-predicate>"
+          "The targets whose id satisfies the condition";
         describe_function "tags <...string-matching-predicates...>"
           "Give list of conditions that the tags of a target should match \
            (it's an “and”.)"
