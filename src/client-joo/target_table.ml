@@ -71,6 +71,7 @@ module Filter = struct
         | `Really_running
         | `Killable
         | `Dead_because_of_dependencies
+        | `Activated_by_user
       ]
     | `Has_tags of Protocol.Up_message.string_predicate list
     | `Name of  Protocol.Up_message.string_predicate
@@ -131,6 +132,7 @@ module Filter = struct
         | List [Atom "is-killable"] -> `Status `Killable
         | List [Atom "is-dependency-dead"] ->
           `Status `Dead_because_of_dependencies
+        | List [Atom "is-activated-by-user"] -> `Status `Activated_by_user
         | List [Atom "created-in-the-past"; time] ->
           `Created_in_the_past (time_span time)
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
@@ -211,6 +213,9 @@ module Filter = struct
      died but not because of some their dependencies dying.";
     { ast = `Status `Killable },
     "Get all the targets that can be killed.";
+    { ast = `Status `Activated_by_user },
+    "Get all the targets that activated by the user, usually they're the \
+     roots of the workflow trees or the restarted targets.";
     { ast = `And [
           `Created_in_the_past (`Days 1.);
           `Status (`Really_running);
@@ -318,6 +323,7 @@ module Filter = struct
         | `Really_running -> "(is-really-running)"
         | `Killable -> "(is-killable)"
         | `Dead_because_of_dependencies -> "(is-dependency-dead)"
+        | `Activated_by_user -> "(is-activated-by-user)"
         end
     in
     ast_to_lisp ast
@@ -350,6 +356,8 @@ module Filter = struct
         describe_function "is-dependency-dead" "The targets that failed \
                                                 because some of  their \
                                                 dependencies died.";
+        describe_function "is-activated-by-user"
+          "The targets that have been directly activated by the user.";
         describe_function "created-in-the-past <time-span>"
           "The targets that were created between now and “time-span ago.”";
         describe_function "or <...filters...>"
