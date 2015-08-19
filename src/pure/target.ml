@@ -333,36 +333,46 @@ that the potential condition has been ensured.
       simplify (s.previous_state :> t)
     | `Passive _ -> `Activable
 
+  let rec find_map (t: t) ~f =
+    let continue history = find_map ~f (history.previous_state :> t) in
+    begin match f t with
+    | Some t -> Some t
+    | None ->
+      begin match t with
+      | `Building history -> continue history
+      | `Tried_to_start (history, _) -> continue history
+      | `Started_running (history, _) -> continue history
+      | `Starting history -> continue history
+      | `Still_building history -> continue history
+      | `Still_running (history, _) -> continue history
+      | `Still_running_despite_recoverable_error (_, history, _) -> continue history
+      | `Ran_successfully (history, _) -> continue history
+      | `Successfully_did_nothing history -> continue history
+      | `Active (history, _) -> continue history
+      | `Tried_to_eval_condition history -> continue history
+      | `Tried_to_reeval_condition (_, history) -> continue history
+      | `Verified_success history -> continue history
+      | `Already_done history -> continue history
+      | `Dependencies_failed (history, _) -> continue history
+      | `Failed_running (history, _, _) -> continue history
+      | `Failed_to_kill history -> continue history
+      | `Failed_to_eval_condition history -> continue history
+      | `Failed_to_start (history, _) -> continue history
+      | `Killing history -> continue history
+      | `Tried_to_kill history -> continue history
+      | `Did_not_ensure_condition history -> continue history
+      | `Killed history -> continue history
+      | `Finished history -> continue history
+      | `Passive log -> None
+      end
+    end
+
   let rec passive_time (t: t) =
-    let continue history =
-      passive_time (history.previous_state :> t)
-    in
-    match t with
-    | `Building history -> continue history
-    | `Tried_to_start (history, _) -> continue history
-    | `Started_running (history, _) -> continue history
-    | `Starting history -> continue history
-    | `Still_building history -> continue history
-    | `Still_running (history, _) -> continue history
-    | `Still_running_despite_recoverable_error (_, history, _) -> continue history
-    | `Ran_successfully (history, _) -> continue history
-    | `Successfully_did_nothing history -> continue history
-    | `Active (history, _) -> continue history
-    | `Tried_to_eval_condition history -> continue history
-    | `Tried_to_reeval_condition (_, history) -> continue history
-    | `Verified_success history -> continue history
-    | `Already_done history -> continue history
-    | `Dependencies_failed (history, _) -> continue history
-    | `Failed_running (history, _, _) -> continue history
-    | `Failed_to_kill history -> continue history
-    | `Failed_to_eval_condition history -> continue history
-    | `Failed_to_start (history, _) -> continue history
-    | `Killing history -> continue history
-    | `Tried_to_kill history -> continue history
-    | `Did_not_ensure_condition history -> continue history
-    | `Killed history -> continue history
-    | `Finished history -> continue history
-    | `Passive log -> log.time
+    find_map t ~f:(function
+    | `Passive log -> Some log.time
+    | other -> None)
+    |> Option.value_exn ~msg:"Could not find passive-time"
+      (* The exception should never happen *)
 
   let finished_time = function
   | `Finished {log; _} -> Some log.time
@@ -734,6 +744,15 @@ type state = [
       | `Finished {previous_state = (`Dependencies_failed _); _ } -> true
       | other -> false
 
+    let activated_by_user s =
+      find_map s ~f:(
+        function
+        | `Passive _ -> Some false
+        | `Active (_, `User) -> Some true
+        | `Active (_, `Dependency _) -> Some false
+        | other -> None)
+      |> Option.value ~default:false (* actually find should always
+                                        find at least `Passive *)
   end
 
   module Count = struct

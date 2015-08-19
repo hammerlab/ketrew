@@ -174,6 +174,7 @@ module State : sig
     val passive : t -> bool
     val killable: t -> bool
     val finished_because_dependencies_died: t -> bool
+    val activated_by_user: t -> bool
   end
 
   (** A module providing functions [t -> int] to provide counts. *)
