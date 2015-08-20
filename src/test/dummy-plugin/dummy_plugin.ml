@@ -57,7 +57,7 @@ M*)
 
 module Another_long_running : Ketrew.Long_running.LONG_RUNNING = struct
   include Ketrew.Daemonize
-  let name = name
+  let name = "dummy"
 
   let additional_queries run_param =
     ("date", Log.(s "Display the date, not even on the right host"))

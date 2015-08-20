@@ -23,16 +23,6 @@
 open Ketrew_pure.Internal_pervasives
 open Unix_io
 
-type error = [
-  | `Fatal of string
-  | `Recoverable of string
-]
-(** The “imposed” error types for “long-running” plugins.
-    A [`Fatal _] error will make the target die with the error,
-    whereas if an error is [`Recoverable _] Ketrew will keep trying
-    (for example, a networking error which may not happen later).
-*)
-
 (** The module type [LONG_RUNNING] defines the interface for plugins. *)
 module type LONG_RUNNING = sig
 
@@ -51,20 +41,20 @@ module type LONG_RUNNING = sig
       and assumes that no exception will be thrown in that case. *)
 
   val start: run_parameters ->
-    (run_parameters, error) Deferred_result.t
+    (run_parameters, Host_io.Error.classified) Deferred_result.t
   (** Start the long-running computation, the returned [run_parameters] will be
       stored and used for the first call to {!update}. *)
 
   val update: run_parameters ->
     ([`Succeeded of run_parameters
      | `Failed of run_parameters * string
-     | `Still_running of run_parameters], error) Deferred_result.t
+     | `Still_running of run_parameters], Host_io.Error.classified) Deferred_result.t
   (** Check and update the status of the long-running job. Again, is
       [`Still_running rp] is returned, the next call to {!update} (or {!kill})
       will receive those parameters. *)
 
   val kill: run_parameters ->
-    ([`Killed of run_parameters], error) Deferred_result.t
+    ([`Killed of run_parameters], Host_io.Error.classified) Deferred_result.t
   (** Kill the long-running computation. *)
 
   val log: run_parameters -> (string * Log.t) list

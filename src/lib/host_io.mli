@@ -52,6 +52,19 @@ module Error: sig
   type 'a non_zero_execution = 'a constraint 'a = 
     [> `Non_zero of (string * int) ] execution
 
+
+  type classified = [
+    | `Fatal of string
+    | `Recoverable of string
+  ]
+  (** The “imposed” error types for “long-running” plugins.
+      A [`Fatal _] error will make the target die with the error,
+      whereas if an error is [`Recoverable _] Ketrew will keep trying
+      (for example, a networking error which may not happen later).
+  *)
+
+  
+
   val classify :
     [ `Execution of
         < host : string; message : string; stderr : string option;

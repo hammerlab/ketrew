@@ -118,6 +118,12 @@ end
 
 module Error = struct
 
+  type classified = [
+    | `Fatal of string
+    | `Recoverable of string
+  ]
+
+  
   type 'a execution = 'a constraint 'a =
   [> `Unix_exec of string
   | `Execution of
