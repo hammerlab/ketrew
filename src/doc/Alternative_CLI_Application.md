@@ -20,13 +20,13 @@ Plugins can be compiled to “good old-school” libraries:
 
 And can be linked-in directly with `src/app/main.ml`:
 
-    cp src/app/main.ml $tmp_dir
-    ocamlfind opt -package ketrew -thread -linkpkg -I $tmp_dir $tmp_dir/dummy_plugin.cmx $tmp_dir/main.ml -o $tmp_dir/new_ketrew_app
+    cp src/app/cli_main.ml $tmp_dir
+    ocamlfind opt -package ketrew -thread -linkpkg -I $tmp_dir $tmp_dir/dummy_plugin.cmx $tmp_dir/cli_main.ml -o $tmp_dir/new_ketrew_app
     $tmp_dir/new_ketrew_app --help=plain
 
 We can run the plugin user to add a workflow:
 
-    cp src/test/dummy_plugin_user.ml $tmp_dir
+    sed 's/Dummy_plugin_test_lib.//' src/test/dummy_plugin_user.ml > $tmp_dir/dummy_plugin_user.ml
     ocamlfind opt -package ketrew -thread -linkpkg -I $tmp_dir $tmp_dir/dummy_plugin.cmx $tmp_dir/dummy_plugin_user.ml -o $tmp_dir/my_workflow
     $tmp_dir/my_workflow "du -sh $HOME"
 
