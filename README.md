@@ -60,7 +60,7 @@ if the target fails, and
 succeeds.
 
 Any OCaml program can use the EDSL (script, compiled, or even inside the
-toplevel), see the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
 
 
 ### Example
@@ -204,7 +204,7 @@ examples and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
 computations:  see the documentation on
 [plugins](src/doc/Long-Running_Plugins.md),
 and the examples in the library:
-like [`Ketrew_lsf`](src/lib/ketrew_lsf.mli) or in the tests:
+like [`Ketrew.Lsf`](src/lib/lsf.mli) or in the tests:
 [`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml).
 - You may want to extend Ketrew, or preconfigure it, *without* configuration
 files or dynamically loaded libraries: just
@@ -217,7 +217,7 @@ listens on a Unix-pipe.
 - If you want to help or simply to understand Ketrew
 see the [development](src/doc/Developer_Documentation.md)
 documentation, and have a look at the modules
-like [`Ketrew_engine`](src/lib/ketrew_engine.mli).
+like [`Ketrew.Engine`](src/lib/engine.mli).
 
 License
 -------

@@ -6,25 +6,25 @@ Here are some common terms used in this documentation.
 EDSL Concepts
 -------------
 
-A **target** (`Ketrew_edsl.target`) is the basic building block of a
+A **target** (function `Ketrew.EDSL.target`) is the basic building block of a
 workflow, a target has many components:
 
 - A **build-process** wraps a way for a target of running a program, usually on
-  a given host; for example the function `Ketrew_edsl.pbs` returns a
+  a given host; for example the function `Ketrew.EDSL.pbs` returns a
   datastructure representing the action of running a program on a host with the
   PBS batch scheduler. It is the parameter `?make` of `Ketrew.EDSL.target`.
-    - A **host** (`Ketrew_edsl.Host.t`) is a place where one can run things.
+    - A **host** (`Ketrew.EDSL.Host.t`) is a place where one can run things.
       Usually a host is an SSH host with a “playground”, and a few other
       options.
     - A **playground** is a directory on a host where the Ketrew engine and its
       plugins can (and will) write log files, temporary scripts, etc.
       Most features which use hosts require playgrounds and will fail if not
       provided.
-    - A **program** (`Ketrew_edsl.Program.t`) is a datastructure representing
+    - A **program** (`Ketrew.EDSL.Program.t`) is a datastructure representing
       shell scripts on steroids, Ketrew provides high-level combinators to build
       programs.
-- A **condition** (`Ketrew_edsl.Condition.t`) defines how to tell if a target
-  should be run or not (the argument `?done_when` of `Ketrew_edsl.target`).
+- A **condition** (`Ketrew.EDSL.Condition.t`) defines how to tell if a target
+  should be run or not (the argument `?done_when` of `Ketrew.EDSL.target`).
 - Links to other targets:
     - **dependencies** are targets that need to be satisfied or run before a
       target can start,
@@ -40,7 +40,7 @@ workflow, a target has many components:
       same *condition* then the new one is considered redundant and will be
       replaced with a pointer to the older one;
     - the behavior above can be cancelled by providing `` `None``
-      (cf. `Ketrew_target.Equivalence.t`).
+      (cf. `Ketrew_pure.Target.Equivalence.t`).
 
 In the EDSL, a target may have a **product**, which is, for now, just a facility
 for the EDSL itself (the engine does not keep track of products).

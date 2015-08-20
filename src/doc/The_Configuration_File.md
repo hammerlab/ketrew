@@ -123,12 +123,12 @@ file.
 Option Details
 --------------
 
-To build configurations refer to the [API](src/lib/ketrew_configuration.mli) of
-the `Ketrew_configuration` module.
+To build configurations refer to the [API](src/lib/configuration.mli) of
+the `Ketrew.Configuration` module.
 
-As shown above, the idea is to call the function `Ketrew_configuration.output`
-with results of the function `Ketrew_configuration.profile`, themselves created
-thanks to the function `Ketrew_configuration.create`, etc.
+As shown above, the idea is to call the function `Ketrew.Configuration.output`
+with results of the function `Ketrew.Configuration.profile`, themselves created
+thanks to the function `Ketrew.Configuration.create`, etc.
 
 Print The Configuration
 -----------------------

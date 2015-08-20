@@ -23,7 +23,7 @@
 Dummy Plugin
 ============
 
-This plugin “inherits” from the implementation of `Ketrew_daemonize` and adds a
+This plugin “inherits” from the implementation of `Ketrew.Daemonize` and adds a
 new “query” (that just retrives the result of the `date` command; pretty
 useless).
 
@@ -34,7 +34,7 @@ open Ketrew.Unix_io
 (*M
 
 The name has to be “unique”; the `create` function calls
-`Ketrew_daemonize.create` and changes the `name`:
+`Ketrew.Daemonize.create` and changes the `name`:
 
 M*)
 let name = "dummy"
@@ -51,7 +51,7 @@ Implementation
 The module `Another_long_running` is the actual implementation of the plugin.
 
 The functions `additional_queries` and `query` deal with the `"date"` query,
-or pass the baby to the `Ketrew_daemonize` module.
+or pass the baby to the `Ketrew.Daemonize` module.
 
 M*)
 
@@ -72,7 +72,7 @@ module Another_long_running : Ketrew.Long_running.LONG_RUNNING = struct
         | `Error e ->
           fail Log.(s "Command `date` failed: " % s (Ketrew.Error.to_string e))
       end
-    else (* call Ketrew_daemonize's function: *)
+    else (* call Ketrew.Daemonize's function: *)
       query run_param item
 end
 

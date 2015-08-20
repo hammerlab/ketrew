@@ -113,7 +113,7 @@ MacOSX does not support the `nohup` and `setsid` commands any more.
 ### Get a Container fron “Apache Yarn”
 
 This function is like `run_command_with_lsf` but uses the
-`Ketrew_yarn` backend.
+`Ketrew.Yarn` backend.
 [Yarn](http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html)
 comes from the Hadoop ecosystem and is used to request resources.
 

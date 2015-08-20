@@ -11,25 +11,25 @@ The long-running plugins *must*:
 - provide a way to create values like
 <code>`Long_running (name, serialized_state)</code>;
 - register themselves with the function:
-`Ketrew_plugin.register_long_running_plugin`.
+`Ketrew.Plugin.register_long_running_plugin`.
 
 
 Examples
 --------
 
 There are (for now) four long-running methods in the library, see
-[`Ketrew_lsf`](../lib/ketrew_lsf.mli),
-[`Ketrew_yarn`](../lib/ketrew_yarn.mli),
-[`Ketrew_pbs`](../lib/ketrew_pbs.mli), and
-[`Ketrew_daemonize`](../lib/ketrew_daemonize.mli).
-They all use the module `Ketrew_long_running_utilities` which provides a few
+[`Ketrew.Lsf`](../lib/lsf.mli),
+[`Ketrew.Yarn`](../lib/yarn.mli),
+[`Ketrew.Pbs`](../lib/pbs.mli), and
+[`Ketrew.Daemonize`](../lib/daemonize.mli).
+They all use the module `Ketrew.Long_running_utilities` which provides a few
 helpers for plugin writers.
 
 Moreover, the tests contain a “dynamically linked plugin” that uses the
-implementation of `Ketrew_daemonize` and adds a (stupid) custom runtime-query:
+implementation of `Ketrew.Daemonize` and adds a (stupid) custom runtime-query:
 
 - Implementation of the plugin:
-[`src/test/dummy_plugin.ml`](../test/dummy_plugin.ml).
+[`src/test/dummy-plugin/dummy_plugin.ml`](../test/dummy-plugin/dummy_plugin.ml).
 - Workflow script that uses the plugin:
 [`src/test/dummy_plugin_user.ml`](../test/dummy_plugin_user.ml).
 

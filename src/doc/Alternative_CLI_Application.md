@@ -15,8 +15,8 @@ Plugins can be compiled to “good old-school” libraries:
 
     tmp_dir=/tmp/with_dummy_plugin
     mkdir -p $tmp_dir
-    cp src/test/dummy_plugin.ml $tmp_dir
-    ocamlfind opt  -package ketrew -thread -c  $tmp_dir/dummy_plugin.ml -o $tmp_dir/dummy_plugin.cmx
+    cp src/test/dummy-plugin/dummy_plugin.ml $tmp_dir
+    ocamlfind opt -package ketrew -thread -c  $tmp_dir/dummy_plugin.ml -o $tmp_dir/dummy_plugin.cmx
 
 And can be linked-in directly with `src/app/main.ml`:
 
@@ -45,10 +45,10 @@ Configuration
 -------------
 
 The function `Ketrew_command_line.run_main` can take an `~override_configuration` parameter, which can be created with
-`Ketrew_configuration.{create,create_server}`
+`Ketrew.Configuration.{create,create_server}`
 (c.f. 
-[`Ketrew_command_line`](../lib/ketrew_command_line.mli) and
-[`Ketrew_configuration`](../lib/ketrew_configuration.mli)).
+[`Ketrew.Command_line`](../lib/command_line.mli) and
+[`Ketrew.Configuration`](../lib/configuration.mli)).
 
 See the example in
 [`src/test/preconfigured_main.ml`](../test/preconfigured_main.ml), here is how
@@ -62,18 +62,15 @@ to compile it:
 
 We can check that no configuration file is read with
 
-    export KETREW_CONFIGURATION=/some/unknown/path/that/really/does/not/exist
+    export KETREW_CONFIGURATION=/some/unknown/path/that/really/does/not/exist.json
 
 The “normal” ketrew fails:
 
     ketrew pc
 
 ```badresult
-[ketrew: ERROR]
-    Error: Exception while reading
-    "/some/unknown/path/that/really/does/not/exist":
-    Unix.Unix_error(Unix.ENOENT, "open",
-    "/some/unknown/path/that/really/does/not/exist")
+ketrew: internal error, uncaught exception:
+        Sys_error("/some/unknown/path/that/really/does/not/exist.json: No such file or directory")
 ```
 
 The new one succeeds:
@@ -81,21 +78,38 @@ The new one succeeds:
     $tmp_dir/new_ketrew_app print-configuration
 
 ```goodresult
-[ketrew]
-    From user-overriden:
-    * Database: "/tmp/somepath"
-    * Unix-failure does not turn into target failure
-    * Debug-level: 42
-    * Client with colors
-    * Timeout-upper-bound: 60. seconds
-    * Plugins:
-        * OCamlfind package: "lwt.react"
-        * OCamlfind package: "lwt.unix"
-    Server:
-        Authorized tokens: Some "/tmp/tokens"
-        Listen: TLS:4242 (Certificate: "somecert.pem",
-            Key: "somekey.pem")
+[ketrew] 
+    Mode: Server
+    Engine:
+        Database: "/tmp/somepath"
+        Unix-failure: does not turn into target failure
+        Host-timeout-upper-bound:
+        Maximum-successive-attempts: 10
+    UI:
+        Colors: with colors
+        Get-key: uses `cbreak`
+        Explorer:
+            Default request: Targets younger than 1.5 days
+            Targets-per-page: 6
+            Targets-to-prefectch: 6
+    HTTP-server:
+        Authorized tokens:
+            Path: "/tmp/tokens"
+        Daemonize: false
+        Command Pipe: None
+        Log-path: None
         Return-error-messages: false
+        Max-blocking-time: 300.
+        Block-step-time: 3.
+        Listen:
+            Port: 4242
+            Certificate: "somecert.pem"
+            Key: "somekey.pem"
+    Misc:
+        Debug-level: 42
+        Plugins:
+            OCamlfind package: "lwt.react"
+            OCamlfind package: "lwt.unix"
 ```
 
 Command Line “Sub-commands”

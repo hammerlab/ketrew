@@ -51,7 +51,7 @@ where:
 - The parameter `token` is an authentication token (the server reads the file
   `_test_env/test-authorized-tokens`, where there is an “easy token” `"nekot"`).
 - The `POST` data (`-d $json`) is the serialized up-message.  The available
-  messages are defined in `src/pure/ketrew_protocol.mli` and tagged with a
+  messages are defined in `src/pure/protocol.mli` and tagged with a
   version.
 
 To find out how to give the right JSON to to the API, you may just check from
@@ -59,8 +59,8 @@ the top-level:
 
 ```ocaml
 utop[0]> #require "ketrew";;
-utop[1]> module K = Ketrew_protocol.Up_message;;
-module K = Ketrew_protocol.Up_message
+utop[1]> module K = Ketrew_pure.Protocol.Up_message;;
+module K = Ketrew_pure.Protocol.Up_message
 utop[2]> K.serialize;;
 - : K.t -> bytes = <fun>
 utop[3]> K.serialize (`Get_targets []);;

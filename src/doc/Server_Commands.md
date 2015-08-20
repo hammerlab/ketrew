@@ -13,20 +13,15 @@ To ask the server to die nicely:
 
     echo 'die' > _test_env/test-command.pipe
 
-To ask the server to reload the authentication file (authorized tokens):
+To ask the server to reload the authentication module, hence re-reading the
+authentication token files:
 
     echo 'reload-auth' > _test_env/test-command.pipe
 
-To add an arbitrary string to the measurements/logs maintained by the server:
+To dump the table of HTTP connections ever senn by the server:
 
-    echo 'tag hello some random string' > _test_env/test-command.pipe
+    echo 'dump-all-connections' > _test_env/test-command.pipe 
 
-it will appear in the logs as:
-
-    [2014-09-30-21h16m39s020ms-UTC]  hello some random string
-
-To ask the server to write the measurements/logs to the database (and forget
-them afterwards):
-
-    echo 'flush-measurements' > _test_env/test-command.pipe
+This will create a file in the server's current directory
+`all-connections-<unique-id>` useful for debug purposes.
 

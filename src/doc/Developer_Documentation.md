@@ -26,7 +26,7 @@ parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
 - `trakeva` with the `sqlite` backend
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
-and uses the `omake` as a build system.
+and uses the `omake` as a build system and the tool `ocamlify`.
 
 At runtime, Ketrew may use an `ssh` client (tested only with OpenSSH; but SSH
 calls are quite configurable).
@@ -134,6 +134,7 @@ those which start with `kd` are in *client-server* mode (`'d'` for “distribute
 
 - `kscli`: the standalone `ketrew` application.
 - `kdserver`: the server `ketrew` application.
+- `kdroserver`: the server `ketrew` application but running in “read-only” mode.
 - `kddaemon`: the same as `kdserver` but quiting the current terminal (`daemon`
   option).
 - `kdclient`: the client `ketrew` application (talking to a `kdserver` or
