@@ -241,6 +241,9 @@ let initialize_configuration
   let auth_tokens_file = config_path // "authorized_tokens" in
   System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
   >>= fun () ->
+  System.Shell.do_or_fail (fmt "echo 'PKG ketrew' > %s"
+                             ((config_path // ".merlin") |> Filename.quote))
+  >>= fun () ->
   let ocaml_config_file_header =
     fmt {ocaml|
 let () =
