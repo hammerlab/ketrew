@@ -220,6 +220,34 @@ let interact ~client =
   in
   main_loop ()
 
+let submit ?add_tags ~configuration ~wet_run what =
+  let workflow =
+    match what with
+    | `Daemonize (host_str, cmd) ->
+      let name =
+        fmt "%S on %s"
+          (match String.sub cmd ~index:0 ~length:20 with
+          | Some s -> s ^ "..."
+          | None -> cmd)
+          host_str
+      in
+      let make =
+        EDSL.daemonize ~using:`Python_daemon ~host:(EDSL.Host.parse host_str)
+          EDSL.Program.(sh cmd)
+      in
+      EDSL.target name ~make
+  in
+  begin match wet_run with
+  | true ->
+    Client.submit ~override_configuration:configuration ?add_tags workflow
+  | false ->
+    Log.(s "Dry-run: not submitting the workflow: " % n
+         % s (EDSL.to_display_string workflow)
+         @ normal);
+  end;
+  return ()
+
+  
 let initialize_configuration
     ?(tokens=[]) ~tls ~port ~debug_level config_path =
   System.ensure_directory_path config_path
@@ -418,7 +446,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               in
               initialize_configuration
                 ~tls ~port ~debug_level ~tokens config_path)
-          $ Arg.(info ["tls"] ~docv:"CERT KEY"
+          $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
                  |> value)
@@ -427,7 +455,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                          generating a self-signed certificate/private-key pair"
                  |> flag |> value)
           $ Arg.(info ["debug-level"] ~docv:"INT"
-                ~doc:"Set the debug-level $(docv)."
+                   ~doc:"Set the debug-level $(docv)."
                  |> opt int 0 |> value)
           $ Arg.(info ["with-token"]
                    ~docv:"STRING"
@@ -549,6 +577,37 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(info "print-configuration" ~version
                ~doc:"Display current configuration." ~man:[])
   in
+  let submit_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure begin fun configuration daemonize wet_run add_tags ->
+          begin match daemonize with
+          | Some (host, cmd) ->
+            submit ~configuration ~add_tags
+              ~wet_run (`Daemonize (host, cmd))
+          | None -> 
+            Log.(s "Nothing to do." @ normal);
+            return ()
+          end
+        end
+        $ config_file_argument
+        $ Arg.(info ["daemonize"] ~docv:"HOST,CMD"
+                 ~doc:"Submit a daemonized command on a given HOST."
+               |> opt (pair string string |> some) None
+               |> value)
+        $ Arg.(info ["w"; "wet-run"]
+                 ~doc:"Really submit the workflow (the default is to dry-run"
+               |> flag |> value)
+        $ Arg.(info ["tag"]
+                 ~docv:"STRING"
+                 ~doc:"Tag the workflow with $(docv)."
+               |> opt_all string [] |> value)
+      )
+      ~info:(
+        info "submit" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Submit (simple) workflows." ~man:[])
+  in
   let interact_cmd =
     let open Term in
     sub_command
@@ -637,6 +696,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     @ [
       init_cmd; status_cmd; start_gui; run_cmd; kill_cmd;
       interact_cmd;
+      submit_cmd;
       explore_cmd;
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
