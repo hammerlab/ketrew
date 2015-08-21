@@ -53,7 +53,7 @@ The first time you use Ketrew, you need to configure it, simplest by calling
     
 by default this will configure Ketrew in `$HOME/.ketrew/` with a client/server
 mode **not** using TLS on port `8756` (see `ketrew init --help` you can even ask
-it to generated self-signed TLS certificates).
+it to generate self-signed TLS certificates).
 See also the [documentation](src/doc/The_Configuration_File.md)
 on the configuration file learn how to tweak it.
 
@@ -66,14 +66,14 @@ You may then start a server:
 
     KETREW_PROFILE=server ketrew start-server > /dev/null &
 
-you can then open the GUI:
+and then open the GUI:
 
     ketrew gui
 
-which is just trying to open
+which is just trying to load
 <http://127.0.0.1:8756/gui?token=my-not-so-secret-token> ☺
 
-You can always stop the server or check on it:
+You can always stop the server or check its status:
 
     ketrew stop -P server
     ketrew status -P server
@@ -97,7 +97,7 @@ If you don't like Web UI's you can use the text-based UI:
 The EDSL: Defining Workflows
 ----------------------------
 
-The previous sections uses `ketrew submit` to launch an extremely simple
+The previous section uses `ketrew submit` to launch an extremely simple
 workflow, to go further we need the EDSL.
 
 ### Overview
