@@ -39,8 +39,66 @@ See the [development documentation](src/doc/Developer_Documentation.md) to find
 out how to build Ketrew (and its dependencies) from the sources.
 
 
+Getting Started
+---------------
+
+Ketrew is very flexible and hence may seem difficult to understand, let's get a
+very minimalistic workflow running.
+
+The first time you use Ketrew, you need to configure it, simplest by calling
+`ketrew init`, and please choose an authentication token:
+
+    rm -fr ~/.ketrew/ # if you had a previous configuration there
+    ketrew init --with-token my-not-so-secret-token
+    
+by default this will configure Ketrew in `$HOME/.ketrew/` with a client/server
+mode **not** using TLS on port `8756` (see `ketrew init --help` you can even ask
+it to generated self-signed TLS certificates).
+See also the [documentation](src/doc/The_Configuration_File.md)
+on the configuration file learn how to tweak it.
+
+You can check that the client or the server are configured:
+
+    ketrew print-configuration
+    ketrew print-configuration -P server
+
+You may then start a server:
+
+    KETREW_PROFILE=server ketrew start-server > /dev/null &
+
+you can then open the GUI:
+
+    ketrew gui
+
+which is just trying to open
+<http://127.0.0.1:8756/gui?token=my-not-so-secret-token> ☺
+
+You can always stop the server or check on it:
+
+    ketrew stop -P server
+    ketrew status -P server
+
+The `ketrew submit` sub-command can create tiny workflows:
+
+    ketrew submit --wet-run --tag 1st-workflow --tag command-line --daemonize /tmp/KT,"du -sh $HOME"
+    
+The job will appear on the WebUI and you can inspect/restart/kill it.
+
+<div>
+<img width="100%"
+  src="https://cloud.githubusercontent.com/assets/617111/9421006/17bceb36-483a-11e5-8845-bb2234697a14.gif">
+</div>
+
+If you don't like Web UI's you can use the text-based UI:
+
+    ketrew interact
+
+
 The EDSL: Defining Workflows
 ----------------------------
+
+The previous sections uses `ketrew submit` to launch an extremely simple
+workflow, to go further we need the EDSL.
 
 ### Overview
 
@@ -116,79 +174,14 @@ let () =
      server over HTTPS. The server will start running the workflow right away.  *)
 ```
 
-If you actually have access to an LSF cluster and want to try this workflow see
-below: [“For The Impatient”](#ForTheImpatient).
+If you actually have access to an LSF cluster and want to try this workflow,
+put it in a file `my_second_workflow.ml`, and simply:
+
+    ocaml my_second_workflow.ml 'du -sh $HOME'
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 
-The Engine: Running Stuff
--------------------------
-
-### For The Impatient
-
-Let's say the example above is in a file `my_first_workflow.ml`:
-
-The first time you use Ketrew, you need to call `init`:
-
-    ketrew init
-
-Then you can *submit* your workflow:
-
-    ocaml my_first_workflow.ml 'du -sh $HOME'
-
-When the function `Ketrew.Client.submit` is called, the workflow will be
-*submitted* but not yet running. To run the *engine* do:
-
-    ketrew run loop
-
-The engine will run until you type `q` or until there is nothing left to do.
-
-Anytime, you can go a check the status and do many things with your
-workflows, for example with:
-
-    ketrew interact
-
-which is an interactive text-based interface.
-
-### Initialization
-
-Let's go back to the beginning; to create a configuration file, run:
-
-    ketrew init
-
-This creates `$HOME/.ketrew/configuration.json` (see `ketrew init --help` to
-choose another path).
-
-By default this configures Ketrew in **Standalone** mode;
-See the [documentation](src/doc/The_Configuration_File.md)
-on the configuration file to tweak it.
-
-### Standalone Ketrew
-
-The default for Ketrew is to run in “Standalone” mode.
-From the command-line client, one can both query and run the engine.  See
-first: `ketrew --help`; then:
-
-- To display the current status: `ketrew status --help`.
-- To run as many steps as possible until a “fix-point” is reached:
-`ketrew run fix` (see `ketrew run-engine --help`).
-- To kill running jobs use `ketrew kill` + the target Identifier,<br/>
-or do an interactive murder: `ketrew kill --interactive`
-(see `ketrew kill --help`).
-
-See also `ketrew interact --help` or `ketrew explore --help` for fun
-*one-key-based* navigation.
-
-### Client-Server Mode
-
-In this mode, the Ketrew engine runs a proper server which is
-accessed over an HTTP API.
-
-See the commands `ketrew start-server --help`
-and `ketrew stop-server --help`.
-
-The client works in the same way as in “Standalone” mode.
 
 Where to Go Next
 ----------------
