@@ -314,9 +314,10 @@ let server =
   let client =
     fmt {ocaml|
 let client =
-  client ~token:%S "https://127.0.0.1:%d"
+  client ~token:%S "http%s://127.0.0.1:%d"
 |ocaml}
       (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
+      (match tls with `Don't -> "" | _ -> "s")
       port
   in
   let config =
