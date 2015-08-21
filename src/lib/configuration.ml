@@ -180,8 +180,11 @@ let log t =
     ]
 
 
+let default_configuration_directory_path =
+  Sys.getenv "HOME" ^ "/.ketrew/"
+  
 let default_database_path =
-  Sys.getenv "HOME" ^ "/.ketrew/database"
+  default_configuration_directory_path // "database"
 
 let create ?(debug_level=0) ?(plugins=[]) mode =
   {debug_level; plugins; mode;}
@@ -315,7 +318,7 @@ module File = struct
     |> Option.value_exn ~msg:(fmt "profile %S not found" name)
 
   let default_ketrew_path =
-    Sys.getenv "HOME" ^ "/.ketrew/"
+    default_configuration_directory_path
 
   let default_configuration_filenames = [
     "configuration.json";

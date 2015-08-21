@@ -220,6 +220,92 @@ let interact ~client =
   in
   main_loop ()
 
+let initialize_configuration
+    ?(tokens=[]) ~tls ~port ~debug_level config_path =
+  System.ensure_directory_path config_path
+  >>= fun () ->
+  begin match tls with
+  | `Use (cert, key) -> return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
+  | `Create_self_signed ->
+    let cert = config_path // "certificate.pem" in
+    let key = config_path // "privkey-nopass.pem" in
+    System.Shell.do_or_fail
+      (fmt "openssl req -x509 -newkey rsa:2048 \
+            -keyout %s -out %s \
+            -days 10 -nodes -subj \"/CN=test_ketrew\" 2> /dev/null" key cert)
+    >>= fun () ->
+    return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
+  | `Don't -> return (fmt "`Tcp %d" port)
+  end
+  >>= fun server_listen ->
+  let auth_tokens_file = config_path // "authorized_tokens" in
+  System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
+  >>= fun () ->
+  let ocaml_config_file_header =
+    fmt {ocaml|
+let () =
+  try Topdirs.dir_directory (Sys.getenv "OCAML_TOPLEVEL_PATH")
+  with Not_found -> ();;
+#use "topfind"
+#thread
+#require "ketrew"
+open Ketrew.Configuration
+let debug_level = %d
+|ocaml} debug_level in
+  let engine =
+    fmt {ocaml|
+let engine =
+  engine ~database_parameters:%S ()
+|ocaml}
+      (config_path // "database")
+  in
+  let server =
+    fmt {ocaml|
+let server =
+  server ~engine
+    ~authorized_tokens:[
+       %s
+       authorized_tokens_path %S
+     ]
+    ~return_error_messages:true
+    ~log_path:%S
+    ~command_pipe:%S
+    (%s)
+|ocaml}
+      (List.map tokens ~f:(fun tok ->
+           fmt "authorized_token ~name:\"%s\" %S;" tok tok)
+       |> String.concat ~sep:"\n")
+      auth_tokens_file
+      (config_path // "server.log")
+      (config_path // "command.pipe")
+      server_listen
+  in
+  let client =
+    fmt {ocaml|
+let client =
+  client ~token:%S "https://127.0.0.1:%d"
+|ocaml}
+      (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
+      port
+  in
+  let config =
+    ocaml_config_file_header
+    ^ engine
+    ^ server
+    ^ client
+    ^ {ocaml|
+let () =
+  output [
+    profile "standalone"
+      (create ~debug_level (standalone () ~engine));
+    profile "server" (create ~debug_level server);
+    profile "default" (create ~debug_level client);
+  ]
+|ocaml}
+  in
+  IO.write_file ~content:config (config_path // "configuration.ml")
+
+  
 let daemonize_if_applicable config =
   let exit_parent () =
     (* in case some library add at-exit hooks:
@@ -318,27 +404,39 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let init_cmd =
     sub_command
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
-               ~doc:"Initialize the client (create a config-file)")
+               ~doc:"Initialize the application (create a config-directory)")
       ~term:Term.(
-          pure (fun db_path debug_level config_path ->
-              System.ensure_directory_path (Filename.dirname config_path)
-              >>= fun () ->
-              let open Configuration in
-              let config = [
-                profile "default"
-                  (create ~debug_level
-                     (standalone ()
-                        ~engine:(engine ~database_parameters:db_path ())));
-              ] in
-              IO.write_file ~content:(config |> to_json) config_path)
-          $ Arg.(value & opt string Configuration.default_database_path
-                 & info ["database"] ~docv:"FILE"
-                   ~doc:"Use $(docv) as database.")
-          $ Arg.(value & opt int 1
-                 & info ["debug-level"] ~docv:"INT"
-                   ~doc:"Set the debug-level $(docv).")
-          $ Arg.(required & pos 0 (some string) None
-                 & info [] ~docv:"PATH" ~doc:"Path of the generated config file")
+          pure (fun cert_key self_tls debug_level tokens port config_path ->
+              let tls =
+                match cert_key with
+                | Some (cert, key) -> `Use (cert, key)
+                | None when self_tls -> `Create_self_signed
+                | _ -> `Don't
+              in
+              initialize_configuration
+                ~tls ~port ~debug_level ~tokens config_path)
+          $ Arg.(info ["tls"] ~docv:"CERT KEY"
+                   ~doc:"Configure the server to listen on HTTPS"
+                 |> opt (pair string string |> some) None
+                 |> value)
+          $ Arg.(info ["self-signed-tls"]
+                   ~doc:"Configure the server to listen on HTTPS by \
+                         generating a self-signed certificate/private-key pair"
+                 |> flag |> value)
+          $ Arg.(info ["debug-level"] ~docv:"INT"
+                ~doc:"Set the debug-level $(docv)."
+                 |> opt int 0 |> value)
+          $ Arg.(info ["with-token"]
+                   ~docv:"STRING"
+                   ~doc:"Add $(docv) to the list of authentication token."
+                 |> opt_all string [] |> value)
+          $ Arg.(value & opt int 8756
+                 & info ["port"] ~docv:"INT"
+                   ~doc:"Set the server port to $(docv).")
+          $ Arg.(value
+                 & opt string Configuration.default_configuration_directory_path
+                 & info ["configuration-path"] ~docv:"DIR"
+                   ~doc:"Create the configuration in $(docv).")
         ) in
   let start_gui =
     sub_command

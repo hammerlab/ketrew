@@ -230,9 +230,8 @@ val to_json: profile list -> string
 
 (** {2 Access Configuration Values} *)
 
-val default_database_path: string
-(** Default path to the database (used when generating custom configuration
-    files). *)
+val default_configuration_directory_path: string
+(** Default path to the configuration directory (["~/.ketrew/"]). *)
 
 val database_parameters: engine -> string
 (** Get the database parameters. *)
