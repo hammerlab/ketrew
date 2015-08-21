@@ -652,13 +652,14 @@ let start_listening_on_connections ~server_state =
   let return_error_messages, how =
     Configuration.return_error_messages server_state.server_configuration,
     Configuration.listen_to server_state.server_configuration in
-  begin match how with
-  | `Tls (certfile, keyfile, port) ->
-    Deferred_result.wrap_deferred
-      ~on_exn:(function
-        | e -> `Start_server_error (Printexc.to_string e))
-      Lwt.(fun () ->
-          let mode =
+  Deferred_result.wrap_deferred
+    ~on_exn:(function
+      | e -> `Start_server_error (Printexc.to_string e))
+    Lwt.(fun () ->
+        let mode =
+          (* Convert to Conduit_lwt_unix.server *)
+          match how with
+          | `Tls (certfile, keyfile, port) ->
             `TLS (
               (* `TLS means that conduit will do:
                  match Sys.getenv "CONDUIT_TLS" with
@@ -666,56 +667,57 @@ let start_listening_on_connections ~server_state =
                  | _ -> OpenSSL *)
               `Crt_file_path certfile,
               `Key_file_path keyfile,
-              `No_password, `Port port) in
-          let request_callback (_, conn_id) request body =
-            let id = Cohttp.Connection.to_string conn_id in
-            begin match Hashtbl.find server_state.all_connections id with
-            | some ->
-              Hashtbl.replace server_state.all_connections
-                id (`Request Time.(now ()) :: some);
-            | exception _ ->
-              Hashtbl.replace server_state.all_connections 
-                id (`Request Time.(now ()) :: []);
-            end;
-            handle_request ~server_state ~body request 
-            >>= fun high_level_answer ->
-            begin match high_level_answer with
-            | `Ok `Unit ->
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
-            | `Ok (`Message (`Json, msg)) ->
-              let body = Protocol.Down_message.serialize msg in
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
-            | `Ok (`Page body) ->
-              Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
-            | `Error e ->
-              Log.(s "Error while handling the request: "
-                   % s (Error.to_string e) @ error);
-              let body =
-                if return_error_messages
-                then "Error: " ^ (Error.to_string e)
-                else "Undisclosed server error" in
-              Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
-            end
-            >>= fun ((response, body) as cohttp_answer) ->
-            return cohttp_answer
-          in
-          let conn_closed (_, conn_id) =
-            let id = Cohttp.Connection.to_string conn_id in
-            begin match Hashtbl.find server_state.all_connections id with
-            | some ->
-              Hashtbl.replace server_state.all_connections
-                id (`Open Time.(now ()) :: some);
-            | exception _ ->
-              Hashtbl.replace server_state.all_connections 
-                id (`Open Time.(now ()) :: []);
-            end;
-            Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
-                 @ verbose);
-          in
-          Cohttp_lwt_unix.Server.(
-            create ~mode (make ~callback:request_callback ~conn_closed ()))
-        )
-  end
+              `No_password, `Port port)
+          | `Tcp port -> `TCP (`Port port)
+        in
+        let request_callback (_, conn_id) request body =
+          let id = Cohttp.Connection.to_string conn_id in
+          begin match Hashtbl.find server_state.all_connections id with
+          | some ->
+            Hashtbl.replace server_state.all_connections
+              id (`Request Time.(now ()) :: some);
+          | exception _ ->
+            Hashtbl.replace server_state.all_connections 
+              id (`Request Time.(now ()) :: []);
+          end;
+          handle_request ~server_state ~body request 
+          >>= fun high_level_answer ->
+          begin match high_level_answer with
+          | `Ok `Unit ->
+            Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
+          | `Ok (`Message (`Json, msg)) ->
+            let body = Protocol.Down_message.serialize msg in
+            Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
+          | `Ok (`Page body) ->
+            Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
+          | `Error e ->
+            Log.(s "Error while handling the request: "
+                 % s (Error.to_string e) @ error);
+            let body =
+              if return_error_messages
+              then "Error: " ^ (Error.to_string e)
+              else "Undisclosed server error" in
+            Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
+          end
+          >>= fun ((response, body) as cohttp_answer) ->
+          return cohttp_answer
+        in
+        let conn_closed (_, conn_id) =
+          let id = Cohttp.Connection.to_string conn_id in
+          begin match Hashtbl.find server_state.all_connections id with
+          | some ->
+            Hashtbl.replace server_state.all_connections
+              id (`Open Time.(now ()) :: some);
+          | exception _ ->
+            Hashtbl.replace server_state.all_connections 
+              id (`Open Time.(now ()) :: []);
+          end;
+          Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
+               @ verbose);
+        in
+        Cohttp_lwt_unix.Server.(
+          create ~mode (make ~callback:request_callback ~conn_closed ()))
+      )
 
 let stop ~configuration =
   Deferred_result.some ~or_fail:(`Stop_server_error "No command-pipe configured")
@@ -744,7 +746,10 @@ let status ~configuration =
   let local_server_uri =
     match Configuration.listen_to configuration with
     | `Tls (_, _, port) ->
-      Uri.make ~scheme:"https" ~host:"127.0.0.1" ~path:"/hello" () ~port in
+      Uri.make ~scheme:"https" ~host:"127.0.0.1" ~path:"/hello" () ~port
+    | `Tcp (port) ->
+      Uri.make ~scheme:"http" ~host:"127.0.0.1" ~path:"/hello" () ~port
+  in
   Log.(s "Trying GET on " % uri local_server_uri @ verbose);
   begin
     System.with_timeout 5. ~f:(fun () ->

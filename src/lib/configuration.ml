@@ -49,7 +49,10 @@ type authorized_tokens = [
 ] [@@deriving yojson]
 type server = {
   authorized_tokens: authorized_tokens list;
-  listen_to: [ `Tls of (string * string * int) ];
+  listen_to: [
+    | `Tls of (string * string * int)
+    | `Tcp of int
+  ];
   return_error_messages: bool;
   command_pipe: string option;
   daemon: bool;
@@ -162,12 +165,16 @@ let log t =
           item "Max-blocking-time" (OCaml.float srv.max_blocking_time);
           item "Block-step-time" (OCaml.float srv.block_step_time);
           item "Listen"
-            (let `Tls (cert, key, port) = srv.listen_to in
-             sublist [
-               item "Port" (i port);
-               item "Certificate" (quote cert);
-               item "Key" (quote key);
-             ])
+            begin match srv.listen_to with
+            | `Tls (cert, key, port) ->
+              item "HTTPS" (
+                sublist [
+                  item "Port" (i port);
+                  item "Certificate" (quote cert);
+                  item "Key" (quote key);
+                ])
+            | `Tcp port -> item "HTTP" (i port)
+            end
         ]);
       item "Misc" common;
     ]

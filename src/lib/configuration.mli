@@ -145,7 +145,7 @@ val server:
   ?max_blocking_time: float ->
   ?block_step_time: float ->
   ?read_only_mode: bool ->
-  [ `Tls of string * string * int ] ->
+  [ `Tcp of int | `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
     {!create} function).
@@ -171,6 +171,7 @@ val server:
       hopefully disapear soon) (seconds, default [3.]).
     - [read_only_mode]:
       run the server in read-only mode (default [false]).
+    = [`Tcp port]: configure the server the unsercurely listen on [port].
     - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
       server to listen on [port].
 *)
@@ -257,8 +258,8 @@ val authorized_tokens: server ->
   [ `Path of string | `Inline of (string * string)] list
 (** The path to the [authorized_tokens] file. *)
 
-val listen_to: server -> [ `Tls of (string * string * int) ]
-(** Get the OpenSSL server configuration. *)
+val listen_to: server -> [ `Tcp of int | `Tls of string * string * int ]
+(** Get the OpenSSL-or-not server configuration. *)
 
 val return_error_messages: server -> bool
 (** Get the value of [return_error_messages]. *)
