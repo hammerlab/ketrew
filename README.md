@@ -60,11 +60,12 @@ on the configuration file learn how to tweak it.
 You can check that the client or the server are configured:
 
     ketrew print-configuration
-    ketrew print-configuration -P server
+    ketrew print-configuration --configuration-profile server
+    ketrew print-configuration -P daemon
 
 You may then start a server:
 
-    KETREW_PROFILE=server ketrew start-server > /dev/null &
+    KETREW_PROFILE=daemon ketrew start-server
 
 and then open the GUI:
 
@@ -75,8 +76,8 @@ which is just trying to load
 
 You can always stop the server or check its status:
 
-    ketrew stop -P server
-    ketrew status -P server
+    ketrew stop -P daemon
+    ketrew status -P daemon
 
 The `ketrew submit` sub-command can create tiny workflows:
 
