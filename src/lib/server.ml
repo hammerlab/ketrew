@@ -778,6 +778,10 @@ let status ~configuration =
 
 
 let start ~configuration  =
+  Log.(s "Set preemptive bounds: 10, 52" @ verbose);
+  Lwt_preemptive.init 10 52 (fun str ->
+      Log.(s" Lwt_preemptive error: " % s str @ error);
+    );
   begin
     status ~configuration
     >>= function
