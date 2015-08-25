@@ -292,8 +292,8 @@ let engine =
   in
   let server =
     fmt {ocaml|
-let server =
-  server ~engine
+let server ~daemon =
+  server ~daemon ~engine
     ~authorized_tokens:[
        %s
        authorized_tokens_path %S
@@ -330,7 +330,8 @@ let () =
   output [
     profile "standalone"
       (create ~debug_level (standalone () ~engine));
-    profile "server" (create ~debug_level server);
+    profile "server" (create ~debug_level (server ~daemon:false));
+    profile "daemon" (create ~debug_level (server ~daemon:true));
     profile "default" (create ~debug_level client);
   ]
 |ocaml}
