@@ -2,8 +2,8 @@ Configuration File
 ==================
 
 Ketrew applications (ie. server or client), use a JSON format
-configuration file (it is possible to avoid configuration files by using
-the library and/or creating your own
+for configuration (it is possible to generate that file from OCaml or
+even to avoid all configuration files by creating your own
 [ad-hoc command-line application](./Alternative_CLI_Application.md)).
 
 The configuration file can contain one or more named "profiles".
@@ -39,8 +39,8 @@ After parsing the configuration file, Ketrew will select a profile by name:
 Generating From Command Line
 ----------------------------
 
-The command `ketrew initialize` can generate a configuration file (limited to
-standalone mode for now); see `ketrew init --help`.
+The command `ketrew initialize` can generate a configuration file (among other
+things); see `ketrew init --help`.
 
 
 Example
@@ -117,7 +117,7 @@ let () =
 You may run `ocaml configuration.ml` to see the equivalent Json.
 
 Creating a test environment (`make test-env`, cf. developer
-[docs](./Developer_Documentation.md)) generates a very similar configuration
+[docs](./Developer_Documentation.md)) generates a pretty complex configuration
 file.
 
 Option Details
