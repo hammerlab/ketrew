@@ -38,7 +38,7 @@ module Error_log = struct
     ];
   }
   type t = item list Reactive.Source.t
-      let create () = Reactive.Source.create []
+  let create () = Reactive.Source.create []
 
   let append t v =
     let open Reactive in
@@ -885,16 +885,19 @@ module Html = struct
             time_span t.wait_before_retry_asynchronous_loop;
           ]);
       h4 [pcdata "Currently Interesting Targets"];
-      Reactive_node.ul Reactive.(
-          interesting_target_ids t
-          |> Signal.map ~f:(List.map ~f:(fun id ->li [code [pcdata id]]))
-          |> Signal.list);
-      h4 [pcdata "List-of-IDs Loop"];
-      Reactive_node.ul Reactive.(
+      Reactive_node.div Reactive.(
+          (interesting_target_ids t)
+          |> Signal.map ~f:(fun l ->
+              Bootstrap.collapsable_ul ~ul_kind:`None ~maximum_items:10
+                (List.map l ~f:(fun id -> code [pcdata id]))
+            ) |> Signal.singleton);
+      h4 [pcdata "List-of-IDs Loop Log"];
+      Reactive_node.div Reactive.(
           Source.signal t.list_of_ids_log
-          |> Signal.map ~f:(List.map ~f:(fun log -> li [Markup.to_html log]))
-          |> Signal.list
-        );
+          |> Signal.map ~f:(fun l ->
+              Bootstrap.collapsable_ul ~ul_kind:`None ~maximum_items:5
+                (List.map l ~f:(fun log -> Markup.to_html log))
+            ) |> Signal.singleton);
       h4 [pcdata "Asynchronous Tasks"];
       Reactive_node.div Reactive.(
           Async_task_log.markup_signal t.async_task_log
