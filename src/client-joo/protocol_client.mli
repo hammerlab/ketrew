@@ -23,7 +23,7 @@ val call :
    [> `Protocol_client of
         [> `JSONP of [> `Exn of exn | `Timeout ]
         | `Parsing_message of bytes * exn
-        | `Wrong_xhr_status of bytes
+        | `Wrong_xhr_status of int * bytes
         | `Xhr_timeout
         ] ])
     Pvem_js.t
@@ -35,7 +35,7 @@ module Error: sig
       | `JSONP of
           [< `Exn of exn | `Timeout ]
       | `Parsing_message of string * exn
-      | `Wrong_xhr_status of bytes 
+      | `Wrong_xhr_status of int * bytes 
       | `Xhr_timeout
     ] ->
     string

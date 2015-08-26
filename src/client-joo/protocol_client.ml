@@ -25,9 +25,14 @@ module Custom_xml_http_request = struct
              | 200 ->
                Lwt.wakeup condition (`Ok (Js.to_string xhr##.responseText))
              | other ->
+             Log.(s "READY !! status: " % i xhr##.status % n
+                  % s " status text: " % s (xhr##.statusText |> Js.to_string) % n
+                  % s " resp text: " % s (xhr##.responseText |> Js.to_string) % n
+                  @ normal);
                Lwt.wakeup condition
                  (`Error (`Protocol_client
-                            (`Wrong_xhr_status (Js.to_string xhr##.statusText))))
+                            (`Wrong_xhr_status
+                               (other, Js.to_string xhr##.statusText))))
              end
            | other -> Log.(s "READY other !! " @ normal);
            end);
@@ -213,7 +218,7 @@ module Error = struct
   | `JSONP (`Exn e) -> fmt "JSONP Exception: %s" (Printexc.to_string e)
   | `Parsing_message (_, e) ->
     fmt "JSONP Parsing Exception: %s" (Printexc.to_string e)
-  | `Wrong_xhr_status s ->
-    fmt "XHR Wrong status: %S" s
+  | `Wrong_xhr_status (nb, s) ->
+    fmt "XHR Wrong status: %d (text: %S)" nb s
   | `Xhr_timeout -> "XHR timeout"
 end
