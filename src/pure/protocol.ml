@@ -80,6 +80,7 @@ module Up_message = struct
       | `All
       | `Not_finished_before of float
       | `Created_after of float
+      | `Status_changed_since of float
     ] [@@deriving yojson]
     type string_predicate = [`Equals of string | `Matches of string]
         [@@deriving yojson]
@@ -173,6 +174,7 @@ module Up_message = struct
       | `All -> text "All"
       | `Not_finished_before t -> description "Not-finished-before" (date t)
       | `Created_after t -> description "Created-after" (date t)
+      | `Status_changed_since t -> description "Status-change-since" (date t)
       end;
       "Filter",  markup_filter filter
     ]

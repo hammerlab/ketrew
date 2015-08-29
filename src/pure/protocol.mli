@@ -69,6 +69,7 @@ module Up_message : sig
     | `All
     | `Not_finished_before of float
     | `Created_after of float
+    | `Status_changed_since of float
   ]
   type string_predicate = [`Equals of string | `Matches of string]
   type filter = [

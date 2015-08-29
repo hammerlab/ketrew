@@ -360,6 +360,12 @@ let get_list_of_target_ids t query =
             | true -> None
             | false -> wins ()
           end
+        | `Status_changed_since time ->
+          let (`Time t, _, _) = Target.(state target |> State.summary) in
+          begin match time <= t with
+          | true -> wins ()
+          | false -> None
+          end
         end
         >>= fun _ ->
         let string_predicate ~p string =
