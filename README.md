@@ -12,11 +12,9 @@ parameter variations, running on different *hosts* with various schedulers).
 and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
-This is the `2.0.0` version of Ketrew, serialized content is backwards
-compatible with the `1.x.x` series but the protocol is not; the EDSL API
-requires minor changes (all caught by the OCaml compiler).
-See also the documentation for the
-[master branch](http://seb.mondet.org/software/ketrew/).
+This is the master branch of Ketrew.
+See also the documentation for the latest release: 
+[2.0.0](http://seb.mondet.org/software/ketrew/doc.2.0.0/index.html).
 
 Build & Install
 ---------------
