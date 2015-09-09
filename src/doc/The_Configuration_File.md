@@ -54,7 +54,7 @@ A configuration file `configuration.ml` (that Ketrew will execute through
 #thread
 #require "ketrew"
 
-open Ketrew_configuration
+open Ketrew.Configuration
 
 let debug_level = 2
 (* `debug-level`: integer specifying the amount of verbose messages:
