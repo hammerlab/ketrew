@@ -22,7 +22,7 @@ open Ketrew_pure
 open Internal_pervasives
 open Unix_io
 
-module Database = Trakeva_sqlite
+module Database = Trakeva_of_uri
 module Database_action = Trakeva.Action
 module Database_error = Trakeva.Error
 
