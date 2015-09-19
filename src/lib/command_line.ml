@@ -675,6 +675,31 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "stop-server" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Stop the server." ~man:[])
   in
+  let sync_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun src dst ->
+            Persistent_data.Synchronize.copy src dst
+          )
+        $ Arg.(info ["from"] ~docv:"SRC" ~doc:"The source to copy from"
+               |> opt (some string) None
+               |> required)
+        $ Arg.(info ["to"] ~docv:"DST" ~doc:"The destination to copy to"
+               |> opt (some string) None
+               |> required)
+      )
+      ~info:(
+        info "synchronize" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Synchronize/copy a ketrew database."
+          ~man:[
+            `P "The strings SRC and DST are URIs that the Trakeva library \
+                can accept (i.e. like in the configuration file) *or* \
+                a URI starting with `backup://` and indicating a path \
+                to a directory.";
+          ]
+      )
+  in
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -702,6 +727,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       explore_cmd;
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
+      sync_cmd;
     ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
