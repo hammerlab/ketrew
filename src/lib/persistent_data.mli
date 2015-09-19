@@ -157,3 +157,24 @@ module Adding_targets: sig
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
 end
+
+module Synchronize: sig
+  val copy :
+    string ->
+    string ->
+    (unit,
+     [> `Database of Trakeva.Error.t
+     | `Database_unavailable of bytes
+     | `IO of
+          [> `Read_file_exn of bytes * exn
+          | `Write_file_exn of bytes * exn ]
+     | `Missing_data of bytes
+     | `Not_a_directory of bytes
+     | `System of
+          [> `File_info of bytes
+          | `List_directory of bytes
+          | `Make_directory of bytes ] *
+          [> `Exn of exn | `Wrong_access_rights of int ]
+     | `Target of [> `Deserilization of bytes ] ])
+      Deferred_result.t
+end

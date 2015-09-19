@@ -59,6 +59,12 @@ module With_database = struct
   let active_targets_collection = "active-targets"
   let finished_targets_collection = "finished-targets"
 
+  let all_collections = [
+    passive_targets_collection;
+    active_targets_collection;
+    finished_targets_collection;
+  ]
+
   let set_target_db_action target =
     let key = Target.id target in
     Database_action.(set ~collection:active_targets_collection ~key
@@ -108,6 +114,14 @@ module With_database = struct
               (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
   let update_target t trgt = add_or_update_targets t [trgt]
+
+  let raw_add_or_update_stored_target t ~collection ~stored_target =
+    let key = Target.Stored_target.id stored_target in
+    run_database_action t
+      Database_action.(
+        set ~collection  ~key (Target.Stored_target.serialize stored_target)
+      )
+      ~msg:(fmt "raw_add_or_update_stored_target: %s" key)
 
   let get_stored_target t key =
     database t >>= fun db ->
@@ -546,5 +560,108 @@ module Adding_targets = struct
       )
     >>= fun () ->
     return (res <> [])
+
+end
+
+module Synchronize = struct
+
+  let make_input spec =
+    let uri = Uri.of_string spec in
+    match Uri.scheme uri with
+    | Some "backup" ->
+      let path  = Uri.path uri in
+      return (object
+        method get_collection collection =
+          let dir = path // collection in
+          System.file_info dir
+          >>= begin function
+          | `Symlink _
+          | `Socket
+          | `Fifo
+          | `Regular_file _
+          | `Block_device
+          | `Character_device -> fail (`Not_a_directory dir)
+          | `Absent -> return []
+          | `Directory ->
+            let `Stream next = System.list_directory dir in
+            let rec go acc =
+              next ()
+              >>= function
+              | None -> return acc
+              | Some s ->
+                let file = path // collection // s in
+                System.file_info file
+                >>= begin function
+                | `Regular_file _ ->
+                  IO.read_file file
+                  >>= fun d ->
+                  of_result (Target.Stored_target.deserialize d)
+                  >>= fun st ->
+                  go (st :: acc)
+                | _ -> go acc
+                end
+            in
+            go []
+          end
+        method close =
+          return ()
+      end)
+    | _ ->
+      With_database.create ~database_parameters:spec
+      >>= fun src_db ->
+      return (object
+        method get_collection collection =
+          With_database.get_collections_of_stored_targets src_db ~from:[collection]
+        method close =
+          With_database.unload src_db
+      end)
+
+  let make_output spec =
+    let uri = Uri.of_string spec in
+    match Uri.scheme uri with
+    | Some "backup" ->
+      let path  = Uri.path uri in
+      System.ensure_directory_path path
+      >>= fun () ->
+      return (object
+        method store ~collection ~stored_target =
+          System.ensure_directory_path (path // collection)
+          >>= fun () ->
+          IO.write_file (path // collection //
+                         Target.Stored_target.id stored_target ^ ".json")
+            ~content:(Target.Stored_target.serialize stored_target)
+        method close =
+          return ()
+      end)
+    | _ ->
+      With_database.create ~database_parameters:spec
+      >>= fun dst_db ->
+      return (object
+        method store ~collection ~stored_target =
+          With_database.raw_add_or_update_stored_target dst_db
+            ~collection ~stored_target
+        method close =
+          With_database.unload dst_db
+      end)
+
+  let copy src dst =
+    make_input src
+    >>= fun input ->
+    make_output dst
+    >>= fun output ->
+    Deferred_list.while_sequential
+      With_database.all_collections ~f:(fun collection ->
+          input#get_collection collection
+          >>= fun all_for_collection ->
+          Deferred_list.while_sequential all_for_collection ~f:(fun stored_target ->
+              output#store  ~collection ~stored_target)
+          >>= fun _ ->
+          return ())
+    >>= fun _ ->
+    input#close
+    >>= fun () ->
+    output#close
+
+
 
 end
