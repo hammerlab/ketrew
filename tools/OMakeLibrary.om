@@ -45,12 +45,13 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
         protected.LIB_CMOS = $(addsuffix .cmo, $(LIB_MODULES))
         protected.LIB_CMIS = $(addsuffix .cmi, $(LIB_MODULES))
         protected.LIB_CMXS = $(addsuffix .cmx, $(LIB_MODULES))
+        protected.LIB_OS = $(addsuffix .o, $(LIB_MODULES))
         echo "LIB $(libname) MODULES: $(LIB_MODULES)"
         echo "$(LIB_CMXS)"
         echo "$(LIB_CMIS)"
         $(libname).cmo $(libname).cmi: $(LIB_CMOS) $(LIB_CMIS)
             ocamlc -pack -o $(libname).cmo $(OCamlLinkSort $(LIB_CMOS))
-        $(libname).cmx $(libname).o: $(LIB_CMXS) $(LIB_CMIS)
+        $(libname).cmx $(libname).o: $(LIB_CMXS) $(LIB_OS) $(LIB_CMIS)
             ocamlopt -pack -o $(libname).cmx $(OCamlLinkSort $(LIB_CMXS))
         $(libname).cmxs: $(libname).cmx
             ocamlopt -shared -o $@ $(libname).cmx
@@ -75,7 +76,7 @@ public.OCamlProgramOfDirectory(appname, directory) =
     protected.APP_FILES[] = $(ls $(directory))
     protected.targetname = app-$(appname)
     protected.local_includes = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
-    protected.local_deps_suffix = $(if $(NATIVE_ENABLED), .cmx,  .cmo)
+    protected.local_deps_suffix = $(if $(NATIVE_ENABLED), .o,  .cmo)
     protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS)))) \
         $(file $(addprefix _build/,$(addsuffix $(local_deps_suffix), $(OCAML_LOCAL_LIBS)))) 
     .PHONY: $(targetname)
