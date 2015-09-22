@@ -82,6 +82,8 @@ opam update
 
 opam pin add trakeva https://github.com/smondet/trakeva.git
 
+opam install sqlite3 postgresql
+
 opam pin $opam_pin_add ketrew .
 
 opam install --yes ketrew
