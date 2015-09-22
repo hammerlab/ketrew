@@ -80,6 +80,7 @@ opam remote add smondet git://github.com/smondet/dev-opam-repo
 
 opam update
 
+opam pin add trakeva https://github.com/smondet/trakeva.git
 
 opam pin $opam_pin_add ketrew .
 
