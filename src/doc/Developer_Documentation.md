@@ -14,16 +14,16 @@ Ketrew depends on
 - `docout`: logging with `smart-print`
 - `sosa`:  String module/functor
 - `pvem_lwt_unix`: `Lwt_unix` wrapped in a `Pvem.t` (error monad) with more
-precise error types.
-- `uri`:
-parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
-(`uri` itself depends on `camlp4`).
+  precise error types.
+- `uri`: parse [RFC-3986](http://www.ietf.org/rfc/rfc3986.txt)-compliant URIs
+  (`uri` itself depends on `camlp4`).
 - `cmdliner`: command line parsing
 - `ppx_deriving_yojson`, `ppx_deriving`, `yojson`: JSON
   parsing/printing and other code generation
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
-- `trakeva` with the `sqlite` backend
+- `trakeva`, specifically the `trakeva_of_uri` library (with either the `sqlite`
+  or `postgresql` backends).
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
 and uses the `omake` as a build system and the tool `ocamlify`.

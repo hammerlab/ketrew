@@ -81,7 +81,7 @@ let ui = ui ~with_color:true ~explorer ~with_cbreak:true ()
   configuration” that detaches or not from the shell. *)
 let my_servers daemon =
   server ~ui
-    ~engine:(engine ~database_parameters:"/path/to/database-client-server" ())
+    ~engine:(engine ~database_parameters:"/path/to/sqlite-database-client-server" ())
     ~authorized_tokens:[
        authorized_tokens_path "/path/to/authorized-tokens";
        authorized_token ~name:"The-inline-one" "inlinetoken";
@@ -102,7 +102,7 @@ let () =
     profile "standalone"
       (create ~debug_level ~plugins
          (standalone ~ui ()
-            ~engine:(engine ~database_parameters:"/path/to/database-standalone" ())));
+            ~engine:(engine ~database_parameters:"/path/to/sqlite-database-standalone" ())));
     profile "daemon"
       (create ~debug_level ~plugins (my_servers true));
     profile "server"

@@ -94,8 +94,9 @@ val engine:
   unit -> engine
 (** Build an [engine] configuration:
 
-    - [database_parameters]: the path to the database file/directory
-      (the default is ["~/.ketrew/database"]).
+    - [database_parameters]: the URI passed to the [trakeva_of_uri]
+      library to create the database
+      (the default is a Sqlite database: ["~/.ketrew/database"]).
     - [turn_unix_ssh_failure_into_target_failure]: when an
       SSH or system call fails it may not mean that the command in
       your workflow is wrong (could be an SSH configuration or

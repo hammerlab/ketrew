@@ -24,9 +24,10 @@ any Unix platform.
 
 ### From Opam
 
-If you have `opam` up and running:
+If you have `opam` up and running, just install Ketrew while choose a database
+backend (you may pick both and choose later in the config-file):
 
-    opam install ketrew
+    opam install  (sqlite | postgresql)  ketrew
 
 Then you need at runtime `ssh` in the `$PATH`.
 
@@ -52,8 +53,11 @@ The first time you use Ketrew, you need to configure it, simplest by calling
     ketrew init --with-token my-not-so-secret-token
     
 by default this will configure Ketrew in `$HOME/.ketrew/` with a client/server
-mode **not** using TLS on port `8756` (see `ketrew init --help` you can even ask
-it to generate self-signed TLS certificates).
+mode **not** using TLS on port `8756` and with a local Sqlite database
+(use the option `--use-database URI` to choose another
+[database backend](src/doc/Database_Backends.md)).
+See `ketrew init --help` for more
+options, you can even ask it to generate self-signed TLS certificates.
 See also the [documentation](src/doc/The_Configuration_File.md)
 on the configuration file learn how to tweak it.
 
