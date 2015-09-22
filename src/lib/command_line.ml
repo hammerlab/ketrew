@@ -249,7 +249,7 @@ let submit ?add_tags ~configuration ~wet_run what =
 
   
 let initialize_configuration
-    ?(tokens=[]) ~tls ~port ~debug_level config_path =
+    ?use_database ?(tokens=[]) ~tls ~port ~debug_level config_path =
   System.ensure_directory_path config_path
   >>= fun () ->
   begin match tls with
@@ -283,12 +283,16 @@ let () =
 open Ketrew.Configuration
 let debug_level = %d
 |ocaml} debug_level in
+  let db_params =
+    match use_database with
+    | None  -> config_path // "database"
+    | Some s -> s in
   let engine =
     fmt {ocaml|
 let engine =
   engine ~database_parameters:%S ()
 |ocaml}
-      (config_path // "database")
+      db_params
   in
   let server =
     fmt {ocaml|
@@ -439,7 +443,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Initialize the application (create a config-directory)")
       ~term:Term.(
-          pure (fun cert_key self_tls debug_level tokens port config_path ->
+          pure (fun cert_key self_tls debug_level tokens port
+                 config_path use_database ->
               let tls =
                 match cert_key with
                 | Some (cert, key) -> `Use (cert, key)
@@ -447,7 +452,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                 | _ -> `Don't
               in
               initialize_configuration
-                ~tls ~port ~debug_level ~tokens config_path)
+                ?use_database ~tls ~port ~debug_level ~tokens config_path)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
@@ -470,6 +475,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & opt string Configuration.default_configuration_directory_path
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
+          $ Arg.(info ["use-database"] ~docv:"URI"
+                   ~doc:"Use the given URI for the database configuration \
+                         (the default being a Sqlite DB in the configuration \
+                         directory)."
+                 |> opt (some string) None |> value)
         ) in
   let start_gui =
     sub_command
