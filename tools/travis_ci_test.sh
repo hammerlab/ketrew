@@ -80,9 +80,6 @@ opam remote add smondet git://github.com/smondet/dev-opam-repo
 
 opam update
 
-# We add the react dependency for lwt.react in the tests
-opam install react
-
 
 opam pin $opam_pin_add ketrew .
 
