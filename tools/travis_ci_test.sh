@@ -31,6 +31,11 @@ travis_install_on_linux () {
     sudo apt-get install sqlite3=3.7.15.1-1~travis1
     sudo sqlite3 -version
 
+    sudo apt-get install libpq-dev postgresql
+
+    export PATH=$PATH:/usr/lib/postgresql/9.4/bin
+    echo "PATH: $PATH"
+    
     export opam_init_options="--comp=$OCAML_VERSION"
     sudo apt-get install -qq  opam time git
 }
@@ -104,7 +109,13 @@ git clone  git://github.com/smondet/trakeva
 cd trakeva
 make configure
 make
-./trakeva_tests
+# On OSX we start our own postgresql server, on linux we use the one of the box
+case $TRAVIS_OS_NAME in
+    osx) ./trakeva_tests ;;
+    linux)
+        POSTGRESQL_CONNECTION_INFO=postgresql://127.0.0.1/template1  ./trakeva_tests ;;
+    *) echo "Unknown $TRAVIS_OS_NAME"; exit 1
+esac
 cd ..
 
 echo "Now build Ketrew + tests"
