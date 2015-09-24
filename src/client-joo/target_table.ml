@@ -634,6 +634,29 @@ module Html = struct
                               );
                           );
                         false);
+                    a_onkeypress (fun ev ->
+                        Js.Optdef.case ev##.charCode
+                          (fun () -> true)
+                          (fun key_code ->
+                             (*
+                            Log.(s "keypress happens: " % i key_code % n
+                                 % s "altKey: " % (Js.to_bool ev##.altKey |> OCaml.bool) % n
+                                 % s "shiftKey: " % (Js.to_bool ev##.shiftKey |> OCaml.bool) % n
+                                 % s "ctrlKey: " % (Js.to_bool ev##.ctrlKey |> OCaml.bool) % n
+                                 % s "metaKey: " % (Js.to_bool ev##.metaKey |> OCaml.bool) % n
+                                 @ verbose);
+                                *)
+                             if key_code = 13 then (
+                               let open Reactive in
+                               match Source.value status with
+                               | `Ok v ->
+                                 Reactive.Source.set target_table.filter v;
+                                 false
+                               | `Error e ->
+                                 true
+                             ) else true
+                          )
+                      )
                   ];
                   Reactive_node.div ~a:[a_class ["input-group-btn"]]
                     Reactive.(
