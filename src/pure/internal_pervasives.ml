@@ -48,7 +48,7 @@ let sprintf = `No
 let fmt = Printf.sprintf
 (** The only function dealing with “formats.” *)
 
-let global_debug_level = ref 2
+let global_debug_level = ref 0
 (** Global reference. *)
 
 let global_with_color = ref true
