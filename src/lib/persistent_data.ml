@@ -511,10 +511,13 @@ let activate_target t ~target ~reason =
 let fold_active_targets t ~init ~f =
   Cache_table.fold t.cache ~init:(return init) ~f:(fun ~previous ~id st ->
       previous >>= fun previous ->
+      let active t =
+        let s = Target.state t in
+        not Target.State.Is.(passive s || finished s) in
       match Target.Stored_target.get_target st with
-      | `Target t ->
+      | `Target t when active t ->
         f previous ~target:t
-      | `Pointer _ -> return previous
+      | `Pointer _ | `Target _ -> return previous
     )
       
 let move_target_to_finished_collection t ~target =
