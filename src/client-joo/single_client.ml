@@ -741,6 +741,7 @@ module Html = struct
       preemptive_bounds (*  int * int *);
       preemptive_queue (*  int *);
       libev (*  bool *);
+      database;
       gc_minor_words  (*  float *);
       gc_promoted_words  (*  float *);
       gc_major_words  (*  float *);
@@ -793,6 +794,7 @@ module Html = struct
       end;
       "Preemptive → size of the waiting queue",  textf "%d" preemptive_queue;
       "LibEV", (if libev then text "Yes" else text "No");
+      "Database", text database;
       "GC", description_list [
         "minor_words", float gc_minor_words (*  float *);
         "promoted_words", float gc_promoted_words (*  float *);
