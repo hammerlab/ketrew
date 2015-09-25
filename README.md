@@ -34,6 +34,15 @@ Then you need at runtime `ssh` in the `$PATH`.
 This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
 libraries.
 
+*Optional*: Ketrew, like any Lwt-based piece of software, will be much faster and
+scalable when `libev` is detected and used as a backend.
+Use `opam install conf-libev` to tell opam that `libev` is
+[installed](http://opam.ocaml.org/packages/conf-libev/conf-libev.4-11/), which
+you can ensure with `brew install libev` on MacOSX, `apt-get install libev-dev`
+on Debian/Ubuntu, or `yum install libev-devel` on CentOS (which requires
+`export C_INCLUDE_PATH=/usr/include/libev/` and
+`export LIBRARY_PATH=/usr/lib64/` before `opam install conf-libev`).
+
 ### Without Opam
 
 See the [development documentation](src/doc/Developer_Documentation.md) to find
