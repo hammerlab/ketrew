@@ -28,6 +28,8 @@ module Server_status = struct
     preemptive_bounds: int * int;
     preemptive_queue: int;
     libev: bool;
+    database: (string [@default ""]); (* default value for extreme
+                                         backwards compatibility *)
     gc_minor_words : float;
     gc_promoted_words : float;
     gc_major_words : float;
@@ -40,8 +42,10 @@ module Server_status = struct
     gc_stack_size : int;
   } [@@deriving yojson]
   let create
+      ~database
       ~time ~read_only ~tls ~preemptive_bounds ~preemptive_queue ~libev ~gc =
     {time; read_only; tls; preemptive_bounds; preemptive_queue; libev;
+     database;
      gc_minor_words = gc.Gc.minor_words;
      gc_promoted_words = gc.Gc.promoted_words;
      gc_major_words = gc.Gc.major_words;

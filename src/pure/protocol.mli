@@ -27,6 +27,7 @@ module Server_status : sig
     preemptive_bounds: int * int;
     preemptive_queue: int;
     libev: bool;
+    database: string;
     gc_minor_words : float;
     gc_promoted_words : float;
     gc_major_words : float;
@@ -39,6 +40,7 @@ module Server_status : sig
     gc_stack_size : int;
   }
   val create:
+    database: string ->
     time:float -> read_only:bool ->
     tls:[ `Native | `OpenSSL | `None ] ->
     preemptive_bounds:int * int ->

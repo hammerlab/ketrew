@@ -346,9 +346,12 @@ let answer_get_server_status ~server_state =
     | Conduit_lwt_unix.Native  -> `Native
     | Conduit_lwt_unix.No_tls -> `None
   in
+  let database =
+    let configuration = server_state.server_configuration in
+    Configuration.database_parameters (Configuration.server_engine configuration)
+  in
   let status =
-    Protocol.Server_status.create
-      ~tls
+    Protocol.Server_status.create ~database ~tls
       ~time:Time.(now ())
       ~read_only:(Configuration.read_only_mode server_state.server_configuration)
       ~preemptive_bounds:(Lwt_preemptive.get_bounds ()) 
