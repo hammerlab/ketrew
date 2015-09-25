@@ -309,6 +309,7 @@ val yarn_distributed_shell :
   ?daemon_start_timeout:float ->
   ?hadoop_bin:string ->
   ?distributed_shell_shell_jar:string ->
+  ?container_vcores : int ->
   container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->
@@ -326,6 +327,7 @@ val yarn_distributed_shell :
     [org.apache.hadoop.yarn.applications.distributedshell.Client] class
     (default: ["/opt/cloudera/parcels/CDH/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell.jar"]
     which seems to be the default installation path when using Cloudera-manager).
+    - [container_vcores]: how many virtual cores to request (default [1]).
     - [container_memory]: how much memory to request from Yarn for the container
     ([`GB 42] for 42 GB; [`Raw some_string] to pass directly [some_string]
     to the option ["-container_memory"] of [distributedshell.Cllient]).

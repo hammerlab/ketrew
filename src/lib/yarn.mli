@@ -35,6 +35,7 @@ type distributed_shell_parameters
 val distributed_shell_program :
   ?hadoop_bin:string ->
   ?distributed_shell_shell_jar:string ->
+  ?container_vcores: int ->
   container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->

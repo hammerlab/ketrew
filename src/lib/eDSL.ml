@@ -195,13 +195,13 @@ let yarn_application ?host ?daemonize_using ?daemon_start_timeout program =
 
 let yarn_distributed_shell
     ?host ?daemonize_using ?daemon_start_timeout 
-    ?hadoop_bin ?distributed_shell_shell_jar
+    ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores
     ~container_memory ~timeout ~application_name program =
   Yarn.(
     create
       ?host ?daemonize_using ?daemon_start_timeout
       (distributed_shell_program
-         ?hadoop_bin ?distributed_shell_shell_jar
+         ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores 
          ~container_memory ~timeout ~application_name program))
 
 let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =

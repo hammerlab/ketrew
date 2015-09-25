@@ -31,6 +31,7 @@ module Run_parameters = struct
     hadoop_bin: string;
     distributed_shell_shell_jar: string;
     container_memory: [ `GB of int | `MB of int | `Raw of string ];
+    container_vcores: (int [@default 1]);
     timeout: [ `Seconds of int | `Raw of string ];
     application_name: string;
   } [@@deriving yojson]
@@ -66,12 +67,13 @@ let default_distributed_shell_jar =
 let distributed_shell_program
     ?(hadoop_bin="hadoop")
     ?(distributed_shell_shell_jar=default_distributed_shell_jar)
+    ?(container_vcores = 1)
     ~container_memory
     ~timeout
     ~application_name
     program =
   `Distributed_shell (
-    {hadoop_bin; distributed_shell_shell_jar;
+    {hadoop_bin; distributed_shell_shell_jar; container_vcores;
      container_memory; timeout; application_name}, program)
 
 let create
@@ -104,6 +106,7 @@ let rec markup : t -> Display_markup.t =
             | `MB i -> textf "%d GB" i
             | `Raw s -> textf "Raw: %S" s
             end;
+            "Container cores", textf "%d" dsp.container_vcores;
             "Timeout",
             begin match dsp.timeout with
             | `Seconds s -> time_span (float s)
@@ -323,7 +326,8 @@ let query run_param item =
     end
 
 let hadoop_distshell_call
-    ~distshell_jar ~hadoop_bin ~container_memory ~timeout ~application_name
+    ~distshell_jar ~hadoop_bin ~container_memory ~container_vcores
+    ~timeout ~application_name
     script =
   [hadoop_bin; 
    "org.apache.hadoop.yarn.applications.distributedshell.Client";
@@ -332,6 +336,7 @@ let hadoop_distshell_call
    "-shell_script"; script;
    "-appname"; application_name;
    "-container_memory"; container_memory;
+   "-container_vcores"; Int.to_string container_vcores;
    "-timeout"; timeout]
 
 let start = function
@@ -340,7 +345,8 @@ let start = function
     match program with
     | `Distributed_shell (params, p) ->
       let {hadoop_bin; distributed_shell_shell_jar;
-           container_memory; timeout; application_name} = params in
+           container_memory; container_vcores;
+           timeout; application_name} = params in
       let container_memory =
         match container_memory with
         | `GB i -> fmt "%d" (i * 1024)
@@ -353,7 +359,7 @@ let start = function
         | `Seconds secs -> fmt "%d" (secs * 1000)
       in
       (Some (
-          hadoop_distshell_call ~hadoop_bin
+          hadoop_distshell_call ~hadoop_bin ~container_vcores
             ~distshell_jar:distributed_shell_shell_jar
             ~container_memory ~timeout ~application_name),
        p)
