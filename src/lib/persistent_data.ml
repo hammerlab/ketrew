@@ -22,6 +22,10 @@ open Ketrew_pure
 open Internal_pervasives
 open Unix_io
 
+include Logging.Global.Make_module_error_and_info(struct
+    let module_name = "Persistence"
+  end)
+
 module Database = Trakeva_of_uri
 module Database_action = Trakeva.Action
 module Database_error = Trakeva.Error
@@ -191,12 +195,13 @@ module With_database = struct
         >>= fun ids ->
         return (collection, ids))
     >>= fun col_ids ->
-    Log.(s "Getting : "
-         % separate (s " + ")
-           (List.map col_ids ~f:(fun (col, ids) ->
-                i (List.length ids) % sp % parens (quote col)
-              ))
-         % s " stored targets" @verbose);
+    log_info
+      Log.(s "Getting : "
+           % separate (s " + ")
+             (List.map col_ids ~f:(fun (col, ids) ->
+                  i (List.length ids) % sp % parens (quote col)
+                ))
+           % s " stored targets");
     Deferred_list.while_sequential col_ids ~f:(fun (_, ids) ->
         Deferred_list.while_sequential ids ~f:(fun key ->
             get_stored_target t key
@@ -211,12 +216,13 @@ module With_database = struct
         >>= fun ids ->
         return (collection, ids))
     >>= fun col_ids ->
-    Log.(s "Getting : "
-         % separate (s " + ")
-           (List.map col_ids ~f:(fun (col, ids) ->
-                i (List.length ids) % sp % parens (quote col)
-              ))
-         % s " targets" @verbose);
+    log_info
+      Log.(s "Getting : "
+           % separate (s " + ")
+             (List.map col_ids ~f:(fun (col, ids) ->
+                  i (List.length ids) % sp % parens (quote col)
+                ))
+           % s " targets");
     Deferred_list.while_sequential col_ids ~f:(fun (_, ids) ->
         Deferred_list.while_sequential ids ~f:(fun key ->
             get_stored_target t key
@@ -285,8 +291,8 @@ module With_database = struct
     let proceed_to_mass_killing t =
       get_all_targets_to_kill t
       >>= fun to_kill_list ->
-      Log.(s "Going to actually kill: "
-           % OCaml.list (sf "{%S}") to_kill_list @ verbose);
+      log_info
+        Log.(s "Going to actually kill: " % OCaml.list quote to_kill_list);
       List.fold to_kill_list ~init:(return []) ~f:(fun prev id ->
           prev >>= fun prev_list ->
           get_target t id
@@ -336,8 +342,9 @@ module With_database = struct
             set ~collection:targets_to_add_collection ~key
               (Target.Stored_target.serialize st))
         |> seq in
-      Log.(s "Storing " % i (List.length t_list) % s " to be added at next step"
-           @ verbose);
+      log_info
+        Log.(s "Storing " % i (List.length t_list)
+             % s " targets to be added at next step");
       run_database_action t action
         ~msg:(fmt "store_targets_to_add [%s]"
                 (List.map t_list ~f:Target.id
@@ -398,8 +405,10 @@ module With_database = struct
                  ~from:target ~pointing_to:at_least_one :: to_store_targets)
           end
         in
-        Log.(s "Adding new " % i (List.length stuff_to_actually_add)
-             % s " things to the DB" @ verbose);
+        log_info
+          Log.(s "Adding new " % i (List.length stuff_to_actually_add)
+               % s " targets to the DB"
+               % (parens (i (List.length tlist) % s " were submitted")));
         let action =
           let open Database_action in
           List.map tlist ~f:(fun trgt ->

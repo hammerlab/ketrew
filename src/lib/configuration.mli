@@ -162,8 +162,12 @@ val server:
       terminal and change the process directory to ["/"]; hence if you
       use this option it is required to provide absolute paths for all
       other parameters requiring paths.
-    - [log_path]: if set together with [daemonize], ask the server to
-      redirect logs to this path (if not set, daemon logs go to ["/dev/null"]).
+    - [log_path]: path to the server;s log directory; if present
+      (highly recommended), the server will dump JSON files containing
+      the logs periodically. Moreover, if set together with
+      [daemonize], the server redirect debug-style logs to a
+      ["debug.txt"] file in that directory (if not set, daemon debug
+      info goes to ["/dev/null"]).
     - [max_blocking_time]: 
       upper bound on the request for blocking in the protocol (seconds,
       default [300.]).
@@ -271,7 +275,7 @@ val daemon: server -> bool
 (** Tell whether the server should detach. *)
 
 val log_path: server -> string option
-(** Get the path to the server's log file. *)
+(** Get the path to the server's log directory. *)
 
 val log: t -> Log.t
 (** Get a display-friendly list of configuration items. *)

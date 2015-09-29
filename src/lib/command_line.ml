@@ -311,7 +311,7 @@ let server ~daemon =
            fmt "authorized_token ~name:\"%s\" %S;" tok tok)
        |> String.concat ~sep:"\n")
       auth_tokens_file
-      (config_path // "server.log")
+      (config_path // "server-log")
       (config_path // "command.pipe")
       server_listen
   in
@@ -369,7 +369,9 @@ let daemonize_if_applicable config =
       | _ ->
         begin match log_path_opt with
         | None -> ()
-        | Some file_name ->
+        | Some path ->
+          begin try UnixLabels.mkdir ~perm:0o600 path; with _ -> () end;
+          let file_name = path // "debug.txt" in
           let out =
             UnixLabels.(
               openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]

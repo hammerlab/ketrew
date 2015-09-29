@@ -156,6 +156,9 @@ module Time = struct
       ((f -. (floor f)) *. 1000. |> int_of_float)
 
   let log f = Log.s (to_filename f)
+
+  let show f = to_filename f
+  let pp formatter f = Format.fprintf formatter "%s" (show f)
 end
 
 
@@ -219,7 +222,7 @@ module Display_markup = struct
     function
     | Date f -> Time.log f
     | Time_span span -> Log.(f span % nbsp % s "s.") 
-    | Text s -> Log.s s
+    | Text s -> Log.verbatim s
     | Uri c | Path c | Command c -> Log.quote c
     | Concat (None, l) -> Log.concat (List.map l ~f:log)
     | Concat (Some sep, l) -> Log.separate (log sep) (List.map l ~f:log)
@@ -232,4 +235,29 @@ module Display_markup = struct
     | Itemize l ->
       Log.(separate n (List.map l ~f:(fun content -> s "*" %nbsp % log content)))
 
+end
+
+module Typed_log = struct
+  module Item = struct
+    type t = {
+      date : Time.t;
+      content : Display_markup.t;
+    } [@@deriving yojson]
+    let show_content c =
+      Display_markup.log c |> Log.to_long_string
+    let show {date; content} =
+      fmt "[%s]\n%s" (Time.show date) (show_content content)
+
+    module Construct = struct
+      let now content = {date = Time.now (); content }
+      let info s = now (Display_markup.text s)
+      let error e s =
+        let open Display_markup in
+        description_list [
+          "Error", text e;
+          "Info", text s;
+        ]
+        |> now
+    end
+  end
 end

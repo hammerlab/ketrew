@@ -27,10 +27,15 @@ type t = {
   data: Persistent_data.t;
   configuration: Configuration.engine;
 }
+
+include Logging.Global.Make_module_error_and_info(struct
+    let module_name = "Engine"
+  end)
+
 let create configuration =
   Persistent_data.create (Configuration.database_parameters configuration)
   >>= fun data ->
-  return {data; configuration;}
+  return {data; configuration}
 
 
 let unload t =
@@ -58,13 +63,6 @@ let with_engine ~configuration f =
   end
 
 let configuration t = t.configuration
-
-
-let not_implemented msg =
-  Log.(s "Going through not implemented stuff: " % s msg @ verbose);
-  fail (`Not_implemented msg)
-
-
 
 
 module Run_automaton = struct
@@ -129,12 +127,10 @@ module Run_automaton = struct
         | `Error (`Database _ as e)
         | `Error (`Missing_data _ as e) ->
           (* Dependency not-found => should get out of the way *)
-          let errlog =
-            match e with
-            | `Database e -> Log.s (Trakeva.Error.to_string e)
-            | `Missing_data id -> Log.(s "Missing target: " % quote id) in
-          Log.(s "Error while activating dependencies: " % errlog @ error);
-          Log.(s "return (dep, `Failed)" @ verbose);
+          log_error e 
+            Log.(s "Error while activating dependencies of " %
+                 quote dependency_of % s " → "
+                 % OCaml.list quote ids);
           return (dep, `Failed)
         | `Error (`Target _ as e) -> fail e)
     >>= begin
@@ -148,17 +144,17 @@ module Run_automaton = struct
       | (oks, []) when all_successful oks -> return `All_succeeded
       | (oks, []) when one_failed oks ->
         let failed_ones = List.filter oks ~f:(is `Failed) |> List.map ~f:fst in
-        Log.(s "Targets " % OCaml.list s failed_ones % s " considered failed"
-             @ verbose);
-        Log.(s "return (`At_least_one_failed failed_ones)" @ verbose);
+        log_info
+          Log.(s "Targets " % OCaml.list s failed_ones
+               % s " considered failed");
         return (`At_least_one_failed failed_ones)
       | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
         return `Still_processing
       | (_, errors) ->
-        Log.(s "Some errors while activating dependencies: " %n
-             % separate n
-               (List.map ~f:(fun x -> s (Error.to_string x)) errors)
-             @ error);
+        log_info
+          Log.(s "Some errors while activating dependencies: " %n
+               % separate n
+                 (List.map ~f:(fun x -> s (Error.to_string x)) errors));
         return (`At_least_one_failed [])
     end
 
@@ -206,7 +202,7 @@ module Run_automaton = struct
                       Target.Automaton.run_parameters = run_parameters })
         | `Ok (`Failed (run_parameters, msg)) ->
           let run_parameters = Long_running.serialize run_parameters in
-          Log.(s (Target.id target) % s " failed: " % s msg @ very_verbose);
+          log_info Log.(s (Target.id target) % s " failed: " % s msg);
           fail (`Fatal, msg,
                 { bookkeeping with
                   Target.Automaton.run_parameters = run_parameters })
@@ -297,11 +293,11 @@ module Run_automaton = struct
           | `Ok (new_target, progress) ->
             Persistent_data.update_target t.data new_target
             >>= fun () ->
-            Log.(s "Transition for target: "
-                 % Target.log target
-                 % s "Done: " % n
-                 % Target.(State.log ~depth:2 (state new_target))
-                 @ very_verbose);
+            log_info
+              Log.(s "Transition for target: "
+                   % Target.log target
+                   % s "Done: " % n
+                   % Target.(State.log ~depth:2 (state new_target)));
             return (progress :: previous_happenings)
           | `Error `Empty_should_not_exist ->
             return []
@@ -313,6 +309,11 @@ module Run_automaton = struct
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data
     >>= fun adding_did_something ->
+    log_info
+      Log.(s "Engine.step -> " % n
+           % s "has_progressed        → " % OCaml.bool has_progressed % n
+           % s "adding_did_something  → " % OCaml.bool adding_did_something % n
+           % s "killing_did_something → " % OCaml.bool killing_did_something);
     return (has_progressed || adding_did_something || killing_did_something)
 
   let fix_point state =

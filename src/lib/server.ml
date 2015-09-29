@@ -27,6 +27,10 @@ open Unix_io
 (** A common error that simply means “invalid argument”. *)
 let wrong_request short long = fail (`Wrong_http_request (short, long))
 
+include Logging.Global.Make_module_error_and_info(struct
+    let module_name = "Server"
+  end)
+
 (** Module dealing with access tokens and access rights. There are no
     “sessions” here; just a file that looks like SSH's `authorized_keys`, and a
     function: token × capability → bool.
@@ -135,9 +139,8 @@ M*)
   let create ~state ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     all_connections = Hashtbl.create 42}
-
-
+     all_connections = Hashtbl.create 42; }
+  
 end
 open Server_state
 
@@ -159,7 +162,6 @@ type 'error service =
 let token_parameter req =
   let token =
     Uri.get_query_param (Cohttp.Request.uri req) "token" in
-  Log.(s "Got token: " % OCaml.option quote token @ very_verbose);
   token
 
 (** Get a parameter or fail. *)
@@ -182,9 +184,7 @@ let format_parameter req =
 (** Fail if the request is not a [`GET]. *)
 let check_that_it_is_a_get request =
   begin match Cohttp.Request.meth request with
-  | `GET ->
-    Log.(s "It is a GET request" @ very_verbose);
-    return ()
+  | `GET -> return ()
   | other -> wrong_request "wrong method" (Cohttp.Code.string_of_method other)
   end
 
@@ -192,7 +192,6 @@ let check_that_it_is_a_get request =
 let get_post_body request ~body =
   begin match Cohttp.Request.meth request with
   | `POST ->
-    Log.(s "It is a GET request" @ very_verbose);
     wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
       (fun () -> Cohttp_lwt_body.to_string  body)
   | other ->
@@ -217,8 +216,7 @@ let get_targets_from_ids ~server_state target_ids =
         >>< function
         | `Ok t -> return (Some (id, t))
         | `Error e -> 
-          Log.(s "Error while getting the target " % s id % s ": "
-               % s (Error.to_string e) @ error);
+          log_error e Log.(s "Error while getting the target " % s id);
           return None)
     >>| List.filter_opt
   end
@@ -249,8 +247,8 @@ let answer_get_target_available_queries ~server_state target_id =
 let answer_call_query ~server_state ~target_id ~query =
   Engine.get_target server_state.state target_id
   >>= fun target ->
-  Log.(s "Calling query " % quote query % s " on "
-       % Target.log target @ very_verbose);
+  log_info
+    Log.(s "Calling query " % quote query % s " on " % Target.log target);
   begin
     Plugin.call_query ~target query
     >>< function
@@ -262,7 +260,8 @@ let answer_call_query ~server_state ~target_id ~query =
 
 
 let answer_add_targets ~server_state ~targets =
-  Log.(s "Adding " % i (List.length targets) % s " targets" @ normal);
+  log_info
+    Log.(s "Adding " % i (List.length targets) % s " targets");
   Engine.add_targets server_state.state targets
   >>= fun () ->
   Light.green server_state.loop_traffic_light;
@@ -302,8 +301,9 @@ let block_if_empty_at_most ~server_state
       let max_block_time =
         Configuration.max_blocking_time server_state.server_configuration in
       if req_block_time > max_block_time then (
-        Log.(s "requested block-time: " % f req_block_time %n
-             % s "Using max instead: " % f max_block_time @ warning);
+        log_info
+          Log.(s "requested block-time: " % f req_block_time %n
+               % s "Using max instead: " % f max_block_time);
         max_block_time
       ) else
         req_block_time in
@@ -313,12 +313,12 @@ let block_if_empty_at_most ~server_state
       >>= fun values ->
       match start_time +. block_time < now with
       | true ->
-        Log.(s "block_if_empty_at_most + blocking → returns " % n
-             % s "start_time: " % Time.log start_time % n
-             % s "block_time: " % f block_time % n
-             % s "req_block_time: " % f req_block_time % n
-             % s "now: " % Time.log now % n
-             @ verbose);
+        log_info
+          Log.(s "block_if_empty_at_most + blocking → returns " % n
+               % s "start_time: " % Time.log start_time % n
+               % s "block_time: " % f block_time % n
+               % s "req_block_time: " % f req_block_time % n
+               % s "now: " % Time.log now);
         send values
       | false ->
         begin match should_send values with
@@ -367,9 +367,9 @@ let answer_get_target_flat_states ~server_state
     ~get_values:(fun () ->
         get_targets_from_ids ~server_state target_ids
         >>= fun targets ->
-        Log.(s "answer_get_target_flat_states computing states for "
-             % OCaml.list s target_ids
-             @ verbose);
+        log_info
+          Log.(s "answer_get_target_flat_states computing states for "
+               % OCaml.list s target_ids);
         let states =
           List.filter_map targets ~f:(fun (id, trgt) ->
               let flat_state = Target.State.Flat.of_state (Target.state trgt) in
@@ -386,9 +386,10 @@ let answer_get_target_flat_states ~server_state
           (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
                prev + (List.length flat.Target.State.Flat.history)))
         in
-        Log.(s "answer_get_target_flat_states" % n
-             % s "States: " % i (List.length states) % n
-             % s "Total items: " % i  total_items @ normal);
+        log_info
+          Log.(s "answer_get_target_flat_states" % n
+               % s "States: " % i (List.length states) % n
+               % s "Total items: " % i  total_items);
         total_items <> 0)
     ~send:(fun states ->
         return (`List_of_target_flat_states states))
@@ -465,8 +466,7 @@ let gui_service ~server_state ~body req =
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
-  Log.(s "Request-in: " % sexp Cohttp.Request.sexp_of_t req
-       @ verbose);
+  log_info Log.(s "Request-in: " % sexp Cohttp.Request.sexp_of_t req);
   match Uri.path (Cohttp.Request.uri req) with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
@@ -516,6 +516,16 @@ let reload_authentication ~server_state =
   server_state.authentication <- authentication;
   return ()
 
+let execute_deferred server_state f =
+  Lwt.(
+    f ()
+    >>= function
+    | `Ok () -> return ()
+    | `Error e ->
+      log_error e Log.(s "execute_deferred");
+      return ()
+  )
+
 let start_listening_on_command_pipe ~server_state =
   let conf = server_state.server_configuration in
   match Configuration.command_pipe conf with
@@ -540,15 +550,14 @@ let start_listening_on_command_pipe ~server_state =
             Lwt_io.read_line pipe
             >>= function
             |  die when die = die_command ->
-              Log.(s "Server killed by “die” command " 
-                   % parens (OCaml.string file_path)
-                   @ normal);
+              log_info
+                Log.(s "Server killed by “die” command " 
+                     % parens (OCaml.string file_path));
               begin Engine.unload server_state.state
                 >>= function
                 | `Ok () -> exit 0
                 | `Error e ->
-                  Log.(s "Could not unload engine:"  % sp
-                       % s (Error.to_string e) @ error);
+                  log_error e Log.(s "Could not unload engine");
                   exit 10
               end
             | reload_auth when reload_auth = reload_authorized_tokens ->
@@ -556,9 +565,9 @@ let start_listening_on_command_pipe ~server_state =
                 >>= function
                 | `Ok () -> return ()
                 | `Error e ->
-                  Log.(s "Could not reload Authentication:" 
-                       % Authentication.log server_state.authentication
-                       % s": " % s (Error.to_string e) @ error);
+                  log_error e 
+                    Log.(s "Could not reload Authentication: " 
+                         % Authentication.log server_state.authentication);
                   return ()
               end
               >>= fun () ->
@@ -583,18 +592,40 @@ let start_listening_on_command_pipe ~server_state =
                                      | `Open t -> fmt "Open %s" (ti t)
                                      | `Request t -> fmt "Request %s" (ti t)
                                      | `Closed t -> fmt "Closed %s" (ti t)
-                                                       end))
-                            )
+                                     end))
+                        )
                         server_state.all_connections
                         (return ()))
                 >>< function
                 | `Ok () -> return ()
-                | `Error _ -> return ()
+                | `Error e ->
+                  log_error e Log.(s "dump-all-connections");
+                  return ()
               )
               >>= fun _ ->
               read_loop ~error_count ()
+            | get_log when String.sub get_log 0 (8) = Some "get-log:" ->
+              execute_deferred server_state Deferred_result.(fun () ->
+                  begin match String.split get_log ~on:(`Character ':') with
+                  | "get-log" :: path :: format :: [] ->
+                    begin match format with
+                    | "json" -> return `Json
+                    | "txt" -> return `Txt
+                    | _ -> fail (`Failure (fmt "wrong format: %S" format))
+                    end
+                    >>= fun format ->
+                    Log.(s "Append logs to " %quote path @ verbose);
+                    Logging.Global.append_to_file ~path ~format
+                  | _ ->
+                    log_info Log.(s "Wrong get-log: " % quote get_log);
+                    return ()
+                  end
+                )
+              >>= fun () ->
+              read_loop ~error_count ()
             |  other ->
-              Log.(s "Cannot understand command: " % OCaml.string other @ error);
+              log_info
+                Log.(s "Cannot understand command: " % OCaml.string other);
               read_loop ~error_count ())
           (fun e ->
              let error_count = error_count + 1 in
@@ -626,17 +657,29 @@ let start_engine_loop ~server_state =
           else
             time_step
         in
-        Log.(s "Successful fix-point: "
-             % parens (i step_count % s " steps") %n
-             % s "Sleeping " % f seconds % s " s" @ verbose);
+        log_info
+          Log.(s "Successful fix-point: "
+               % parens (i step_count % s " steps") %n
+               % s "Sleeping " % f seconds % s " s");
         return seconds
       | `Error e ->
-        Log.(s "Errorneous fix-point: "
-             % s (Error.to_string e) %n
-             % s "Sleeping " % f time_step % s " s" @ verbose);
+        log_error e
+          Log.(s "Errorneous fix-point" %n
+               % s "Sleeping " % f time_step % s " s");
         return time_step
     end
     >>= fun seconds ->
+    begin match Configuration.log_path server_state.server_configuration with
+    | None  -> return ()
+    | Some path ->
+      System.ensure_directory_path path
+      >>= fun () ->
+      let new_file = path // Unique_id.create () ^ ".json" in
+      Logging.Global.append_to_file ~path:new_file ~format:`Json
+      >>= fun () ->
+      Logging.Global.clear ()
+    end
+    >>= fun () ->
     Deferred_list.pick_and_cancel [
       System.sleep seconds;
       begin
@@ -694,8 +737,10 @@ let start_listening_on_connections ~server_state =
           | `Ok (`Page body) ->
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
           | `Error e ->
-            Log.(s "Error while handling the request: "
-                 % s (Error.to_string e) @ error);
+            log_error e
+              Log.(s "Error while handling the request: conn_id: "
+                   % s id % s ", request: "
+                   % sexp Cohttp.Request.sexp_of_t request);
             let body =
               if return_error_messages
               then "Error: " ^ (Error.to_string e)
@@ -807,10 +852,11 @@ let start ~configuration  =
   >>= fun authentication ->
   let server_state =
     Server_state.create ~authentication ~state:engine configuration in
-  Log.(s "Start-Server: Starting the Engine loop" @ verbose);
+  log_info Log.(s "Start-Server: Starting the Engine loop");
   start_engine_loop ~server_state;
-  Log.(s "Start-Server: Starting listening on command-pipe" @ verbose);
+  log_info Log.(s "Start-Server: Starting listening on command-pipe");
   start_listening_on_command_pipe ~server_state
   >>= fun () ->
   Log.(s "Start-Server: Starting listening on connections" @ verbose);
+  log_info Log.(s "Start-Server: Starting listening on connections");
   start_listening_on_connections ~server_state

@@ -26,7 +26,7 @@ open Unix_io
 type t
 (** The contents of the application engine. *)
 
-val with_engine: 
+val with_engine:
   configuration:Configuration.engine ->
   (engine:t ->
    (unit, [> `Database of Trakeva.Error.t
@@ -40,7 +40,7 @@ val with_engine:
   (unit, 'merge_error) Deferred_result.t
 (** Create a {!engine.t}, run the function passed as argument, and properly dispose of it. *)
 
-val load: 
+val load:
   configuration:Configuration.engine ->
   (t,
    [> `Database of Trakeva.Error.t
@@ -51,7 +51,7 @@ val load:
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
    ]) Deferred_result.t
 
-val unload: t -> 
+val unload: t ->
   (unit, [>
       | `Database_unavailable of Ketrew_pure.Target.id
       | `Database of  Trakeva.Error.t
@@ -98,7 +98,7 @@ val get_list_of_target_ids: t ->
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Get only the Ids of the targets for a given “query”:
-    
+
 - [`All] for all the targets visible to the engine.
 - [`Not_finished_before _] for the targets that were not finished at a given date.
 *)
@@ -145,12 +145,11 @@ val kill :
     Deferred_result.t
 (** Kill a target *)
 
-val restart_target: t -> Ketrew_pure.Target.id -> 
-  (Ketrew_pure.Target.id, 
+val restart_target: t -> Ketrew_pure.Target.id ->
+  (Ketrew_pure.Target.id,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_pure.Target.id
    | `Missing_data of Ketrew_pure.Target.id
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
-
