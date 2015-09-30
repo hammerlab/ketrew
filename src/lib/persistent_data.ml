@@ -74,6 +74,27 @@ module With_database = struct
     Database_action.(set ~collection:active_targets_collection ~key
                        Target.Stored_target.(of_target target |> serialize))
 
+  let iter_all_target_ids t =
+    database t
+    >>= fun db ->
+    let iterators =
+      List.map all_collections ~f:(fun collection ->
+          Database.iterator db ~collection) in
+    let iterators_to_go = ref iterators in
+    return (fun () ->
+        let rec get_next () =
+          begin match !iterators_to_go with
+          | [] -> return None
+          | current :: next ->
+            current ()
+            >>= begin function
+            | None -> iterators_to_go := next; get_next ()
+            | Some s -> return (Some s)
+            end
+          end
+        in
+        get_next ()
+      )
 
   let run_database_action ?(msg="NO INFO") t action =
     database t
@@ -238,6 +259,12 @@ module With_database = struct
       passive_targets_collection;
       active_targets_collection;
       finished_targets_collection;
+    ]
+
+  let alive_stored_targets t =
+    get_collections_of_stored_targets t ~from:[
+      passive_targets_collection;
+      active_targets_collection;
     ]
     
 
@@ -424,16 +451,9 @@ module Cache_table = struct
     return ()
 
   let get t id =
-    try return (Hashtbl.find t id)
+    try return (Some (Hashtbl.find t id))
     with e ->
-      fail (`Missing_data (fmt "cache_table: %s" id))
-
-  let filter_map t ~f =
-    let red _ elt prev =
-      match f elt with
-      | Some x -> x :: prev
-      | None -> prev in
-    return (Hashtbl.fold red t []) 
+      return None
 
   let fold t ~init ~f =
     Hashtbl.fold (fun id elt previous -> f ~previous ~id elt) t init
@@ -450,7 +470,7 @@ type t = {
 let create ~database_parameters =
   With_database.create ~database_parameters
   >>= fun db ->
-  With_database.all_stored_targets db
+  With_database.alive_stored_targets db
   >>= fun all ->
   let cache = Cache_table.create () in
   List.fold ~init:(return ()) all  ~f:(fun prev_m st ->
@@ -467,7 +487,17 @@ let unload t =
 
 let get_target t id =
   let rec get_following_pointers ~key ~count =
-    Cache_table.get t.cache key
+    begin
+      Cache_table.get t.cache key
+      >>= function
+      | Some stored -> return stored
+      | None ->
+        With_database.get_stored_target t.db id
+        >>= fun stored ->
+        Cache_table.add_or_replace t.cache key stored
+        >>= fun () ->
+        return stored
+    end
     >>= fun stored ->
     begin match Target.Stored_target.get_target stored with
     | `Pointer _ when count >= 30 ->
@@ -481,11 +511,21 @@ let get_target t id =
 
 
 let all_targets t =
-  Cache_table.filter_map t.cache
-    ~f:(fun trgt ->
-        match Target.Stored_target.get_target trgt with
-        | `Pointer _ -> None
-        | `Target t -> Some t)
+  With_database.iter_all_target_ids t.db
+  >>= fun iterator ->
+  let rec iterate acc =
+    iterator ()
+    >>= begin function
+    | None -> return acc
+    | Some id ->
+      With_database.get_stored_target t.db id
+      >>= fun stored ->
+      begin match Target.Stored_target.get_target stored with
+      | `Pointer _ -> iterate acc
+      | `Target t -> iterate (t :: acc)
+      end
+    end in
+  iterate []
 
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason

@@ -43,9 +43,7 @@ val get_target:
   t ->
   Target.id ->
   (Ketrew_pure.Target.t,
-   [> `Database of
-        [> `Get of Trakeva.Key_in_collection.t | `Load of string ] *
-        string
+   [> `Database of Trakeva.Error.t
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -53,11 +51,7 @@ val get_target:
 val all_targets :
   t ->
   (Ketrew_pure.Target.t list,
-   [> `Database of
-        [> `Get of Trakeva.Key_in_collection.t
-        | `Get_all of string
-        | `Load of string ] *
-        string
+   [>  `Database of Trakeva.Error.t
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
