@@ -84,6 +84,7 @@ val all_targets: t ->
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
    | `Missing_data of Ketrew_pure.Target.id
@@ -97,6 +98,7 @@ val get_list_of_target_ids : t ->
   (Ketrew_pure.Target.id list,
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -106,6 +108,7 @@ val get_target: t ->
   id:Ketrew_pure.Target.id ->
   (Ketrew_pure.Target.t,
    [> `Client of Error.t
+   | `Database_unavailable of bytes
    | `Database of Trakeva.Error.t
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
@@ -117,6 +120,7 @@ val get_targets: t ->
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
    Deferred_result.t

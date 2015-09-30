@@ -139,7 +139,20 @@ module With_database = struct
       ~msg:(fmt "add_or_update_targets [%s]"
               (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
-  let update_target t trgt = add_or_update_targets t [trgt]
+  (* This will be called after an update and after afetching to
+     make sure it gets done even with crashes weirdly sync-ed DBs *)
+  let clean_if_finsihed t target =
+    begin match Target.(state target |> State.Is.finished) with
+    | true ->
+      log_info Log.(Target.log target % s " moves to the finsihed collection");
+      move_target_to_finished_collection t ~target
+    | false -> return ()
+    end
+
+  let update_target t trgt =
+    add_or_update_targets t [trgt]
+    >>= fun () ->
+    clean_if_finsihed t trgt
 
   let raw_add_or_update_stored_target t ~collection ~stored_target =
     let key = Target.Stored_target.id stored_target in
@@ -150,25 +163,35 @@ module With_database = struct
       ~msg:(fmt "raw_add_or_update_stored_target: %s" key)
 
   let get_stored_target t key =
-    database t >>= fun db ->
-    Database.get db ~collection:active_targets_collection ~key
-    >>= begin function
-    | Some serialized_stored ->
-      of_result (Target.Stored_target.deserialize serialized_stored)
-    | None ->
-      Database.get db ~collection:finished_targets_collection ~key
+    begin
+      database t >>= fun db ->
+      Database.get db ~collection:active_targets_collection ~key
       >>= begin function
       | Some serialized_stored ->
         of_result (Target.Stored_target.deserialize serialized_stored)
       | None ->
-        Database.get db ~collection:passive_targets_collection ~key
+        Database.get db ~collection:finished_targets_collection ~key
         >>= begin function
         | Some serialized_stored ->
           of_result (Target.Stored_target.deserialize serialized_stored)
         | None ->
-          fail (`Missing_data (fmt "get_stored_target %S" key))
+          Database.get db ~collection:passive_targets_collection ~key
+          >>= begin function
+          | Some serialized_stored ->
+            of_result (Target.Stored_target.deserialize serialized_stored)
+          | None ->
+            fail (`Missing_data (fmt "get_stored_target %S" key))
+          end
         end
       end
+    end
+    >>= fun st ->
+    begin match Target.Stored_target.get_target st with
+    | `Target target ->
+      clean_if_finsihed t target
+      >>= fun () ->
+      return st
+    | `Pointer _ -> return st
     end
 
   let get_target t id =
@@ -570,9 +593,6 @@ let fold_active_targets t ~init ~f =
       | `Pointer _ | `Target _ -> return previous
     )
       
-let move_target_to_finished_collection t ~target =
-  With_database.move_target_to_finished_collection t.db ~target
-
 let update_target t trgt =
   With_database.update_target t.db trgt
   >>= fun () ->

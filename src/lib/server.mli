@@ -38,6 +38,7 @@ val start: configuration:Configuration.server ->
    | `Missing_data of bytes
    | `Server_status_error of bytes
    | `Start_server_error of bytes
+   | `Database_unavailable of bytes
    | `System of
         [> `File_info of bytes
         | `List_directory of bytes

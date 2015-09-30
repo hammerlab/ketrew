@@ -27,11 +27,8 @@ type t
 val create :
   database_parameters:string ->
   (t,
-   [> `Database of
-        [> `Get of Trakeva.Key_in_collection.t
-        | `Get_all of string
-        | `Load of string ] *
-        string
+   [> `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -44,6 +41,7 @@ val get_target:
   Target.id ->
   (Ketrew_pure.Target.t,
    [> `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -52,6 +50,7 @@ val all_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [>  `Database of Trakeva.Error.t
+   | `Database_unavailable of bytes
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -84,15 +83,6 @@ val fold_active_targets :
       as 'combined_errors)
        Deferred_result.t) ->
   ('a, 'combined_errors) Deferred_result.t
-
-val move_target_to_finished_collection : (* TODO: rename to “declare_finished” or something *)
-  t ->
-  target:Target.t ->
-  (unit,
-   [> `Database of
-        [> `Act of Trakeva.Action.t | `Load of string ] * string
-   | `Database_unavailable of string ])
-    Deferred_result.t
 
 val update_target :
   t ->

@@ -125,6 +125,7 @@ module Run_automaton = struct
             return (dep, c)
           end
         | `Error (`Database _ as e)
+        | `Error (`Database_unavailable _ as e)
         | `Error (`Missing_data _ as e) ->
           (* Dependency not-found => should get out of the way *)
           log_error e 
@@ -284,9 +285,7 @@ module Run_automaton = struct
       ~f:begin fun previous_happenings ~target ->
         begin match Target.state target with
         | s when Target.State.Is.finished s ->
-          Persistent_data.move_target_to_finished_collection t.data ~target
-          >>= fun () ->
-          return [] (* moving to the finsihed-set is not a worthy “change” *)
+          return []
         | other ->
           _process_automaton_transition t target
           >>< function
