@@ -163,30 +163,6 @@ module With_database = struct
     in
     get_following_pointers ~key:id ~count:0
 
-  let fold_active_targets t ~init ~f =
-    database t
-    >>= fun db ->
-    let target_stream =
-      Database.iterator db ~collection:active_targets_collection in
-    let rec iter_stream previous =
-      target_stream ()
-      >>= begin function
-      | Some key ->
-        get_stored_target t key
-        >>| Target.Stored_target.get_target
-        >>= fun topt ->
-        begin match topt with
-        | `Pointer _ -> (* it's a pointer, keep going *) iter_stream previous
-        | `Target target ->
-          f previous ~target
-          >>= fun next ->
-          iter_stream next
-        end
-      | None -> return previous (* done with the stream *)
-      end
-    in
-    iter_stream init
-
   let get_collections_of_stored_targets t ~from =
     database t
     >>= fun db ->
