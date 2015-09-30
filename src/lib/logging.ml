@@ -49,12 +49,14 @@ module Log_store = struct
   let append_to_file ~path ~format t =
     let as_list = Ring.fold ~init:[] t ~f:(fun prev x -> x :: prev) in
     IO.with_out_channel (`Append_to_file path) ~f:(fun out ->
+        IO.write out (if format = `Json then "[\n" else "")
+        >>= fun () ->
         List.fold ~init:(return true) as_list
           ~f:(fun prev_m item ->
               prev_m >>= fun prev ->
               IO.write out
                 (if format = `Json then
-                   (if prev then "[\n" else ",\n")
+                   (if prev then "\n" else ",\n")
                  else "\n" ^ String.make 80 '-' ^ "\n")
               >>= fun () ->
               IO.write out
