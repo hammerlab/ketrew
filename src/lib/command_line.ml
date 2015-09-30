@@ -342,6 +342,132 @@ let () =
   in
   IO.write_file ~content:config (config_path // "configuration.ml")
 
+let show_server_logs ~max_number server_config =
+  let ask_for_server_memory_logs format =
+    begin match Configuration.command_pipe server_config with
+    | Some pipe ->
+      let path =
+        Filename.temp_file "ketrew-logs"
+          (match format with `Json -> ".json" | _ -> ".txt") in
+      System.file_info ~follow_symlink:true pipe
+      >>= begin function
+      | `Fifo ->
+        let command =
+          fmt "get-log:%s:%s" path
+            (match format with `Json -> "json" | _ -> "txt") in
+        Log.(s "Sending " % quote command
+             % s " through the command pipe: " % quote pipe @ verbose);
+        begin 
+          System.with_timeout 2. (fun () ->
+              IO.with_out_channel (`Append_to_file pipe) ~buffer_size:16 ~f:(fun oc ->
+                  IO.write oc command
+                  >>= fun () ->
+                  IO.write oc "\n"
+                )
+            )
+          >>< function
+          | `Ok () -> return ()
+          | `Error (`Timeout _) ->
+            Log.(s "Writing to the command-pipe timeouted, \
+                    is the server running?" @ warning);
+            return ()
+          | `Error (`IO _ as e) -> fail e
+          | `Error (`System _) ->
+            fail (`Stop_server_error "System.timeout failed!")
+        end
+        >>= fun () ->
+        (System.sleep 1. >>< fun _ -> return ())
+        >>= fun () ->
+        return (Some path)
+      | other ->
+        fail (`Failure (fmt "File %S is not a FIFO!" pipe))
+      end
+    | None -> return None
+    end in
+  begin match Configuration.log_path server_config with
+  | None ->
+    ask_for_server_memory_logs `Txt
+    >>= begin function
+    | Some path ->
+      IO.with_in_channel (`File path) ?buffer_size:None ~f:(fun i ->
+          IO.with_out_channel `Stdout ~f:(fun o ->
+              Log.(s "read" @ verbose);
+              let rec loop () =
+                IO.read i
+                >>= function
+                | "" -> return ()
+                | more ->
+                  IO.write o more
+                  >>= fun () ->
+                  loop ()
+              in
+              loop ()
+            )
+        )
+    | None ->
+      Log.(s "Server has no log-path and no command-pipe, cannot get the logs"
+           @ error);
+      return ()
+    end
+  | Some p ->
+    ask_for_server_memory_logs `Json
+    >>= fun from_memory ->
+    let `Stream dir = System.list_directory p in
+    let rec get_all acc =
+      dir ()  >>= function
+      | Some s when Filename.check_suffix s ".json" -> get_all (s :: acc)
+      | Some s -> get_all acc
+      | None -> return acc
+    in
+    get_all []
+    >>| List.sort ~cmp:(fun a b -> String.compare b a)
+    >>| List.map ~f:(fun f -> p // f)
+    >>= fun rev_sorted_dir ->
+    let rec display count =
+      function
+      | [] -> return ()
+      | _ when count > max_number -> return ()
+      | file :: files ->
+        IO.read_file file
+        >>= fun blob ->
+        let json =
+          match Yojson.Safe.from_string blob with
+          |  j -> j
+          | exception err ->
+            Log.(s "Error parsing JSON in " % quote file % s " → " % exn err
+                 @ warning);
+            `List []
+        in
+        begin match json with
+        | `List l ->
+          let rec go_through_list count =  function
+          | [] -> return count
+          | _ when count > max_number -> return count
+          | item :: more ->
+            begin match Typed_log.Item.of_yojson item  with
+            | `Error err ->
+              Log.(s "Error parsing JSON in " % quote file % s " → " % s err
+                   @ warning);
+              go_through_list count more
+            | `Ok typed_item ->
+              Printf.printf "%s\n%s\n" (String.make 80 '=')
+                (Typed_log.Item.show typed_item);
+              go_through_list (count + 1) more
+            end
+          in
+          go_through_list count l
+        | _ ->
+          fail (`Failure "JSON logs not a list")
+        end
+        >>= fun count ->
+        display (count + 1) files
+    in
+    display 0
+      (match from_memory with
+      | None -> rev_sorted_dir
+      | Some s -> s :: rev_sorted_dir)
+  end
+
   
 let daemonize_if_applicable config =
   let exit_parent () =
@@ -501,7 +627,23 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           $ config_file_argument
           $ Arg.(value @@ opt string "open"
                  @@ info ["O"; "open-command"]
-                   ~doc:"Command to use as browser (default: `open`).")
+                   ~doc:"Command to use as browser.")
+        ) in
+  let logs_cmd = 
+    sub_command
+      ~info:(Term.info "logs" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
+               ~doc:"See the logs.")
+      ~term: Term.(
+          pure (fun configuration max_number ->
+              match Configuration.mode configuration  with
+              | `Client _ | `Standalone _ ->
+                fail (`Failure "This is not a configured Ketrew server")
+              | `Server s ->
+                show_server_logs ~max_number s)
+          $ config_file_argument
+          $ Arg.(value @@ opt int 4000
+                 @@ info ["M"; "max-items"]
+                   ~doc:"Set a maximum number of log items to display.")
         ) in
   let status_cmd =
     sub_command
@@ -737,6 +879,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       interact_cmd;
       submit_cmd;
       explore_cmd;
+      logs_cmd;
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
