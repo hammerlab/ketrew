@@ -25,6 +25,7 @@ open Unix_io
 include Logging.Global.Make_module_error_and_info(struct
     let module_name = "Persistence"
   end)
+open Logging.Global
 
 module Database = Trakeva_of_uri
 module Database_action = Trakeva.Action
@@ -245,6 +246,12 @@ module With_database = struct
           | `In_progress
           | `Activable -> Some target)
     in
+    Logger.(
+      description_list [
+        "function", text "With_database.alive_targets";
+        "result", textf "%d targets, %d after filter"
+          (List.length targets) (List.length filtered);
+      ] |> log);
     return filtered
 
   let all_targets t =
@@ -467,6 +474,19 @@ type t = {
   cache: Target.Stored_target.t Cache_table.t
 }
 
+let log_info t fmt =
+  Printf.ksprintf (fun msg ->
+      Logger.(
+        description_list [
+          "Location", text "Persistent_data.t";
+          "Cache",
+          textf "%d targets"
+            (Cache_table.fold t.cache ~init:0
+               ~f:(fun ~previous ~id _ -> previous + 1));
+          "Info", text msg
+        ] |> log)
+    ) fmt
+
 let create ~database_parameters =
   With_database.create ~database_parameters
   >>= fun db ->
@@ -478,9 +498,12 @@ let create ~database_parameters =
       let id = Target.Stored_target.id st in
       Cache_table.add_or_replace cache id st)
   >>= fun () ->
-  return {db; cache}
+  let t = {db; cache} in
+  log_info t "create %S" database_parameters;
+  return t
 
 let unload t =
+  log_info t "unloadingd";
   With_database.unload t.db
   >>= fun () ->
   Cache_table.reset t.cache
@@ -516,7 +539,9 @@ let all_targets t =
   let rec iterate acc =
     iterator ()
     >>= begin function
-    | None -> return acc
+    | None ->
+      log_info t "all_targets → %d targets" (List.length acc);
+      return acc
     | Some id ->
       With_database.get_stored_target t.db id
       >>= fun stored ->
