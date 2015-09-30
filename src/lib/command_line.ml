@@ -500,7 +500,7 @@ let daemonize_if_applicable config =
           let file_name = path // "debug.txt" in
           let out =
             UnixLabels.(
-              openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
+              openfile ~perm:0o700 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
               |> out_channel_of_descr)
           in
           global_with_color := false;
