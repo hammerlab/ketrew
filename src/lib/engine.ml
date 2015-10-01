@@ -281,29 +281,54 @@ module Run_automaton = struct
     - Process Archival to-do list (?)
     - Process to-add list
   *)
-    Persistent_data.fold_active_targets t.data ~init:[]
-      ~f:begin fun previous_happenings ~target ->
-        begin match Target.state target with
-        | s when Target.State.Is.finished s ->
+    let concurrency_number = 8 in
+    let step_target target :
+      (* This type annotation is for safety, we want to know if a
+         new kind of error appears here: *)
+      (Ketrew_pure.Target.Automaton.progress list,
+       [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+       | `Database_unavailable of string ]) Deferred_result.t =
+      begin match Target.state target with
+      | s when Target.State.Is.finished s ->
+        return []
+      | other ->
+        _process_automaton_transition t target
+        >>< function
+        | `Ok (new_target, progress) ->
+          Persistent_data.update_target t.data new_target
+          >>= fun () ->
+          log_info
+            Log.(s "Transition for target: "
+                 % Target.log target
+                 % s "Done: " % n
+                 % Target.(State.log ~depth:2 (state new_target)));
+          return [progress]
+        | `Error `Empty_should_not_exist ->
           return []
-        | other ->
-          _process_automaton_transition t target
-          >>< function
-          | `Ok (new_target, progress) ->
-            Persistent_data.update_target t.data new_target
-            >>= fun () ->
-            log_info
-              Log.(s "Transition for target: "
-                   % Target.log target
-                   % s "Done: " % n
-                   % Target.(State.log ~depth:2 (state new_target)));
-            return (progress :: previous_happenings)
-          | `Error `Empty_should_not_exist ->
-            return []
-        end
+      end in
+    let concurrent_step targets =
+      Deferred_list.for_concurrent targets ~f:(fun target ->
+          step_target target)
+      >>= fun (happens, errors) ->
+      List.iteri errors ~f:(fun i e ->
+          log_error e (Log.sf "%dth failure of concurrent step (%d targets)"
+                         i concurrency_number));
+      return (List.concat happens)
+    in
+    Persistent_data.fold_active_targets t.data
+      ~init:(`Happenings [], `Targets [])
+      ~f:begin fun (`Happenings previous_happenings, `Targets targets) ~target ->
+        if List.length targets < concurrency_number - 1 then
+          return (`Happenings previous_happenings, `Targets (target :: targets))
+        else
+          concurrent_step (target :: targets)
+          >>= fun happens ->
+          return (`Happenings (happens @ previous_happenings), `Targets [])
       end
-    >>| List.exists ~f:((=) `Changed_state)
-    >>= fun has_progressed ->
+    >>= fun (`Happenings hap, `Targets remmaining) ->
+    concurrent_step remmaining
+    >>= fun more_hap ->
+    let has_progressed = List.exists ~f:((=) `Changed_state) (more_hap @ hap) in
     Persistent_data.Killing_targets.proceed_to_mass_killing t.data
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data
