@@ -56,11 +56,13 @@ module Down_message : sig
          pointer, Summary.id can be different. *)
     | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
     | `List_of_target_ids of string list
+    | `Deferred_list_of_target_ids of string * int (* id × total-length *)
     | `List_of_query_descriptions of (string * string) list
     | `Query_result of string
     | `Query_error of string
     | `Server_status of Server_status.t
     | `Ok
+    | `Missing_deferred
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
@@ -111,6 +113,7 @@ module Up_message : sig
     | `Restart_targets of string list (* List of Ids *)
     | `Get_target_ids of target_query * (query_option list)
     | `Get_server_status
+    | `Get_deferred of string * int * int (* id × index × length *)
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 

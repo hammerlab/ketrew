@@ -27,7 +27,8 @@ open Unix_io
 (** A common error that simply means “invalid argument”. *)
 let wrong_request short long = fail (`Wrong_http_request (short, long))
 
-include Logging.Global.Make_module_error_and_info(struct
+open Logging.Global
+include Make_module_error_and_info(struct
     let module_name = "Server"
   end)
 
@@ -118,6 +119,54 @@ end
 
 (** The state maintained by the HTTP server. *)
 module Server_state = struct
+  module Deferred_queries = struct
+    type query_content =
+      | List_of_ids of string list
+    type query = {
+      id: string;
+      content: query_content;
+      birthdate: Time.t;
+    }
+    type t = {
+      table: (string, query) Hashtbl.t
+    }
+
+    let create () = {table = Hashtbl.create 42}
+
+    let add_list_of_ids t ids =
+      let id = Unique_id.create () in
+      let content = List_of_ids ids in
+      let birthdate = Time.now () in
+      Hashtbl.add t.table id {id; content; birthdate};
+      id
+
+    let make_message t ~id ~index ~length : Protocol.Down_message.t =
+      match Hashtbl.find t.table id with
+      | { content = List_of_ids l } ->
+        `List_of_target_ids (List.take (List.drop l index) length)
+      | exception _ ->
+        `Missing_deferred
+
+    let garbage_collection t =
+      let now = Time.now () in
+      let to_remove =
+        Hashtbl.fold
+          (fun id {birthdate} prev  -> 
+             if birthdate +. 60. *. 60. *. 2. > now
+             then id :: prev
+             else prev)
+          t.table [] in
+      List.iter to_remove ~f:(Hashtbl.remove t.table);
+      ()
+
+    let markup t =
+      let open Display_markup in
+      description_list [
+        "Query Number", textf "%d" (Hashtbl.length t.table);
+      ]
+
+
+  end
 
   type t = {
     state: Engine.t;
@@ -128,6 +177,7 @@ module Server_state = struct
       (string,
        [`Open of Time.t | `Request of Time.t | `Closed of Time.t] list)
         Hashtbl.t;
+    deferred_queries: Deferred_queries.t;
   }
 (*M
 The `loop_traffic_light` is “red” for the server  by default but some services
@@ -139,8 +189,16 @@ M*)
   let create ~state ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     all_connections = Hashtbl.create 42; }
-  
+     all_connections = Hashtbl.create 42;
+     deferred_queries = Deferred_queries.create ()}
+
+  let markup t =
+    let open Display_markup in
+    description_list [
+      "Connections", textf "%d" (Hashtbl.length t.all_connections);
+      "Deferred_queries", Deferred_queries.markup t.deferred_queries;
+    ]
+
 end
 open Server_state
 
@@ -337,7 +395,18 @@ let answer_get_target_ids ~server_state (query, options) =
     ~get_values:(fun () ->
         Engine.get_list_of_target_ids server_state.state query)
     ~should_send:(function [] -> false | _ -> true)
-    ~send:(fun v -> return (`List_of_target_ids v))
+    ~send:begin fun v ->
+      match List.length v with
+      | small when small < 1001 ->
+        return (`List_of_target_ids v)
+      | big ->
+        let answer_id = 
+          Deferred_queries.add_list_of_ids server_state.deferred_queries v in
+        let msg = `Deferred_list_of_target_ids (answer_id, big) in
+        log_info Log.(s "answer_get_target_ids -> Deferred_list_of_target_ids "
+                      % s answer_id % s ", " % i big);
+        return msg
+    end
 
 let answer_get_server_status ~server_state =
   let tls =
@@ -443,6 +512,13 @@ let answer_message ~server_state ?token msg =
     with_capability `See_targets
     >>= fun () ->
     answer_get_target_flat_states ~server_state query
+  | `Get_deferred (id, index, length) ->
+    with_capability `See_targets
+    >>= fun () ->
+    let msg =
+      Deferred_queries.make_message server_state.deferred_queries
+        ~id ~index ~length in
+    return msg
 
 let api_service ~server_state ~body req =
   get_post_body req ~body
@@ -657,18 +733,23 @@ let start_engine_loop ~server_state =
           else
             time_step
         in
-        log_info
-          Log.(s "Successful fix-point: "
-               % parens (i step_count % s " steps") %n
-               % s "Sleeping " % f seconds % s " s");
-        return seconds
+        let markup =
+          Display_markup.(
+            description_list [
+              "Steps", textf "%d" step_count;
+              "Sleep", time_span seconds;
+            ]) in
+        return (markup, seconds)
       | `Error e ->
-        log_error e
-          Log.(s "Errorneous fix-point" %n
-               % s "Sleeping " % f time_step % s " s");
-        return time_step
+        let markup =
+          Display_markup.(
+            description_list [
+              "Error", Error.to_string e |> text;
+              "Sleep", time_span time_step;
+            ]) in
+        return (markup, time_step)
     end
-    >>= fun seconds ->
+    >>= fun (fix_point_markup, seconds) ->
     begin match Configuration.log_path server_state.server_configuration with
     | None  -> return ()
     | Some path ->
@@ -680,16 +761,26 @@ let start_engine_loop ~server_state =
       Logging.Global.clear ()
     end
     >>= fun () ->
+    Deferred_queries.garbage_collection server_state.deferred_queries;
     Deferred_list.pick_and_cancel [
-      System.sleep seconds;
+      begin System.sleep seconds >>= fun () -> return `Slept end;
       begin
         Light.try_to_pass server_state.loop_traffic_light
         >>= fun () ->
         server_state.loop_traffic_light.Light.color <- `Red;
-        return ()
+        return `Woken_up
       end;
     ]
-    >>= fun () ->
+    >>= fun how_awake ->
+    Logger.(
+      log
+        Display_markup.(
+          description_list [
+            "End-of-engine-loop",
+            text (match how_awake with `Slept -> "Slept" | `Woken_up -> "Woken-up");
+            "State", Server_state.markup server_state;
+            "Fix-point", fix_point_markup;
+          ]));
     loop seconds 
   in
   Lwt.ignore_result (loop time_step)

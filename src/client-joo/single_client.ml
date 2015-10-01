@@ -395,26 +395,30 @@ let start_list_of_ids_loop t =
                  ));
           ];
         ]);
-    Protocol_client.call ~timeout
-      t.protocol_client (`Get_target_ids (query, options))
-    >>= begin function
-    | `List_of_target_ids l ->
-      let server_time =
-        match snd Reactive.(Source.signal t.status |> Signal.value) with
-        | `Ok s -> Some s.Protocol.Server_status.time
-        | _ -> None
-      in
-      add_log Display_markup.(
-          concat [
-            textf "Got %d ids, server_time: " (List.length l);
-            option server_time date;
-          ]
-        );
-      Target_table.add_target_ids ?server_time t.target_table l;
-      return ()
-    | other ->
-      fail (`Wrong_down_message other)
-    end
+    let rec get_ids message =
+      Protocol_client.call ~timeout t.protocol_client message
+      >>= begin function
+      | `List_of_target_ids l ->
+        let server_time =
+          match snd Reactive.(Source.signal t.status |> Signal.value) with
+          | `Ok s -> Some s.Protocol.Server_status.time
+          | _ -> None
+        in
+        add_log Display_markup.(
+            concat [
+              textf "Got %d ids, server_time: " (List.length l);
+              option server_time date;
+            ]
+          );
+        Target_table.add_target_ids ?server_time t.target_table l;
+        return ()
+      | `Deferred_list_of_target_ids (answer_id, big) ->
+        get_ids (`Get_deferred (answer_id, 0, min 500 big))
+      | other ->
+        fail (`Wrong_down_message other)
+      end
+    in
+    get_ids  (`Get_target_ids (query, options))
   in
   let loop_handle =
     preemptible_asynchronous_loop t ~name:"List-of-IDS" ~body:(fun () ->

@@ -66,11 +66,13 @@ module Down_message = struct
       | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
       | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
       | `List_of_target_ids of string list
+      | `Deferred_list_of_target_ids of string * int (* id × total-length *)
       | `List_of_query_descriptions of (string * string) list
       | `Query_result of string
       | `Query_error of string
       | `Server_status of Server_status.t
       | `Ok
+      | `Missing_deferred
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)
@@ -125,6 +127,7 @@ module Up_message = struct
       | `Restart_targets of string list (* List of Ids *)
       | `Get_target_ids of target_query * (query_option list)
       | `Get_server_status
+      | `Get_deferred of string * int * int (* id × index × length *)
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)
