@@ -22,6 +22,7 @@
 
 module Result = Pvem.Result
 module String = struct
+  let legacy_lowercase = String.lowercase
   include Sosa.Native_string
 end
 
@@ -253,6 +254,7 @@ module Typed_log = struct
       let word_info = "Info"
       let word_module = "Module"
     end
+
     module Construct = struct
       let now content = {date = Time.now (); content }
       let info s = now (Display_markup.text s)
@@ -264,6 +266,7 @@ module Typed_log = struct
         ]
         |> now
     end
+
     module Condition = struct
       type t = [
         | `Field_equals of string * string
@@ -272,19 +275,27 @@ module Typed_log = struct
         | `False
         | `And of t list
         | `Or of t list
+        | `Ignore_case of t
       ]
-      let rec eval t =
+      let rec eval ?(ignore_case = false) t =
+        let continue c = eval ~ignore_case t c in
+        let string_eq a b =
+          if ignore_case then
+            String.legacy_lowercase a = String.legacy_lowercase b
+          else
+            a = b in
         function
         | `True -> true
         | `False -> false
-        | `And al -> List.for_all al ~f:(eval t)
-        | `Or ol -> List.exists ol ~f:(eval t)
+        | `And al -> List.for_all al ~f:continue
+        | `Or ol -> List.exists ol ~f:continue
+        | `Ignore_case c -> eval ~ignore_case:true t c
         | `Has_field f ->
           let open Display_markup in
           begin match t.content with
           | Itemize l ->
             List.exists l ~f:(function
-              | Description (field_v, _) -> field_v = f
+              | Description (field_v, _) -> string_eq field_v f
               |  _ -> false)
           | _ -> false
           end
@@ -294,7 +305,7 @@ module Typed_log = struct
           | Itemize l ->
             List.exists l ~f:(function
               | Description (field_v, Text value_v) ->
-                field_v = field && value_v = value 
+                string_eq field_v field && string_eq value_v value 
               |  _ -> false)
           | _ -> false
           end

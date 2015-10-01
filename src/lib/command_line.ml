@@ -642,10 +642,12 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term: Term.(
           pure (fun configuration field_equals has_fields max_number ->
               let condition =
-                `And [
-                  `And (List.map has_fields ~f:(fun f -> `Has_field f));
-                  `And (List.map field_equals ~f:(fun p -> `Field_equals p));
-                  ] in
+                `Ignore_case (
+                  `And [
+                    `And (List.map has_fields ~f:(fun f -> `Has_field f));
+                    `And (List.map field_equals ~f:(fun p -> `Field_equals p));
+                  ]
+                ) in
               match Configuration.mode configuration  with
               | `Client _ | `Standalone _ ->
                 fail (`Failure "This is not a configured Ketrew server")
