@@ -169,6 +169,20 @@ module With_database = struct
       >>= begin function
       | Some serialized_stored ->
         of_result (Target.Stored_target.deserialize serialized_stored)
+        >>= fun st ->
+        (* It may happen that finished targets are in the active collection,
+           - the application may have been stopped between the
+             Finished save and the move to the finsihed collection
+           - the user may have played with `ketrew sync` and backup
+             directories
+           so when we come accross it, we clean up *)
+        begin match Target.Stored_target.get_target st with
+        | `Target target ->
+          clean_if_finsihed t target
+          >>= fun () ->
+          return st
+        | `Pointer _ -> return st
+        end
       | None ->
         Database.get db ~collection:finished_targets_collection ~key
         >>= begin function
@@ -184,14 +198,6 @@ module With_database = struct
           end
         end
       end
-    end
-    >>= fun st ->
-    begin match Target.Stored_target.get_target st with
-    | `Target target ->
-      clean_if_finsihed t target
-      >>= fun () ->
-      return st
-    | `Pointer _ -> return st
     end
 
   let get_target t id =
