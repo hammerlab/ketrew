@@ -248,16 +248,56 @@ module Typed_log = struct
     let show {date; content} =
       fmt "[%s]\n%s" (Time.show date) (show_content content)
 
+    module Constants = struct
+      let word_error = "Error"
+      let word_info = "Info"
+      let word_module = "Module"
+    end
     module Construct = struct
       let now content = {date = Time.now (); content }
       let info s = now (Display_markup.text s)
       let error e s =
         let open Display_markup in
         description_list [
-          "Error", text e;
-          "Info", text s;
+          Constants.word_error, text e;
+          Constants.word_info, text s;
         ]
         |> now
+    end
+    module Condition = struct
+      type t = [
+        | `Field_equals of string * string
+        | `Has_field of string
+        | `True
+        | `False
+        | `And of t list
+        | `Or of t list
+      ]
+      let rec eval t =
+        function
+        | `True -> true
+        | `False -> false
+        | `And al -> List.for_all al ~f:(eval t)
+        | `Or ol -> List.exists ol ~f:(eval t)
+        | `Has_field f ->
+          let open Display_markup in
+          begin match t.content with
+          | Itemize l ->
+            List.exists l ~f:(function
+              | Description (field_v, _) -> field_v = f
+              |  _ -> false)
+          | _ -> false
+          end
+        | `Field_equals (field, value) ->
+          let open Display_markup in
+          begin match t.content with
+          | Itemize l ->
+            List.exists l ~f:(function
+              | Description (field_v, Text value_v) ->
+                field_v = field && value_v = value 
+              |  _ -> false)
+          | _ -> false
+          end
     end
   end
 end

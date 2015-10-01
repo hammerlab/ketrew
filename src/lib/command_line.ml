@@ -342,7 +342,7 @@ let () =
   in
   IO.write_file ~content:config (config_path // "configuration.ml")
 
-let show_server_logs ~max_number server_config =
+let show_server_logs ~max_number ?(condition = `True) server_config =
   let ask_for_server_memory_logs format =
     begin match Configuration.command_pipe server_config with
     | Some pipe ->
@@ -444,15 +444,20 @@ let show_server_logs ~max_number server_config =
           | [] -> return count
           | _ when count > max_number -> return count
           | item :: more ->
+            let output typed_item =
+              Printf.printf "%s\n%s\n" (String.make 80 '=')
+                (Typed_log.Item.show typed_item);
+              go_through_list (count + 1) more
+            in
             begin match Typed_log.Item.of_yojson item  with
             | `Error err ->
               Log.(s "Error parsing JSON in " % quote file % s " → " % s err
                    @ warning);
               go_through_list count more
-            | `Ok typed_item ->
-              Printf.printf "%s\n%s\n" (String.make 80 '=')
-                (Typed_log.Item.show typed_item);
-              go_through_list (count + 1) more
+            | `Ok typed_item
+              when Typed_log.Item.Condition.eval typed_item condition ->
+              output typed_item
+            | `Ok typed_item -> go_through_list count more
             end
           in
           (* Logging.Log_store writes in order, so we reverse: *)
@@ -574,14 +579,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term:Term.(
           pure (fun cert_key self_tls debug_level tokens port
                  config_path use_database ->
-              let tls =
-                match cert_key with
-                | Some (cert, key) -> `Use (cert, key)
-                | None when self_tls -> `Create_self_signed
-                | _ -> `Don't
-              in
-              initialize_configuration
-                ?use_database ~tls ~port ~debug_level ~tokens config_path)
+                 let tls =
+                   match cert_key with
+                   | Some (cert, key) -> `Use (cert, key)
+                   | None when self_tls -> `Create_self_signed
+                   | _ -> `Don't
+                 in
+                 initialize_configuration
+                   ?use_database ~tls ~port ~debug_level ~tokens config_path)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
@@ -635,13 +640,32 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "logs" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"See the logs.")
       ~term: Term.(
-          pure (fun configuration max_number ->
+          pure (fun configuration field_equals has_fields max_number ->
+              let condition =
+                `And [
+                  `And (List.map has_fields ~f:(fun f -> `Has_field f));
+                  `And (List.map field_equals ~f:(fun p -> `Field_equals p));
+                  ] in
               match Configuration.mode configuration  with
               | `Client _ | `Standalone _ ->
                 fail (`Failure "This is not a configured Ketrew server")
               | `Server s ->
-                show_server_logs ~max_number s)
+                show_server_logs ~max_number ~condition s)
           $ config_file_argument
+          $ Arg.(
+              info ["E"; "field-equals"]
+                ~docv:"FIELD,VALUE"
+                ~doc:"Filter the output for log-items that have the FIELD equal \
+                      to the VALUE"
+              |> opt_all (pair string string) []
+              |> value)
+          $ Arg.(
+              info ["F"; "has-field"]
+                ~docv:"FIELD"
+                ~doc:"Filter the output for log-items that have the FIELD \
+                      present"
+              |> opt_all string []
+              |> value)
           $ Arg.(value @@ opt int 4000
                  @@ info ["M"; "max-items"]
                    ~doc:"Set a maximum number of log items to display.")
