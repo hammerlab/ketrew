@@ -574,6 +574,8 @@ let all_targets t =
     | Some id ->
       With_database.get_stored_target t.db id
       >>= fun stored ->
+      Cache_table.add_or_replace t.cache id stored
+      >>= fun () ->
       begin match Target.Stored_target.get_target stored with
       | `Pointer _ -> iterate acc
       | `Target t -> iterate (t :: acc)
