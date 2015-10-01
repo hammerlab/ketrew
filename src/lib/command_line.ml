@@ -455,7 +455,8 @@ let show_server_logs ~max_number server_config =
               go_through_list (count + 1) more
             end
           in
-          go_through_list count l
+          (* Logging.Log_store writes in order, so we reverse: *)
+          go_through_list count (List.rev l)
         | _ ->
           fail (`Failure "JSON logs not a list")
         end
