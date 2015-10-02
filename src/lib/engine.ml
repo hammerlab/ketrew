@@ -281,7 +281,8 @@ module Run_automaton = struct
     - Process Archival to-do list (?)
     - Process to-add list
   *)
-    let concurrency_number = 8 in
+    let concurrency_number =
+      Configuration.concurrent_automaton_steps t.configuration in
     let step_target target :
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
