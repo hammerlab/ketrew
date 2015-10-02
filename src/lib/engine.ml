@@ -28,7 +28,8 @@ type t = {
   configuration: Configuration.engine;
 }
 
-include Logging.Global.Make_module_error_and_info(struct
+open Logging.Global
+include Make_module_error_and_info(struct
     let module_name = "Engine"
   end)
 
@@ -317,16 +318,16 @@ module Run_automaton = struct
       return (List.concat happens)
     in
     Persistent_data.fold_active_targets t.data
-      ~init:(`Happenings [], `Targets [])
-      ~f:begin fun (`Happenings previous_happenings, `Targets targets) ~target ->
+      ~init:(`Happenings [], `Targets [], `Count 0)
+      ~f:begin fun (`Happenings previous_happenings, `Targets targets, `Count count) ~target ->
         if List.length targets < concurrency_number - 1 then
-          return (`Happenings previous_happenings, `Targets (target :: targets))
+          return (`Happenings previous_happenings, `Targets (target :: targets), `Count (count + 1))
         else
           concurrent_step (target :: targets)
           >>= fun happens ->
-          return (`Happenings (happens @ previous_happenings), `Targets [])
+          return (`Happenings (happens @ previous_happenings), `Targets [], `Count (count + 1))
       end
-    >>= fun (`Happenings hap, `Targets remmaining) ->
+    >>= fun (`Happenings hap, `Targets remmaining, `Count before_remaining) ->
     concurrent_step remmaining
     >>= fun more_hap ->
     let has_progressed = List.exists ~f:((=) `Changed_state) (more_hap @ hap) in
@@ -334,11 +335,19 @@ module Run_automaton = struct
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data
     >>= fun adding_did_something ->
-    log_info
-      Log.(s "Engine.step -> " % n
-           % s "has_progressed        → " % OCaml.bool has_progressed % n
-           % s "adding_did_something  → " % OCaml.bool adding_did_something % n
-           % s "killing_did_something → " % OCaml.bool killing_did_something);
+    Logger.(
+      let bool b = textf "%b" b in
+      description_list [
+        Typed_log.Item.Constants.word_module, text "Engine";
+        Typed_log.Item.Constants.word_info, textf "End of step";
+        "has_progressed", bool has_progressed;
+        "adding_did_something", bool adding_did_something;
+        "killing_did_something", bool killing_did_something;
+        "concurrent_automaton_steps", textf "%d" concurrency_number;
+        "Targets-visited",
+        textf "%d + %d" before_remaining (List.length remmaining);
+      ] |> log
+    );
     return (has_progressed || adding_did_something || killing_did_something)
 
   let fix_point state =
