@@ -395,7 +395,7 @@ let start_list_of_ids_loop t =
                  ));
           ];
         ]);
-    let rec get_ids message =
+    let rec get_ids first_time message =
       Protocol_client.call ~timeout t.protocol_client message
       >>= begin function
       | `List_of_target_ids l ->
@@ -410,15 +410,21 @@ let start_list_of_ids_loop t =
               option server_time date;
             ]
           );
+        begin if first_time && not and_block then
+            Target_table.set_filter_results_number t.target_table (List.length l)
+        end;
         Target_table.add_target_ids ?server_time t.target_table l;
         return ()
       | `Deferred_list_of_target_ids (answer_id, big) ->
-        get_ids (`Get_deferred (answer_id, 0, min 500 big))
+        begin if first_time && not and_block then
+            Target_table.set_filter_results_number t.target_table big;
+        end;
+        get_ids false (`Get_deferred (answer_id, 0, min 100 big))
       | other ->
         fail (`Wrong_down_message other)
       end
     in
-    get_ids  (`Get_target_ids (query, options))
+    get_ids true (`Get_target_ids (query, options))
   in
   let loop_handle =
     preemptible_asynchronous_loop t ~name:"List-of-IDS" ~body:(fun () ->

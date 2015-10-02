@@ -424,6 +424,7 @@ type t = {
   target_ids_last_updated: Time.t option Reactive.Source.t; (* server-time *) 
   showing: (int * int) Reactive.Source.t;
   columns: column list Reactive.Source.t;
+  filter_results_number: int Reactive.Source.t;
   filter_interface_visible: bool Reactive.Source.t;
   filter_interface_showing_help: bool Reactive.Source.t;
   filter: Filter.t Reactive.Source.t;
@@ -452,6 +453,7 @@ let create () =
    target_ids_last_updated;
    filter_interface_visible;
    filter_interface_showing_help;
+   filter_results_number = Reactive.Source.create 0;
    showing; columns; filter; saved_filters}
 
 let target_ids_last_updated t = Reactive.Source.signal t.target_ids_last_updated
@@ -488,6 +490,8 @@ let add_target_ids t ?server_time l =
     (Some (Target_id_set.add_list current l));
   ()
 
+let set_filter_results_number t n =
+  Reactive.Source.set t.filter_results_number n
 
 module Html = struct
 
@@ -495,20 +499,21 @@ module Html = struct
     let open H5 in
     span [Reactive_node.pcdata
             Reactive.(
-              Signal.tuple_2
+              Signal.tuple_3
                 (Source.signal t.showing) (Source.signal t.target_ids)
-              |> Signal.map ~f:(fun ((n_from, n_count), target_ids) ->
+                (Source.signal t.filter_results_number)
+              |> Signal.map ~f:(fun ((n_from, n_count), target_ids, total) ->
                   match target_ids with
                   | None -> "Fetching targets …"
                   | Some tids ->
-                    let total = Target_id_set.length tids in
-                    begin match total with
+                    let subtotal = Target_id_set.length tids in
+                    begin match subtotal with
                     | 0 -> "Target-table (empty)"
                     | other ->
-                      (fmt "Target-table ([%d, %d] of %d)"
-                         (min total (n_from + 1))
-                         (min (n_from + n_count) total)
-                         total)
+                      (fmt "Target-table ([%d, %d] of %d/%d)"
+                         (min subtotal (n_from + 1))
+                         (min (n_from + n_count) subtotal)
+                         subtotal total)
                     end))]
 
   let target_status_badge target_status_signal  =
