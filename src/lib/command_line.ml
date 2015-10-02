@@ -445,7 +445,8 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
           | _ when count > max_number -> return count
           | item :: more ->
             let output typed_item =
-              Printf.printf "%s\n%s\n" (String.make 80 '=')
+              Printf.printf "%s[%d]\n%s\n"
+                (String.make 72 '=') count
                 (Typed_log.Item.show typed_item);
               go_through_list (count + 1) more
             in
@@ -466,9 +467,9 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
           fail (`Failure "JSON logs not a list")
         end
         >>= fun count ->
-        display (count + 1) files
+        display count files
     in
-    display 0
+    display 1
       (match from_memory with
       | None -> rev_sorted_dir
       | Some s -> s :: rev_sorted_dir)
