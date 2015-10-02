@@ -354,6 +354,8 @@ module Run_automaton = struct
     let rec fix_point ~count =
       step state
       >>= fun progressed ->
+      (System.sleep 0.1 >>< fun _ -> return ())
+      >>= fun () ->
       let count = count + 1 in
       begin match progressed with
       | true -> fix_point ~count
