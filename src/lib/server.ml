@@ -178,6 +178,7 @@ module Server_state = struct
        [`Open of Time.t | `Request of Time.t | `Closed of Time.t] list)
         Hashtbl.t;
     deferred_queries: Deferred_queries.t;
+    process_holder: Process_holder.t;
   }
 (*M
 The `loop_traffic_light` is “red” for the server  by default but some services
@@ -186,10 +187,10 @@ can set it to `Green to wake-up it earlier and do things.
 For example, after adding targets, the server will be woken-up to start running
 the targets and not wait for the next “loop timeout.”
 M*)
-  let create ~state ~authentication server_configuration =
+  let create ~state ~process_holder ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     all_connections = Hashtbl.create 42;
+     all_connections = Hashtbl.create 42; process_holder;
      deferred_queries = Deferred_queries.create ()}
 
   let markup t =
@@ -935,6 +936,8 @@ let start ~configuration  =
       return ()
   end
   >>= fun () ->
+  Process_holder.load ()
+  >>= fun process_holder ->
   Log.(s "Start-Server: Loading the Engine" @ verbose);
   Engine.load (Configuration.server_engine configuration) 
   >>= fun engine ->
@@ -942,7 +945,8 @@ let start ~configuration  =
   Authentication.load (Configuration.authorized_tokens configuration)
   >>= fun authentication ->
   let server_state =
-    Server_state.create ~authentication ~state:engine configuration in
+    Server_state.create
+      ~process_holder ~authentication ~state:engine configuration in
   log_info Log.(s "Start-Server: Starting the Engine loop");
   start_engine_loop ~server_state;
   log_info Log.(s "Start-Server: Starting listening on command-pipe");

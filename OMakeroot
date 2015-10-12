@@ -105,6 +105,9 @@ section # Executable tests
     .PHONY: synthetic-test
     synthetic-test: $(OCamlProgramOfFile ketrew-synth-workflows, \
                                        $(file src/test/synthetic_workflows.ml))
+    .PHONY: process-holder-test
+    synthetic-test: $(OCamlProgramOfFile ketrew-test-process-holding, \
+                                       $(file src/test/hold_processes.ml))
 
 
 DotMerlin(./src, $(LWT_UNIX_LIB_PACKAGES) $(JOO_PACKAGES))
@@ -114,7 +117,7 @@ uninstall: uninstall-lib-ketrew_pure uninstall-lib-ketrew uninstall-app-ketrew
 
 build-all: lib-ketrew_pure lib-ketrew app-ketrew app-ketrew-client-joo main-test \
     workflow-examples integration-test test-plugin test-plugin-user \
-    preconfigured-main-test synthetic-test
+    preconfigured-main-test synthetic-test process-holder-test
 
 .PHONY: doc test-env bisect-report bisect-clean
 

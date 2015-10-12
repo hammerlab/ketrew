@@ -882,6 +882,32 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
+  let internal_ssh_command =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun command pipe log_to uri ->
+            Process_holder.setsid_ssh ?log_to ?command ?pipe uri
+          )
+        $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["pipe"; "fifo"] ~docv:"PATH" ~doc:"Use PATH to communicate"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["to"] ~docv:"URI" ~doc:"The host in “URI form”"
+               |> opt (some string) None
+               |> required)
+      )
+      ~info:(
+        info "internal-ssh" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Call ssh in the background and talk to it with a named-pipe \
+                (for internal use)"
+      )
+  in
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -911,6 +937,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
+      internal_ssh_command;
     ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
