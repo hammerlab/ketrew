@@ -886,13 +886,17 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun command pipe log_to uri ->
-            Process_holder.setsid_ssh ?log_to ?command ?pipe uri
+        pure (fun command pipe_in pipe_out log_to uri ->
+            Process_holder.Ssh_connection.setsid_ssh
+              ?log_to ?command ?pipe_in ?pipe_out uri
           )
         $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
                |> opt (some string) None
                |> value)
-        $ Arg.(info ["pipe"; "fifo"] ~docv:"PATH" ~doc:"Use PATH to communicate"
+        $ Arg.(info ["pipe-in"; "fifo-in"] ~docv:"PATH" ~doc:"Use PATH to communicate"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["pipe-out"; "fifo-out"] ~docv:"PATH" ~doc:"Use PATH to communicate"
                |> opt (some string) None
                |> value)
         $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"

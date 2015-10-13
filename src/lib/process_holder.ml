@@ -59,6 +59,7 @@ module Process = struct
       end;
     ]
 
+  let id t = t.id
   let stdout t = Buffer.contents t.stdout_buffer
   let stderr t = Buffer.contents t.stderr_buffer
 
@@ -119,7 +120,7 @@ module Process = struct
       | `Loop -> get_all_output ()
     in
     Lwt.async (fun () -> get_all_output ());
-    (process.id, process)
+    process
 
   let wait p =
     wrap_deferred Lwt.(fun () ->
@@ -134,6 +135,17 @@ module Process = struct
 
 
 end
+
+module Ssh_connection = struct
+
+  let make_pipe ?name () =
+    let fifo = 
+      match name with
+      | None  -> Filename.temp_file "ketrew-ssh-askpass" ".pipe"
+      | Some s -> s in
+    (try Unix.unlink fifo with _ -> ());
+    Unix.mkfifo fifo 0o700;
+    fifo
 
 (*
 Overly complex work around OpenSSH TTY craziness.
@@ -151,133 +163,251 @@ We need to comunicate with that process:
   program.
 
 *)
-let setsid_ssh ?log_to ?pipe ?command uri =
-  let ssh_connection, port_option =
-    let uri = Uri.of_string uri in
-    fmt "%s%s"
-      (Uri.user uri |> Option.value_map ~default:"" ~f:(fmt "%s@"))
-      (Uri.host uri |> Option.value ~default:"127.0.0.1"),
-    Uri.port uri |> Option.value_map ~default:"" ~f:(fmt " -p %d") in
-  global_with_color := false;
-  Log.(s "setsid_ssh to " % quote ssh_connection
-       % sf " port-option %S" port_option  @ normal);
-  let temp_script = Filename.temp_file "ketrew-ssh-askpass" ".sh" in
-  Unix.chmod temp_script 0o700;
-  let make_pipe opt =
-    let fifo = 
-      match pipe with
-      | None  -> Filename.temp_file "ketrew-ssh-askpass" ".pipe"
-      | Some s -> s in
-    (try Unix.unlink fifo with _ -> ());
-    Unix.mkfifo fifo 0o700;
-    fifo
-  in
-  let temp_fifo = make_pipe pipe in
-  let log_json =
-    match log_to with
-    | None  -> Filename.temp_file "ketrew-ssh-log" ".json"
-    | Some f -> f in
-  let meta_log markup =
-    let content =
-      Display_markup.to_yojson markup |> Yojson.Safe.pretty_to_string in
-    IO.write_file log_json ~content
-  in
-  let log_file = "/tmp/ketrew-ssh-askpass.log" in
-  (try Unix.unlink log_file with _ -> ());
-  begin match Unix.fork () with
-  | 0 ->
-    let session_id = Unix.setsid () in
+  let setsid_ssh ?log_to ?pipe_in ?pipe_out ?command uri =
+    let ssh_connection, port_option =
+      let uri = Uri.of_string uri in
+      fmt "%s%s"
+        (Uri.user uri |> Option.value_map ~default:"" ~f:(fmt "%s@"))
+        (Uri.host uri |> Option.value ~default:"127.0.0.1"),
+      Uri.port uri |> Option.value_map ~default:"" ~f:(fmt " -p %d") in
+    global_with_color := false;
+    Log.(s "setsid_ssh to " % quote ssh_connection
+         % sf " port-option %S" port_option  @ normal);
+    let temp_script = Filename.temp_file "ketrew-ssh-askpass" ".sh" in
+    Unix.chmod temp_script 0o700;
+    let fifo_in =
+      match pipe_in with None  ->  make_pipe () | Some s -> s in
+    let fifo_out =
+      match pipe_out with None  ->  make_pipe () | Some s -> s in
+    let log_json =
+      match log_to with
+      | None  -> Filename.temp_file "ketrew-ssh-log" ".json"
+      | Some f -> f in
+    let meta_log markup =
+      let content =
+        Display_markup.to_yojson markup |> Yojson.Safe.pretty_to_string in
+      IO.write_file log_json ~content
+    in
+    let log_file = "/tmp/ketrew-ssh-askpass.log" in
+    (try Unix.unlink log_file with _ -> ());
     begin match Unix.fork () with
     | 0 ->
-      let log s =
-        IO.with_out_channel (`Append_to_file log_file)
-          ~f:(fun out -> IO.write out s) in
-      log (fmt "Sesssion ID: %d\n" session_id)
-      >>= fun () ->
-      log (fmt "Post Sesssion ID: %d\n" session_id)
-      >>= fun () ->
-      log (fmt "Post Post Sesssion ID: %d\n" session_id)
-      >>= fun () ->
-      let session_log ?process status =
-        Display_markup.(
-          description_list [
-            "Status", text status;
-            "Session-ID", textf "%d" session_id;
-            "Log-File", path log_file;
-            "FIFO", path temp_fifo;
-            "ASK-PASS", path temp_script;
-            "Process",
-            Option.value_map ~f:Process.markup process ~default:(text "N/A");
-          ]) in
-      meta_log (session_log "Session created")
-      >>= fun () ->
-      let content =
-        fmt "#!/bin/sh\n\n\
-             echo \"============\n## $* Called on `date`\" >> %s\n\
-             echo \"$*\" >> %s\n\
-             cat %s\n"
-          log_file temp_fifo temp_fifo
-      in
-      IO.write_file temp_script ~content
-      >>= fun () ->
-      meta_log (session_log "Script written")
-      >>= fun () ->
-      let (_, process) =
-        Process.start 
-          ["bash"; "-c";
-           fmt
-             "unset SSH_AUTH_SOCK; \
-              DISPLAY=:0 SSH_ASKPASS=%s \
-              ssh %s -o StrictHostKeyChecking=no \
-              -o ChallengeResponseAuthentication=no %s %s"
-             temp_script port_option ssh_connection
-             (Option.value_map ~default:"" command ~f:Filename.quote)
-          ]
-      in
-      meta_log (session_log ~process "Process started")
-      >>= fun () ->
-      log Log.(s "setsid_ssh started"% n
-               % Display_markup.log (Process.markup process)
-               % n |> to_long_string)
-      >>= fun () ->
-      begin
-        Process.wait process
-        >>< function
-        | `Error (`Failure msg) ->
-          meta_log (session_log ~process "Process.wait failed")
-          >>= fun () ->
-          log Log.(s "setsid_ssh wait failed: " % quote msg % n
-                   % Display_markup.log (Process.markup process) % n
-                   % s "stdout: " % n % verbatim (Process.stdout process) % n
-                   % s "stderr: " % n % verbatim (Process.stderr process) % n
-                   % n % n % n
-                   |> to_long_string)
-        | `Ok () ->
-          meta_log (session_log ~process "Process finished")
-          >>= fun () ->
-          log Log.(s "setsid_ssh done" % n
-                   % Display_markup.log (Process.markup process) % n
-                   % s "stdout: " % n % verbatim (Process.stdout process) % n
-                   % s "stderr: " % n % verbatim (Process.stderr process) % n
-                   % n % n % n
-                   |> to_long_string)
-      end
+      let session_id = Unix.setsid () in
+      begin match Unix.fork () with
+      | 0 ->
+        let log s =
+          IO.with_out_channel (`Append_to_file log_file)
+            ~f:(fun out -> IO.write out s) in
+        log (fmt "Sesssion ID: %d\n" session_id)
+        >>= fun () ->
+        log (fmt "Post Sesssion ID: %d\n" session_id)
+        >>= fun () ->
+        log (fmt "Post Post Sesssion ID: %d\n" session_id)
+        >>= fun () ->
+        let session_log ?process status =
+          Display_markup.(
+            description_list [
+              "Status", text status;
+              "Session-ID", textf "%d" session_id;
+              "Log-File", path log_file;
+              "FIFO-in", path fifo_in;
+              "FIFO-out", path fifo_out;
+              "ASK-PASS", path temp_script;
+              "Process",
+              Option.value_map ~f:Process.markup process ~default:(text "N/A");
+            ]) in
+        meta_log (session_log "Session created")
+        >>= fun () ->
+        let content =
+          fmt "#!/bin/sh\n\n\
+               echo \"============\n## $* Called on `date`\" >> %s\n\
+               echo \"$*\" >> %s\n\
+               cat %s\n"
+            log_file fifo_out fifo_in
+        in
+        IO.write_file temp_script ~content
+        >>= fun () ->
+        meta_log (session_log "Script written")
+        >>= fun () ->
+        let process =
+          Process.start 
+            ["bash"; "-c";
+             fmt
+               "unset SSH_AUTH_SOCK; \
+                DISPLAY=:0 SSH_ASKPASS=%s \
+                ssh %s -o StrictHostKeyChecking=no \
+                -o ChallengeResponseAuthentication=no %s %s"
+               temp_script port_option ssh_connection
+               (Option.value_map ~default:"" command ~f:Filename.quote)
+            ]
+        in
+        meta_log (session_log ~process "Process started")
+        >>= fun () ->
+        log Log.(s "setsid_ssh started"% n
+                 % Display_markup.log (Process.markup process)
+                 % n |> to_long_string)
+        >>= fun () ->
+        begin
+          Process.wait process
+          >>< function
+          | `Error (`Failure msg) ->
+            meta_log (session_log ~process "Process.wait failed")
+            >>= fun () ->
+            log Log.(s "setsid_ssh wait failed: " % quote msg % n
+                     % Display_markup.log (Process.markup process) % n
+                     % s "stdout: " % n % verbatim (Process.stdout process) % n
+                     % s "stderr: " % n % verbatim (Process.stderr process) % n
+                     % n % n % n
+                     |> to_long_string)
+          | `Ok () ->
+            meta_log (session_log ~process "Process finished")
+            >>= fun () ->
+            log Log.(s "setsid_ssh done" % n
+                     % Display_markup.log (Process.markup process) % n
+                     % s "stdout: " % n % verbatim (Process.stdout process) % n
+                     % s "stderr: " % n % verbatim (Process.stderr process) % n
+                     % n % n % n
+                     |> to_long_string)
+        end
     (*
     Process.wait process
        *)
-    (* (System.sleep 1.0 >>< fun _ -> return ()) >>= fun () -> *)
+      (* (System.sleep 1.0 >>< fun _ -> return ()) >>= fun () -> *)
+      | pid ->
+        (* second fork *)
+        return ()
+      end
     | pid ->
-      (* second fork *)
-      return ()
-    end
-  | pid ->
       Log.(s "setsid_ssh main finishing, \
               subprocess is: " % i pid
-           % s "You should talk to: " %n
-           % s temp_fifo
            @ normal);
       return ()
-  end
+    end
+
+
+  let read_fifo fifo =
+    let read_buffer = String.make 1 'B' in
+    wrap_deferred
+      ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
+          let open Lwt in
+          let open Lwt_unix in
+          Log.(s "opening " % quote fifo @ verbose);
+          (* make the call blocking until somebody opens for writing: *)
+          openfile fifo [O_RDONLY] 0o700
+          >>= fun fd ->
+          Log.(s "opened " % quote fifo @ verbose);
+          let read_char fd =
+            read fd read_buffer 0 1
+            >>= function
+            | 0 -> return None
+            | 1 -> return (Some (String.get_exn read_buffer 0))
+            | more -> fail (Failure (fmt "read_char got %d bytes" more))
+          in
+          let rec read_all acc fd =
+            read_char fd
+            >>= function
+            | None -> return (List.rev acc)
+            | Some s -> read_all (s :: acc) fd
+          in
+          read_all [] fd
+          >>= fun l ->
+          close fd
+          >>= fun () ->
+          return (String.of_character_list l))
+
+
+  type t = {
+    ketrew_bin: string;
+    json_log: string;
+    fifo_to_daemon: string;
+    fifo_from_daemon: string;
+    connection: string;
+    command: string;
+    process: Process.t;
+    fifo_questions: (Time.t * string) list Reactive.Source.t;
+  }
+
+  let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") connection =
+    let json_log = Filename.temp_file "ketrew-json-log" ".json" in
+    let fifo_to_daemon = make_pipe () in
+    let fifo_from_daemon = make_pipe () in
+    let fifo_questions = Reactive.Source.create [] in
+    let rec read_fifo_over_and_over () =
+      read_fifo fifo_from_daemon
+      >>= fun content ->
+      Reactive.Source.modify fifo_questions (fun l ->
+          (Time.now (), content) :: l);
+      read_fifo_over_and_over () in
+    Lwt.async read_fifo_over_and_over;
+    (* The fifo should be created here *)
+    let process =
+      Process.start ~bin:ketrew_bin [
+        ketrew_bin; "internal-ssh";
+        "--log-to"; json_log;
+        "--fifo-in"; fifo_to_daemon;
+        "--fifo-out"; fifo_from_daemon;
+        "--to"; connection;
+        "-c"; command;
+      ] in
+    let ssh =
+      {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
+       command; process; fifo_questions}
+    in
+    ssh
+
+  let get_daemon_logs t =
+    IO.read_file t.json_log
+    >>= fun logs ->
+    begin match Yojson.Safe.from_string logs |> Display_markup.of_yojson with
+    | `Ok o -> return o
+    | exception e ->
+      fail (`Failure (fmt "parsing %s: %s" t.json_log (Printexc.to_string e)))
+    | `Error e -> fail (`Failure (fmt "parsing %s: %s" t.json_log e))
+    end
+
+  let markup
+      {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
+       command = the_command; process; fifo_questions} =
+    let questions = Reactive.Source.value fifo_questions in
+    Display_markup.(
+      description_list [
+        "Ketrew-bin", text ketrew_bin;
+        "JSON-logfile", text json_log;
+        "FIFO-to-daemon", text fifo_to_daemon;
+        "FIFO-from-daemon", text fifo_from_daemon;
+        "Connection", text connection;
+        "Command", text the_command;
+        "Fifo-questsions",
+        description_list
+          (("Length", textf "%d items" (List.length questions))
+           :: (List.take questions 3 |> List.mapi ~f:(fun i (time, v) ->
+               fmt "%d" i, concat [date time; text ": "; text v])));
+        "Process", Process.markup process;
+      ]
+    )
+
+  let markup_with_daemon_logs t =
+    begin
+      get_daemon_logs t
+      >>< function
+      | `Ok m -> return m
+      | `Error e -> return Display_markup.(textf "Error: %s" (Error.to_string e))
+    end
+    >>= fun dm ->
+    return Display_markup.(
+      description_list [
+        "SSH-holder", markup t;
+        "Daemon-log", dm;
+      ]
+    )
+
+  let write_to_fifo t content =
+    IO.with_out_channel (`Append_to_file t.fifo_to_daemon) ~f:(fun out ->
+        IO.write out content)
+
+
+
+end
 
 
 type t = {
@@ -291,7 +421,8 @@ let load () =
   return t
 
 let start t ?bin argl =
-  let (id, p) = Process.start ?bin argl in
+  let p = Process.start ?bin argl in
+  let id = Process.id p in
   Hashtbl.add t.active_processes id p;
   return id
 

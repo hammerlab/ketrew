@@ -37,100 +37,45 @@ let test_ssh () =
     try Sys.getenv s with _ -> failwithf "Test needs variable: %S" s in
   let ssh_connection = get_env "KHP_SSH_URI" in
   let ssh_password = get_env "KHP_SSH_PASSWORD" in
-  let json_log = "/tmp/khp_log.json" in
-  let fifo = "/tmp/khp_fifo.pipe" in
-  let unique_blob = Unique_id.create () in
-  load ()
-  >>= fun holder ->
-  (* It's actually a bit silly to use the process-holder with
-     `internal-ssh` since it daemonizes, but the API gets tested *)
-  start holder [
-    "./ketrew"; "internal-ssh";
-    "--log-to"; json_log;
-    "--fifo"; fifo;
-    "--to"; ssh_connection;
-    "-c"; fmt "echo %s >> /tmp/hello" unique_blob;
-  ]
-  >>= fun proc_id ->
-  get holder proc_id
-  >>= fun process ->
-  Log.(s "Started " % Display_markup.log (Process.markup process) %n
-       % s "stdout: " % quote (Process.stdout process) % n
-       % s "stderr: " % quote (Process.stderr process) % n
-       @ normal);
-  (*
-  (System.sleep 1.0 >>< fun _ -> return ()) >>= fun () ->
-  Log.(s "After 1 second " % Display_markup.log (Process.markup process) %n
-       % s "stdout: " % quote (Process.stdout process) % n
-       % s "stderr: " % quote (Process.stderr process) % n
-       @ normal);
-     *)
-  (* (System.sleep 1.0 >>< fun _ -> return ()) >>= fun () -> *)
-  let display_logs () =
-    IO.read_file json_log
-    >>= fun logs ->
-    let markup =
-      Yojson.Safe.from_string logs |> Display_markup.of_yojson 
-      |> function
-      | `Ok o -> o
-      | `Error e -> failwithf "parsing %s: %s" json_log e in
-    Log.(s "Logs: " % n % Display_markup.log markup @ normal);
-    return ()
+  let (t : Ssh_connection.t) =
+    let command =
+      let unique_blob = Unique_id.create () in
+      fmt "echo %s >> /tmp/hello" unique_blob in
+    Ssh_connection.create ~ketrew_bin:"./ketrew"  ~command
+      ssh_connection
   in
-  display_logs ()
+  Ssh_connection.markup_with_daemon_logs t
+  >>= fun full_markup ->
+  Log.(s "Just Started " % Display_markup.log full_markup
+       @ normal);
+  (System.sleep 1.0 >>< fun _ -> return ())
   >>= fun () ->
-  let read_fifo () =
-    wrap_deferred
-      ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
-          let open Lwt in
-          let open Lwt_unix in
-          Log.(s "opening " % quote fifo @ normal);
-          openfile fifo [O_RDONLY] 0o700 (* make the call blocking until somebody opens for writing *)
-          >>= fun fd ->
-          Log.(s "opened " % quote fifo @ normal);
-          let read_char fd =
-            let one = String.make 1 'B' in
-            read fd one 0 1
-            >>= function
-            | 0 -> return None
-            | 1 -> return (Some (String.get_exn one 0))
-            | more -> fail (Failure (fmt "read_char got %d bytes" more))
-          in
-          let rec read_all acc fd =
-            read_char fd
-            >>= function
-            | None -> return (List.rev acc)
-            | Some s -> read_all (s :: acc) fd
-          in
-          read_all [] fd
-          >>= fun l ->
-          close fd
-          >>= fun () ->
-          return (String.of_character_list l))
-    >>= fun content ->
-    Log.(s "Read fifo: " % quote fifo % s ": "
-         % quote content
-         @ normal);
-    return () in
-  let write_to_fifo content =
-    IO.with_out_channel (`Append_to_file fifo) ~f:(fun out ->
-        IO.write out content)
-  in
-  read_fifo ()
+  Ssh_connection.markup_with_daemon_logs t
+  >>= fun full_markup ->
+  Log.(s "After a second " % Display_markup.log full_markup
+       @ normal);
+  (System.sleep 1.0 >>< fun _ -> return ())
   >>= fun () ->
-  write_to_fifo "blablalablablabablablablablablaaaaa"
-  >>= fun () ->
-  read_fifo ()
-  >>= fun () ->
-  write_to_fifo ssh_password
+  Ssh_connection.write_to_fifo t "blablalablablabablablablablablaaaaa"
   >>= fun () ->
   (System.sleep 1.0 >>< fun _ -> return ())
   >>= fun () ->
-  display_logs ()
+  Ssh_connection.markup_with_daemon_logs t
+  >>= fun full_markup ->
+  Log.(s "After wrong password + 1s " % Display_markup.log full_markup
+       @ normal);
+  Ssh_connection.write_to_fifo t ssh_password
   >>= fun () ->
+  (System.sleep 1.0 >>< fun _ -> return ())
+  >>= fun () ->
+  Ssh_connection.markup_with_daemon_logs t
+  >>= fun full_markup ->
+  Log.(s "At the end " % Display_markup.log full_markup
+       @ normal);
   return ()
 
 let () =
+  global_debug_level := 2;
   Lwt_main.run begin
     match Sys.argv.(1) with
     | "ssh" -> test_ssh ()
