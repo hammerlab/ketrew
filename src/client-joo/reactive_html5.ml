@@ -1,4 +1,5 @@
-open Ketrew_pure.Internal_pervasives
+open Ketrew_pure
+open Internal_pervasives
 
 
 module H5 = struct

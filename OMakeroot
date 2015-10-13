@@ -29,7 +29,7 @@ else
     export
  
 PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp \
-   ppx_deriving_yojson ppx_deriving.show $(BISECT_PACKAGE)
+   ppx_deriving_yojson ppx_deriving.show $(BISECT_PACKAGE) react reactiveData
 
 LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_of_uri \
          pvem_lwt_unix cmdliner cohttp.lwt lwt ssl conduit dynlink findlib
