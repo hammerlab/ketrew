@@ -17,3 +17,10 @@ gen/
 /.omakedb.lock
 /OMakeroot.omc
 /tools/OMakeLibrary.omc
+/_integration_test/
+/ketrew-client-joo
+/ketrew-dummy-plugin-user
+/ketrew-preconfigured-test
+/ketrew-synth-workflows
+/ketrew-test-process-holding
+/ketrew-workflow-examples
