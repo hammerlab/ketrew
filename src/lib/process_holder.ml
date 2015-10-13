@@ -148,22 +148,24 @@ module Ssh_connection = struct
     fifo
 
 (*
-Overly complex work around OpenSSH TTY craziness.
+Overly complex work around OpenSSH's TTY craziness.
 
 In order to get the prompt for a password, on top the
 `DISPLAY` and `SSH_ASKPASS` environment variables we need to ensure
-we're detached from any terminal. `setsid` provides that, on OSX
+we're detached from any terminal. `setsid` provides that, but on OSX
 `setsid` is not provided as a command line tools, so we use OCaml's
 [`Unix.setsid`](http://caml.inria.fr/pub/docs/manual-ocaml/libref/Unix.html#VALsetsid).
 Which then requires a `fork` not to mess up with the current process.
 
 We need to comunicate with that process:
 
-- There is a FIFO file that is the implementation of the `SSH_ASKPASS`
-  program.
+- There are two FIFO files that are the I/O plumbing of the extremely
+  simple implementation of the `SSH_ASKPASS` program.
+
 
 *)
-  let setsid_ssh ?log_to ?pipe_in ?pipe_out ?command uri =
+  let setsid_ssh
+      ?session_id_file ?control_path ?log_to ?pipe_in ?pipe_out ?command uri =
     let ssh_connection, port_option =
       let uri = Uri.of_string uri in
       fmt "%s%s"
@@ -200,9 +202,10 @@ We need to comunicate with that process:
             ~f:(fun out -> IO.write out s) in
         log (fmt "Sesssion ID: %d\n" session_id)
         >>= fun () ->
-        log (fmt "Post Sesssion ID: %d\n" session_id)
-        >>= fun () ->
-        log (fmt "Post Post Sesssion ID: %d\n" session_id)
+        begin match session_id_file with
+        | None  -> return ()
+        | Some s -> IO.write_file s ~content:(fmt "%d\n" session_id)
+        end
         >>= fun () ->
         let session_log ?process status =
           Display_markup.(
@@ -236,8 +239,11 @@ We need to comunicate with that process:
                "unset SSH_AUTH_SOCK; \
                 DISPLAY=:0 SSH_ASKPASS=%s \
                 ssh %s -o StrictHostKeyChecking=no \
-                -o ChallengeResponseAuthentication=no %s %s"
-               temp_script port_option ssh_connection
+                -o ChallengeResponseAuthentication=no %s %s %s"
+               temp_script port_option
+               (Option.value_map ~default:"" control_path
+                  ~f:(fmt "-o ControlMaster=auto -o 'ControlPath=%s'"))
+               ssh_connection
                (Option.value_map ~default:"" command ~f:Filename.quote)
             ]
         in
@@ -321,6 +327,8 @@ We need to comunicate with that process:
     json_log: string;
     fifo_to_daemon: string;
     fifo_from_daemon: string;
+    session_id_file: string;
+    control_path: string;
     connection: string;
     command: string;
     process: Process.t;
@@ -332,6 +340,9 @@ We need to comunicate with that process:
     let fifo_to_daemon = make_pipe () in
     let fifo_from_daemon = make_pipe () in
     let fifo_questions = Reactive.Source.create [] in
+    let control_path = Filename.temp_file "ketrew-control-path" ".ssh" in
+    (try Unix.unlink control_path with _ -> ());
+    let session_id_file = Filename.temp_file "ketrew-ssh-session" ".int" in
     let rec read_fifo_over_and_over () =
       read_fifo fifo_from_daemon
       >>= fun content ->
@@ -346,12 +357,14 @@ We need to comunicate with that process:
         "--log-to"; json_log;
         "--fifo-in"; fifo_to_daemon;
         "--fifo-out"; fifo_from_daemon;
+        "--control-path"; control_path;
+        "--write-session-id"; session_id_file;
         "--to"; connection;
         "-c"; command;
       ] in
     let ssh =
-      {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
-       command; process; fifo_questions}
+      {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; control_path;
+       connection; command; process; session_id_file; fifo_questions}
     in
     ssh
 
@@ -364,6 +377,15 @@ We need to comunicate with that process:
       fail (`Failure (fmt "parsing %s: %s" t.json_log (Printexc.to_string e)))
     | `Error e -> fail (`Failure (fmt "parsing %s: %s" t.json_log e))
     end
+
+  let host_uri t =
+    let uri = Uri.of_string t.connection in
+    Uri.add_query_param uri
+      ("ssh-option", [
+          "-oControlMaster=auto";
+          fmt "-oControlPath=%s" t.control_path;
+        ])
+    |> Uri.to_string
 
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
@@ -405,6 +427,14 @@ We need to comunicate with that process:
     IO.with_out_channel (`Append_to_file t.fifo_to_daemon) ~f:(fun out ->
         IO.write out content)
 
+  let kill t =
+    IO.read_file t.session_id_file
+    >>| String.strip
+    >>= fun content ->
+    begin match Int.of_string content with
+    | Some i -> System.Shell.do_or_fail (fmt "kill -- -%d" i)
+    | None -> fail (`Failure (fmt "Session-ID not an integer: %S" content))
+    end
 
 
 end

@@ -886,9 +886,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun command pipe_in pipe_out log_to uri ->
+        pure (fun command pipe_in pipe_out log_to control_path session_id_file
+               uri ->
             Process_holder.Ssh_connection.setsid_ssh
-              ?log_to ?command ?pipe_in ?pipe_out uri
+              ?session_id_file ?log_to ?command ?pipe_in ?pipe_out
+              ?control_path uri
           )
         $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
                |> opt (some string) None
@@ -900,6 +902,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                |> opt (some string) None
                |> value)
         $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["control-path"] ~docv:"PATH" ~doc:"Set SSH ControlPath"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["write-session-id"] ~docv:"PATH"
+                 ~doc:"Write the session ID of the daemon to PATH"
                |> opt (some string) None
                |> value)
         $ Arg.(info ["to"] ~docv:"URI" ~doc:"The host in “URI form”"
