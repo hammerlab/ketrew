@@ -430,7 +430,7 @@ let apply_globals t =
   global_debug_level := t.debug_level;
   let color, host_timeout, cbreak =
     match t.mode with
-    | `Client {client_ui; connection} ->
+    | `Client {client_ui; connection; token} ->
       (client_ui.with_color, None, client_ui.with_cbreak)
     | `Standalone {standalone_ui; standalone_engine} ->
       (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound,

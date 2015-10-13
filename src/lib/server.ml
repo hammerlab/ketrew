@@ -142,7 +142,7 @@ module Server_state = struct
 
     let make_message t ~id ~index ~length : Protocol.Down_message.t =
       match Hashtbl.find t.table id with
-      | { content = List_of_ids l } ->
+      | { content = List_of_ids l; _ } ->
         `List_of_target_ids (List.take (List.drop l index) length)
       | exception _ ->
         `Missing_deferred
@@ -151,7 +151,7 @@ module Server_state = struct
       let now = Time.now () in
       let to_remove =
         Hashtbl.fold
-          (fun id {birthdate} prev  -> 
+          (fun id {birthdate; _} prev  -> 
              if birthdate +. 60. *. 60. *. 2. > now
              then id :: prev
              else prev)

@@ -37,7 +37,7 @@ LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_of_uri \
 JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml
 
 
-OCAMLFLAGS = -bin-annot -thread -short-paths -g -strict-formats -strict-sequence
+OCAMLFLAGS = -bin-annot -thread -short-paths -g -strict-formats -strict-sequence -w +9
 
 section # Pure library
     OCAMLPACKS[] = $(PURE_LIB_PACKAGES)

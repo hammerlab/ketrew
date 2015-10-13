@@ -389,16 +389,19 @@ We need to comunicate with that process:
 
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
+       session_id_file; control_path;
        command = the_command; process; fifo_questions} =
     let questions = Reactive.Source.value fifo_questions in
     Display_markup.(
       description_list [
-        "Ketrew-bin", text ketrew_bin;
-        "JSON-logfile", text json_log;
-        "FIFO-to-daemon", text fifo_to_daemon;
-        "FIFO-from-daemon", text fifo_from_daemon;
-        "Connection", text connection;
-        "Command", text the_command;
+        "Ketrew-bin", path ketrew_bin;
+        "JSON-logfile", path json_log;
+        "FIFO-to-daemon", path fifo_to_daemon;
+        "FIFO-from-daemon", path fifo_from_daemon;
+        "Connection", path connection;
+        "Command", command the_command;
+        "Sesssion-ID-File", path session_id_file;
+        "SSH-ControlPath", path control_path;
         "Fifo-questsions",
         description_list
           (("Length", textf "%d items" (List.length questions))

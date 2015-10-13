@@ -45,7 +45,7 @@ module Target_cache  = struct
       count "Query-results" t.backend_query_results; 
     ]
 
-  let _get_target_knowledge {targets} ~id =
+  let _get_target_knowledge {targets; _} ~id =
     try (Hashtbl.find targets id)
     with _ ->
       (* Log.(s "Target-cache: miss on " % s id @ verbose); *)
