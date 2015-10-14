@@ -610,11 +610,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & opt string Configuration.default_configuration_directory_path
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
-          $ Arg.(info ["use-database"] ~docv:"URI"
-                   ~doc:"Use the given URI for the database configuration \
-                         (the default being a Sqlite DB in the configuration \
-                         directory)."
-                 |> opt (some string) None |> value)
+          $ Arg.(
+              let doc =
+                fmt "Use the given URI for the database configuration \
+                     (the default being a Sqlite DB in the configuration \
+                     directory, available backends: %s)."
+                  (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
+              info ["use-database"] ~docv:"URI" ~doc
+              |> opt (some string) None |> value)
         ) in
   let start_gui =
     sub_command
@@ -888,10 +891,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term:(
         pure (fun command pipe_in pipe_out log_to control_path session_id_file
                uri ->
-            Process_holder.Ssh_connection.setsid_ssh
-              ?session_id_file ?log_to ?command ?pipe_in ?pipe_out
-              ?control_path uri
-          )
+               Process_holder.Ssh_connection.setsid_ssh
+                 ?session_id_file ?log_to ?command ?pipe_in ?pipe_out
+                 ?control_path uri
+             )
         $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
                |> opt (some string) None
                |> value)
