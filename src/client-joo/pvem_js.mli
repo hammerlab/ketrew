@@ -7,3 +7,5 @@ include Pvem.DEFERRED_RESULT
 val sleep : float -> (unit, [> `Exn of exn ]) t
 
 val pick_and_cancel: ('a, 'error) t list -> ('a, 'error) t
+
+val asynchronously: (unit -> (unit, unit) t) -> unit

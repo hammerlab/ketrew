@@ -7,3 +7,6 @@ let sleep f =
   end
 
 let pick_and_cancel l = Lwt.pick l
+
+let asynchronously (f: unit -> (unit, unit) t) =
+  Lwt.async f
