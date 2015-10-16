@@ -727,18 +727,13 @@ module Html = struct
     let display (date, status) =
       match status with
       | `Ok status ->
-        span ~a:[ a_class ["label"; "label-success"];
-                  a_title (fmt "OK (%s)"
-                             (status.Protocol.Server_status.time |> Time.to_filename));
-                ] [pcdata "✔"]
+        Bootstrap.icon_success
+          ~title:(fmt "OK (%s)"
+                    (status.Protocol.Server_status.time |> Time.to_filename))
       | `Unknown ->
-        span ~a:[ a_class ["label"; "label-warning"];
-                  a_title "Unknown";
-                ] [pcdata "?"]
+        Bootstrap.icon_unknown ~title:"Status Unknown"
       | `Problem problem ->
-        span ~a:[ a_class ["label"; "label-danger"];
-                  a_title (fmt "Problem: %s" problem);
-                ] [pcdata "✖"]
+        Bootstrap.icon_wrong ~title:(fmt "Problem: %s" problem)
     in
     Reactive_node.span
       Reactive.(

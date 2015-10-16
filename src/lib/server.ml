@@ -104,6 +104,7 @@ module Authentication = struct
       return (token_is_valid tok)
     | Some tok, `Kill_targets
     | Some tok, `Restart_targets
+    | Some tok, `Play_with_process_holder
     | Some tok, `Submit_targets ->
       return (not read_only_mode && token_is_valid tok)
     | None, _ -> return false
@@ -520,6 +521,12 @@ let answer_message ~server_state ?token msg =
       Deferred_queries.make_message server_state.deferred_queries
         ~id ~index ~length in
     return msg
+  | `Process p_msg ->
+    with_capability `Play_with_process_holder
+    >>= fun () ->
+    Process_holder.answer_message server_state.process_holder p_msg
+    >>= fun p_down ->
+    return (`Process p_down)
 
 let api_service ~server_state ~body req =
   get_post_body req ~body

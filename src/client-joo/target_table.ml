@@ -603,9 +603,10 @@ module Html = struct
           |> Signal.map ~f:(fun filter ->
               let status = Reactive.Source.create (`Ok filter) in
               let url_box = Reactive.Source.create None in
+              let module BOIG = Bootstrap.Input_group in
               div [
-                div ~a:[a_class ["input-group"]] [
-                  div ~a:[a_class ["input-group-addon"]] [
+                BOIG.make [
+                  BOIG.addon [
                     pcdata "Write your filtering query ";
                     local_anchor
                       ~on_click:(fun _ ->
@@ -623,72 +624,45 @@ module Html = struct
                       ];
                     pcdata ": ";
                   ];
-                  input () ~a:[
-                    a_class ["form-control"];
-                    a_input_type `Text;
-                    (* a_size 100; *)
-                    a_autocomplete `Off;
-                    a_value (Filter.to_lisp filter);
-                    a_oninput (fun ev ->
-                        Js.Opt.iter ev##.target (fun input ->
-                            Js.Opt.iter (Dom_html.CoerceTo.input input) (fun input ->
-                                let v = input##.value |> Js.to_string in
-                                Log.(s "input inputs: " % s v @ verbose);
-                                Reactive.Source.set status
-                                  (Filter.of_lisp v)
-                              );
-                          );
-                        false);
-                    a_onkeypress (fun ev ->
-                        Js.Optdef.case ev##.charCode
-                          (fun () -> true)
-                          (fun key_code ->
-                             (*
-                            Log.(s "keypress happens: " % i key_code % n
-                                 % s "altKey: " % (Js.to_bool ev##.altKey |> OCaml.bool) % n
-                                 % s "shiftKey: " % (Js.to_bool ev##.shiftKey |> OCaml.bool) % n
-                                 % s "ctrlKey: " % (Js.to_bool ev##.ctrlKey |> OCaml.bool) % n
-                                 % s "metaKey: " % (Js.to_bool ev##.metaKey |> OCaml.bool) % n
-                                 @ verbose);
-                                *)
-                             if key_code = 13 then (
-                               let open Reactive in
-                               match Source.value status with
-                               | `Ok v ->
-                                 Reactive.Source.set target_table.filter v;
-                                 false
-                               | `Error e ->
-                                 true
-                             ) else true
+                  BOIG.text_input `Text
+                    ~value:(Filter.to_lisp filter)
+                    ~on_input:(fun v ->
+                        Reactive.Source.set status (Filter.of_lisp v))
+                    ~on_keypress:(fun key_code ->
+                        if key_code = 13 then (
+                          let open Reactive in
+                          match Source.value status with
+                          | `Ok v -> Reactive.Source.set target_table.filter v
+                          | `Error e -> ()
+                        ));
+                  BOIG.button_group [
+                    Reactive_node.div
+                      Reactive.(
+                        Source.signal status
+                        |> Signal.map ~f:(function
+                          | `Ok v -> [
+                              Bootstrap.button
+                                ~enabled:(v <> filter)
+                                ~on_click:(fun _ ->
+                                    Reactive.Source.set
+                                      target_table.filter v;
+                                    false)
+                                [pcdata "Submit"];
+                              Bootstrap.button [pcdata "Save for later"]
+                                ~on_click:(fun _ ->
+                                    Reactive.Source.modify
+                                      target_table.saved_filters
+                                      (fun l -> v :: l);
+                                    false);
+                              Bootstrap.button [pcdata "Make URL"]
+                                ~on_click:(fun _ ->
+                                    Reactive.Source.set url_box (Some v);
+                                    false);
+                            ]
+                          | `Error e -> []
                           )
-                      )
+                        |> Signal.list)
                   ];
-                  Reactive_node.div ~a:[a_class ["input-group-btn"]]
-                    Reactive.(
-                      Source.signal status
-                      |> Signal.map ~f:(function
-                        | `Ok v -> [
-                            Bootstrap.button
-                              ~enabled:(v <> filter)
-                              ~on_click:(fun _ ->
-                                  Reactive.Source.set
-                                    target_table.filter v;
-                                  false)
-                              [pcdata "Submit"];
-                            Bootstrap.button [pcdata "Save for later"]
-                              ~on_click:(fun _ ->
-                                  Reactive.Source.modify
-                                    target_table.saved_filters
-                                    (fun l -> v :: l);
-                                  false);
-                            Bootstrap.button [pcdata "Make URL"]
-                              ~on_click:(fun _ ->
-                                  Reactive.Source.set url_box (Some v);
-                                  false);
-                          ]
-                        | `Error e -> []
-                        )
-                      |> Signal.list);
                 ];
                 Reactive_node.div Reactive.(
                     Source.signal status

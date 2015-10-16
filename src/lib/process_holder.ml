@@ -430,21 +430,41 @@ We need to comunicate with that process:
     IO.with_out_channel (`Append_to_file t.fifo_to_daemon) ~f:(fun out ->
         IO.write out content)
 
-  let kill t =
+  let session_pid t =
     IO.read_file t.session_id_file
     >>| String.strip
     >>= fun content ->
     begin match Int.of_string content with
-    | Some i -> System.Shell.do_or_fail (fmt "kill -- -%d" i)
+    | Some i -> return i
     | None -> fail (`Failure (fmt "Session-ID not an integer: %S" content))
+    end
+  let kill t =
+    session_pid t
+    >>= fun pid ->
+    System.Shell.do_or_fail (fmt "kill -- -%d" pid)
+
+  let session_status t =
+    session_pid t
+    >>= fun pid ->
+    System.Shell.execute (fmt "ps -g %d" pid)
+    >>= fun (_,_, process_status) ->
+    begin match process_status with
+    | `Exited 0 -> return `Alive
+    | `Signaled _
+    | `Stopped _ 
+    | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
     end
 
 
 end
 
 
+type active_process = [
+  | `Ssh_connection of Ssh_connection.t
+  | `Process of Process.t
+]
 type t = {
-  mutable active_processes: (string, Process.t) Hashtbl.t;
+  mutable active_processes: (string, active_process) Hashtbl.t;
 }
 
 let create () = {active_processes = Hashtbl.create 42}
@@ -453,14 +473,94 @@ let load () =
   let t = create () in
   return t
 
-let start t ?bin argl =
+let start_process t ?bin argl =
   let p = Process.start ?bin argl in
   let id = Process.id p in
-  Hashtbl.add t.active_processes id p;
+  Hashtbl.add t.active_processes id (`Process p);
   return id
+
+let start_ssh_connection t ?ketrew_bin ?command connection =
+  let s = Ssh_connection.create ?ketrew_bin ?command connection in
+  let id = Unique_id.create  () in
+  Hashtbl.add t.active_processes id (`Ssh_connection s);
+  return s
 
 let get t ~id =
   match Hashtbl.find t.active_processes id with
   | t -> return t
   | exception _ -> fail (`Missing_data id)
+        
+let get_ssh_connection t ~id =
+  get t ~id
+  >>= begin function
+  | `Ssh_connection ssh -> return ssh
+  | _ -> fail (`Not_an_ssh_connection id)
+  end
+
+let all_ssh_ids_and_names t =
+  Hashtbl.fold (fun id x prev_m ->
+      prev_m >>= fun prev ->
+      begin match x with
+      | `Ssh_connection ssh ->
+        Ssh_connection.session_status ssh
+        >>= fun status ->
+        let next =
+          {Protocol.Process_sub_protocol.Ssh_connection.
+            id; uri = Ssh_connection.host_uri ssh; status} :: prev in
+        return next
+      | `Process _ -> return prev
+      end
+    )
+    t.active_processes (return [])
+
+let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
+  begin match msg with
+  | `Start_ssh_connetion connection ->
+    start_ssh_connection t ~ketrew_bin:global_executable_path connection
+    >>= fun (_ : Ssh_connection.t) ->
+    return (`Ok)
+  | `Get_all_ssh_ids ->
+    all_ssh_ids_and_names t
+    >>= fun all ->
+    return (`List_of_ssh_ids all)
+  | `Get_logs (id, `Full) ->
+    get_ssh_connection t ~id
+    >>= fun ssh ->
+    Ssh_connection.markup_with_daemon_logs ssh
+    >>= fun markup ->
+    return (`Logs (id, Display_markup.serialize markup))
+  | `Send_ssh_input (id, content) ->
+    get_ssh_connection t ~id
+    >>= fun ssh ->
+    System.with_timeout 3.0 ~f:begin fun () ->
+      Ssh_connection.write_to_fifo ssh content
+    end
+    >>= fun () ->
+    return `Ok
+  | `Send_command (id, command) ->
+    get_ssh_connection t ~id
+    >>= fun ssh ->
+    return (`Error "not implemented")
+  | `Kill id ->
+    get_ssh_connection t ~id
+    >>= fun ssh ->
+    Ssh_connection.kill ssh
+    >>= fun () ->
+    return `Ok
+  end
+  >>< function
+  | `Ok msg -> return msg
+  | `Error e ->
+    let msg =
+      match e with
+      | `IO _ as e -> IO.error_to_string e
+      |  `Missing_data id -> fmt "cannot find process %S" id
+      | `System (`With_timeout  _, `Exn e) ->
+        fmt "timed-wait failed: %s" (Printexc.to_string e)
+      | `Timeout f -> fmt "Operation timeouted: %f s." f
+      | `Not_an_ssh_connection id -> fmt "not an SSH connection: %s" id
+      | `Failure s -> fmt "failure: %s" s
+      | `Shell _ as eshell -> Error.to_string eshell
+    in
+    return (`Error msg)
 

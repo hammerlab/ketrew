@@ -47,6 +47,33 @@ module Server_status : sig
     preemptive_queue:int -> libev:bool -> gc:Gc.stat -> t
 end
 
+module Process_sub_protocol : sig
+
+  type up = [
+    | `Start_ssh_connetion of string
+    | `Get_all_ssh_ids
+    | `Get_logs of string * [ `Full ]
+    | `Send_ssh_input of string * string
+    | `Send_command of string * string
+    | `Kill of string
+  ]
+  module Ssh_connection : sig
+    type status = [ `Alive | `Dead of string ]
+    type t = {
+      id: string;
+      uri: string;
+      status: status;
+    }
+  end
+  type down = [
+    | `List_of_ssh_ids of Ssh_connection.t list
+    | `Logs of string * string (* id × serialized markup *)
+    | `Error of string
+    | `Ok
+  ]
+
+end
+
 module Down_message : sig
 
   type t = [
@@ -63,6 +90,7 @@ module Down_message : sig
     | `Server_status of Server_status.t
     | `Ok
     | `Missing_deferred
+    | `Process of Process_sub_protocol.down
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
@@ -114,6 +142,7 @@ module Up_message : sig
     | `Get_target_ids of target_query * (query_option list)
     | `Get_server_status
     | `Get_deferred of string * int * int (* id × index × length *)
+    | `Process of Process_sub_protocol.up
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
