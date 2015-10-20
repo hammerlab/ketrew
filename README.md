@@ -1,8 +1,6 @@
 Ketrew: Keep Track of Experimental Workflows
 ============================================
 
-[![Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
-
 **Ketrew** is:
 
 - an OCaml library providing an EDSL API to define complex and convoluted
@@ -15,6 +13,11 @@ Ketrew can be a standalone application, or use a client-server architecture.
 This is the master branch of Ketrew.
 See also the documentation for the latest release: 
 [2.0.0](http://seb.mondet.org/software/ketrew/doc.2.0.0/index.html).
+
+If you have any question, you may submit an
+[issue](https://github.com/hammerlab/ketrew/issues), or join
+the authors on the public “Slack” channel of the Hammer Lab:
+[![Slack Status](http://publicslack.hammerlab.org/badge.svg)](http://publicslack.hammerlab.org)
 
 Build & Install
 ---------------
@@ -233,5 +236,9 @@ License
 
 It's [Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
+Badges
+------
+
+[![master Branch Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
 
 
