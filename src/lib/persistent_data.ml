@@ -25,6 +25,7 @@ open Unix_io
 include Logging.Global.Make_module_error_and_info(struct
     let module_name = "Persistence"
   end)
+open Logging.Global
 
 module Database = Trakeva_of_uri
 module Database_action = Trakeva.Action
@@ -74,6 +75,27 @@ module With_database = struct
     Database_action.(set ~collection:active_targets_collection ~key
                        Target.Stored_target.(of_target target |> serialize))
 
+  let iter_all_target_ids t =
+    database t
+    >>= fun db ->
+    let iterators =
+      List.map all_collections ~f:(fun collection ->
+          Database.iterator db ~collection) in
+    let iterators_to_go = ref iterators in
+    return (fun () ->
+        let rec get_next () =
+          begin match !iterators_to_go with
+          | [] -> return None
+          | current :: next ->
+            current ()
+            >>= begin function
+            | None -> iterators_to_go := next; get_next ()
+            | Some s -> return (Some s)
+            end
+          end
+        in
+        get_next ()
+      )
 
   let run_database_action ?(msg="NO INFO") t action =
     database t
@@ -117,7 +139,20 @@ module With_database = struct
       ~msg:(fmt "add_or_update_targets [%s]"
               (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
-  let update_target t trgt = add_or_update_targets t [trgt]
+  (* This will be called after an update and after afetching to
+     make sure it gets done even with crashes weirdly sync-ed DBs *)
+  let clean_if_finsihed t target =
+    begin match Target.(state target |> State.Is.finished) with
+    | true ->
+      log_info Log.(Target.log target % s " moves to the finsihed collection");
+      move_target_to_finished_collection t ~target
+    | false -> return ()
+    end
+
+  let update_target t trgt =
+    add_or_update_targets t [trgt]
+    >>= fun () ->
+    clean_if_finsihed t trgt
 
   let raw_add_or_update_stored_target t ~collection ~stored_target =
     let key = Target.Stored_target.id stored_target in
@@ -128,23 +163,39 @@ module With_database = struct
       ~msg:(fmt "raw_add_or_update_stored_target: %s" key)
 
   let get_stored_target t key =
-    database t >>= fun db ->
-    Database.get db ~collection:active_targets_collection ~key
-    >>= begin function
-    | Some serialized_stored ->
-      of_result (Target.Stored_target.deserialize serialized_stored)
-    | None ->
-      Database.get db ~collection:finished_targets_collection ~key
+    begin
+      database t >>= fun db ->
+      Database.get db ~collection:active_targets_collection ~key
       >>= begin function
       | Some serialized_stored ->
         of_result (Target.Stored_target.deserialize serialized_stored)
+        >>= fun st ->
+        (* It may happen that finished targets are in the active collection,
+           - the application may have been stopped between the
+             Finished save and the move to the finsihed collection
+           - the user may have played with `ketrew sync` and backup
+             directories
+           so when we come accross it, we clean up *)
+        begin match Target.Stored_target.get_target st with
+        | `Target target ->
+          clean_if_finsihed t target
+          >>= fun () ->
+          return st
+        | `Pointer _ -> return st
+        end
       | None ->
-        Database.get db ~collection:passive_targets_collection ~key
+        Database.get db ~collection:finished_targets_collection ~key
         >>= begin function
         | Some serialized_stored ->
           of_result (Target.Stored_target.deserialize serialized_stored)
         | None ->
-          fail (`Missing_data (fmt "get_stored_target %S" key))
+          Database.get db ~collection:passive_targets_collection ~key
+          >>= begin function
+          | Some serialized_stored ->
+            of_result (Target.Stored_target.deserialize serialized_stored)
+          | None ->
+            fail (`Missing_data (fmt "get_stored_target %S" key))
+          end
         end
       end
     end
@@ -162,30 +213,6 @@ module With_database = struct
       end
     in
     get_following_pointers ~key:id ~count:0
-
-  let fold_active_targets t ~init ~f =
-    database t
-    >>= fun db ->
-    let target_stream =
-      Database.iterator db ~collection:active_targets_collection in
-    let rec iter_stream previous =
-      target_stream ()
-      >>= begin function
-      | Some key ->
-        get_stored_target t key
-        >>| Target.Stored_target.get_target
-        >>= fun topt ->
-        begin match topt with
-        | `Pointer _ -> (* it's a pointer, keep going *) iter_stream previous
-        | `Target target ->
-          f previous ~target
-          >>= fun next ->
-          iter_stream next
-        end
-      | None -> return previous (* done with the stream *)
-      end
-    in
-    iter_stream init
 
   let get_collections_of_stored_targets t ~from =
     database t
@@ -248,6 +275,12 @@ module With_database = struct
           | `In_progress
           | `Activable -> Some target)
     in
+    Logger.(
+      description_list [
+        "function", text "With_database.alive_targets";
+        "result", textf "%d targets, %d after filter"
+          (List.length targets) (List.length filtered);
+      ] |> log);
     return filtered
 
   let all_targets t =
@@ -262,6 +295,12 @@ module With_database = struct
       passive_targets_collection;
       active_targets_collection;
       finished_targets_collection;
+    ]
+
+  let alive_stored_targets t =
+    get_collections_of_stored_targets t ~from:[
+      passive_targets_collection;
+      active_targets_collection;
     ]
     
 
@@ -448,16 +487,9 @@ module Cache_table = struct
     return ()
 
   let get t id =
-    try return (Hashtbl.find t id)
+    try return (Some (Hashtbl.find t id))
     with e ->
-      fail (`Missing_data (fmt "cache_table: %s" id))
-
-  let filter_map t ~f =
-    let red _ elt prev =
-      match f elt with
-      | Some x -> x :: prev
-      | None -> prev in
-    return (Hashtbl.fold red t []) 
+      return None
 
   let fold t ~init ~f =
     Hashtbl.fold (fun id elt previous -> f ~previous ~id elt) t init
@@ -471,10 +503,23 @@ type t = {
   cache: Target.Stored_target.t Cache_table.t
 }
 
+let log_info t fmt =
+  Printf.ksprintf (fun msg ->
+      Logger.(
+        description_list [
+          "Location", text "Persistent_data.t";
+          "Cache",
+          textf "%d targets"
+            (Cache_table.fold t.cache ~init:0
+               ~f:(fun ~previous ~id _ -> previous + 1));
+          "Info", text msg
+        ] |> log)
+    ) fmt
+
 let create ~database_parameters =
   With_database.create ~database_parameters
   >>= fun db ->
-  With_database.all_stored_targets db
+  With_database.alive_stored_targets db
   >>= fun all ->
   let cache = Cache_table.create () in
   List.fold ~init:(return ()) all  ~f:(fun prev_m st ->
@@ -482,16 +527,29 @@ let create ~database_parameters =
       let id = Target.Stored_target.id st in
       Cache_table.add_or_replace cache id st)
   >>= fun () ->
-  return {db; cache}
+  let t = {db; cache} in
+  log_info t "create %S" database_parameters;
+  return t
 
 let unload t =
+  log_info t "unloadingd";
   With_database.unload t.db
   >>= fun () ->
   Cache_table.reset t.cache
 
 let get_target t id =
   let rec get_following_pointers ~key ~count =
-    Cache_table.get t.cache key
+    begin
+      Cache_table.get t.cache key
+      >>= function
+      | Some stored -> return stored
+      | None ->
+        With_database.get_stored_target t.db id
+        >>= fun stored ->
+        Cache_table.add_or_replace t.cache key stored
+        >>= fun () ->
+        return stored
+    end
     >>= fun stored ->
     begin match Target.Stored_target.get_target stored with
     | `Pointer _ when count >= 30 ->
@@ -505,11 +563,25 @@ let get_target t id =
 
 
 let all_targets t =
-  Cache_table.filter_map t.cache
-    ~f:(fun trgt ->
-        match Target.Stored_target.get_target trgt with
-        | `Pointer _ -> None
-        | `Target t -> Some t)
+  With_database.iter_all_target_ids t.db
+  >>= fun iterator ->
+  let rec iterate acc =
+    iterator ()
+    >>= begin function
+    | None ->
+      log_info t "all_targets → %d targets" (List.length acc);
+      return acc
+    | Some id ->
+      With_database.get_stored_target t.db id
+      >>= fun stored ->
+      Cache_table.add_or_replace t.cache id stored
+      >>= fun () ->
+      begin match Target.Stored_target.get_target stored with
+      | `Pointer _ -> iterate acc
+      | `Target t -> iterate (t :: acc)
+      end
+    end in
+  iterate []
 
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason
@@ -529,9 +601,6 @@ let fold_active_targets t ~init ~f =
       | `Pointer _ | `Target _ -> return previous
     )
       
-let move_target_to_finished_collection t ~target =
-  With_database.move_target_to_finished_collection t.db ~target
-
 let update_target t trgt =
   With_database.update_target t.db trgt
   >>= fun () ->

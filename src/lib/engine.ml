@@ -28,7 +28,8 @@ type t = {
   configuration: Configuration.engine;
 }
 
-include Logging.Global.Make_module_error_and_info(struct
+open Logging.Global
+include Make_module_error_and_info(struct
     let module_name = "Engine"
   end)
 
@@ -125,6 +126,7 @@ module Run_automaton = struct
             return (dep, c)
           end
         | `Error (`Database _ as e)
+        | `Error (`Database_unavailable _ as e)
         | `Error (`Missing_data _ as e) ->
           (* Dependency not-found => should get out of the way *)
           log_error e 
@@ -280,46 +282,80 @@ module Run_automaton = struct
     - Process Archival to-do list (?)
     - Process to-add list
   *)
-    Persistent_data.fold_active_targets t.data ~init:[]
-      ~f:begin fun previous_happenings ~target ->
-        begin match Target.state target with
-        | s when Target.State.Is.finished s ->
-          Persistent_data.move_target_to_finished_collection t.data ~target
+    let concurrency_number =
+      Configuration.concurrent_automaton_steps t.configuration in
+    let step_target target :
+      (* This type annotation is for safety, we want to know if a
+         new kind of error appears here: *)
+      (Ketrew_pure.Target.Automaton.progress list,
+       [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+       | `Database_unavailable of string ]) Deferred_result.t =
+      begin match Target.state target with
+      | s when Target.State.Is.finished s ->
+        return []
+      | other ->
+        _process_automaton_transition t target
+        >>< function
+        | `Ok (new_target, progress) ->
+          Persistent_data.update_target t.data new_target
           >>= fun () ->
-          return [] (* moving to the finsihed-set is not a worthy “change” *)
-        | other ->
-          _process_automaton_transition t target
-          >>< function
-          | `Ok (new_target, progress) ->
-            Persistent_data.update_target t.data new_target
-            >>= fun () ->
-            log_info
-              Log.(s "Transition for target: "
-                   % Target.log target
-                   % s "Done: " % n
-                   % Target.(State.log ~depth:2 (state new_target)));
-            return (progress :: previous_happenings)
-          | `Error `Empty_should_not_exist ->
-            return []
-        end
+          log_info
+            Log.(s "Transition for target: "
+                 % Target.log target
+                 % s "Done: " % n
+                 % Target.(State.log ~depth:2 (state new_target)));
+          return [progress]
+        | `Error `Empty_should_not_exist ->
+          return []
+      end in
+    let concurrent_step targets =
+      Deferred_list.for_concurrent targets ~f:(fun target ->
+          step_target target)
+      >>= fun (happens, errors) ->
+      List.iteri errors ~f:(fun i e ->
+          log_error e (Log.sf "%dth failure of concurrent step (%d targets)"
+                         i concurrency_number));
+      return (List.concat happens)
+    in
+    Persistent_data.fold_active_targets t.data
+      ~init:(`Happenings [], `Targets [], `Count 0)
+      ~f:begin fun (`Happenings previous_happenings, `Targets targets, `Count count) ~target ->
+        if List.length targets < concurrency_number - 1 then
+          return (`Happenings previous_happenings, `Targets (target :: targets), `Count (count + 1))
+        else
+          concurrent_step (target :: targets)
+          >>= fun happens ->
+          return (`Happenings (happens @ previous_happenings), `Targets [], `Count (count + 1))
       end
-    >>| List.exists ~f:((=) `Changed_state)
-    >>= fun has_progressed ->
+    >>= fun (`Happenings hap, `Targets remmaining, `Count before_remaining) ->
+    concurrent_step remmaining
+    >>= fun more_hap ->
+    let has_progressed = List.exists ~f:((=) `Changed_state) (more_hap @ hap) in
     Persistent_data.Killing_targets.proceed_to_mass_killing t.data
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data
     >>= fun adding_did_something ->
-    log_info
-      Log.(s "Engine.step -> " % n
-           % s "has_progressed        → " % OCaml.bool has_progressed % n
-           % s "adding_did_something  → " % OCaml.bool adding_did_something % n
-           % s "killing_did_something → " % OCaml.bool killing_did_something);
+    Logger.(
+      let bool b = textf "%b" b in
+      description_list [
+        Typed_log.Item.Constants.word_module, text "Engine";
+        Typed_log.Item.Constants.word_info, textf "End of step";
+        "has_progressed", bool has_progressed;
+        "adding_did_something", bool adding_did_something;
+        "killing_did_something", bool killing_did_something;
+        "concurrent_automaton_steps", textf "%d" concurrency_number;
+        "Targets-visited",
+        textf "%d + %d" before_remaining (List.length remmaining);
+      ] |> log
+    );
     return (has_progressed || adding_did_something || killing_did_something)
 
   let fix_point state =
     let rec fix_point ~count =
       step state
       >>= fun progressed ->
+      (System.sleep 0.1 >>< fun _ -> return ())
+      >>= fun () ->
       let count = count + 1 in
       begin match progressed with
       | true -> fix_point ~count

@@ -59,6 +59,33 @@ module Server_status = struct
     }
 end
 
+module Process_sub_protocol = struct
+  type up = [
+    | `Start_ssh_connetion of string
+    | `Get_all_ssh_ids
+    | `Get_logs of string * [ `Full ]
+    | `Send_ssh_input of string * string
+    | `Send_command of string * string
+    | `Kill of string
+  ] [@@deriving yojson]
+
+  module Ssh_connection = struct
+    type status = [ `Alive | `Dead of string ] [@@deriving yojson]
+    type t = {
+      id: string;
+      uri: string;
+      status: status;
+    } [@@deriving yojson]
+  end
+  type down = [
+    | `List_of_ssh_ids of Ssh_connection.t list
+    | `Logs of string * string (* id × serialized markup *)
+    | `Error of string
+    | `Ok
+  ] [@@deriving yojson]
+
+end
+
 module Down_message = struct
   module V0 = struct
     type t = [
@@ -66,11 +93,14 @@ module Down_message = struct
       | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
       | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
       | `List_of_target_ids of string list
+      | `Deferred_list_of_target_ids of string * int (* id × total-length *)
       | `List_of_query_descriptions of (string * string) list
       | `Query_result of string
       | `Query_error of string
       | `Server_status of Server_status.t
       | `Ok
+      | `Missing_deferred
+      | `Process of Process_sub_protocol.down
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)
@@ -125,6 +155,8 @@ module Up_message = struct
       | `Restart_targets of string list (* List of Ids *)
       | `Get_target_ids of target_query * (query_option list)
       | `Get_server_status
+      | `Get_deferred of string * int * int (* id × index × length *)
+      | `Process of Process_sub_protocol.up
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)

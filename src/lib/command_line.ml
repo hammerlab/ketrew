@@ -342,7 +342,7 @@ let () =
   in
   IO.write_file ~content:config (config_path // "configuration.ml")
 
-let show_server_logs ~max_number server_config =
+let show_server_logs ~max_number ?(condition = `True) server_config =
   let ask_for_server_memory_logs format =
     begin match Configuration.command_pipe server_config with
     | Some pipe ->
@@ -444,25 +444,32 @@ let show_server_logs ~max_number server_config =
           | [] -> return count
           | _ when count > max_number -> return count
           | item :: more ->
+            let output typed_item =
+              Printf.printf "%s[%d]\n%s\n"
+                (String.make 72 '=') count
+                (Typed_log.Item.show typed_item);
+              go_through_list (count + 1) more
+            in
             begin match Typed_log.Item.of_yojson item  with
             | `Error err ->
               Log.(s "Error parsing JSON in " % quote file % s " → " % s err
                    @ warning);
               go_through_list count more
-            | `Ok typed_item ->
-              Printf.printf "%s\n%s\n" (String.make 80 '=')
-                (Typed_log.Item.show typed_item);
-              go_through_list (count + 1) more
+            | `Ok typed_item
+              when Typed_log.Item.Condition.eval typed_item condition ->
+              output typed_item
+            | `Ok typed_item -> go_through_list count more
             end
           in
-          go_through_list count l
+          (* Logging.Log_store writes in order, so we reverse: *)
+          go_through_list count (List.rev l)
         | _ ->
           fail (`Failure "JSON logs not a list")
         end
         >>= fun count ->
-        display (count + 1) files
+        display count files
     in
-    display 0
+    display 1
       (match from_memory with
       | None -> rev_sorted_dir
       | Some s -> s :: rev_sorted_dir)
@@ -500,7 +507,7 @@ let daemonize_if_applicable config =
           let file_name = path // "debug.txt" in
           let out =
             UnixLabels.(
-              openfile ~perm:0o600 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
+              openfile ~perm:0o700 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
               |> out_channel_of_descr)
           in
           global_with_color := false;
@@ -573,14 +580,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term:Term.(
           pure (fun cert_key self_tls debug_level tokens port
                  config_path use_database ->
-              let tls =
-                match cert_key with
-                | Some (cert, key) -> `Use (cert, key)
-                | None when self_tls -> `Create_self_signed
-                | _ -> `Don't
-              in
-              initialize_configuration
-                ?use_database ~tls ~port ~debug_level ~tokens config_path)
+                 let tls =
+                   match cert_key with
+                   | Some (cert, key) -> `Use (cert, key)
+                   | None when self_tls -> `Create_self_signed
+                   | _ -> `Don't
+                 in
+                 initialize_configuration
+                   ?use_database ~tls ~port ~debug_level ~tokens config_path)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
@@ -603,11 +610,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & opt string Configuration.default_configuration_directory_path
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
-          $ Arg.(info ["use-database"] ~docv:"URI"
-                   ~doc:"Use the given URI for the database configuration \
-                         (the default being a Sqlite DB in the configuration \
-                         directory)."
-                 |> opt (some string) None |> value)
+          $ Arg.(
+              let doc =
+                fmt "Use the given URI for the database configuration \
+                     (the default being a Sqlite DB in the configuration \
+                     directory, available backends: %s)."
+                  (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
+              info ["use-database"] ~docv:"URI" ~doc
+              |> opt (some string) None |> value)
         ) in
   let start_gui =
     sub_command
@@ -634,13 +644,34 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "logs" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"See the logs.")
       ~term: Term.(
-          pure (fun configuration max_number ->
+          pure (fun configuration field_equals has_fields max_number ->
+              let condition =
+                `Ignore_case (
+                  `And [
+                    `And (List.map has_fields ~f:(fun f -> `Has_field f));
+                    `And (List.map field_equals ~f:(fun p -> `Field_equals p));
+                  ]
+                ) in
               match Configuration.mode configuration  with
               | `Client _ | `Standalone _ ->
                 fail (`Failure "This is not a configured Ketrew server")
               | `Server s ->
-                show_server_logs ~max_number s)
+                show_server_logs ~max_number ~condition s)
           $ config_file_argument
+          $ Arg.(
+              info ["E"; "field-equals"]
+                ~docv:"FIELD,VALUE"
+                ~doc:"Filter the output for log-items that have the FIELD equal \
+                      to the VALUE"
+              |> opt_all (pair string string) []
+              |> value)
+          $ Arg.(
+              info ["F"; "has-field"]
+                ~docv:"FIELD"
+                ~doc:"Filter the output for log-items that have the FIELD \
+                      present"
+              |> opt_all string []
+              |> value)
           $ Arg.(value @@ opt int 4000
                  @@ info ["M"; "max-items"]
                    ~doc:"Set a maximum number of log items to display.")
@@ -854,6 +885,45 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
+  let internal_ssh_command =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun command pipe_in pipe_out log_to control_path session_id_file
+               uri ->
+               Process_holder.Ssh_connection.setsid_ssh
+                 ?session_id_file ?log_to ?command ?pipe_in ?pipe_out
+                 ?control_path uri
+             )
+        $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["pipe-in"; "fifo-in"] ~docv:"PATH" ~doc:"Use PATH to communicate"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["pipe-out"; "fifo-out"] ~docv:"PATH" ~doc:"Use PATH to communicate"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["control-path"] ~docv:"PATH" ~doc:"Set SSH ControlPath"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["write-session-id"] ~docv:"PATH"
+                 ~doc:"Write the session ID of the daemon to PATH"
+               |> opt (some string) None
+               |> value)
+        $ Arg.(info ["to"] ~docv:"URI" ~doc:"The host in “URI form”"
+               |> opt (some string) None
+               |> required)
+      )
+      ~info:(
+        info "internal-ssh" ~version ~sdocs:"COMMON OPTIONS"
+          ~doc:"Call ssh in the background and talk to it with a named-pipe \
+                (for internal use)"
+      )
+  in
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -883,6 +953,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
+      internal_ssh_command;
     ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f

@@ -91,6 +91,7 @@ val engine:
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?host_timeout_upper_bound: float ->
   ?maximum_successive_attempts: int ->
+  ?concurrent_automaton_steps: int ->
   unit -> engine
 (** Build an [engine] configuration:
 
@@ -107,6 +108,9 @@ val engine:
       will be “≤ upper-bound” (in seconds, default is [60.]).
     - [maximum_successive_attempts]: number of successive non-fatal
       failures allowed before declaring a target dead (default is [10]).
+    - [concurrent_automaton_steps]: maximum number of steps in the
+      state machine that engine will try to run concurrently (default
+      is [4]).
 *)
 
 type authorized_tokens 
@@ -246,6 +250,9 @@ val is_unix_ssh_failure_fatal: engine -> bool
 
 val maximum_successive_attempts: engine -> int
 (** Get the maximum number of successive non-fatal failures. *)
+  
+val concurrent_automaton_steps: engine -> int
+(** Get the maximum number of concurrent automaton steps. *)
   
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)

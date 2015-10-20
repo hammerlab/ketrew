@@ -132,7 +132,9 @@ let of_uri uri =
   let connection =
     Option.value_map ~default:`Localhost (Uri.host uri) ~f:(fun address ->
         let add_ssh_options =
-          Option.value ~default:[] (Uri.get_query_param' uri "ssh-option") in
+          Option.value ~default:[] (Uri.get_query_param' uri "ssh-option")
+          @ Option.value ~default:[] (Uri.get_query_param' uri "ssh-options")
+        in
         let user = Uri.userinfo uri in
         `Ssh {Ssh.address; port = Uri.port uri; user; add_ssh_options})
   in
@@ -164,16 +166,22 @@ let of_uri uri =
     (Uri.to_string uri)
 
 let to_uri t =
-  let scheme, host, port, userinfo =
+  let scheme, host, port, userinfo, add_ssh_options =
     match t.connection with
-    | `Ssh {Ssh.address; port; user;} -> Some "ssh", Some address, port, user
-    | `Localhost -> None, None, None, None
+    | `Ssh {Ssh.address; port; user; add_ssh_options} ->
+      Some "ssh", Some address, port, user, add_ssh_options
+    | `Localhost -> None, None, None, None, []
   in
   let query =
     let {binary; command_name; options; command_option} =
       t.default_shell in
     let shell_spec = [command_name] @ options @ [command_option] in
-    ["shell", [String.concat ~sep:"," shell_spec]]
+    "shell", [String.concat ~sep:"," shell_spec];
+    ::
+    begin match add_ssh_options with
+    | [] -> []
+    | more -> [ "ssh-options", more ]
+    end
   in
   Uri.make ?scheme ?userinfo ?host ?port 
     ?path:(Option.map ~f:Path.to_string t.playground)

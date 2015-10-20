@@ -32,6 +32,7 @@ type engine = {
   turn_unix_ssh_failure_into_target_failure: (bool [@default false]);
   host_timeout_upper_bound: (float option [@default None]);
   maximum_successive_attempts: (int [@default 10]);
+  concurrent_automaton_steps: (int [@default 4])
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -118,7 +119,8 @@ let log t =
          ]);
     ] in
   let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
-               host_timeout_upper_bound; maximum_successive_attempts } =
+               host_timeout_upper_bound; maximum_successive_attempts;
+               concurrent_automaton_steps} =
     sublist [
       item "Database" (quote database_parameters);
       item "Unix-failure"
@@ -128,6 +130,7 @@ let log t =
       item "Host-timeout-upper-bound"
         (option f host_timeout_upper_bound);
       item "Maximum-successive-attempts" (i maximum_successive_attempts);
+      item "Concurrent-automaton-steps" (i concurrent_automaton_steps);
     ] in
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
@@ -210,11 +213,13 @@ let engine
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?host_timeout_upper_bound
     ?(maximum_successive_attempts=10)
+    ?(concurrent_automaton_steps = 4)
     () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
   host_timeout_upper_bound;
   maximum_successive_attempts;
+  concurrent_automaton_steps;
 }
 let default_engine = engine ()
 
@@ -258,6 +263,7 @@ let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
+let concurrent_automaton_steps e = e.concurrent_automaton_steps
 let mode t = t.mode
 let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine
@@ -424,7 +430,7 @@ let apply_globals t =
   global_debug_level := t.debug_level;
   let color, host_timeout, cbreak =
     match t.mode with
-    | `Client {client_ui; connection} ->
+    | `Client {client_ui; connection; token} ->
       (client_ui.with_color, None, client_ui.with_cbreak)
     | `Standalone {standalone_ui; standalone_engine} ->
       (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound,

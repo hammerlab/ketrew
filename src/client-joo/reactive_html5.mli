@@ -26,6 +26,8 @@ module H5: sig
     signal:bool Reactive.Signal.t ->
     [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
 
+  val a_inline : unit -> [> `Style_Attr ] attrib
+
   module Bootstrap: sig
 
     val loader_gif : unit -> [> Html5_types.img ] elt
@@ -39,6 +41,22 @@ module H5: sig
       ?a:[< Html5_types.span_attrib > `Class ] attrib list_wrap ->
       [< Html5_types.span_content_fun ] elt list_wrap ->
       [> Html5_types.span ] elt
+    val label_success :
+      ?a:[< Html5_types.span_attrib > `Class ] attrib list_wrap ->
+      [< Html5_types.span_content_fun ] elt list_wrap ->
+      [> Html5_types.span ] elt
+    val label_danger :
+      ?a:[< Html5_types.span_attrib > `Class ] attrib list_wrap ->
+      [< Html5_types.span_content_fun ] elt list_wrap ->
+      [> Html5_types.span ] elt
+    val label_warning :
+      ?a:[< Html5_types.span_attrib > `Class ] attrib list_wrap ->
+      [< Html5_types.span_content_fun ] elt list_wrap ->
+      [> Html5_types.span ] elt
+
+    val icon_success: title: string -> [> Html5_types.span ] elt
+    val icon_unknown: title: string -> [> Html5_types.span ] elt
+    val icon_wrong: title: string -> [> Html5_types.span ] elt
 
 
     val north_east_arrow_label: unit -> [> Html5_types.span ] elt
@@ -109,7 +127,23 @@ module H5: sig
     ?first_line_limit:int ->
     Ketrew_pure.Internal_pervasives.String.t ->
     [> Html5_types.span ] Reactive_node.elt option * [> Html5_types.pre ] elt
-    
+
+  module Input_group : sig
+    type item
+    val make :
+      item list -> [> Html5_types.div ] elt
+
+    val addon:  [< Html5_types.div_content_fun ] elt list -> item
+    val button_group: [< Html5_types.div_content_fun ] elt list -> item
+    val text_input :
+      ?value: string ->
+      on_input:(string -> unit) ->
+      on_keypress:(int -> unit) ->
+      [`Text | `Password ] ->
+      item
+  end
+
+
   val success_box:
     [< Html5_types.div_content_fun ] elt list_wrap -> [> Html5_types.div ] elt
   val warning_box:

@@ -92,7 +92,7 @@ let markup {name; connection} =
     end; 
   ]
 
-let log {connection} =
+let log {connection; _} =
   Log.(braces
          (match connection with
          | JSONP url -> s "JSONP→" % s url

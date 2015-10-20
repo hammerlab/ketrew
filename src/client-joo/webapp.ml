@@ -1,4 +1,5 @@
-open Ketrew_pure.Internal_pervasives
+open Ketrew_pure
+open Internal_pervasives
 open Pvem_js
 open Reactive_html5
 

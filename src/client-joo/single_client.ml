@@ -17,12 +17,13 @@ module Tab = struct
   type t = [
     | `Status
     | `Target_table
+    | `Processes_ui
     | `Target_page of Target_page.t
   ]
   let is_target_page ~id =
     function
     | `Target_page t -> (String.compare (Target_page.target_id t) id = 0)
-    | `Status | `Target_table -> false
+    | `Status | `Target_table | `Processes_ui -> false
   let eq a b =
     match a, b with
     | `Target_page ta, `Target_page tb -> Target_page.eq ta tb
@@ -153,6 +154,8 @@ type t = {
   reload_status_condition: unit Lwt_condition.t;
   target_table: Target_table.t;
 
+  processes_ui : Processes_ui.t;
+
   error_log: Error_log.t;
 
   async_task_log: Async_task_log.t;
@@ -168,10 +171,12 @@ let create ~protocol_client () =
   let tabs =
     Reactive.Source.create
       ~eq:(fun la lb -> try List.for_all2 ~f:Tab.eq la lb with _ -> false)
-      [ `Status; `Target_table ] in
+      [ `Status; `Processes_ui; `Target_table ] in
+  let processes_ui = Processes_ui.create protocol_client in
   {
     protocol_client;
     target_cache = Target_cache.create ();
+    processes_ui;
     status;
     tabs;
     current_tab;
@@ -202,7 +207,8 @@ let interesting_target_ids t =
       (Source.signal t.tabs
        |> Signal.map ~f:(List.filter_map ~f:(function
          | `Target_page tp -> Some (Target_page.target_id tp)
-         | `Status -> None
+         | `Processes_ui
+         | `Status
          | `Target_table -> None)))
     |> Signal.map  ~f:(fun (from_table, from_pages) ->
         let with_deps id =
@@ -395,26 +401,36 @@ let start_list_of_ids_loop t =
                  ));
           ];
         ]);
-    Protocol_client.call ~timeout
-      t.protocol_client (`Get_target_ids (query, options))
-    >>= begin function
-    | `List_of_target_ids l ->
-      let server_time =
-        match snd Reactive.(Source.signal t.status |> Signal.value) with
-        | `Ok s -> Some s.Protocol.Server_status.time
-        | _ -> None
-      in
-      add_log Display_markup.(
-          concat [
-            textf "Got %d ids, server_time: " (List.length l);
-            option server_time date;
-          ]
-        );
-      Target_table.add_target_ids ?server_time t.target_table l;
-      return ()
-    | other ->
-      fail (`Wrong_down_message other)
-    end
+    let rec get_ids first_time message =
+      Protocol_client.call ~timeout t.protocol_client message
+      >>= begin function
+      | `List_of_target_ids l ->
+        let server_time =
+          match snd Reactive.(Source.signal t.status |> Signal.value) with
+          | `Ok s -> Some s.Protocol.Server_status.time
+          | _ -> None
+        in
+        add_log Display_markup.(
+            concat [
+              textf "Got %d ids, server_time: " (List.length l);
+              option server_time date;
+            ]
+          );
+        begin if first_time && not and_block then
+            Target_table.set_filter_results_number t.target_table (List.length l)
+        end;
+        Target_table.add_target_ids ?server_time t.target_table l;
+        return ()
+      | `Deferred_list_of_target_ids (answer_id, big) ->
+        begin if first_time && not and_block then
+            Target_table.set_filter_results_number t.target_table big;
+        end;
+        get_ids false (`Get_deferred (answer_id, 0, min 100 big))
+      | other ->
+        fail (`Wrong_down_message other)
+      end
+    in
+    get_ids true (`Get_target_ids (query, options))
   in
   let loop_handle =
     preemptible_asynchronous_loop t ~name:"List-of-IDS" ~body:(fun () ->
@@ -711,18 +727,13 @@ module Html = struct
     let display (date, status) =
       match status with
       | `Ok status ->
-        span ~a:[ a_class ["label"; "label-success"];
-                  a_title (fmt "OK (%s)"
-                             (status.Protocol.Server_status.time |> Time.to_filename));
-                ] [pcdata "✔"]
+        Bootstrap.icon_success
+          ~title:(fmt "OK (%s)"
+                    (status.Protocol.Server_status.time |> Time.to_filename))
       | `Unknown ->
-        span ~a:[ a_class ["label"; "label-warning"];
-                  a_title "Unknown";
-                ] [pcdata "?"]
+        Bootstrap.icon_unknown ~title:"Status Unknown"
       | `Problem problem ->
-        span ~a:[ a_class ["label"; "label-danger"];
-                  a_title (fmt "Problem: %s" problem);
-                ] [pcdata "✖"]
+        Bootstrap.icon_wrong ~title:(fmt "Problem: %s" problem)
     in
     Reactive_node.span
       Reactive.(
@@ -969,6 +980,13 @@ module Html = struct
                 )
               ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
               [pcdata "Status"]
+          | `Processes_ui ->
+            Bootstrap.tab_item
+              ~active:Reactive.(
+                  Source.signal current_tab
+                  |> Signal.map ~f:(function `Processes_ui -> true | _ -> false))
+              ~on_click:(fun _ -> Reactive.Source.set current_tab `Processes_ui; false)
+              [Processes_ui.Html.title client.processes_ui]
           | `Target_page tp ->
             let id = Target_page.target_id tp in
             Bootstrap.tab_item
@@ -1037,6 +1055,8 @@ module Html = struct
                                 Target_cache.get_target_flat_status_signal
                                   client.target_cache ~id)
                         | `Status -> status client
+                        | `Processes_ui ->
+                          Processes_ui.Html.render client.processes_ui
                         | `Target_page tp -> Target_page.Html.render tp)
                       |> Signal.singleton)
         );

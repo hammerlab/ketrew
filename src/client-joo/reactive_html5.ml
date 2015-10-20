@@ -1,4 +1,5 @@
-open Ketrew_pure.Internal_pervasives
+open Ketrew_pure
+open Internal_pervasives
 
 
 module H5 = struct
@@ -17,6 +18,9 @@ module H5 = struct
       ]
       @ a)
       content
+
+  let a_inline () =
+    a_style "display: inline"
 
   let hide_show_div ?(a=[]) ~signal content =
     div ~a:[
@@ -47,8 +51,19 @@ module H5 = struct
         a_class ["label"; "label-default"];
       ] [pcdata "🔧"]
 
-    let label_default ?(a=[]) c =
-      span ~a:(a_class ["label"; "label-default"] :: a) c
+    let label ~kind ?(a=[]) c =
+      span ~a:(a_class ["label"; fmt "label-%s" kind] :: a) c
+
+    let label_default ?a c = label ~kind:"default" ?a c
+    let label_warning ?a c = label ~kind:"warning" ?a c
+    let label_success ?a c = label ~kind:"success" ?a c
+    let label_danger ?a c = label ~kind:"danger" ?a c
+
+    let icon_success ~title = label_success ~a:[a_title title] [pcdata "✔"]
+    let icon_unknown ~title = label_warning ~a:[a_title title] [pcdata "?"]
+    let icon_wrong ~title = label_danger ~a:[a_title title] [pcdata "✖"]
+
+    
 
     let north_east_arrow_label () =
       label_default [pcdata "➚"]
@@ -239,6 +254,60 @@ module H5 = struct
          pre [
            Reactive_node.pcdata content_signal;
          ])
+
+    module Input_group = struct
+      type item =
+        | Addon:  [< Html5_types.div_content_fun ] elt list -> item
+        | Button_group: [< Html5_types.div_content_fun ] elt list -> item
+        | Text_input: [ `Text | `Password ] * string * (string -> unit) * (int -> unit) -> item
+
+      let addon l = Addon l
+      let button_group l = Button_group l
+      let text_input ?(value = "") ~on_input ~on_keypress input_type =
+        Text_input (input_type, value, on_input, on_keypress)
+
+      let make items =
+        List.map items ~f:(function
+          | Addon l ->
+            div ~a:[a_class ["input-group-addon"]] l
+          | Button_group l ->
+            div ~a:[a_class ["input-group-btn"]] l
+          | Text_input (input_type, value, on_input, on_keypress) ->
+            input () ~a:[
+              a_class ["form-control"];
+              a_input_type input_type;
+              (* a_size 100; *)
+              a_autocomplete `Off;
+              a_value value;
+              a_oninput (fun ev ->
+                  Js.Opt.iter ev##.target (fun input ->
+                      Js.Opt.iter (Dom_html.CoerceTo.input input) (fun input ->
+                          let v = input##.value |> Js.to_string in
+                          Log.(s "input inputs: " % s v @ verbose);
+                          on_input v;
+                        );
+                    );
+                  false);
+              a_onkeypress (fun ev ->
+                  Js.Optdef.case ev##.charCode
+                    (fun () -> true)
+                    (fun key_code ->
+                             (*
+                            Log.(s "keypress happens: " % i key_code % n
+                                 % s "altKey: " % (Js.to_bool ev##.altKey |> OCaml.bool) % n
+                                 % s "shiftKey: " % (Js.to_bool ev##.shiftKey |> OCaml.bool) % n
+                                 % s "ctrlKey: " % (Js.to_bool ev##.ctrlKey |> OCaml.bool) % n
+                                 % s "metaKey: " % (Js.to_bool ev##.metaKey |> OCaml.bool) % n
+                                 @ verbose);
+                                *)
+                       on_keypress key_code;
+                       true
+                    )
+                )
+            ]
+          )
+        |> div ~a:[a_class ["input-group"]]
+    end
 
     let error_box content =
       div ~a:[
@@ -438,5 +507,5 @@ module H5 = struct
   end
 
 
-  
+
 end

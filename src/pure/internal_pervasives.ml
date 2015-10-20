@@ -22,6 +22,7 @@
 
 module Result = Pvem.Result
 module String = struct
+  let legacy_lowercase = String.lowercase
   include Sosa.Native_string
 end
 
@@ -47,6 +48,21 @@ let sprintf = `No
 
 let fmt = Printf.sprintf
 (** The only function dealing with “formats.” *)
+
+let global_executable_path =
+  begin match Filename.is_relative Sys.executable_name with
+  | false -> Sys.executable_name
+  | true -> Filename.concat (Sys.getcwd ()) Sys.executable_name
+  end
+(** Full path to the executable that is running (makes no sense in the
+    javascript backend).
+
+    This will be executed before the server has the chance to
+    daemonize (and hence change the current directory).
+    
+    When called from a shell that uses ["$PATH"],
+    [Sys.executable_name] should absolute.
+*)
 
 let global_debug_level = ref 0
 (** Global reference. *)
@@ -248,16 +264,66 @@ module Typed_log = struct
     let show {date; content} =
       fmt "[%s]\n%s" (Time.show date) (show_content content)
 
+    module Constants = struct
+      let word_error = "Error"
+      let word_info = "Info"
+      let word_module = "Module"
+    end
+
     module Construct = struct
       let now content = {date = Time.now (); content }
       let info s = now (Display_markup.text s)
       let error e s =
         let open Display_markup in
         description_list [
-          "Error", text e;
-          "Info", text s;
+          Constants.word_error, text e;
+          Constants.word_info, text s;
         ]
         |> now
+    end
+
+    module Condition = struct
+      type t = [
+        | `Field_equals of string * string
+        | `Has_field of string
+        | `True
+        | `False
+        | `And of t list
+        | `Or of t list
+        | `Ignore_case of t
+      ]
+      let rec eval ?(ignore_case = false) t =
+        let continue c = eval ~ignore_case t c in
+        let string_eq a b =
+          if ignore_case then
+            String.legacy_lowercase a = String.legacy_lowercase b
+          else
+            a = b in
+        function
+        | `True -> true
+        | `False -> false
+        | `And al -> List.for_all al ~f:continue
+        | `Or ol -> List.exists ol ~f:continue
+        | `Ignore_case c -> eval ~ignore_case:true t c
+        | `Has_field f ->
+          let open Display_markup in
+          begin match t.content with
+          | Itemize l ->
+            List.exists l ~f:(function
+              | Description (field_v, _) -> string_eq field_v f
+              |  _ -> false)
+          | _ -> false
+          end
+        | `Field_equals (field, value) ->
+          let open Display_markup in
+          begin match t.content with
+          | Itemize l ->
+            List.exists l ~f:(function
+              | Description (field_v, Text value_v) ->
+                string_eq field_v field && string_eq value_v value 
+              |  _ -> false)
+          | _ -> false
+          end
     end
   end
 end
