@@ -21,7 +21,7 @@ else
 
 if $(test $(getenv WITH_BISECT, "") = true)
     echo "Using Bisect"
-    BISECT_PACKAGE= bisect_ppx
+    BISECT_PACKAGE= bisect_ppx.fast
     export
 else
     echo "Not using Bisect: " $(getenv WITH_BISECT, "")
@@ -133,10 +133,10 @@ _report_dir:
 
 bisect-report: _report_dir
     bisect-ppx-report -I _build/src/pure/ -I _build/src/lib/ \
-                        -I _build/src/app/ -I _build/src/test/  \
-                        -I _build/ketrew-dummy-plugin-user \
-                        -I _build/ketrew-integration-test \
-                        -I _build/ketrew-test \
-                        -I _build/ketrew-workflow-examples \
-                        -verbose  -html _report_dir  bisect*.out
+                      -I _build/src/app/ -I _build/src/test/  \
+                      -I _build/ketrew-dummy-plugin-user \
+                      -I _build/ketrew-integration-test \
+                      -I _build/ketrew-test \
+                      -I _build/ketrew-workflow-examples \
+                      -verbose -html _report_dir  bisect*.out
     
