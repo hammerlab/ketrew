@@ -77,13 +77,11 @@ Getting Started
 ---------------
 
 Ketrew is very flexible and hence may seem difficult to understand, let's get a
-very minimalistic workflow running.
+minimal workflow running.
 
-Before you can use Ketrew, you need to configure it. 
+Before you can use Ketrew, you need to configure it, the simplest way:
 
-    
-    # The simplest way
-    $ ketrew init
+    $ ketrew init --with-token my-not-so-secret-token
 
 By default this will configure Ketrew in
 
@@ -93,10 +91,10 @@ By default this will configure Ketrew in
 You can check that the client or the server are configured. The client is returned by default:
 
     $ ketrew print-configuration
-    [ketrew] 
+    [ketrew]
         Mode: Client
         Connection: "http://127.0.0.1:8756"
-        Auth-token: "TODO:set-tokens"
+        Auth-token: "my-not-so-secret-token"
         UI:
             Colors: with colors
             Get-key: uses `cbreak`
@@ -107,17 +105,18 @@ You can check that the client or the server are configured. The client is return
         Misc:
             Debug-level: 0
             Plugins: None
-    
+
 For the server:
- 
+
     $ ketrew print-configuration -P server
-    [ketrew] 
+    [ketrew]
         Mode: Server
         Engine:
-            Database: "/full-path-to-home/.ketrew/database"
+            Database: "/path-to-home/.ketrew/database"
             Unix-failure: does not turn into target failure
             Host-timeout-upper-bound:
             Maximum-successive-attempts: 10
+            Concurrent-automaton-steps: 4
         UI:
             Colors: with colors
             Get-key: uses `cbreak`
@@ -127,10 +126,11 @@ For the server:
                 Targets-to-prefectch: 6
         HTTP-server:
             Authorized tokens:
-                Path: "/full-path-to-home/.ketrew/authorized_tokens"
+                Inline (Name: my-not-so-secret-token, Value: "my-not-so-secret-token")
+                Path: "/path-to-home/.ketrew/authorized_tokens"
             Daemonize: false
-            Command Pipe: Some "/full-path-to-home.ketrew/command.pipe"
-            Log-path: Some "/full-path-to-home/.ketrew/server-log"
+            Command Pipe: Some "/path-to-home/.ketrew/command.pipe"
+            Log-path: Some "/path-to-home/.ketrew/server-log"
             Return-error-messages: true
             Max-blocking-time: 300.
             Block-step-time: 3.
@@ -140,7 +140,9 @@ For the server:
             Plugins: None
 
 Note that `-P` is the shorter argument form for `--configuration_profile`.
-Furthermore `daemon` is a shortcut for starting the `server` in [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may now start a server:
+Furthermore `daemon` is a shortcut for starting the `server` in
+[daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
+now start a server:
 
     $ ketrew start-server -P daemon
 
@@ -148,18 +150,19 @@ Let's open the GUI:
 
     $ ketrew gui
 
-which is just trying to load
-<http://127.0.0.1:8756/gui?token=TODO:set-tokens> ☺. So lets configure a
+Which should open your browser.
 
-You can always stop the server or check its status:
+<div><img width="100%" src="Ketrew_gui_1.png"/></div>
 
-    ketrew stop -P daemon
-    ketrew status -P daemon
+You can always check the server's status:
+
+    $ ketrew status -P daemon
+    [ketrew] The server appears to be doing well.
 
 The `ketrew submit` sub-command can create tiny workflows:
 
     ketrew submit --wet-run --tag 1st-workflow --tag command-line --daemonize /tmp/KT,"du -sh $HOME"
-    
+
 The job will appear on the WebUI and you can inspect/restart/kill it.
 
 <div>
@@ -167,9 +170,24 @@ The job will appear on the WebUI and you can inspect/restart/kill it.
   src="https://cloud.githubusercontent.com/assets/617111/9421006/17bceb36-483a-11e5-8845-bb2234697a14.gif">
 </div>
 
+
 If you don't like Web UI's you can use the text-based UI:
 
-    ketrew interact
+    $ ketrew interact
+    [ketrew]
+        Main menu
+        Press a single key:
+        * [q]: Quit
+        * [v]: Toggle verbose
+        * [s]: Display current status
+        * [l]: Loop displaying the status
+        * [k]: Kill targets
+        * [e]: The Target Explorer™
+
+Finally to stop the server:
+
+    $ ketrew stop -P daemon
+    [ketrew] Server killed.
 
 
 The EDSL: Defining Workflows
@@ -275,7 +293,7 @@ Troubleshooting
 --------------------------------------------
 TODO: move this section
   - in a client/server mode
-  - **not** using TLS on port `8756` 
+  - **not** using TLS on port `8756`
   - with a local Sqlite database (use the option `--use-database URI` to choose another
 [database backend](src/doc/Database_Backends.md)).
 See `ketrew init --help` for more
