@@ -337,6 +337,7 @@ let () =
     profile "server" (create ~debug_level (server ~daemon:false));
     profile "daemon" (create ~debug_level (server ~daemon:true));
     profile "default" (create ~debug_level client);
+    profile "client" (create ~debug_level client);
   ]
 |ocaml}
   in
