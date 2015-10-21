@@ -11,7 +11,7 @@ and keeping track everything that succeeds, fails, or gets lost.
 Ketrew can be a standalone application, or use a client-server architecture.
 
 This is the master branch of Ketrew.
-See also the documentation for the latest release: 
+See also the documentation for the latest release:
 [2.0.0](http://seb.mondet.org/software/ketrew/doc.2.0.0/index.html).
 
 If you have any question, you may submit an
@@ -27,8 +27,9 @@ any Unix platform.
 
 ### From Opam
 
-If you have `opam` [up and running](http://opam.ocaml.org/doc/Install.html),
-just install Ketrew:
+If you have [opam](http://opam.ocaml.org/) up and running, just install Ketrew
+while choose a database backend (you may pick both and choose later in the
+config-file):
 
     opam install  (sqlite | postgresql) [ssl | tls]  ketrew
 
@@ -38,24 +39,38 @@ just install Ketrew:
   with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
   `tls`, *experimental*).
 
-This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
-libraries.
+This gets you the
 
-Then, at runtime, you need the `ssh` client in the `$PATH`.
+  - `ketrew` executable that can be used to schedule and run workflows.
+  - [ketrew_pure](http://seb.mondet.org/software/ketrew/api/Ketrew_pure.html)
+    library, that represents the [stateless]
+    (https://en.wikipedia.org/wiki/Side_effect_%28computer_science%29)
+    part of describing workflows.
+  - [ketrew](http://seb.mondet.org/software/ketrew/api/Ketrew.html) library,
+    that handles the messy orchestration of those tasks and, significantly,
+    has the [EDSL](http://seb.mondet.org/software/ketrew/api/Ketrew.EDSL.html)
+    to write workflows.
 
-*Optional*: Ketrew, like any Lwt-based piece of software, will be much faster and
-scalable when `libev` is detected and used as a backend.
-Use `opam install conf-libev` to tell opam that `libev` is
+Remember that at runtime you'll need `ssh` in your `$PATH` to execute commands on
+foreign hosts.
+
+*Optional*: Ketrew, like any [Lwt](http://ocsigen.org/lwt/)-based piece of
+software, will be much faster and scalable when `libev` is detected and used
+as a backend. Use `opam install conf-libev` to tell opam that `libev` is
 [installed](http://opam.ocaml.org/packages/conf-libev/conf-libev.4-11/), which
-you can ensure with `brew install libev` on MacOSX, `apt-get install libev-dev`
-on Debian/Ubuntu, or `yum install libev-devel` on CentOS (which requires
-`export C_INCLUDE_PATH=/usr/include/libev/` and
-`export LIBRARY_PATH=/usr/lib64/` before `opam install conf-libev`).
+you can ensure with
+
+  - `brew install libev` on MacOSX
+  - `apt-get install libev-dev`on Debian/Ubuntu,
+  - `yum install libev-devel` on CentOS (which requires
+    `export C_INCLUDE_PATH=/usr/include/libev/` and `export LIBRARY_PATH=/usr/lib64/`
+
+before `opam install conf-libev`.
 
 ### Without Opam
 
 See the [development documentation](src/doc/Developer_Documentation.md) to find
-out how to build Ketrew (and its dependencies) from the sources.
+out how to build Ketrew (and its dependencies) from source.
 
 
 Getting Started
@@ -64,37 +79,77 @@ Getting Started
 Ketrew is very flexible and hence may seem difficult to understand, let's get a
 very minimalistic workflow running.
 
-The first time you use Ketrew, you need to configure it, simplest by calling
-`ketrew init`, and please choose an authentication token:
+Before you can use Ketrew, you need to configure it. 
 
-    rm -fr ~/.ketrew/ # if you had a previous configuration there
-    ketrew init --with-token my-not-so-secret-token
     
-by default this will configure Ketrew in `$HOME/.ketrew/` with a client/server
-mode **not** using TLS on port `8756` and with a local Sqlite database
-(use the option `--use-database URI` to choose another
-[database backend](src/doc/Database_Backends.md)).
-See `ketrew init --help` for more
-options, you can even ask it to generate self-signed TLS certificates.
-See also the [documentation](src/doc/The_Configuration_File.md)
-on the configuration file learn how to tweak it.
+    # The simplest way
+    $ ketrew init
 
-You can check that the client or the server are configured:
+By default this will configure Ketrew in
 
-    ketrew print-configuration
-    ketrew print-configuration --configuration-profile server
-    ketrew print-configuration -P daemon
+    $ ls $HOME/.ketrew/
+    authorized_tokens	configuration.ml
 
-You may then start a server:
+You can check that the client or the server are configured. The client is returned by default:
 
-    KETREW_PROFILE=daemon ketrew start-server
+    $ ketrew print-configuration
+    [ketrew] 
+        Mode: Client
+        Connection: "http://127.0.0.1:8756"
+        Auth-token: "TODO:set-tokens"
+        UI:
+            Colors: with colors
+            Get-key: uses `cbreak`
+            Explorer:
+                Default request: Targets younger than 1.5 days
+                Targets-per-page: 6
+                Targets-to-prefectch: 6
+        Misc:
+            Debug-level: 0
+            Plugins: None
+    
+For the server:
+ 
+    $ ketrew print-configuration -P server
+    [ketrew] 
+        Mode: Server
+        Engine:
+            Database: "/full-path-to-home/.ketrew/database"
+            Unix-failure: does not turn into target failure
+            Host-timeout-upper-bound:
+            Maximum-successive-attempts: 10
+        UI:
+            Colors: with colors
+            Get-key: uses `cbreak`
+            Explorer:
+                Default request: Targets younger than 1.5 days
+                Targets-per-page: 6
+                Targets-to-prefectch: 6
+        HTTP-server:
+            Authorized tokens:
+                Path: "/full-path-to-home/.ketrew/authorized_tokens"
+            Daemonize: false
+            Command Pipe: Some "/full-path-to-home.ketrew/command.pipe"
+            Log-path: Some "/full-path-to-home/.ketrew/server-log"
+            Return-error-messages: true
+            Max-blocking-time: 300.
+            Block-step-time: 3.
+            Listen: HTTP: 8756
+        Misc:
+            Debug-level: 0
+            Plugins: None
 
-and then open the GUI:
+Note that `-P` is the shorter argument form for `--configuration_profile`.
+Furthermore `daemon` is a shortcut for starting the `server` in [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may now start a server:
 
-    ketrew gui
+    $ ketrew start-server -P daemon
+
+Let's open the GUI:
+
+    $ ketrew gui
 
 which is just trying to load
-<http://127.0.0.1:8756/gui?token=my-not-so-secret-token> ☺
+<http://127.0.0.1:8756/gui?token=TODO:set-tokens> ☺. So lets configure a
 
 You can always stop the server or check its status:
 
@@ -204,6 +259,31 @@ put it in a file `my_second_workflow.ml`, and simply:
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
+
+Troubleshooting
+---------------
+
+- When reconfiguring `Ketrew` between versions it may be helpful to delete old configurations:
+
+        $ rm -fr $HOME/.ketrew/
+
+- During configuration you can optionally pass an authentication token:
+
+        $ ketrew init --with-token my-not-so-secret-token
+
+
+--------------------------------------------
+TODO: move this section
+  - in a client/server mode
+  - **not** using TLS on port `8756` 
+  - with a local Sqlite database (use the option `--use-database URI` to choose another
+[database backend](src/doc/Database_Backends.md)).
+See `ketrew init --help` for more
+options, you can even ask it to generate self-signed TLS certificates.
+See also the [documentation](src/doc/The_Configuration_File.md)
+on the configuration file learn how to tweak it.
+
+---------------------------------
 
 
 Where to Go Next
