@@ -60,12 +60,19 @@ module Server_status = struct
 end
 
 module Process_sub_protocol = struct
+  module Command = struct
+    type t = {
+      connection: string;
+      id: string;
+      command: string;
+    } [@@deriving yojson]
+  end
   type up = [
     | `Start_ssh_connetion of string
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
-    | `Send_command of string * string
+    | `Send_command of Command.t
     | `Kill of string
   ] [@@deriving yojson]
 
@@ -77,10 +84,18 @@ module Process_sub_protocol = struct
       status: status;
     } [@@deriving yojson]
   end
+  module Command_output = struct
+    type t = {
+      id: string;
+      stdout: string;
+      stderr: string;
+    } [@@deriving yojson]
+  end
   type down = [
     | `List_of_ssh_ids of Ssh_connection.t list
     | `Logs of string * string (* id × serialized markup *)
     | `Error of string
+    | `Command_output of Command_output.t
     | `Ok
   ] [@@deriving yojson]
 
