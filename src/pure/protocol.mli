@@ -49,12 +49,19 @@ end
 
 module Process_sub_protocol : sig
 
+  module Command : sig
+    type t = {
+      connection: string;
+      id: string;
+      command: string;
+    }
+  end
   type up = [
     | `Start_ssh_connetion of string
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
-    | `Send_command of string * string
+    | `Send_command of Command.t
     | `Kill of string
   ]
   module Ssh_connection : sig
@@ -65,10 +72,18 @@ module Process_sub_protocol : sig
       status: status;
     }
   end
+  module Command_output: sig
+    type t = {
+      id: string;
+      stdout: string;
+      stderr: string;
+    }
+  end
   type down = [
     | `List_of_ssh_ids of Ssh_connection.t list
     | `Logs of string * string (* id × serialized markup *)
     | `Error of string
+    | `Command_output of Command_output.t
     | `Ok
   ]
 

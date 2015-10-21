@@ -15,6 +15,8 @@ let rec log_deferred_status = function
   Log.(s "Error: " % Display_markup.log err)
 
 module Ssh_connection = Protocol.Process_sub_protocol.Ssh_connection
+module Ssh_command_output = Protocol.Process_sub_protocol.Command_output
+module Ssh_command = Protocol.Process_sub_protocol.Command
 
 type t = {
   client: Protocol_client.t;
@@ -22,14 +24,18 @@ type t = {
   ssh_connections_status: deferred_status Reactive.Source.t;
   logs_cache : (string, string option Reactive.Source.t) Hashtbl.t;
   logs_visibility: (string, bool Reactive.Source.t) Hashtbl.t;
+  ssh_commands: Ssh_command.t list Reactive.Source.t;
+  ssh_command_outputs: Ssh_command_output.t list Reactive.Source.t;
 }
 let create client =
   let ssh_connections = Reactive.Source.create [] in
+  let ssh_commands = Reactive.Source.create [] in
+  let ssh_command_outputs = Reactive.Source.create [] in
   let ssh_connections_status = Reactive.Source.create `Ok in
   let logs_cache = Hashtbl.create 42 in
   let logs_visibility = Hashtbl.create 42 in
   {client; ssh_connections; ssh_connections_status;
-   logs_cache; logs_visibility}
+   logs_cache; logs_visibility; ssh_commands; ssh_command_outputs}
 
 let logs_visibility t ~id =
   match Hashtbl.find t.logs_visibility id with
@@ -78,20 +84,20 @@ let send_process_messsage t msg =
       (`Error Display_markup.(
            description "Error talking to the server" (text err)));
     return () in
+  let ok () = Reactive.Source.set t.ssh_connections_status `Ok; return () in
   begin
     Protocol_client.call t.client msg
   end >>< begin function
   | `Ok (`Process (`List_of_ssh_ids l)) ->
     Reactive.Source.set t.ssh_connections l;
-    Reactive.Source.set t.ssh_connections_status `Ok;
-    return ()
+    ok ()
   | `Ok (`Process (`Logs (id, s))) ->
     Reactive.Source.set (current_logs t ~id) (Some s);
-    Reactive.Source.set t.ssh_connections_status `Ok;
-    return ()
-  | `Ok (`Process `Ok) ->
-    Reactive.Source.set t.ssh_connections_status `Ok;
-    return ()
+    ok ()
+  | `Ok (`Process `Ok) -> ok ()
+  | `Ok (`Process (`Command_output s)) ->
+    Reactive.Source.modify t.ssh_command_outputs (fun l -> s :: l);
+    ok ()
   | `Ok (`Process (`Error s)) -> error (fmt "Error: %s" s)
   | `Ok other -> error "Protocol error: Wrong down messsage"
   | `Error (`Protocol_client pc) ->
@@ -121,6 +127,16 @@ let send_input_to_askpass t ~id ~content =
   asynchronously (fun () ->
       send_process_messsage t (`Process (`Send_ssh_input (id, content)))
     )
+let send_command t ~id ~content =
+  let command =
+    {Protocol.Process_sub_protocol.Command.
+      id = Unique_id.create ();
+      command = content;
+      connection = id} in
+  Reactive.Source.modify t.ssh_commands (fun l -> command :: l);
+  asynchronously (fun () ->
+      send_process_messsage t (`Process (`Send_command command))
+    )
 
 let kill t ~id =
   asynchronously (fun () -> send_process_messsage t (`Process (`Kill id)))
@@ -137,7 +153,12 @@ module Html = struct
       | None -> s in
     span ~a:[ a_title s ] [pcdata actual_string]
 
-  module Send_input_to_askpass = struct
+  module Make_send_input_ui (Parameters : sig
+      val is_password_like: bool
+      val button_text : string
+      val input_question : string
+      val send_input : t -> id:string -> content:string -> unit
+    end) = struct
     type ui = {
       visibility:
         [`Hidden | `Visible of [ `Text | `Password ] ] Reactive.Source.t;
@@ -150,7 +171,11 @@ module Html = struct
       {visibility; content = ""; tab; id}
 
     let make_visible {visibility; _} =
-      Reactive.Source.set visibility (`Visible `Password)
+      Reactive.Source.set visibility
+        (if Parameters.is_password_like then
+           `Visible `Password
+         else
+           `Visible `Text)
 
     let state_signal {visibility; _} =
       Reactive.Source.signal visibility
@@ -160,7 +185,7 @@ module Html = struct
       Reactive_node.div ~a:[ a_inline () ] Reactive.(
           Source.map_signal ui.visibility ~f:(fun vis ->
               let enabled = vis = `Hidden in
-              Bootstrap.button [pcdata "Send Input to ASK-PASS"]
+              Bootstrap.button [pcdata Parameters.button_text]
                 ~enabled
                 ~on_click:(fun _ -> make_visible ui; false)
             )
@@ -176,7 +201,7 @@ module Html = struct
             | `Visible input_type ->
               Booig.make [
                 Booig.addon [
-                  pcdata "Enter your input (most likely a password/passphrase)";
+                  pcdata Parameters.input_question;
                 ];
                 Booig.text_input input_type
                   ~value:ui.content
@@ -184,12 +209,12 @@ module Html = struct
                   ~on_keypress:(function
                     | 13 ->
                       Log.(s "on_keypress → enter "  @ verbose);
-                      send_input_to_askpass ui.tab ~id:ui.id ~content:ui.content
+                      Parameters.send_input ui.tab ~id:ui.id ~content:ui.content
                     | other ->
                       Log.(s "on_keypress → " % i other  @ verbose));
                 Booig.button_group [
                   Bootstrap.button [pcdata "Go!"] ~on_click:(fun _ ->
-                      send_input_to_askpass ui.tab ~id:ui.id ~content:ui.content;
+                      Parameters.send_input ui.tab ~id:ui.id ~content:ui.content;
                       false);
                   begin match input_type with
                   | `Password ->
@@ -216,6 +241,24 @@ module Html = struct
         )
 
   end
+
+  module Send_input_to_askpass =
+    Make_send_input_ui(
+    struct
+      let is_password_like = true
+      let button_text = "Send Input to ASK-PASS"
+      let input_question =
+        "Enter your input (most likely a password/passphrase)"
+      let send_input = send_input_to_askpass
+    end)
+  module Send_command_ui =
+    Make_send_input_ui(
+    struct
+      let is_password_like = false
+      let button_text = "Run Shell Command on Host"
+      let input_question = "Enter your command"
+      let send_input = send_command
+    end)
 
   module Kill_ui = struct
 
@@ -260,9 +303,67 @@ module Html = struct
 
   end
 
+  let display_output_of_command ~stdout ~stderr =
+    let open H5 in
+    let standard_somthing ~std ~what =
+      let potential_button, content = Bootstrap.collapsable_pre std in
+      div [
+        strong [pcdata (fmt "Stdandard-%s" what)];
+        (match potential_button with
+        | None  -> span []
+        | Some b -> span [pcdata " "; b]);
+        content;
+      ] in
+    div [
+      standard_somthing ~std:stdout ~what:"output";
+      standard_somthing ~std:stderr ~what:"error";
+    ]
+
+
+
+  let display_commands t ~id =
+    let open H5 in
+    Reactive_node.div Reactive.(
+        Signal.tuple_2
+          (Source.signal t.ssh_commands)
+          (Source.signal t.ssh_command_outputs)
+        |> Signal.map ~f:(fun (commands, outputs) ->
+            match
+              List.filter commands
+                ~f:(fun c -> c.Ssh_command.connection = id) with
+            | [] -> div []
+            | more ->
+              div [
+                pcdata "Commands: ";
+                Bootstrap.collapsable_ul ~ul_kind:`None ~maximum_items:2 (
+                  List.map more ~f:(fun command ->
+                      let {Ssh_command. id; command; connection} = command in
+                      let output =
+                        List.find_map outputs ~f:(fun o ->
+                            let cid = id in
+                            let {Ssh_command_output. id; stderr; stdout} = o in
+                            if id = cid
+                            then Some (display_output_of_command ~stdout ~stderr)
+                            else None)
+                      in
+                      div [
+                        code [pcdata command];
+                        begin match output with
+                        | None  -> pcdata " => No output … yet"
+                        | Some c -> c
+                        end;
+                      ]
+                    )
+                );
+              ]
+          )
+        |> Signal.singleton
+      )
+
   let single_connection_reactive_div t ~uri ~id ~status =
     let open H5 in
     let send_input_to_askpass_ui = Send_input_to_askpass.create t ~id in
+    let send_command_ui = Send_command_ui.create t ~id in
     let kill_ui = Kill_ui.create ~id t in
     let hide_stuff () =
       Bootstrap.button [pcdata "Unexpand"]
@@ -309,8 +410,11 @@ module Html = struct
                 hide_stuff ();
                 reload ();
                 Send_input_to_askpass.button send_input_to_askpass_ui;
+                Send_command_ui.button send_command_ui;
                 Kill_ui.render kill_ui;
                 Send_input_to_askpass.render send_input_to_askpass_ui;
+                Send_command_ui.render send_command_ui;
+                display_commands t ~id;
                 Bootstrap.success_box [Markup.to_html m];
               ];
             ]

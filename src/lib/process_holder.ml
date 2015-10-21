@@ -387,6 +387,9 @@ We need to comunicate with that process:
         ])
     |> Uri.to_string
 
+  let as_host t =
+    host_uri t |> Host.of_string
+
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
        session_id_file; control_path;
@@ -537,10 +540,16 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
     end
     >>= fun () ->
     return `Ok
-  | `Send_command (id, command) ->
-    get_ssh_connection t ~id
+  | `Send_command 
+      { Protocol.Process_sub_protocol.Command.connection; id; command } ->
+    get_ssh_connection t ~id:connection
     >>= fun ssh ->
-    return (`Error "not implemented")
+    let host = Ssh_connection.as_host ssh in
+    Host_io.get_shell_command_output host command
+    >>= fun (stdout, stderr) ->
+    return (`Command_output {
+        Protocol.Process_sub_protocol.Command_output.id; stdout; stderr
+      })
   | `Kill id ->
     get_ssh_connection t ~id
     >>= fun ssh ->
@@ -560,6 +569,7 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
       | `Timeout f -> fmt "Operation timeouted: %f s." f
       | `Not_an_ssh_connection id -> fmt "not an SSH connection: %s" id
       | `Failure s -> fmt "failure: %s" s
+      | `Host _
       | `Shell _ as eshell -> Error.to_string eshell
     in
     return (`Error msg)
