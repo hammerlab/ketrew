@@ -503,7 +503,7 @@ let daemonize_if_applicable config =
         begin match log_path_opt with
         | None -> ()
         | Some path ->
-          begin try UnixLabels.mkdir ~perm:0o700 path; with _ -> () end;
+          Sys.command (fmt "mkdir -p %s" (Filename.quote path)) |> ignore;
           let file_name = path // "debug.txt" in
           let out =
             UnixLabels.(
