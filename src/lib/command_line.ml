@@ -559,7 +559,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
            ~doc:"Use $(docv) as configuration file (can be overriden also \
                  with `$KETREW_CONFIGURATION`)." )
   in
-  let to_profile_arg args =
+  let make_profile_arg args =
     let at, names = match args with
       | [] -> Arg.(pos 0 (some string) None), []
       | p  -> Arg.(opt (some string) None), p
@@ -569,7 +569,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
            ~doc:"Use the profile $(docv) within the configuration file \
                  (can be overriden also with `$KETREW_PROFILE`).")
   in
-  let to_cfg_file_arg profile_names =
+  let make_configuration_arg profile_names =
     Term.(
       pure (fun profile path_opt ->
           let how =
@@ -579,11 +579,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             | None, None -> `Guess
           in
           Configuration.load_exn ?profile how)
-      $ (to_profile_arg profile_names)
+      $ make_profile_arg profile_names
       $ configuration_file_arg)
   in
-  let config_file_argument = to_cfg_file_arg ["P"; "configuration-profile"] in
-  let config_file_with_pos_arg = to_cfg_file_arg [] in
+  let configuration_arg = make_configuration_arg ["P"; "configuration-profile"] in
   let init_cmd =
     sub_command
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
@@ -645,7 +644,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                 System.Shell.do_or_fail
                   (fmt "%s %s/gui?token=%s" open_cmd url token)
             )
-          $ config_file_argument
+          $ configuration_arg
           $ Arg.(value @@ opt string "open"
                  @@ info ["O"; "open-command"]
                    ~doc:"Command to use as browser.")
@@ -668,7 +667,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                 fail (`Failure "This is not a configured Ketrew server")
               | `Server s ->
                 show_server_logs ~max_number ~condition s)
-          $ config_file_argument
+          $ configuration_arg
           $ Arg.(
               info ["E"; "field-equals"]
                 ~docv:"FIELD,VALUE"
@@ -713,7 +712,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                        % sp % parens (s why) % s "." @ normal);
                   return ()
                 end)
-          $ config_file_argument
+          $ configuration_arg
           $ Arg.(value @@ flag
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
@@ -725,7 +724,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun configuration max_sleep how ->
             Client.as_client ~configuration
               ~f:(run_state ~max_sleep ~how))
-        $ config_file_argument
+        $ configuration_arg
         $ Arg.(value & opt float 60.
                & info ["max-sleep"] ~docv:"SECONDS"
                  ~doc:"Maximal sleep time between 2 steps (applies to `loop`)")
@@ -754,7 +753,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun configuration interactive ids ->
             Client.as_client ~configuration
               ~f:(kill ~interactive ids))
-        $ config_file_argument
+        $ configuration_arg
         $ interactive_flag "Go through running targets and kill them with 'y' \
                             or 'n'."
         $ Arg.(value @@ pos_all string [] @@
@@ -771,7 +770,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun configuration  ->
             Log.(Configuration.log configuration
                  @ normal); return ())
-        $ config_file_with_pos_arg)
+        $ make_configuration_arg [])
       ~info:(info "print-configuration" ~version
                ~doc:"Display current configuration." ~man:[])
   in
@@ -789,7 +788,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             return ()
           end
         end
-        $ config_file_argument
+        $ configuration_arg
         $ Arg.(info ["daemonize"] ~docv:"HOST,CMD"
                  ~doc:"Submit a daemonized command on a given HOST."
                |> opt (pair string string |> some) None
@@ -812,7 +811,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term:(
         pure (fun configuration ->
             Client.as_client ~configuration ~f:interact)
-        $ config_file_argument)
+        $ configuration_arg)
       ~info:(
         info "interact" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run the interactive menu." ~man:[])
@@ -825,7 +824,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             Client.as_client ~configuration
               ~f:Explorer.(fun ~client -> create ~client () |> explore)
           )
-        $ config_file_argument)
+        $ configuration_arg)
       ~info:(
         info "explore" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run the interactive Target Explorer." ~man:[])
@@ -846,7 +845,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               Server.start srv
             | other -> fail (`Failure "not a server")
           )
-        $ config_file_argument)
+        $ configuration_arg)
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Start the server." ~man:[])
@@ -866,7 +865,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               Log.(s "Write-operation timeout; the server must not be \
                       running, try sub-command `status`" @ warning);
               return ())
-        $ config_file_argument)
+        $ configuration_arg)
       ~info:(
         info "stop-server" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Stop the server." ~man:[])
