@@ -68,6 +68,12 @@ The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 and check-out `_doc/<branch>/index.html` (unless branch is `master`, then
 `_doc/index.html`).
 
+### Merlin
+
+Simply,
+
+    omake .merlin
+
 Tests
 -----
 
