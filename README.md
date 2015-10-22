@@ -35,7 +35,7 @@ just install Ketrew:
 - you need to choose a database backend `sqlite` or `postgresql`
   (you may install both and choose later in the config-file),
 - if you want Ketrew to use HTTPS you need to get it linked
-  with either OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
+  with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
   `tls`, *experimental*).
 
 This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
