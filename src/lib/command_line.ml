@@ -552,7 +552,24 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let version = Lazy.force Metadata.version in
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
-  let config_file_argument =
+  let configuration_file_arg =
+    Arg.(value & opt (some string) None
+         & info ["C"; "configuration-file"]
+           ~docs:common_options_section ~docv:"FILE"
+           ~doc:"Use $(docv) as configuration file (can be overriden also \
+                 with `$KETREW_CONFIGURATION`)." )
+  in
+  let to_profile_arg args =
+    let at, names = match args with
+      | [] -> Arg.(pos 0 (some string) None), []
+      | p  -> Arg.(opt (some string) None), p
+    in
+    Arg.(value & at & info names
+           ~docs:common_options_section ~docv:"NAME"
+           ~doc:"Use the profile $(docv) within the configuration file \
+                 (can be overriden also with `$KETREW_PROFILE`).")
+  in
+  let to_cfg_file_arg profile_names =
     Term.(
       pure (fun profile path_opt ->
           let how =
@@ -562,18 +579,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             | None, None -> `Guess
           in
           Configuration.load_exn ?profile how)
-      $ Arg.(value & opt (some string) None
-             & info ["P"; "configuration-profile"]
-               ~docs:common_options_section ~docv:"NAME"
-               ~doc:"Use the profile $(docv) within the configuration file \
-                     (can be overriden also with `$KETREW_PROFILE`).")
-      $ Arg.(value & opt (some string) None
-             & info ["C"; "configuration-file"]
-               ~docs:common_options_section ~docv:"FILE"
-               ~doc:"Use $(docv) as configuration file (can be overriden also \
-                     with `$KETREW_CONFIGURATION`)." )
-    )
+      $ (to_profile_arg profile_names)
+      $ configuration_file_arg)
   in
+  let config_file_argument = to_cfg_file_arg ["P"; "configuration-profile"] in
+  let config_file_with_pos_arg = to_cfg_file_arg [] in
   let init_cmd =
     sub_command
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
@@ -758,10 +768,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun configuration ->
+        pure (fun configuration  ->
             Log.(Configuration.log configuration
                  @ normal); return ())
-        $ config_file_argument)
+        $ config_file_with_pos_arg)
       ~info:(info "print-configuration" ~version
                ~doc:"Display current configuration." ~man:[])
   in
