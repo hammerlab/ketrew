@@ -247,9 +247,16 @@ let submit ?add_tags ~configuration ~wet_run what =
   end;
   return ()
 
-  
+let generate_token () =
+  let () = Random.self_init () in
+  List.init 64 ~f:(fun _ -> (Random.bits ()) land 255)
+  |> List.map ~f:char_of_int
+  |> String.of_character_list
+  |> B64.encode ~alphabet:B64.uri_safe_alphabet 
+
 let initialize_configuration
-    ?use_database ?(tokens=[]) ~tls ~port ~debug_level config_path =
+    ?use_database ~tokens ~tls ~port ~debug_level config_path =
+  let tokens = if tokens = [] then [generate_token ()] else tokens in
   System.ensure_directory_path config_path
   >>= fun () ->
   begin match tls with
@@ -601,7 +608,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
-                 |> value)
+                 |> value) 
           $ Arg.(info ["self-signed-tls"]
                    ~doc:"Configure the server to listen on HTTPS by \
                          generating a self-signed certificate/private-key pair"
@@ -627,7 +634,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                      directory, available backends: %s)."
                   (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
               info ["use-database"] ~docv:"URI" ~doc
-              |> opt (some string) None |> value)
+              |> opt (some string) None |> value) 
         ) in
   let start_gui =
     sub_command
