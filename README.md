@@ -27,15 +27,21 @@ any Unix platform.
 
 ### From Opam
 
-If you have `opam` up and running, just install Ketrew while choose a database
-backend (you may pick both and choose later in the config-file):
+If you have `opam` [up and running](http://opam.ocaml.org/doc/Install.html),
+just install Ketrew:
 
-    opam install  (sqlite | postgresql)  ketrew
+    opam install  (sqlite | postgresql) [ssl | tls]  ketrew
 
-Then you need at runtime `ssh` in the `$PATH`.
+- you need to choose a database backend `sqlite` or `postgresql`
+  (you may install both and choose later in the config-file),
+- if you want Ketrew to use HTTPS you need to get it linked
+  with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
+  `tls`, *experimental*).
 
 This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
 libraries.
+
+Then, at runtime, you need the `ssh` client in the `$PATH`.
 
 *Optional*: Ketrew, like any Lwt-based piece of software, will be much faster and
 scalable when `libev` is detected and used as a backend.
