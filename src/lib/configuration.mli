@@ -119,6 +119,9 @@ type authorized_tokens
 
     Tokens have a name and a value; the value is the one checked
     against the ["token"] argument of the HTTP queries.
+
+    A token's value must consist only of
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=".
  *)
 
 val authorized_token: name: string -> string -> authorized_tokens

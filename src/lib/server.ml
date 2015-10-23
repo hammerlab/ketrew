@@ -57,6 +57,13 @@ module Authentication = struct
       s "From paths: " % OCaml.list quote paths
       % s "; inline: " % OCaml.list string inlines)
 
+  let valid {value; _} =
+    let valid_chars = B64.uri_safe_alphabet ^ "=" in
+    let invalid_char = fun c -> not (String.exists valid_chars ((=) c)) in
+    match String.find ~f:invalid_char value with
+    | Some _ -> false
+    | None -> true
+
   let load_file file =
     Log.(s "Authentication: loading " % quote file @ verbose);
     IO.read_file file
@@ -68,7 +75,14 @@ module Authentication = struct
                 |> List.map ~f:(fun t -> String.strip ~on:`Both t)
                 |> List.filter ~f:(fun s -> s <> "") with
           | comment :: more when String.get comment ~index:1 = Some '#' -> None
-          | name :: value :: comments -> Some {name; value; comments}
+          | name :: value :: comments ->
+             let token =  {name; value; comments} in
+             begin match valid token with
+             | true -> Some token
+             | false ->  Log.(s "Invalid character(s) in token: " % OCaml.string value % s " in file "
+                              % OCaml.string file @ warning);
+                         None
+             end
           | [] -> None
           | other ->
             Log.(s "Ignoring line: " % OCaml.string line % s " of file "
@@ -86,7 +100,15 @@ module Authentication = struct
   let load meta_tokens =
     Deferred_list.while_sequential meta_tokens ~f:(function
       | `Path p -> load_file p
-      | `Inline (name, value) -> return [{name; value; comments = []}])
+      | `Inline (name, value) ->
+         let token = {name; value; comments = []} in
+         let tokens =
+           match valid token with
+           | true -> [token]
+           | false ->
+              Log.(s "Invalid character(s) in token: " % OCaml.string value @ warning);
+              [] in
+         return tokens)
     >>| List.concat
     >>= fun valid_tokens ->
     return {valid_tokens; authentication_input = meta_tokens}
