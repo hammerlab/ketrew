@@ -77,7 +77,10 @@ module Process_sub_protocol = struct
   ] [@@deriving yojson]
 
   module Ssh_connection = struct
-    type status = [ `Alive | `Dead of string ] [@@deriving yojson]
+    type status = [
+      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Dead of string
+    ] [@@deriving yojson]
     type t = {
       id: string;
       uri: string;

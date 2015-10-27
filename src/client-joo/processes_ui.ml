@@ -377,7 +377,9 @@ module Html = struct
             false) in
     let status_badge () =
       match status with
-      | `Alive -> Bootstrap.icon_success ~title:"Alive"
+      | `Alive `Idle -> Bootstrap.icon_success ~title:"Alive & Kicking"
+      | `Alive `Askpass_waiting_for_input ->
+        Bootstrap.icon_unknown ~title:"Alive but waiting for input"
       | `Dead s -> Bootstrap.icon_wrong ~title:(fmt "Dead: %s" s)
     in
     Reactive_node.div Reactive.(

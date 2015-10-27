@@ -65,7 +65,10 @@ module Process_sub_protocol : sig
     | `Kill of string
   ]
   module Ssh_connection : sig
-    type status = [ `Alive | `Dead of string ]
+    type status = [
+      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Dead of string
+    ]
     type t = {
       id: string;
       uri: string;

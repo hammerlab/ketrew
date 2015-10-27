@@ -332,6 +332,7 @@ We need to comunicate with that process:
     command: string;
     process: Process.t;
     fifo_questions: (Time.t * string) list Reactive.Source.t;
+    mutable fd_to_askpass: Lwt_unix.file_descr option;
   }
 
   let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") connection =
@@ -363,7 +364,8 @@ We need to comunicate with that process:
       ] in
     let ssh =
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; control_path;
-       connection; command; process; session_id_file; fifo_questions}
+       connection; command; process; session_id_file; fifo_questions;
+       fd_to_askpass = None}
     in
     ssh
 
@@ -392,7 +394,7 @@ We need to comunicate with that process:
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
        session_id_file; control_path;
-       command = the_command; process; fifo_questions} =
+       command = the_command; process; fifo_questions; fd_to_askpass} =
     let questions = Reactive.Source.value fifo_questions in
     Display_markup.(
       description_list [
@@ -428,9 +430,6 @@ We need to comunicate with that process:
       ]
     )
 
-  let write_to_fifo t content =
-    IO.with_out_channel (`Append_to_file t.fifo_to_daemon) ~f:(fun out ->
-        IO.write out content)
 
   let session_pid t =
     IO.read_file t.session_id_file
@@ -445,18 +444,54 @@ We need to comunicate with that process:
     >>= fun pid ->
     System.Shell.do_or_fail (fmt "kill -- -%d" pid)
 
-  let session_status t =
+  let file_descriptor_to_askpass t =
+    begin match t.fd_to_askpass with
+    | Some fd -> return fd
+    | None ->
+      wrap_deferred
+        ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
+            let open Lwt in
+            Lwt_unix.(openfile t.fifo_to_daemon
+                        [O_APPEND; O_NONBLOCK; O_WRONLY] 0o770)
+            >>= fun fd ->
+            t.fd_to_askpass <- Some fd;
+            return fd)
+    end
+
+  let can_write_to_fifo t =
+    file_descriptor_to_askpass t
+    >>< function
+    | `Ok fd -> return true
+    | `Error s ->
+      Log.(s "The fifo: " % quote t.fifo_to_daemon % s " is not writable"
+           @ verbose);
+      return false
+
+  let write_to_fifo t content =
+    file_descriptor_to_askpass t
+    >>= fun fd ->
+    wrap_deferred
+      ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
+          let open Lwt in
+          Lwt_unix.write_string fd content 0 (String.length content)
+          >>= fun (_ : int) ->
+          t.fd_to_askpass <- None;
+          Lwt_unix.close fd)
+
+  let get_status t =
     session_pid t
     >>= fun pid ->
     System.Shell.execute (fmt "ps -g %d" pid)
     >>= fun (_,_, process_status) ->
+    can_write_to_fifo t
+    >>= fun can_write ->
     begin match process_status with
-    | `Exited 0 -> return `Alive
+    | `Exited 0 ->
+      return (`Alive (if can_write then `Askpass_waiting_for_input else `Idle))
     | `Signaled _
     | `Stopped _ 
     | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
     end
-
 
 end
 
@@ -504,7 +539,7 @@ let all_ssh_ids_and_names t =
       prev_m >>= fun prev ->
       begin match x with
       | `Ssh_connection ssh ->
-        Ssh_connection.session_status ssh
+        Ssh_connection.get_status ssh
         >>= fun status ->
         let next =
           {Protocol.Process_sub_protocol.Ssh_connection.
