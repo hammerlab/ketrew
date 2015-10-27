@@ -118,28 +118,28 @@ module Authentication = struct
 
   let reload {authentication_input; _} = load authentication_input
 
-  let can t ~read_only_mode ?token do_stuff =
+  let able_to_do ~read_only_mode = function
+    | `Browse_gui
+    | `See_server_status
+    | `See_targets
+    | `Query_targets  -> true
+    | `Kill_targets
+    | `Restart_targets
+    | `Play_with_process_holder
+    | `Submit_targets -> not read_only_mode
+
+  let can t ~read_only_mode ?token stuff =
     let token_is_valid tok =
       List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
-    begin match token, do_stuff with
-    | Some tok, `Browse_gui
-    | Some tok, `See_server_status
-    | Some tok, `See_targets
-    | Some tok, `Query_targets ->
-      return (token_is_valid tok)
-    | Some tok, `Kill_targets
-    | Some tok, `Restart_targets
-    | Some tok, `Play_with_process_holder
-    | Some tok, `Submit_targets ->
-      return (not read_only_mode && token_is_valid tok)
-    | None, _ -> return false
-    end
+    let valid_token =
+      Option.value ~default:false (Option.map ~f:token_is_valid token) in
+    valid_token && able_to_do stuff ~read_only_mode
 
   let ensure_can t ~read_only_mode ?token do_stuff =
-    can t ?token do_stuff ~read_only_mode
-    >>= function
-    | true -> return ()
-    | false -> wrong_request "Authentication" "Insufficient credentials"
+    if can t ?token do_stuff ~read_only_mode then
+      return ()
+    else
+      wrong_request "Authentication" "Insufficient credentials"
 
 end (* Authentication *)
 
