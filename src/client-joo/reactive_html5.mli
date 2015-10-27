@@ -91,56 +91,56 @@ module H5: sig
         list ->
       [> Html5_types.div ] elt
 
-  val button_group :
-    ?justified:bool ->
-    [< Html5_types.div_content_fun ] elt list_wrap ->
-    [> Html5_types.div ] elt
+    val button_group :
+      ?justified:bool ->
+      [< Html5_types.div_content_fun ] elt list_wrap ->
+      [> Html5_types.div ] elt
 
-  val button :
-    ?on_click:Xml.mouse_event_handler ->
-    ?enabled:bool ->
-    [< Html5_types.button_content_fun ] elt list_wrap ->
-    [> Html5_types.div ] elt
+    val button :
+      ?on_click:Xml.mouse_event_handler ->
+      ?enabled:bool ->
+      [< Html5_types.button_content_fun ] elt list_wrap ->
+      [> Html5_types.div ] elt
 
-  val pagination :
-    [ `Disabled of Html5_types.flow5_without_interactive elt list_wrap
-     | `Enabled of
-         Xml.mouse_event_handler *
-         Html5_types.flow5_without_interactive elt list_wrap ]
-    list -> [> Html5_types.nav ] elt
+    val pagination :
+      [ `Disabled of Html5_types.flow5_without_interactive elt list_wrap
+      | `Enabled of
+          Xml.mouse_event_handler *
+          Html5_types.flow5_without_interactive elt list_wrap ]
+      list -> [> Html5_types.nav ] elt
 
-  val panel :
-    body:[< Html5_types.div_content_fun ] elt list_wrap ->
-    [> Html5_types.div ] elt
+    val panel :
+      body:[< Html5_types.div_content_fun ] elt list_wrap ->
+      [> Html5_types.div ] elt
 
-  val table_responsive :
-    head:[< Html5_types.thead ] elt wrap ->
-    body:[< Html5_types.tbody_content_fun ] elt list_wrap ->
-    [> Html5_types.div ] elt
+    val table_responsive :
+      head:[< Html5_types.thead ] elt wrap ->
+      body:[< Html5_types.tbody_content_fun ] elt list_wrap ->
+      [> Html5_types.div ] elt
 
-  val collapsable_ul :
-    ?ul_kind:[ `Inline | `None ] ->
-    ?maximum_items:int ->
-    [< Html5_types.li_content_fun > `A ] elt list -> [> Html5_types.ul ] elt
+    val collapsable_ul :
+      ?ul_kind:[ `Inline | `None ] ->
+      ?maximum_items:int ->
+      [< Html5_types.li_content_fun > `A ] elt list -> [> Html5_types.ul ] elt
 
-  val collapsable_pre :
-    ?first_line_limit:int ->
-    Ketrew_pure.Internal_pervasives.String.t ->
-    [> Html5_types.span ] Reactive_node.elt option * [> Html5_types.pre ] elt
+    val collapsable_pre :
+      ?first_line_limit:int ->
+      Ketrew_pure.Internal_pervasives.String.t ->
+      [> Html5_types.span ] Reactive_node.elt option * [> Html5_types.pre ] elt
 
-  module Input_group : sig
-    type item
-    val make :
-      item list -> [> Html5_types.div ] elt
+    module Input_group : sig
+      type item
+      val make :
+        item list -> [> Html5_types.div ] elt
 
-    val addon:  [< Html5_types.div_content_fun ] elt list -> item
-    val button_group: [< Html5_types.div_content_fun ] elt list -> item
-    val text_input :
-      ?value: string ->
-      on_input:(string -> unit) ->
-      on_keypress:(int -> unit) ->
-      [`Text | `Password ] ->
-      item
+      val addon:  [< Html5_types.div_content_fun ] elt list -> item
+      val button_group: [< Html5_types.div_content_fun ] elt list -> item
+      val text_input :
+        ?value: string ->
+        on_input:(string -> unit) ->
+        on_keypress:(int -> unit) ->
+        [`Text | `Password ] ->
+        item
   end
 
 
