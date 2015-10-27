@@ -64,6 +64,11 @@ module Authentication = struct
     | Some _ -> false
     | None -> true
 
+  let split_and_trim line =
+    String.split line ~on:(`Character ' ')
+    |> List.map ~f:(fun t -> String.strip ~on:`Both t)
+    |> List.filter ~f:(fun s -> s <> "")
+
   let load_file file =
     Log.(s "Authentication: loading " % quote file @ verbose);
     IO.read_file file
@@ -71,10 +76,8 @@ module Authentication = struct
     let valid_tokens =
       String.split content ~on:(`Character '\n')
       |> List.filter_map ~f:(fun line ->
-          match String.split line ~on:(`Character ' ')
-                |> List.map ~f:(fun t -> String.strip ~on:`Both t)
-                |> List.filter ~f:(fun s -> s <> "") with
-          | comment :: more when String.get comment ~index:1 = Some '#' -> None
+          match split_and_trim line with
+          | comment :: _ when String.get comment ~index:1 = Some '#' -> None
           | name :: value :: comments ->
              let token =  {name; value; comments} in
              begin match valid token with
