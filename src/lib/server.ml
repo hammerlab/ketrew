@@ -141,7 +141,7 @@ module Authentication = struct
     | true -> return ()
     | false -> wrong_request "Authentication" "Insufficient credentials"
 
-end
+end (* Authentication *)
 
 (** The state maintained by the HTTP server. *)
 module Server_state = struct
@@ -192,7 +192,7 @@ module Server_state = struct
       ]
 
 
-  end
+  end (* Deferred_queries *)
 
   type t = {
     state: Engine.t;
@@ -208,10 +208,12 @@ module Server_state = struct
   }
 (*M
 The `loop_traffic_light` is “red” for the server  by default but some services
-can set it to `Green to wake-up it earlier and do things.
+can set it to `Green to wake it up earlier and do things.
 
 For example, after adding targets, the server will be woken-up to start running
 the targets and not wait for the next “loop timeout.”
+See [Pvem_lwt_unix.LIGHT](http://seb.mondet.org/software/pvem_lwt_unix/api/Pvem_lwt_unix.LIGHT.html)
+for more details.
 M*)
   let create ~state ~process_holder ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
@@ -226,7 +228,7 @@ M*)
       "Deferred_queries", Deferred_queries.markup t.deferred_queries;
     ]
 
-end
+end (* Server_state *)
 open Server_state
 
 type answer = [
@@ -234,7 +236,7 @@ type answer = [
   | `Message of [ `Json ] * Protocol.Down_message.t
   | `Page of string
 ]
-(** A service can replay one of those cases; or an error. *)
+(** A service can reply to one of these cases; or error. *)
 
 type 'error service =
   server_state:Server_state.t ->
@@ -245,9 +247,7 @@ type 'error service =
 
 (** Get the ["token"] parameter from an URI. *)
 let token_parameter req =
-  let token =
-    Uri.get_query_param (Cohttp.Request.uri req) "token" in
-  token
+  Uri.get_query_param (Cohttp.Request.uri req) "token"
 
 (** Get a parameter or fail. *)
 let mandatory_parameter req ~name =
@@ -270,7 +270,8 @@ let format_parameter req =
 let check_that_it_is_a_get request =
   begin match Cohttp.Request.meth request with
   | `GET -> return ()
-  | other -> wrong_request "wrong method" (Cohttp.Code.string_of_method other)
+  | other ->
+    wrong_request "wrong method, wanted get" (Cohttp.Code.string_of_method other)
   end
 
 (** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
@@ -280,7 +281,7 @@ let get_post_body request ~body =
     wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
       (fun () -> Cohttp_lwt_body.to_string  body)
   | other ->
-    wrong_request "wrong method" (Cohttp.Code.string_of_method other)
+    wrong_request "wrong method, wanted post" (Cohttp.Code.string_of_method other)
   end
 
 (** Grab and deserialize a POST body into an up_message. *)
@@ -288,7 +289,7 @@ let message_of_body ~body =
   wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
     (fun () -> Protocol.Up_message.deserialize_exn body)
 
-(** {2 Services; Answering Requests} *)
+(** {1 Services: Answering Requests} *)
 
 let get_targets_from_ids ~server_state target_ids =
   begin match target_ids  with
@@ -611,7 +612,7 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
     wrong_request "Wrong path" other
 
 
-(** {2 Start/Stop The Server} *)
+(** {3 Start/Stop The Server} *)
 
 let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
@@ -952,7 +953,7 @@ let status ~configuration =
 let start ~configuration  =
   Log.(s "Set preemptive bounds: 10, 52" @ verbose);
   Lwt_preemptive.init 10 52 (fun str ->
-      Log.(s" Lwt_preemptive error: " % s str @ error);
+      Log.(s " Lwt_preemptive error: " % s str @ error);
     );
   begin
     status ~configuration
