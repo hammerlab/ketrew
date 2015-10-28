@@ -32,116 +32,11 @@ include Make_module_error_and_info(struct
     let module_name = "Server"
   end)
 
-(** Module dealing with access tokens and access rights. There are no
-    “sessions” here; just a file that looks like SSH's `authorized_keys`, and a
-    function: token × capability → bool.
-
-    Capabilities are defined with polymorphic variants.
-*)
-module Authentication = struct
-
-  type token = {name: string; value: string; comments : string list}
-  type t = {
-    valid_tokens: token list;
-    authentication_input: [`Path of string | `Inline of (string * string)] list;
-  }
-
-  let log {valid_tokens; authentication_input} =
-    let paths =
-      List.filter_map authentication_input ~f:(function
-        | `Path p -> Some p | `Inline _ -> None) in
-    let inlines =
-      List.filter_map authentication_input ~f:(function
-        | `Path _ -> None | `Inline (name, _) -> Some name) in
-    Log.(
-      s "From paths: " % OCaml.list quote paths
-      % s "; inline: " % OCaml.list string inlines)
-
-  let valid {value; _} =
-    let valid_chars = B64.uri_safe_alphabet ^ "=" in
-    let invalid_char = fun c -> not (String.exists valid_chars ((=) c)) in
-    match String.find ~f:invalid_char value with
-    | Some _ -> false
-    | None -> true
-
-  let split_and_trim line =
-    String.split line ~on:(`Character ' ')
-    |> List.map ~f:(fun t -> String.strip ~on:`Both t)
-    |> List.filter ~f:(fun s -> s <> "")
-
-  let load_file file =
-    Log.(s "Authentication: loading " % quote file @ verbose);
-    IO.read_file file
-    >>= fun content ->
-    let valid_tokens =
-      String.split content ~on:(`Character '\n')
-      |> List.filter_map ~f:(fun line ->
-          match split_and_trim line with
-          | comment :: _ when String.get comment ~index:1 = Some '#' -> None
-          | name :: value :: comments ->
-             let token =  {name; value; comments} in
-             begin match valid token with
-             | true -> Some token
-             | false ->  Log.(s "Invalid character(s) in token: " % OCaml.string value % s " in file "
-                              % OCaml.string file @ warning);
-                         None
-             end
-          | [] -> None
-          | other ->
-            Log.(s "Ignoring line: " % OCaml.string line % s " of file "
-                 % OCaml.string file @ warning);
-            None)
-    in
-    Log.(s "Loaded auth from " % OCaml.string file
-         % OCaml.list (fun t ->
-             OCaml.list OCaml.string [t.name; t.value;
-                                      String.concat ~sep:" "  t.comments])
-           valid_tokens
-         @ verbose);
-    return valid_tokens
-
-  let load meta_tokens =
-    Deferred_list.while_sequential meta_tokens ~f:(function
-      | `Path p -> load_file p
-      | `Inline (name, value) ->
-         let token = {name; value; comments = []} in
-         let tokens =
-           match valid token with
-           | true -> [token]
-           | false ->
-              Log.(s "Invalid character(s) in token: " % OCaml.string value @ warning);
-              [] in
-         return tokens)
-    >>| List.concat
-    >>= fun valid_tokens ->
-    return {valid_tokens; authentication_input = meta_tokens}
-
-  let reload {authentication_input; _} = load authentication_input
-
-  let able_to_do ~read_only_mode = function
-    | `Browse_gui
-    | `See_server_status
-    | `See_targets
-    | `Query_targets  -> true
-    | `Kill_targets
-    | `Restart_targets
-    | `Play_with_process_holder
-    | `Submit_targets -> not read_only_mode
-
-  let can t ~read_only_mode ?token stuff =
-    let token_is_valid tok =
-      List.exists t.valid_tokens ~f:(fun x -> x.value = tok) in
-    let valid_token =
-      Option.value ~default:false (Option.map ~f:token_is_valid token) in
-    valid_token && able_to_do stuff ~read_only_mode
-
-  let ensure_can t ~read_only_mode ?token do_stuff =
-    if can t ?token do_stuff ~read_only_mode then
-      return ()
-    else
-      wrong_request "Authentication" "Insufficient credentials"
-
-end (* Authentication *)
+let ensure_can t ~read_only_mode ?token do_stuff =
+  if Authentication.can t ?token do_stuff ~read_only_mode then
+    return ()
+  else
+    wrong_request "Authentication" "Insufficient credentials"
 
 (** The state maintained by the HTTP server. *)
 module Server_state = struct
@@ -496,7 +391,7 @@ let answer_message ~server_state ?token msg =
   let with_capability cap =
     let read_only_mode =
       Configuration.read_only_mode server_state.server_configuration in
-    Authentication.ensure_can server_state.authentication ?token cap
+    ensure_can server_state.authentication ?token cap
       ~read_only_mode
   in
   match msg with
@@ -567,7 +462,7 @@ let html_page () = Client_html.gui_page
 
 let gui_service ~server_state ~body req =
   let token = token_parameter req in
-  Authentication.ensure_can server_state.authentication ?token `Browse_gui
+  ensure_can server_state.authentication ?token `Browse_gui
     ~read_only_mode:(Configuration.read_only_mode
                        server_state.server_configuration)
   >>= fun () ->
@@ -641,7 +536,7 @@ let start_listening_on_command_pipe ~server_state =
   match Configuration.command_pipe conf with
   | Some file_path ->
     System.remove file_path >>= fun () ->
-    wrap_deferred 
+    wrap_deferred
       ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
       (fun () -> Lwt_unix.mkfifo file_path 0o600)
     >>= fun () ->
@@ -677,7 +572,7 @@ let start_listening_on_command_pipe ~server_state =
                 | `Error e ->
                   log_error e 
                     Log.(s "Could not reload Authentication: " 
-                         % Authentication.log server_state.authentication);
+                         % Authentication.source server_state.authentication);
                   return ()
               end
               >>= fun () ->
