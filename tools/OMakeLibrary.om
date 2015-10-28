@@ -134,9 +134,19 @@ public.OCamlProgramOfFile(appname, path) =
 
 public.DotMerlin(topdir, packages) =
     .merlin:
-         rm -f .merlin
-         foreach(d => ..., $(find $(topdir) -d {}))
-              echo "S $(d)" >> $@
-              echo "B _build/$(d)" >> $@
-         foreach(m => ..., $(packages))
-              echo "PKG $(m)" >> $@
+        rm -f .merlin
+        foreach(d => ..., $(find $(topdir) -d {}))
+            echo "S $(d)" >> $@
+            echo "B _build/$(d)" >> $@
+        foreach(m => ..., $(packages))
+            echo "PKG $(m)" >> $@
+
+public.DotOCamlinit(dirs, packages, to_load) =
+    .ocamlinit:
+        rm -f $@
+        foreach(d => ..., $(dirs))
+            echo "#directory \"_build/$(d)\"" >> $@
+        foreach(m => ..., $(packages))
+            echo "#require \"$(m)\"" >> $@
+        foreach(m => ..., $(to_load))
+            echo "#load_rec \"$(m).cma\"" >> $@
