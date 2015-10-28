@@ -1,41 +1,38 @@
 open Ketrew_pure.Internal_pervasives
 open Unix_io
 
+(* A parametric circular buffer. *)
 module Ring = struct
   type 'a t = {
     recent: 'a option array;
     mutable index: int;
-
   }
+
   let create ?(size = 4200) () =
     {recent = Array.make size None; index = 0}
 
   let add t v =
     t.recent.(t.index) <- Some v;
-    begin match (t.index + 1) with
-    | i when i = (Array.length t.recent) -> t.index <- 0
-    | other -> t.index <- (t.index + 1);
-    end;
-    ()
+    t.index <- (t.index + 1) mod (Array.length t.recent)
 
-  let fold t ~init ~f =
+  let fold_right t ~init ~f =
+    let l = Array.length t.recent in
+    let p i = (i - 1 + l) mod l in
     let rec go count prev index =
       let next item = f prev item in
       match index, t.recent.(index) with
       | _, None -> prev
-      | _, _ when count = Array.length t.recent -> prev
-      | 0, Some s ->
-        go (count + 1) (next s) (Array.length t.recent - 1)
+      | _, _ when count = l -> prev
       | n, Some s ->
-        go (count + 1) (next s) (n - 1)
+        go (count + 1) (next s) (p n)
     in
-    if t.index = 0 then go 0 init (Array.length t.recent - 1) else go 0 init (t.index - 1) 
+    go 0 init (p t.index)
 
   let clear t =
     t.index <- 0;
     Array.iteri t.recent  ~f:(fun i _ -> t.recent.(i) <- None)
 
-end
+end (* Ring *)
 
 module Log_store = struct
   type t = Typed_log.Item.t Ring.t
@@ -43,11 +40,10 @@ module Log_store = struct
   let create ?size () : t =
     Ring.create ?size ()
 
-
   let add t l = Ring.add t l
 
   let append_to_file ~path ~format t =
-    let as_list = Ring.fold ~init:[] t ~f:(fun prev x -> x :: prev) in
+    let as_list = Ring.fold_right ~init:[] t ~f:(fun prev x -> x :: prev) in
     IO.with_out_channel (`Append_to_file path) ~f:(fun out ->
         IO.write out (if format = `Json then "[\n" else "")
         >>= fun () ->
@@ -76,7 +72,7 @@ module Log_store = struct
     Ring.clear t;
     return ()
 
-end
+end (* Log_store *)
 
 module Global = struct
 
@@ -100,8 +96,8 @@ module Global = struct
         Constants.word_info, text (Log.to_long_string lo);
       ] |> log
     let log_info lo =
-      let open Typed_log.Item in
       let open Logger in
+      let open Typed_log.Item in
       description_list [
         Constants.word_module, text M.module_name;
         Constants.word_info, text (Log.to_long_string lo);
@@ -112,5 +108,5 @@ module Global = struct
   let append_to_file ~path ~format = Log_store.append_to_file ~path ~format _log
   let clear () = Log_store.clear _log
 
-end
+end (* Global *)
 

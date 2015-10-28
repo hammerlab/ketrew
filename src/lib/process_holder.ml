@@ -150,10 +150,10 @@ module Ssh_connection = struct
 (*
 Overly complex work around OpenSSH's TTY craziness.
 
-In order to get the prompt for a password, on top the
-`DISPLAY` and `SSH_ASKPASS` environment variables we need to ensure
-we're detached from any terminal. `setsid` provides that, but on OSX
-`setsid` is not provided as a command line tools, so we use OCaml's
+In order to get the prompt for a password, on top of the `DISPLAY` and
+`SSH_ASKPASS` environment variables we need to ensure we're detached from
+any terminal. `setsid` provides that, but on OSX `setsid` is not provided
+as a command line tools, so we use OCaml's
 [`Unix.setsid`](http://caml.inria.fr/pub/docs/manual-ocaml/libref/Unix.html#VALsetsid).
 Which then requires a `fork` not to mess up with the current process.
 
@@ -161,7 +161,6 @@ We need to comunicate with that process:
 
 - There are two FIFO files that are the I/O plumbing of the extremely
   simple implementation of the `SSH_ASKPASS` program.
-
 
 *)
   let setsid_ssh
