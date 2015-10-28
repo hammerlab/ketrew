@@ -289,7 +289,7 @@ let message_of_body ~body =
   wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
     (fun () -> Protocol.Up_message.deserialize_exn body)
 
-(** {1 Services: Answering Requests} *)
+(** {2 Services: Answering Requests} *)
 
 let get_targets_from_ids ~server_state target_ids =
   begin match target_ids  with
@@ -612,7 +612,7 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
     wrong_request "Wrong path" other
 
 
-(** {3 Start/Stop The Server} *)
+(** {2 Start/Stop The Server} *)
 
 let mandatory_for_starting opt ~msg =
   Deferred_result.some opt ~or_fail:(`Start_server_error msg)
