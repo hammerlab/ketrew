@@ -140,49 +140,29 @@ type 'error service =
   (answer, 'error) Deferred_result.t
 (** A service is something that replies an [answer] on a ["/<path>"] URL. *)
 
-(** Get the ["token"] parameter from an URI. *)
-let token_parameter req =
-  Uri.get_query_param (Cohttp.Request.uri req) "token"
+(** Extract information from HTTP requests. *)
+module Request = struct
 
-(** Get a parameter or fail. *)
-let mandatory_parameter req ~name =
-  match Uri.get_query_param (Cohttp.Request.uri req) name with
-  | Some v ->
-    Log.(s "Got " % quote name % s ": " % quote v @ very_verbose);
-    return v
-  | None ->
-    wrong_request (fmt "%s-mandatory-parameter" name) (fmt "Missing mandatory parameter: %S" name)
+  let parameter req =
+    Uri.get_query_param (Cohttp.Request.uri req)
 
-(** Get the ["format"] parameter from an URI. *)
-let format_parameter req =
-  mandatory_parameter req ~name:"format"
-  >>= function
-  | "json" -> return `Json
-  | other ->
-    wrong_request "unknown-format-parameter" (fmt "I can't handle %S" other)
+  let path req =
+    Uri.path (Cohttp.Request.uri req)
 
-(** Fail if the request is not a [`GET]. *)
-let check_that_it_is_a_get request =
-  begin match Cohttp.Request.meth request with
-  | `GET -> return ()
-  | other ->
-    wrong_request "wrong method, wanted get" (Cohttp.Code.string_of_method other)
-  end
+  let to_sexp =
+    Cohttp.Request.sexp_of_t
 
-(** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
-let get_post_body request ~body =
-  begin match Cohttp.Request.meth request with
-  | `POST ->
-    wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
-      (fun () -> Cohttp_lwt_body.to_string  body)
-  | other ->
-    wrong_request "wrong method, wanted post" (Cohttp.Code.string_of_method other)
-  end
+  (** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
+  let get_post_body request ~body =
+    begin match Cohttp.Request.meth request with
+    | `POST ->
+      wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
+        (fun () -> Cohttp_lwt_body.to_string  body)
+    | other ->
+      wrong_request "wrong method, wanted post" (Cohttp.Code.string_of_method other)
+    end
 
-(** Grab and deserialize a POST body into an up_message. *)
-let message_of_body ~body =
-  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
-    (fun () -> Protocol.Up_message.deserialize_exn body)
+end (* Request *)
 
 (** {2 Services: Answering Requests} *)
 
@@ -196,7 +176,7 @@ let get_targets_from_ids ~server_state target_ids =
         Engine.get_target server_state.state id
         >>< function
         | `Ok t -> return (Some (id, t))
-        | `Error e -> 
+        | `Error e ->
           log_error e Log.(s "Error while getting the target " % s id);
           return None)
     >>| List.filter_opt
@@ -233,7 +213,7 @@ let answer_call_query ~server_state ~target_id ~query =
   begin
     Plugin.call_query ~target query
     >>< function
-    | `Ok string -> 
+    | `Ok string ->
       return (`Query_result string)
     | `Error error_log ->
       return (`Query_error (Log.to_long_string error_log))
@@ -323,7 +303,7 @@ let answer_get_target_ids ~server_state (query, options) =
       | small when small < 1001 ->
         return (`List_of_target_ids v)
       | big ->
-        let answer_id = 
+        let answer_id =
           Deferred_queries.add_list_of_ids server_state.deferred_queries v in
         let msg = `Deferred_list_of_target_ids (answer_id, big) in
         log_info Log.(s "answer_get_target_ids -> Deferred_list_of_target_ids "
@@ -346,8 +326,8 @@ let answer_get_server_status ~server_state =
     Protocol.Server_status.create ~database ~tls
       ~time:Time.(now ())
       ~read_only:(Configuration.read_only_mode server_state.server_configuration)
-      ~preemptive_bounds:(Lwt_preemptive.get_bounds ()) 
-      ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ()) 
+      ~preemptive_bounds:(Lwt_preemptive.get_bounds ())
+      ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ())
       ~libev:(Lwt_sys.have `libev)
       ~gc:(Gc.quick_stat ())
   in
@@ -449,11 +429,16 @@ let answer_message ~server_state ?token msg =
     >>= fun p_down ->
     return (`Process p_down)
 
+(** Grab and deserialize a body (either in POST or in the "message" of a URI)
+    into an up_message. *)
+let message_of_body body =
+  wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
+    (fun () -> Protocol.Up_message.deserialize_exn body)
+
 let api_service ~server_state ~body req =
-  get_post_body req ~body
-  >>= fun body ->
-    let token = token_parameter req in
-  message_of_body ~body 
+  let token = Request.parameter req "token" in
+  Request.get_post_body req ~body
+  >>= message_of_body
   >>= answer_message ~server_state ?token
   >>= fun msg ->
   return (`Message (`Json, msg))
@@ -461,7 +446,7 @@ let api_service ~server_state ~body req =
 let html_page () = Client_html.gui_page
 
 let gui_service ~server_state ~body req =
-  let token = token_parameter req in
+  let token = Request.parameter req "token" in
   ensure_can server_state.authentication ?token `Browse_gui
     ~read_only_mode:(Configuration.read_only_mode
                        server_state.server_configuration)
@@ -471,27 +456,23 @@ let gui_service ~server_state ~body req =
 (** {2 Dispatcher} *)
 
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
-  log_info Log.(s "Request-in: " % sexp Cohttp.Request.sexp_of_t req);
-  match Uri.path (Cohttp.Request.uri req) with
+  log_info Log.(s "Request-in: " % sexp Request.to_sexp req);
+  match Request.path req with
   | "/hello" -> return `Unit
   | "/api" -> api_service ~server_state ~body req
   | "/apijsonp" ->
     (* api_service ~server_state ~body req *)
-    let token =
-      Uri.get_query_param (Cohttp.Request.uri req) "token" in
-    let body = 
-      Uri.get_query_param (Cohttp.Request.uri req) "message" in
+    let token = Request.parameter req "token" in
+    let body = Request.parameter req "message" in
     begin match body with
     | Some s -> return s
     | None -> wrong_request "missing jsonp-message" ""
     end
-    >>= fun body ->
-    message_of_body body
+    >>= message_of_body
     >>= fun up_msg ->
     answer_message ~server_state ?token up_msg
     >>= fun down_msg ->
-    let callback =
-      Uri.get_query_param (Cohttp.Request.uri req) "callback" in
+    let callback = Request.parameter req "callback" in
     let page =
       fmt "window.%s({ \"message\" : %S })"
         Option.(value callback ~default:"missing_callback")
@@ -760,7 +741,7 @@ let start_listening_on_connections ~server_state =
             log_error e
               Log.(s "Error while handling the request: conn_id: "
                    % s id % s ", request: "
-                   % sexp Cohttp.Request.sexp_of_t request);
+                   % sexp Request.to_sexp request);
             let body =
               if return_error_messages
               then "Error: " ^ (Error.to_string e)
