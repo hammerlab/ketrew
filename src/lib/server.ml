@@ -157,7 +157,7 @@ module Request = struct
     begin match Cohttp.Request.meth request with
     | `POST ->
       wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
-        (fun () -> Cohttp_lwt_body.to_string  body)
+        (fun () -> Cohttp_lwt_body.to_string body)
     | other ->
       wrong_request "wrong method, wanted post" (Cohttp.Code.string_of_method other)
     end
@@ -361,12 +361,10 @@ let answer_get_server_status ~server_state =
   return (`Server_status status)
 
 let answer_message ~server_state ?token msg =
-  let with_capability cap =
-    let read_only_mode =
+  let read_only_mode =
       Configuration.read_only_mode server_state.server_configuration in
-    ensure_can server_state.authentication ?token cap
-      ~read_only_mode
-  in
+  let with_capability cap =
+    ensure_can server_state.authentication ?token cap ~read_only_mode in
   match msg with
   | `Get_targets l ->
     with_capability `See_targets
@@ -436,6 +434,29 @@ let api_service ~server_state ~body req =
   >>= fun msg ->
   return (`Message (`Json, msg))
 
+(* Handle requests by messaging to the appropriate JSONP callback. *)
+let apijsonp_service ~server_state req =
+  let token = Request.parameter req "token" in
+  let body = Request.parameter req "message" in
+  begin match body with
+  | Some s -> return s
+  | None -> wrong_request "missing jsonp-message" ""
+  end
+  >>= message_of_body     (* the 'message' here is of Up_message.t *)
+  >>= answer_message ~server_state ?token
+  >>= fun down_msg ->
+  let callback = Request.parameter req "callback" in
+  let page =
+    fmt "window.%s({ \"message\" : %S })"
+      Option.(value callback ~default:"missing_callback")
+      (Protocol.Down_message.serialize down_msg |> Uri.pct_encode)
+  in
+  Log.(s "Returning "
+        % i (String.length page) %s " bytes"
+        %sp % parens (s "Callback: " % OCaml.option quote callback)
+        @ verbose);
+  return (`Page page)
+
 let html_page () = Client_html.gui_page
 
 let gui_service ~server_state ~body req =
@@ -451,34 +472,11 @@ let gui_service ~server_state ~body req =
 let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   log_info Log.(s "Request-in: " % sexp Request.to_sexp req);
   match Request.path req with
-  | "/hello" -> return `Unit
-  | "/api" -> api_service ~server_state ~body req
-  | "/apijsonp" ->
-    (* api_service ~server_state ~body req *)
-    let token = Request.parameter req "token" in
-    let body = Request.parameter req "message" in
-    begin match body with
-    | Some s -> return s
-    | None -> wrong_request "missing jsonp-message" ""
-    end
-    >>= message_of_body
-    >>= fun up_msg ->
-    answer_message ~server_state ?token up_msg
-    >>= fun down_msg ->
-    let callback = Request.parameter req "callback" in
-    let page =
-      fmt "window.%s({ \"message\" : %S })"
-        Option.(value callback ~default:"missing_callback")
-        (Protocol.Down_message.serialize down_msg |> Uri.pct_encode)
-    in
-    Log.(s "Returning "
-         % i (String.length page) %s " bytes"
-         %sp % parens (s "Callback: " % OCaml.option quote callback)
-         @ verbose);
-    return (`Page page)
-  | "/gui" -> gui_service ~server_state ~body req
-  | other ->
-    wrong_request "Wrong path" other
+  | "/hello"    -> return `Unit
+  | "/api"      -> api_service ~server_state ~body req
+  | "/apijsonp" -> apijsonp_service ~server_state req
+  | "/gui"      -> gui_service ~server_state ~body req
+  | other       -> wrong_request "Wrong path" other
 
 
 (** {2 Start/Stop The Server} *)
