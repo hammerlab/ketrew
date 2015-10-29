@@ -164,84 +164,6 @@ module Request = struct
 
 end (* Request *)
 
-(** {2 Services: Answering Requests} *)
-
-let get_targets_from_ids ~server_state target_ids =
-  begin match target_ids  with
-  | [] ->
-    Engine.all_targets server_state.state
-    >>| List.map ~f:(fun trt -> (Target.id trt, trt))
-  | more ->
-    Deferred_list.while_sequential more ~f:(fun id ->
-        Engine.get_target server_state.state id
-        >>< function
-        | `Ok t -> return (Some (id, t))
-        | `Error e ->
-          log_error e Log.(s "Error while getting the target " % s id);
-          return None)
-    >>| List.filter_opt
-  end
-
-let answer_get_targets ?(summaries=false) ~server_state target_ids =
-  get_targets_from_ids ~server_state target_ids
-  >>= fun targets ->
-  begin match summaries with
-  | false ->
-    return (`List_of_targets (List.map ~f:snd targets))
-  | true ->
-    return (`List_of_target_summaries
-              (List.map targets ~f:(fun (id, t) ->
-                 (id, Target.Summary.create t))))
-  end
-
-let answer_get_target_available_queries ~server_state target_id =
-  Engine.get_target server_state.state target_id
-  >>= fun target ->
-  let msg =
-    `List_of_query_descriptions (
-      Plugin.additional_queries target
-      |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)
-    ) in
-  return (msg)
-
-
-let answer_call_query ~server_state ~target_id ~query =
-  Engine.get_target server_state.state target_id
-  >>= fun target ->
-  log_info
-    Log.(s "Calling query " % quote query % s " on " % Target.log target);
-  begin
-    Plugin.call_query ~target query
-    >>< function
-    | `Ok string ->
-      return (`Query_result string)
-    | `Error error_log ->
-      return (`Query_error (Log.to_long_string error_log))
-  end
-
-
-let answer_add_targets ~server_state ~targets =
-  log_info
-    Log.(s "Adding " % i (List.length targets) % s " targets");
-  Engine.add_targets server_state.state targets
-  >>= fun () ->
-  Light.green server_state.loop_traffic_light;
-  return (`Ok)
-
-let do_action_on_ids ~server_state ~ids (what_to_do: [`Kill  | `Restart]) =
-  Deferred_list.while_sequential ids (fun id ->
-      begin match what_to_do with
-      | `Kill -> Engine.kill server_state.state id
-      | `Restart ->
-        Engine.restart_target server_state.state id
-        >>= fun (_ : Target.id) ->
-        return ()
-      end)
-  >>= fun (_ : unit list) ->
-  Light.green server_state.loop_traffic_light;
-  return (`Ok)
-
-
 let block_if_empty_at_most ~server_state
     ~get_values
     ~should_send
@@ -293,23 +215,128 @@ let block_if_empty_at_most ~server_state
     loop ()
   end
 
-let answer_get_target_ids ~server_state (query, options) =
-  block_if_empty_at_most ~server_state options
-    ~get_values:(fun () ->
-        Engine.get_list_of_target_ids server_state.state query)
-    ~should_send:(function [] -> false | _ -> true)
-    ~send:begin fun v ->
-      match List.length v with
-      | small when small < 1001 ->
-        return (`List_of_target_ids v)
-      | big ->
-        let answer_id =
-          Deferred_queries.add_list_of_ids server_state.deferred_queries v in
-        let msg = `Deferred_list_of_target_ids (answer_id, big) in
-        log_info Log.(s "answer_get_target_ids -> Deferred_list_of_target_ids "
-                      % s answer_id % s ", " % i big);
-        return msg
+(** {2 Services: Answering Requests} *)
+
+(* Get information related to Targets controlled by the server. *)
+module Targets = struct
+
+  let from_ids ~server_state = function
+    | [] ->
+      Engine.all_targets server_state.state
+      >>| List.map ~f:(fun trt -> (Target.id trt, trt))
+    | more ->
+      Deferred_list.while_sequential more ~f:(fun id ->
+          Engine.get_target server_state.state id
+          >>< function
+          | `Ok t -> return (Some (id, t))
+          | `Error e ->
+            log_error e Log.(s "Error while getting the target " % s id);
+            return None)
+      >>| List.filter_opt
+
+  let get ~server_state target_ids =
+    from_ids ~server_state target_ids
+    >>= fun targets ->
+    return (`List_of_targets (List.map ~f:snd targets))
+
+  let summaries ~server_state target_ids =
+    from_ids ~server_state target_ids
+    >>= fun targets ->
+    return (`List_of_target_summaries
+      (List.map targets ~f:(fun (id, t) ->
+                  (id, Target.Summary.create t))))
+
+  let available_queries ~server_state target_id =
+    Engine.get_target server_state.state target_id
+    >>= fun target ->
+    return (
+      `List_of_query_descriptions (
+        Plugin.additional_queries target
+        |> List.map ~f:(fun (a, l) -> a, Log.to_long_string l)))
+
+  let call_query ~server_state ~target_id ~query =
+    Engine.get_target server_state.state target_id
+    >>= fun target ->
+    log_info
+      Log.(s "Calling query " % quote query % s " on " % Target.log target);
+    begin
+      Plugin.call_query ~target query
+      >>< function
+      | `Ok string ->
+        return (`Query_result string)
+      | `Error error_log ->
+        return (`Query_error (Log.to_long_string error_log))
     end
+
+  let go_green server_state _ =
+    Light.green server_state.loop_traffic_light;
+    return `Ok
+
+  let submit ~server_state ~targets =
+    log_info Log.(s "Adding " % i (List.length targets) % s " targets");
+    Engine.add_targets server_state.state targets
+    >>= go_green server_state
+
+  let kill ~server_state ids =
+    Deferred_list.while_sequential ids (Engine.kill server_state.state)
+    >>= go_green server_state
+
+  let restart ~server_state ids =
+    Deferred_list.while_sequential ids (Engine.restart_target server_state.state)
+    >>= go_green server_state
+
+  let get_flat_states ~server_state
+      (time_constrain, target_ids, options) =
+    block_if_empty_at_most ~server_state options
+      ~get_values:(fun () ->
+          from_ids ~server_state target_ids
+          >>= fun targets ->
+          log_info
+            Log.(s "get_flat_states computing states for "
+                % OCaml.list s target_ids);
+          let states =
+            List.filter_map targets ~f:(fun (id, trgt) ->
+                let flat_state = Target.State.Flat.of_state (Target.state trgt) in
+                match time_constrain with
+                | `All -> Some (id, flat_state)
+                | `Since ti ->
+                  Target.State.Flat.since flat_state ti
+                  |> Option.map ~f:(fun st -> (id, st))
+              )
+          in
+          return states)
+      ~should_send:(fun states ->
+          let total_items =
+            (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
+                prev + (List.length flat.Target.State.Flat.history)))
+          in
+          log_info
+            Log.(s "get_flat_states" % n
+                % s "States: " % i (List.length states) % n
+                % s "Total items: " % i  total_items);
+          total_items <> 0)
+      ~send:(fun states ->
+          return (`List_of_target_flat_states states))
+
+  let get_ids ~server_state (query, options) =
+    block_if_empty_at_most ~server_state options
+      ~get_values:(fun () ->
+          Engine.get_list_of_target_ids server_state.state query)
+      ~should_send:(function [] -> false | _ -> true)
+      ~send:begin fun v ->
+        match List.length v with
+        | small when small < 1001 ->
+          return (`List_of_target_ids v)
+        | big ->
+          let answer_id =
+            Deferred_queries.add_list_of_ids server_state.deferred_queries v in
+          let msg = `Deferred_list_of_target_ids (answer_id, big) in
+          log_info Log.(s "answer_get_target_ids -> Deferred_list_of_target_ids "
+                        % s answer_id % s ", " % i big);
+          return msg
+      end
+
+end (* Targets *)
 
 let answer_get_server_status ~server_state =
   let tls =
@@ -333,40 +360,6 @@ let answer_get_server_status ~server_state =
   in
   return (`Server_status status)
 
-let answer_get_target_flat_states ~server_state
-    (time_constrain, target_ids, options) =
-  block_if_empty_at_most ~server_state options
-    ~get_values:(fun () ->
-        get_targets_from_ids ~server_state target_ids
-        >>= fun targets ->
-        log_info
-          Log.(s "answer_get_target_flat_states computing states for "
-               % OCaml.list s target_ids);
-        let states =
-          List.filter_map targets ~f:(fun (id, trgt) ->
-              let flat_state = Target.State.Flat.of_state (Target.state trgt) in
-              match time_constrain with
-              | `All -> Some (id, flat_state)
-              | `Since ti ->
-                Target.State.Flat.since flat_state ti
-                |> Option.map ~f:(fun st -> (id, st))
-            )
-        in
-        return states)
-    ~should_send:(fun states ->
-        let total_items =
-          (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
-               prev + (List.length flat.Target.State.Flat.history)))
-        in
-        log_info
-          Log.(s "answer_get_target_flat_states" % n
-               % s "States: " % i (List.length states) % n
-               % s "Total items: " % i  total_items);
-        total_items <> 0)
-    ~send:(fun states ->
-        return (`List_of_target_flat_states states))
-
-
 let answer_message ~server_state ?token msg =
   let with_capability cap =
     let read_only_mode =
@@ -378,35 +371,35 @@ let answer_message ~server_state ?token msg =
   | `Get_targets l ->
     with_capability `See_targets
     >>= fun () ->
-    answer_get_targets ~server_state l
+    Targets.get ~server_state l
   | `Get_target_summaries l ->
     with_capability `See_targets
     >>= fun () ->
-    answer_get_targets ~summaries:true ~server_state l
+    Targets.summaries ~server_state l
   | `Get_available_queries target_id ->
     with_capability `Query_targets
     >>= fun () ->
-    answer_get_target_available_queries ~server_state target_id
+    Targets.available_queries ~server_state target_id
   | `Call_query (target_id, query) ->
     with_capability `Query_targets
     >>= fun () ->
-    answer_call_query ~server_state ~target_id ~query
+    Targets.call_query ~server_state ~target_id ~query
   | `Submit_targets targets ->
     with_capability `Submit_targets
     >>= fun () ->
-    answer_add_targets ~server_state ~targets
+    Targets.submit ~server_state ~targets
   | `Kill_targets ids ->
     with_capability `Kill_targets
     >>= fun () ->
-    do_action_on_ids ~server_state ~ids `Kill
+    Targets.kill ~server_state ids
   | `Restart_targets ids ->
     with_capability `Restart_targets
     >>= fun () ->
-    do_action_on_ids ~server_state ~ids `Restart
+    Targets.restart ~server_state ids
   | `Get_target_ids query ->
     with_capability `See_targets
     >>= fun () ->
-    answer_get_target_ids ~server_state query
+    Targets.get_ids ~server_state query
   | `Get_server_status ->
     with_capability `See_server_status
     >>= fun () ->
@@ -414,7 +407,7 @@ let answer_message ~server_state ?token msg =
   | `Get_target_flat_states query ->
     with_capability `See_targets
     >>= fun () ->
-    answer_get_target_flat_states ~server_state query
+    Targets.get_flat_states ~server_state query
   | `Get_deferred (id, index, length) ->
     with_capability `See_targets
     >>= fun () ->

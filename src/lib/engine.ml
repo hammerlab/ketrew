@@ -448,7 +448,7 @@ let get_list_of_target_ids t query =
   in
   return list_of_ids
 
-let kill t ~id =
+let kill t id =
   Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data [id]
 
 let restart_target engine target_id =

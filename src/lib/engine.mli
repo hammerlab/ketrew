@@ -142,7 +142,7 @@ val get_status : t -> Ketrew_pure.Target.id ->
 
 val kill :
   t ->
-  id:string ->
+  string ->
   (unit,
    [> `Database of
         [> `Act of Trakeva.Action.t | `Load of string ] * string
