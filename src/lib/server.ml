@@ -830,7 +830,7 @@ let status ~configuration =
       fail (`Failure (Printexc.to_string e))
     | `Error (`Timeout _) ->
       return (`Not_responding "connection timeouted")
-    |  `Error (`Get_exn other_exn) ->
+    | `Error (`Get_exn other_exn) ->
       fail (`Server_status_error (Printexc.to_string other_exn))
   end
 
