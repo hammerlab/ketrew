@@ -481,10 +481,8 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
 
 (** {2 Start/Stop The Server} *)
 
-let mandatory_for_starting opt ~msg =
-  Deferred_result.some opt ~or_fail:(`Start_server_error msg)
-
 let die_command = "die"
+
 let reload_authorized_tokens = "reload-auth"
 
 let reload_authentication ~server_state =
