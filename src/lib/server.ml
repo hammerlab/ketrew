@@ -519,11 +519,110 @@ let execute_deferred server_state f =
       return ()
   )
 
+let read_loop ~server_state ~file_path pipe =
+  let open Lwt in
+  let rec loop ~error_count () =
+    Log.(s "Listening on " % OCaml.string file_path @ verbose);
+    let normal_execution () =
+      Lwt_io.read_line pipe
+          >>= fun msg ->
+          match Commands.parse msg with
+          | `Die ->
+            log_info Log.(s "Server killed by “die” command "
+                    % parens (OCaml.string file_path));
+            begin Engine.unload server_state.state
+              >>= function
+              | `Ok () -> exit 0
+              | `Error e ->
+                log_error e Log.(s "Could not unload engine");
+                exit 10
+            end
+          | `ReloadAuth ->
+            begin reload_authentication ~server_state
+              >>= function
+              | `Ok () -> return ()
+              | `Error e ->
+                log_error e
+                  Log.(s "Could not reload Authentication: "
+                      % Authentication.source server_state.authentication);
+                return ()
+            end
+            >>= fun () ->
+            loop ~error_count ()
+          | `DumpAllConnections ->
+            let uniq = Unique_id.create () in
+            Deferred_result.(
+              IO.with_out_channel
+                (`Overwrite_file ("all-connections-" ^ uniq))
+                ~f:(fun o ->
+                    Hashtbl.fold (fun id status prev ->
+                        prev >>= fun () ->
+                        IO.write o (fmt "%s:\n" id)
+                        >>= fun () ->
+                        List.fold (List.rev status) ~init:(return ())
+                          ~f:(fun prev status ->
+                              prev >>= fun () ->
+                              let ti = Time.to_filename in
+                              IO.write o
+                                (fmt "    %s\n"
+                                  begin match status with
+                                  | `Open t -> fmt "Open %s" (ti t)
+                                  | `Request t -> fmt "Request %s" (ti t)
+                                  | `Closed t -> fmt "Closed %s" (ti t)
+                                  end))
+                      )
+                      server_state.all_connections
+                      (return ()))
+              >>< function
+              | `Ok () -> return ()
+              | `Error e ->
+                log_error e Log.(s "dump-all-connections");
+                return ()
+            )
+            >>= fun _ ->
+            loop ~error_count ()
+          | `GetLog (format, path) ->
+            execute_deferred server_state Deferred_result.(fun () ->
+                Log.(s "Append logs to " %quote path @ verbose);
+                Logging.Global.append_to_file ~path ~format)
+            >>= fun _ ->
+            loop ~error_count ()
+          | `UnrecognizedFormat format ->
+            execute_deferred server_state Deferred_result.(fun () ->
+                fail (`Failure (fmt "wrong format: %S" format)))
+            >>= fun _ ->
+            loop ~error_count ()
+          | `WrongGetLog msg ->
+            execute_deferred server_state Deferred_result.(fun () ->
+                log_info Log.(s "Wrong get-log: " % quote msg);
+                return ())
+            >>= fun _ ->
+            loop ~error_count ()
+          | `Other other ->
+            log_info
+              Log.(s "Cannot understand command: " % OCaml.string other);
+            loop ~error_count ()
+    in
+    let on_exception e =
+      let error_count = error_count + 1 in
+      Log.(s "Exn while reading command pipe: " % exn e
+        % sp % parens (i error_count % s "-th error") @ error);
+      if error_count >= 5 then
+        return ()
+      else
+        loop ~error_count ()
+    in
+    Lwt.catch normal_execution on_exception;
+  in
+  Lwt.ignore_result (loop ~error_count:0 ())
+
 let start_listening_on_command_pipe ~server_state =
   let conf = server_state.server_configuration in
   match Configuration.command_pipe conf with
+  | None -> return ()
   | Some file_path ->
-    System.remove file_path >>= fun () ->
+    System.remove file_path
+    >>= fun () ->
     wrap_deferred
       ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
       (fun () -> Lwt_unix.mkfifo file_path 0o600)
@@ -535,104 +634,8 @@ let start_listening_on_command_pipe ~server_state =
            ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] ~perm:0o660
            ~mode:Lwt_io.input file_path)
     >>= fun pipe ->
-    begin
-      let open Lwt in
-      let rec read_loop ~error_count () =
-        Log.(s "Listening on " % OCaml.string file_path @ verbose);
-        Lwt.catch (fun () ->
-            Lwt_io.read_line pipe
-            >>= fun msg ->
-            match Commands.parse msg with
-            | `Die ->
-              log_info
-                Log.(s "Server killed by “die” command "
-                    % parens (OCaml.string file_path));
-              begin Engine.unload server_state.state
-                >>= function
-                | `Ok () -> exit 0
-                | `Error e ->
-                  log_error e Log.(s "Could not unload engine");
-                  exit 10
-              end
-            | `ReloadAuth ->
-              begin reload_authentication ~server_state
-                >>= function
-                | `Ok () -> return ()
-                | `Error e ->
-                  log_error e
-                    Log.(s "Could not reload Authentication: "
-                        % Authentication.source server_state.authentication);
-                  return ()
-              end
-              >>= fun () ->
-              read_loop ~error_count ()
-            | `DumpAllConnections ->
-              let uniq = Unique_id.create () in
-              Deferred_result.(
-                IO.with_out_channel
-                  (`Overwrite_file ("all-connections-" ^ uniq))
-                  ~f:(fun o ->
-                      Hashtbl.fold (fun id status prev ->
-                          prev >>= fun () ->
-                          IO.write o (fmt "%s:\n" id)
-                          >>= fun () ->
-                          List.fold (List.rev status) ~init:(return ())
-                            ~f:(fun prev status ->
-                                prev >>= fun () ->
-                                let ti = Time.to_filename in
-                                IO.write o
-                                  (fmt "    %s\n"
-                                    begin match status with
-                                    | `Open t -> fmt "Open %s" (ti t)
-                                    | `Request t -> fmt "Request %s" (ti t)
-                                    | `Closed t -> fmt "Closed %s" (ti t)
-                                    end))
-                        )
-                        server_state.all_connections
-                        (return ()))
-                >>< function
-                | `Ok () -> return ()
-                | `Error e ->
-                  log_error e Log.(s "dump-all-connections");
-                  return ()
-              )
-              >>= fun _ ->
-              read_loop ~error_count ()
-            | `GetLog (format, path) ->
-              execute_deferred server_state Deferred_result.(fun () ->
-                  Log.(s "Append logs to " %quote path @ verbose);
-                  Logging.Global.append_to_file ~path ~format)
-              >>= fun _ ->
-              read_loop ~error_count ()
-            | `UnrecognizedFormat format ->
-              execute_deferred server_state Deferred_result.(fun () ->
-                  fail (`Failure (fmt "wrong format: %S" format)))
-              >>= fun _ ->
-              read_loop ~error_count ()
-            | `WrongGetLog msg ->
-              execute_deferred server_state Deferred_result.(fun () ->
-                  log_info Log.(s "Wrong get-log: " % quote msg);
-                  return ())
-              >>= fun _ ->
-              read_loop ~error_count ()
-            | `Other other ->
-              log_info
-                Log.(s "Cannot understand command: " % OCaml.string other);
-              read_loop ~error_count ())
-          (fun e ->
-             let error_count = error_count + 1 in
-             Log.(s "Exn while reading command pipe: " % exn e
-                  % sp % parens (i error_count % s "-th error") @ error);
-             if error_count >= 5 then
-               return ()
-             else
-               read_loop ~error_count ())
-      in
-      Lwt.ignore_result (read_loop ~error_count:0 ())
-    end;
-    return ()
-  | None ->
-    return ()
+      read_loop ~server_state ~file_path pipe;
+      return ()
 
 let start_engine_loop ~server_state =
   let time_step = 1. in
