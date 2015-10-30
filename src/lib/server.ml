@@ -483,16 +483,10 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
 
 (** {2 Start/Stop The Server} *)
 
-let reload_authentication ~server_state =
-  Authentication.reload server_state.authentication
-  >>= fun authentication ->
-  server_state.authentication <- authentication;
-  return ()
-
 (* Text commands that we can send to the server via the pipe *)
 module Commands = struct
 
-  let die = "die"
+  let die_command = "die"
 
   let parse = function
     | "die"                   -> `Die
@@ -509,101 +503,97 @@ module Commands = struct
         else
           `Other is_get_log
 
+  let die server_state file_path =
+    log_info Log.(s "Server killed by “die” command "
+                    % parens (OCaml.string file_path));
+    Lwt.bind (Engine.unload server_state.state)
+      begin function
+      | `Ok () -> exit 0
+      | `Error e ->
+        log_error e Log.(s "Could not unload engine");
+        exit 10
+      end
+
+  let reload_authentication ~server_state =
+    Lwt.bind (Authentication.reload server_state.authentication)
+      begin function
+      | `Ok authentication ->
+        server_state.authentication <- authentication;
+        return ()
+      | `Error e ->
+        log_error e Log.(s "Could not reload Authentication: "
+          % Authentication.source server_state.authentication);
+        return ()
+      end
+
+  let dump_all_connections server_state =
+    let uniq = Unique_id.create () in
+    IO.with_out_channel (`Overwrite_file ("all-connections-" ^ uniq))
+      ~f:(fun o ->
+          Hashtbl.fold (fun id status prev ->
+              prev >>= fun () ->
+              IO.write o (fmt "%s:\n" id)
+              >>= fun () ->
+              List.fold (List.rev status) ~init:(return ())
+                ~f:(fun prev status ->
+                    prev >>= fun () ->
+                    let ti = Time.to_filename in
+                    IO.write o
+                      (fmt "    %s\n"
+                        begin match status with
+                        | `Open t -> fmt "Open %s" (ti t)
+                        | `Request t -> fmt "Request %s" (ti t)
+                        | `Closed t -> fmt "Closed %s" (ti t)
+                        end)))
+            server_state.all_connections
+            (return ()))
+      >>< function
+      | `Ok () -> return ()
+      | `Error e ->
+        log_error e Log.(s "dump-all-connections");
+        return ()
+
+  let get_log format path =
+    Log.(s "Append logs to " %quote path @ verbose);
+    Lwt.bind (Logging.Global.append_to_file ~path ~format)
+      begin function
+      | `Ok () -> return ()
+      | `Error e ->
+        log_error e Log.(s "get_log");
+        return ()
+      end
+
 end (* Commands *)
 
-let execute_deferred server_state f =
-  Lwt.(
-    f ()
-    >>= function
-    | `Ok () -> return ()
-    | `Error e ->
-      log_error e Log.(s "execute_deferred");
-      return ()
-  )
-
 let read_loop ~server_state ~file_path pipe =
-  let open Lwt in
   let rec loop ~error_count () =
     Log.(s "Listening on " % OCaml.string file_path @ verbose);
     let normal_execution () =
-      Lwt_io.read_line pipe
-          >>= fun msg ->
+      Lwt.bind (Lwt_io.read_line pipe)
+        begin fun msg ->
           match Commands.parse msg with
           | `Die ->
-            log_info Log.(s "Server killed by “die” command "
-                    % parens (OCaml.string file_path));
-            begin Engine.unload server_state.state
-              >>= function
-              | `Ok () -> exit 0
-              | `Error e ->
-                log_error e Log.(s "Could not unload engine");
-                exit 10
-            end
+            Commands.die server_state file_path
           | `ReloadAuth ->
-            begin reload_authentication ~server_state
-              >>= function
-              | `Ok () -> return ()
-              | `Error e ->
-                log_error e
-                  Log.(s "Could not reload Authentication: "
-                      % Authentication.source server_state.authentication);
-                return ()
-            end
-            >>= fun () ->
-            loop ~error_count ()
+            Commands.reload_authentication ~server_state
+            >>= loop ~error_count
           | `DumpAllConnections ->
-            let uniq = Unique_id.create () in
-            Deferred_result.(
-              IO.with_out_channel
-                (`Overwrite_file ("all-connections-" ^ uniq))
-                ~f:(fun o ->
-                    Hashtbl.fold (fun id status prev ->
-                        prev >>= fun () ->
-                        IO.write o (fmt "%s:\n" id)
-                        >>= fun () ->
-                        List.fold (List.rev status) ~init:(return ())
-                          ~f:(fun prev status ->
-                              prev >>= fun () ->
-                              let ti = Time.to_filename in
-                              IO.write o
-                                (fmt "    %s\n"
-                                  begin match status with
-                                  | `Open t -> fmt "Open %s" (ti t)
-                                  | `Request t -> fmt "Request %s" (ti t)
-                                  | `Closed t -> fmt "Closed %s" (ti t)
-                                  end))
-                      )
-                      server_state.all_connections
-                      (return ()))
-              >>< function
-              | `Ok () -> return ()
-              | `Error e ->
-                log_error e Log.(s "dump-all-connections");
-                return ()
-            )
-            >>= fun _ ->
-            loop ~error_count ()
+            Commands.dump_all_connections server_state
+            >>= loop ~error_count
           | `GetLog (format, path) ->
-            execute_deferred server_state Deferred_result.(fun () ->
-                Log.(s "Append logs to " %quote path @ verbose);
-                Logging.Global.append_to_file ~path ~format)
-            >>= fun _ ->
-            loop ~error_count ()
+            Commands.get_log format path
+            >>= loop ~error_count
           | `UnrecognizedFormat format ->
-            execute_deferred server_state Deferred_result.(fun () ->
-                fail (`Failure (fmt "wrong format: %S" format)))
-            >>= fun _ ->
+            log_error (`Failure (fmt "wrong format: %S" format))
+              Log.(s "get_log:unrecognized format");
             loop ~error_count ()
           | `WrongGetLog msg ->
-            execute_deferred server_state Deferred_result.(fun () ->
-                log_info Log.(s "Wrong get-log: " % quote msg);
-                return ())
-            >>= fun _ ->
+            log_info Log.(s "Wrong get-log: " % quote msg);
             loop ~error_count ()
           | `Other other ->
-            log_info
-              Log.(s "Cannot understand command: " % OCaml.string other);
+            log_info Log.(s "Cannot understand command: " % OCaml.string other);
             loop ~error_count ()
+        end
     in
     let on_exception e =
       let error_count = error_count + 1 in
@@ -789,7 +779,7 @@ let stop ~configuration =
     begin
     System.with_timeout 2. (fun () ->
         IO.with_out_channel (`Append_to_file file_path) ~buffer_size:16 ~f:(fun oc ->
-            IO.write oc Commands.die
+            IO.write oc Commands.die_command
             >>= fun () ->
             IO.write oc "\n"))
     >>< function
