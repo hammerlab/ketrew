@@ -438,22 +438,24 @@ let api_service ~server_state ~body req =
 let apijsonp_service ~server_state req =
   let token = Request.parameter req "token" in
   let body = Request.parameter req "message" in
+  let callback = Request.parameter req "callback" in
   begin match body with
-  | Some s -> return s
   | None -> wrong_request "missing jsonp-message" ""
+  | Some b -> match callback with
+              | None -> wrong_request "missing jsonp-callback" ""
+              | Some c -> return (b, c)
   end
-  >>= message_of_body     (* the 'message' here is of Up_message.t *)
+  (* the 'message' here is of Up_message.t *)
+  >>= fun (body, callback) -> message_of_body body
   >>= answer_message ~server_state ?token
   >>= fun down_msg ->
-  let callback = Request.parameter req "callback" in
   let page =
-    fmt "window.%s({ \"message\" : %S })"
-      Option.(value callback ~default:"missing_callback")
+    fmt "window.%s({ \"message\" : %S })" callback
       (Protocol.Down_message.serialize down_msg |> Uri.pct_encode)
   in
   Log.(s "Returning "
         % i (String.length page) %s " bytes"
-        %sp % parens (s "Callback: " % OCaml.option quote callback)
+        %sp % parens (s "Callback: " % quote callback)
         @ verbose);
   return (`Page page)
 
