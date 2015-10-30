@@ -441,9 +441,10 @@ let apijsonp_service ~server_state req =
   let callback = Request.parameter req "callback" in
   begin match body with
   | None -> wrong_request "missing jsonp-message" ""
-  | Some b -> match callback with
+  | Some b -> begin match callback with
               | None -> wrong_request "missing jsonp-callback" ""
               | Some c -> return (b, c)
+              end
   end
   (* the 'message' here is of Up_message.t *)
   >>= fun (body, callback) -> message_of_body body
