@@ -363,60 +363,41 @@ let answer_get_server_status ~server_state =
 let answer_message ~server_state ?token msg =
   let read_only_mode =
       Configuration.read_only_mode server_state.server_configuration in
-  let with_capability cap =
-    ensure_can server_state.authentication ?token cap ~read_only_mode in
+  let with_capability cap f =
+    ensure_can server_state.authentication ?token cap ~read_only_mode
+    >>= fun () -> f ~server_state
+  in
   match msg with
   | `Get_targets l ->
-    with_capability `See_targets
-    >>= fun () ->
-    Targets.get ~server_state l
+    with_capability `See_targets (Targets.get l)
   | `Get_target_summaries l ->
-    with_capability `See_targets
-    >>= fun () ->
-    Targets.summaries ~server_state l
+    with_capability `See_targets (Targets.summaries l)
   | `Get_available_queries target_id ->
-    with_capability `Query_targets
-    >>= fun () ->
-    Targets.available_queries ~server_state target_id
+    with_capability `Query_targets (Targets.available_queries target_id)
   | `Call_query (target_id, query) ->
-    with_capability `Query_targets
-    >>= fun () ->
-    Targets.call_query ~server_state ~target_id ~query
+    with_capability `Query_targets (Targets.call_query ~target_id ~query)
   | `Submit_targets targets ->
-    with_capability `Submit_targets
-    >>= fun () ->
-    Targets.submit ~server_state ~targets
+    with_capability `Submit_targets (Targets.submit ~targets)
   | `Kill_targets ids ->
-    with_capability `Kill_targets
-    >>= fun () ->
-    Targets.kill ~server_state ids
+    with_capability `Kill_targets (Targets.kill ids)
   | `Restart_targets ids ->
-    with_capability `Restart_targets
-    >>= fun () ->
-    Targets.restart ~server_state ids
+    with_capability `Restart_targets (Targets.restart ids)
   | `Get_target_ids query ->
-    with_capability `See_targets
-    >>= fun () ->
-    Targets.get_ids ~server_state query
+    with_capability `See_targets (Targets.get_ids query)
   | `Get_server_status ->
-    with_capability `See_server_status
-    >>= fun () ->
-    answer_get_server_status ~server_state
+    with_capability `See_server_status answer_get_server_status
   | `Get_target_flat_states query ->
-    with_capability `See_targets
-    >>= fun () ->
-    Targets.get_flat_states ~server_state query
+    with_capability `See_targets (Targets.get_flat_states query)
   | `Get_deferred (id, index, length) ->
-    with_capability `See_targets
-    >>= fun () ->
-    let msg =
-      Deferred_queries.make_message server_state.deferred_queries
-        ~id ~index ~length in
-    return msg
+    with_capability `See_targets (fun ~server_state ->
+        let msg =
+          Deferred_queries.make_message server_state.deferred_queries
+          ~id ~index ~length
+        in
+        return msg)
   | `Process p_msg ->
-    with_capability `Play_with_process_holder
-    >>= fun () ->
-    Process_holder.answer_message server_state.process_holder p_msg
+    with_capability `Play_with_process_holder (fun ~server_state ->
+          Process_holder.answer_message server_state.process_holder p_msg)
     >>= fun p_down ->
     return (`Process p_down)
 
