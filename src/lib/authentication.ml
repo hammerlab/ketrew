@@ -28,7 +28,7 @@ type t = {
   authentication_input: [`Path of string | `Inline of (string * string)] list;
 }
 
-let source {valid_tokens; authentication_input} =
+let log {valid_tokens; authentication_input} =
   let paths =
     List.filter_map authentication_input ~f:(function
       | `Path p -> Some p | `Inline _ -> None) in

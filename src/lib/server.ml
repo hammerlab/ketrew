@@ -523,7 +523,7 @@ module Commands = struct
         return ()
       | `Error e ->
         log_error e Log.(s "Could not reload Authentication: "
-          % Authentication.source server_state.authentication);
+          % Authentication.log server_state.authentication);
         return ()
       end
 

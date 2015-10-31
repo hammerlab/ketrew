@@ -32,7 +32,7 @@ open Internal_pervasives
 
 type t
 
-val source : t -> Log.t
+val log : t -> Log.t
 (** Describe the source of the authentication. *)
 
 val load : [ `Inline of string * string | `Path of String.t ] list ->
