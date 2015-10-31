@@ -29,6 +29,7 @@
 
 open Ketrew_pure
 open Internal_pervasives
+open Unix_io
 
 type t
 
@@ -36,11 +37,11 @@ val log : t -> Log.t
 (** Describe the source of the authentication. *)
 
 val load : [ `Inline of string * string | `Path of String.t ] list ->
-    (t, [> `IO of [> `Read_file_exn of Unix_io.IO.path * exn ] ]) Unix_io.t
+    (t, [> `IO of [> `Read_file_exn of IO.path * exn ] ]) Deferred_result.t
 (** Load tokens that represent your authentication.*)
 
 val reload : t ->
-    (t, [> `IO of [> `Read_file_exn of Unix_io.IO.path * exn ] ]) Unix_io.t
+    (t, [> `IO of [> `Read_file_exn of IO.path * exn ] ]) Deferred_result.t
 (** Reload tokens based upon their original source.
     
     This makes sense if the they were originall loaded from a specific `Path. *)
