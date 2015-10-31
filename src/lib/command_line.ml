@@ -249,7 +249,7 @@ let submit ?add_tags ~configuration ~wet_run what =
 
 let generate_token () =
   let () = Random.self_init () in
-  List.init 64 ~f:(fun _ -> (Random.bits ()) land 255)
+  List.init 32 ~f:(fun _ -> (Random.bits ()) land 255)
   |> List.map ~f:char_of_int
   |> String.of_character_list
   |> B64.encode ~alphabet:B64.uri_safe_alphabet 
