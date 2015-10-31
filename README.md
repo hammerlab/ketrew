@@ -79,22 +79,22 @@ Getting Started
 Ketrew is very flexible and hence may seem difficult to understand, let's get a
 minimal workflow running.
 
-Before you can use Ketrew, you need to configure it, the simplest way:
+Before you can use Ketrew, you need to configure it:
 
-    $ ketrew init --with-token my-not-so-secret-token
+    $ ketrew init
 
 By default this will configure Ketrew in
 
     $ ls $HOME/.ketrew/
     authorized_tokens	configuration.ml
 
-You can check that the client or the server are configured. The client is returned by default:
+You can check that the client or the server are configured (the client is returned by default):
 
     $ ketrew print-configuration
     [ketrew]
         Mode: Client
         Connection: "http://127.0.0.1:8756"
-        Auth-token: "my-not-so-secret-token"
+        Auth-token: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4="
         UI:
             Colors: with colors
             Get-key: uses `cbreak`
@@ -105,41 +105,43 @@ You can check that the client or the server are configured. The client is return
         Misc:
             Debug-level: 0
             Plugins: None
+
 
 For the server:
 
-    $ ketrew print-configuration -P server
+    $ ketrew pc server
     [ketrew]
-        Mode: Server
-        Engine:
-            Database: "/path-to-home/.ketrew/database"
-            Unix-failure: does not turn into target failure
-            Host-timeout-upper-bound:
-            Maximum-successive-attempts: 10
-            Concurrent-automaton-steps: 4
-        UI:
-            Colors: with colors
-            Get-key: uses `cbreak`
-            Explorer:
-                Default request: Targets younger than 1.5 days
-                Targets-per-page: 6
-                Targets-to-prefectch: 6
-        HTTP-server:
-            Authorized tokens:
-                Inline (Name: my-not-so-secret-token, Value: "my-not-so-secret-token")
-                Path: "/path-to-home/.ketrew/authorized_tokens"
-            Daemonize: false
-            Command Pipe: Some "/path-to-home/.ketrew/command.pipe"
-            Log-path: Some "/path-to-home/.ketrew/server-log"
-            Return-error-messages: true
-            Max-blocking-time: 300.
-            Block-step-time: 3.
-            Listen: HTTP: 8756
-        Misc:
-            Debug-level: 0
-            Plugins: None
+    Mode: Server
+    Engine:
+        Database: "/Users/leonidrozenberg/.ketrew/database"
+        Unix-failure: does not turn into target failure
+        Host-timeout-upper-bound:
+        Maximum-successive-attempts: 10
+        Concurrent-automaton-steps: 4
+    UI:
+        Colors: with colors
+        Get-key: uses `cbreak`
+        Explorer:
+            Default request: Targets younger than 1.5 days
+            Targets-per-page: 6
+            Targets-to-prefectch: 6
+    HTTP-server:
+        Authorized tokens:
+            Inline (Name: 755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=,
+            Value: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=")
+            Path: "/Users/leonidrozenberg/.ketrew/authorized_tokens"
+        Daemonize: false
+        Command Pipe: Some "/Users/leonidrozenberg/.ketrew/command.pipe"
+        Log-path: Some "/Users/leonidrozenberg/.ketrew/server-log"
+        Return-error-messages: true
+        Max-blocking-time: 300.
+        Block-step-time: 3.
+        Listen: HTTP: 8756
+    Misc:
+        Debug-level: 0
+        Plugins: None
 
-Note that `-P` is the shorter argument form for `--configuration_profile`.
+Note that `pc` is a command _alias_ for `print-configuration`.
 Furthermore `daemon` is a shortcut for starting the `server` in
 [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
 now start a server:
@@ -152,9 +154,9 @@ Let's open the GUI:
 
 Which should open your browser.
 
-<div><img width="100%" src="Ketrew_gui_1.png"/></div>
+<div><img width="100%" src="src/doc/images/preview1.png"/></div>
 
-You can always check the server's status:
+Back at the command line can always check the server's status:
 
     $ ketrew status -P daemon
     [ketrew] The server appears to be doing well.
@@ -285,7 +287,8 @@ Troubleshooting
 
         $ rm -fr $HOME/.ketrew/
 
-- During configuration you can optionally pass an authentication token:
+- During configuration it is recommended that you pass an authentication token,
+  as opposed to having Ketrew generate one for you:
 
         $ ketrew init --with-token my-not-so-secret-token
 
