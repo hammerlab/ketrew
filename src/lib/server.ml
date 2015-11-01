@@ -488,17 +488,16 @@ module Commands = struct
   let die server_state file_path =
     log_info Log.(s "Server killed by “die” command "
                     % parens (OCaml.string file_path));
-    Lwt.bind (Engine.unload server_state.state)
-      begin function
+    Engine.unload server_state.state
+    >>< function
       | `Ok () -> exit 0
       | `Error e ->
         log_error e Log.(s "Could not unload engine");
         exit 10
-      end
 
   let reload_authentication ~server_state =
-    Lwt.bind (Authentication.reload server_state.authentication)
-      begin function
+    Authentication.reload server_state.authentication
+    >>< function
       | `Ok authentication ->
         server_state.authentication <- authentication;
         return ()
@@ -506,7 +505,6 @@ module Commands = struct
         log_error e Log.(s "Could not reload Authentication: "
           % Authentication.log server_state.authentication);
         return ()
-      end
 
   let dump_all_connections server_state =
     let uniq = Unique_id.create () in
@@ -548,47 +546,47 @@ module Commands = struct
 end (* Commands *)
 
 let read_loop ~server_state ~file_path pipe =
-  let rec loop ~error_count () =
-    Log.(s "Listening on " % OCaml.string file_path @ verbose);
-    let normal_execution () =
-      Lwt.bind (Lwt_io.read_line pipe)
-        begin fun msg ->
-          match Commands.parse msg with
-          | `Die ->
-            Commands.die server_state file_path
-          | `ReloadAuth ->
-            Commands.reload_authentication ~server_state
-            >>= loop ~error_count
-          | `DumpAllConnections ->
-            Commands.dump_all_connections server_state
-            >>= loop ~error_count
-          | `GetLog (format, path) ->
-            Commands.get_log format path
-            >>= loop ~error_count
-          | `UnrecognizedFormat format ->
-            log_error (`Failure (fmt "wrong format: %S" format))
-              Log.(s "get_log:unrecognized format");
-            loop ~error_count ()
-          | `WrongGetLog msg ->
-            log_info Log.(s "Wrong get-log: " % quote msg);
-            loop ~error_count ()
-          | `Other other ->
-            log_info Log.(s "Cannot understand command: " % OCaml.string other);
-            loop ~error_count ()
-        end
-    in
-    let on_exception e =
-      let error_count = error_count + 1 in
-      Log.(s "Exn while reading command pipe: " % exn e
-        % sp % parens (i error_count % s "-th error") @ error);
-      if error_count >= 5 then
+  let rec loop ~error_count =
+    if error_count >= 5 then begin
+      Log.(s "Encountered 5 errors, stop reading from pipe." @ verbose);
+      return ()
+    end else begin
+      Log.(s "Listening on " % OCaml.string file_path @ verbose);
+      wrap_deferred (fun () -> Lwt_io.read_line pipe)
+        ~on_exn:(fun e ->
+          let error_count = error_count + 1 in
+          Log.(s "Exn while reading command pipe: " % exn e
+            % sp % parens (i error_count % s "-th error") @ error);
+          `Count error_count)
+      >>| Commands.parse
+      >>= function
+      | `Die ->
+        Commands.die server_state file_path
+      | `ReloadAuth ->
+        Commands.reload_authentication ~server_state
+      | `DumpAllConnections ->
+        Commands.dump_all_connections server_state
+      | `GetLog (format, path) ->
+        Commands.get_log format path
+      | `UnrecognizedFormat format ->
+        log_error (`Failure (fmt "wrong format: %S" format))
+          Log.(s "get_log:unrecognized format");
         return ()
-      else
-        loop ~error_count ()
-    in
-    Lwt.catch normal_execution on_exception;
+      | `WrongGetLog msg ->
+        log_info Log.(s "Wrong get-log: " % quote msg);
+        return ()
+      | `Other other ->
+        log_info Log.(s "Cannot understand command: " % OCaml.string other);
+        return ()
+      >>< function
+      | `Ok () -> loop ~error_count
+      | `Error (`Count error_count) -> loop ~error_count
+    end
   in
-  Lwt.ignore_result (loop ~error_count:0 ())
+  loop ~error_count:0
+  >>< function
+  | `Ok () -> return ()
+  | `Error (`Count _) -> return ()
 
 let start_listening_on_command_pipe ~server_state =
   let conf = server_state.server_configuration in
@@ -607,9 +605,7 @@ let start_listening_on_command_pipe ~server_state =
          Lwt_io.open_file ~buffer_size:16
            ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] ~perm:0o660
            ~mode:Lwt_io.input file_path)
-    >>= fun pipe ->
-      read_loop ~server_state ~file_path pipe;
-      return ()
+    >>= read_loop ~server_state ~file_path
 
 let start_engine_loop ~server_state =
   let time_step = 1. in
