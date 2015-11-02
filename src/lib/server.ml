@@ -212,8 +212,9 @@ let block_if_empty_at_most ~server_state
 
 (** {2 Services: Answering Requests} *)
 
-(* Get information related to Targets controlled by the server. *)
-module Targets = struct
+(* Tell the engine to do stuff; unless otherwise specified the operations
+   relate to targets. *)
+module Engine_instructions = struct
 
   let from_ids ~server_state = function
     | [] ->
@@ -331,7 +332,7 @@ module Targets = struct
           return msg
       end
 
-end (* Targets *)
+end (* Engine_instructions *)
 
 let answer_get_server_status ~server_state =
   let tls =
@@ -364,25 +365,25 @@ let answer_message ~server_state ?token msg =
   in
   match msg with
   | `Get_targets l ->
-    with_capability `See_targets (Targets.get l)
+    with_capability `See_targets (Engine_instructions.get l)
   | `Get_target_summaries l ->
-    with_capability `See_targets (Targets.summaries l)
+    with_capability `See_targets (Engine_instructions.summaries l)
   | `Get_available_queries target_id ->
-    with_capability `Query_targets (Targets.available_queries target_id)
+    with_capability `Query_targets (Engine_instructions.available_queries target_id)
   | `Call_query (target_id, query) ->
-    with_capability `Query_targets (Targets.call_query ~target_id ~query)
+    with_capability `Query_targets (Engine_instructions.call_query ~target_id ~query)
   | `Submit_targets targets ->
-    with_capability `Submit_targets (Targets.submit ~targets)
+    with_capability `Submit_targets (Engine_instructions.submit ~targets)
   | `Kill_targets ids ->
-    with_capability `Kill_targets (Targets.kill ids)
+    with_capability `Kill_targets (Engine_instructions.kill ids)
   | `Restart_targets ids ->
-    with_capability `Restart_targets (Targets.restart ids)
+    with_capability `Restart_targets (Engine_instructions.restart ids)
   | `Get_target_ids query ->
-    with_capability `See_targets (Targets.get_ids query)
+    with_capability `See_targets (Engine_instructions.get_ids query)
   | `Get_server_status ->
     with_capability `See_server_status answer_get_server_status
   | `Get_target_flat_states query ->
-    with_capability `See_targets (Targets.get_flat_states query)
+    with_capability `See_targets (Engine_instructions.get_flat_states query)
   | `Get_deferred (id, index, length) ->
     with_capability `See_targets (fun ~server_state ->
         let msg =
