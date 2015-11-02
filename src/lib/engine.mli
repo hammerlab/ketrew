@@ -140,7 +140,7 @@ val get_status : t -> Ketrew_pure.Target.id ->
     Deferred_result.t
 (** Get the state description of a given target (by “id”). *)
 
-val kill : t -> Unique_id.t ->
+val kill : t -> id:Unique_id.t ->
   (unit,
    [> `Database of
         [> `Act of Trakeva.Action.t | `Load of string ] * string

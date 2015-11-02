@@ -235,7 +235,7 @@ let kill t id_list =
   match t with
   | `Standalone s ->
     let open Standalone in
-    Deferred_list.while_sequential id_list (Engine.kill s.engine)
+    Deferred_list.while_sequential id_list (fun id -> Engine.kill s.engine ~id)
     >>= fun (_ : unit list) ->
     return ()
   | `Http_client c ->

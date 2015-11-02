@@ -273,7 +273,7 @@ module Engine_instructions = struct
     >>= go_green server_state
 
   let kill ~server_state ids =
-    Deferred_list.while_sequential ids (Engine.kill server_state.state)
+    Deferred_list.while_sequential ids (fun id -> Engine.kill server_state.state ~id)
     >>= go_green server_state
 
   let restart ~server_state ids =
