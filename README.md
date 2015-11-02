@@ -191,32 +191,30 @@ Finally to stop the server:
     $ ketrew stop -P daemon
     [ketrew] Server killed.
 
+As you can see, just from the command line, `ketrew submit` provides a power and flexible mechanism for launching tasks. But to go further we need to use an EDSL.
 
 The EDSL: Defining Workflows
 ----------------------------
 
-The previous section uses `ketrew submit` to launch an extremely simple
-workflow, to go further we need the EDSL.
-
 ### Overview
 
-The EDSL is an OCaml library where all the functions are used to build a
-workflow data-structure. Then, one function: `Ketrew.Client.submit` is used to
-submit workflows to the engine.
+The EDSL is an OCaml library where functions are used to build a
+workflow data-structure. Then, one function:
+[Ketrew.Client.submit](http://seb.mondet.org/software/ketrew/api/Ketrew.Client.html#VALsubmit)
+is used to submit workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
 
 There are 3 kinds of links between targets:
 
-- *dependencies:* targets that need to be ensured or
+- *dependencies:* targets that need to be ensured to exist or
 run before a target can start,
-- *fallbacks:* targets that will be activated
-if the target fails, and
-- *success-triggers:* targets that will be activated only *after* a target
-succeeds.
+- *fallbacks:* targets that will be activated if the target fails, and
+- *successes:* targets that will be activated only *after* a target succeeds.
 
-Any OCaml program can use the EDSL (script, compiled, or even inside the
-toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
+See the [target](https://github.com/hammerlab/ketrew/blob/master/src/lib/eDSL.mli#L176)
+function documentation for details. Any OCaml program can use the EDSL (script, compiled,
+or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
 
 
 ### Example
