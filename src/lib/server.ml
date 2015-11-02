@@ -173,9 +173,7 @@ let block_if_empty_at_most ~server_state
     List.find options ~f:(function `Block_if_empty_at_most _ -> true)
   with
   | None ->
-    get_values ()
-    >>= fun values ->
-    send values
+    get_values () >>= send
   | Some (`Block_if_empty_at_most req_block_time) ->
     let start_time = Time.now () in
     let sleep_time =
@@ -192,8 +190,6 @@ let block_if_empty_at_most ~server_state
         req_block_time in
     let rec loop () =
       let now =  Time.now () in
-      get_values ()
-      >>= fun values ->
       match start_time +. block_time < now with
       | true ->
         log_info
@@ -202,15 +198,14 @@ let block_if_empty_at_most ~server_state
                % s "block_time: " % f block_time % n
                % s "req_block_time: " % f req_block_time % n
                % s "now: " % Time.log now);
-        send values
+        get_values () >>= send
       | false ->
-        begin match should_send values with
-        | false ->
-          (System.sleep sleep_time >>< fun _ -> return ())
-          >>= fun () ->
-          loop ()
-        | true -> send values
-        end
+        get_values ()
+        >>= fun values ->
+        if should_send values then
+          send values
+        else
+          System.sleep sleep_time >>< fun _ -> loop ()
     in
     loop ()
   end
