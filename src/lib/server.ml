@@ -77,8 +77,7 @@ module Server_state = struct
              then id :: prev
              else prev)
           t.table [] in
-      List.iter to_remove ~f:(Hashtbl.remove t.table);
-      ()
+      List.iter to_remove ~f:(Hashtbl.remove t.table)
 
     let markup t =
       let open Display_markup in
