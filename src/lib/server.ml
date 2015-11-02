@@ -578,10 +578,8 @@ let read_loop ~server_state ~file_path pipe =
       | `Error (`Count error_count) -> loop ~error_count
     end
   in
-  loop ~error_count:0
-  >>< function
-  | `Ok () -> return ()
-  | `Error (`Count _) -> return ()
+  Lwt.ignore_result (loop ~error_count:0);
+  return ()
 
 let start_listening_on_command_pipe ~server_state =
   let conf = server_state.server_configuration in
