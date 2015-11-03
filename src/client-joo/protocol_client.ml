@@ -63,6 +63,8 @@ let name {name; _} = name
 
 let jsonp_of_raw_url ~name url = create ~name (JSONP url)
 
+let encode_uri_value = Uri.pct_encode ~component:`Query_key
+
 let jsonp_call url =
   (fun msg callback_name ->
      fmt "%s&callback=%s&message=%s"
@@ -75,7 +77,7 @@ let jsonp_of_url ~protocol ~host ?port ~token () =
     Printf.sprintf  "%s//%s%s/apijsonp?token=%s"
       protocol host
       (Option.value_map port ~f:(fmt ":%d") ~default:"")
-      token
+      (encode_uri_value token)
   in
   jsonp_of_raw_url url
 
@@ -131,7 +133,7 @@ let of_current () : t option =
 let base_url {connection; _} =
   match connection with
   | JSONP url -> url
-  | XHR (`Token tok)  -> fmt "/api?token=%s" tok
+  | XHR (`Token tok)  -> fmt "/api?token=%s" (encode_uri_value tok)
 
 
 let of_window_object () =

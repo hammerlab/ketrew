@@ -648,8 +648,9 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Client c ->
                 let url = Configuration.connection c in
                 let token = Configuration.token c in
+                let encoded_tok = Uri.pct_encode ~component:`Query_key token in
                 System.Shell.do_or_fail
-                  (fmt "%s %s/gui?token=%s" open_cmd url token)
+                  (fmt "%s %s/gui?token=%s" open_cmd url encoded_tok)
             )
           $ configuration_arg
           $ Arg.(value @@ opt string "open"
