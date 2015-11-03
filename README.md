@@ -212,7 +212,7 @@ run before a target can start,
 - *fallbacks:* targets that will be activated if the target fails, and
 - *successes:* targets that will be activated only *after* a target succeeds.
 
-See the [target](https://github.com/hammerlab/ketrew/blob/master/src/lib/eDSL.mli#L176)
+See the [target](src/lib/eDSL.mli#L176)
 function documentation for details. Any OCaml program can use the EDSL (script, compiled,
 or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
 
