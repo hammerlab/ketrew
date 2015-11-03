@@ -20,7 +20,7 @@ let run_command_with_daemonize ~cmd ~email =
   let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
   *)
 
-  (* A target that Ketrew will activate after the success of cmd *)
+  (* A target that Ketrew will activate after cmd completes *)
   let email_target ~success =
     let sstring = if success then "succeeded" else "failed" in
     let e_program =
