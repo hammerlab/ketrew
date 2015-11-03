@@ -219,61 +219,69 @@ or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eD
 
 ### Example
 
-This example is a “single-target” workflow that runs an arbitrary shell command
-on an [LSF-based](http://en.wikipedia.org/wiki/Platform_LSF) cluster:
+The following script extends the previous shell based example with the capability to send emails upon the success or failure of your command.
 
 ```ocaml
 #use "topfind"
 #thread
 #require "ketrew"
-let run_command_with_lsf cmd =
+
+let run_command_with_daemonize ~cmd ~email =
   let module KEDSL = Ketrew.EDSL in
-  let host =
-    (* `Host.parse` takes an URI and creates a “Host” datastructue: a place to
-       run stuff.  *)
-    KEDSL.Host.parse
-      "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash"
-    (* This one is an SSH host, named `MyLSFCluster`.
-       The directory `/home/user42/ketrew-playground/` will be used by Ketrew
-       to monitor the jobs. *)
+
+  (* Where to run stuff *)
+  let host = KEDSL.Host.tmp_on_localhost in
+
+  (* A “program” is a datastructure representing an “extended shell script”. *)
+  let program = KEDSL.Program.sh cmd in
+
+  (* A “build process” is a method for making things.
+     
+     In this case, `daemonize` creates a datastructure that represents a job
+     running our program on the host. *)
+  let build_process = KEDSL.daemonize ~host program in
+
+  (* A target that Ketrew will activate after the success of cmd *)
+  let email_target ~success =
+    let sstring = if success then "succeeded" else "failed" in
+    let e_program =
+      KEDSL.Program.shf "echo \"'%s' %s\" | mail -s \"Status update\" %s"
+        cmd sstring
+        email
+    in
+    let e_process =
+      KEDSL.daemonize ~using:`Python_daemon ~host e_program in
+    KEDSL.target ("email result " ^ sstring) ~make:e_process 
   in
-  let program =
-    (* A “program” is a datastructure representing “extended shell scripts”.
-       `Program.sh` creates one out a shell command. *)
-    KEDSL.Program.sh cmd in
-  let lsf_build_process =
-    (* “build process” is a method for making things:
-       `lsf` creates a datastructure that represents a job running a `program`
-       with the LSF scheduling engine, on the host `host`.  *)
-    KEDSL.lsf
-      ~queue:"normal-people" ~wall_limit:"1:30"
-      ~processors:(`Min_max (1,1)) ~host program
-  in
-  (* The function `KEDSL.target` creates a node in the workflow graph.
-     This one is very simple, it has a name and a build-process,
-     and since it doesn't have dependencies or fallbacks, it is a
-     “single-node” workflow: *)
-  KEDSL.target
-     "run_command_with_lsf"
-     ~make:lsf_build_process
+
+  (* The function `KEDSL.target` creates a node in the workflow graph. *)
+  KEDSL.target "daemonize command"
+    ~make:build_process
+    ~on_success_activate:[email_target true]
+    ~on_failure_activate:[email_target false]
 
 let () =
-  let workflow =
-     (* Create the  workflow with the first argument of the command line: *)
-     run_command_with_lsf Sys.argv.(1) in
+  (* Grab the command line arguments. *)
+  let cmd   = Sys.argv.(1) in
+  let email = Sys.argv.(2) in
+
+  (* Create the  workflow with the first argument of the command line: *)
+  let workflow = run_command_with_daemonize ~cmd ~email in
+
   (* Then, `Client.submit` is the only function that “does” something, it
      submits the workflow to the engine: *)
   Ketrew.Client.submit workflow
-  (* If Ketrew is in Standalone mode, this means writing the workflow in the
-     database (nothing runs yet, you need to run Ketrew's engine yourself).
-     If Ketrew is in Client-Server mode, this means sending the workflow to the
-     server over HTTPS. The server will start running the workflow right away.  *)
+
 ```
 
-If you actually have access to an LSF cluster and want to try this workflow,
-put it in a file `my_second_workflow.ml`, and simply:
+You can run this [script](src/example_scripts/daemonize_workflow.ml) from the shell
+with
 
-    ocaml my_second_workflow.ml 'du -sh $HOME'
+    ocaml daemonize_workflow.ml 'du -sh $HOME' myaddress@email.com
+    
+Checking in with the gui, we'll have a couple of new tasks:
+
+<div><img width="100%" src="src/doc/images/preview2.png"/></div>
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
@@ -290,19 +298,13 @@ Troubleshooting
 
         $ ketrew init --with-token my-not-so-secret-token
 
+- On a Mac and the EDSL example didn't work? Unfortunately, there's no
+  [setsid](http://man7.org/linux/man-pages/man1/setsid.1.html) utility
+  which is the default way of daemonizing processes in Ketrew.
+  Use the `` `Python_daemon`` technique for forking:
+        
+        $ let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
 
---------------------------------------------
-TODO: move this section
-  - in a client/server mode
-  - **not** using TLS on port `8756`
-  - with a local Sqlite database (use the option `--use-database URI` to choose another
-[database backend](src/doc/Database_Backends.md)).
-See `ketrew init --help` for more
-options, you can even ask it to generate self-signed TLS certificates.
-See also the [documentation](src/doc/The_Configuration_File.md)
-on the configuration file learn how to tweak it.
-
----------------------------------
 
 
 Where to Go Next
