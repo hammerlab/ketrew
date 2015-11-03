@@ -578,7 +578,9 @@ let read_loop ~server_state ~file_path pipe =
       | `Error (`Count error_count) -> loop ~error_count
     end
   in
-  Lwt.ignore_result (loop ~error_count:0);
+  Lwt.ignore_result
+    (loop ~error_count:0
+     >>< function | `Ok () | `Error (`Count _) -> return ());
   return ()
 
 let start_listening_on_command_pipe ~server_state =
