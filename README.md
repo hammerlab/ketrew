@@ -249,8 +249,7 @@ let run_command_with_daemonize ~cmd ~email =
         cmd sstring
         email
     in
-    let e_process =
-      KEDSL.daemonize ~using:`Python_daemon ~host e_program in
+    let e_process = KEDSL.daemonize ~host e_program in
     KEDSL.target ("email result " ^ sstring) ~make:e_process 
   in
 
