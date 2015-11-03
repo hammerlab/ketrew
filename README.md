@@ -278,7 +278,7 @@ with
 
     ocaml daemonize_workflow.ml 'du -sh $HOME' myaddress@email.com
     
-Checking in with the gui, we'll have a couple of new tasks:
+Checking in with the gui, we'll have a couple of new targets:
 
 <div><img width="100%" src="src/doc/images/preview2.png"/></div>
 
