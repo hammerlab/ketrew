@@ -563,15 +563,15 @@ module Html = struct
                 a_class ["label"; label];
                 a_onmouseover (fun ev ->
                     let mx, my =
-                      Js.Optdef.case ev##.toElement
+                      Js.Optdef.case ev##.relatedTarget
                         (fun () ->
-                           Log.(s "toElement undefined !!" @ error);
+                           Log.(s "relatedTarget undefined !!" @ error);
                            (200, 200))
                         (fun eltopt ->
                            Js.Opt.case eltopt
                              (fun () ->
-                                Log.(s "toElement defined but null!!" @ error);
-                                (200, 200))
+                                Log.(s "relatedTarget defined but null!!" @ error);
+                                (400, 400))
                              (fun elt ->
                                 let rect = elt##getBoundingClientRect in
                                 (int_of_float rect##.left,
