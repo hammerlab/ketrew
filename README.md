@@ -146,7 +146,7 @@ Furthermore `daemon` is a shortcut for starting the `server` in
 [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
 now start a server:
 
-    $ ketrew start-server -P daemon
+    $ ketrew start-server --profile daemon
 
 Let's open the GUI:
 
@@ -156,7 +156,8 @@ Which should open your browser.
 
 <div><img width="100%" src="src/doc/images/preview1.png"/></div>
 
-Back at the command line can always check the server's status:
+Back at the command line can always check the server's status (and introduce
+the shorter command line argument `-P`, instead of `--profile`):
 
     $ ketrew status -P daemon
     [ketrew] The server appears to be doing well.
