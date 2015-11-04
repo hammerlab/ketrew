@@ -188,8 +188,8 @@ Finally to stop the server:
     $ ketrew stop -P daemon
     [ketrew] Server killed.
 
-As you can see, just from the command line, `ketrew submit` provides a power and
-flexible mechanism for launching tasks. But to go further we need to use an EDSL.
+As you can see, just from the command line, you can use `ketrew submit` to
+launch tasks. But to go further we need to use an EDSL.
 
 The EDSL: Defining Workflows
 ----------------------------
