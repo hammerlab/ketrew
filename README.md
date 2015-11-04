@@ -88,7 +88,8 @@ By default this will configure Ketrew in
     $ ls $HOME/.ketrew/
     authorized_tokens	configuration.ml
 
-You can check that the client or the server are configured (the client is returned by default):
+You can check that the client or the server are configured (the client is
+returned by default) by using the `print-configuration` subcommand:
 
     $ ketrew print-configuration
     [ketrew]
@@ -107,7 +108,7 @@ You can check that the client or the server are configured (the client is return
             Plugins: None
 
 
-For the server:
+For the server (using `pc`, a command alias for `print-configuration`):
 
     $ ketrew pc server
     [ketrew]
@@ -141,7 +142,6 @@ For the server:
         Debug-level: 0
         Plugins: None
 
-Note that `pc` is a command _alias_ for `print-configuration`.
 Furthermore `daemon` is a shortcut for starting the `server` in
 [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
 now start a server:
@@ -191,7 +191,8 @@ Finally to stop the server:
     $ ketrew stop -P daemon
     [ketrew] Server killed.
 
-As you can see, just from the command line, `ketrew submit` provides a power and flexible mechanism for launching tasks. But to go further we need to use an EDSL.
+As you can see, just from the command line, `ketrew submit` provides a power and
+flexible mechanism for launching tasks. But to go further we need to use an EDSL.
 
 The EDSL: Defining Workflows
 ----------------------------
@@ -207,8 +208,8 @@ A workflow is a Graph of “**targets**”.
 
 There are 3 kinds of links between targets:
 
-- *dependencies:* targets that need to be ensured to exist or
-run before a target can start,
+- *dependencies:* targets that need to be ensured or satisifed before a target
+can start,
 - *fallbacks:* targets that will be activated if the target fails, and
 - *successes:* targets that will be activated only *after* a target succeeds.
 
@@ -288,6 +289,11 @@ complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 Troubleshooting
 ---------------
 
+- Trying to use use Sqlite3 on MacOSX, and `opam` fail? These
+  [instructions](https://github.com/smondet/trakeva#sqlite3-on-macosx)
+  should be helpful.
+- `opam` and `ssl` errors when install `ketrew`? Please see this
+  [issue](https://github.com/hammerlab/ketrew/issues/214).
 - When reconfiguring `Ketrew` between versions it may be helpful to delete old configurations:
 
         $ rm -fr $HOME/.ketrew/
