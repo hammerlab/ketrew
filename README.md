@@ -41,12 +41,8 @@ config-file):
 
 This gets you the
 
-  - `ketrew` executable that can be used to schedule and run workflows.
-  - [ketrew_pure](http://seb.mondet.org/software/ketrew/api/Ketrew_pure.html)
-    library, that represents the [stateless]
-    (https://en.wikipedia.org/wiki/Side_effect_%28computer_science%29)
-    part of describing workflows.
-  - [ketrew](http://seb.mondet.org/software/ketrew/api/Ketrew.html) library,
+  - a `ketrew` executable that can be used to schedule and run workflows.
+  - the [ketrew](http://seb.mondet.org/software/ketrew/api/Ketrew.html) library,
     that handles the messy orchestration of those tasks and, significantly,
     has the [EDSL](http://seb.mondet.org/software/ketrew/api/Ketrew.EDSL.html)
     to write workflows.
