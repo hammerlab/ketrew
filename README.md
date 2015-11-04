@@ -6,9 +6,9 @@ Ketrew: Keep Track of Experimental Workflows
 - an OCaml library providing an EDSL API to define complex and convoluted
 workflows (interdependent steps/programs using a lot of data, with many
 parameter variations, running on different *hosts* with various schedulers).
-- an engine taking care of orchestrating the run of those workflows,
-and keeping track everything that succeeds, fails, or gets lost.
-Ketrew can be a standalone application, or use a client-server architecture.
+- an client-server application to make to interact with these workflows.
+The engine at heart of the server takes care of orchestrating the run of those
+workflows, and keeping track of everything that succeeds, fails, or gets lost.
 
 This is the master branch of Ketrew.
 See also the documentation for the latest release:
