@@ -63,17 +63,17 @@ module Another_long_running : Ketrew.Long_running.LONG_RUNNING = struct
     ("date", Log.(s "Display the date, not even on the right host"))
     :: additional_queries run_param
 
-  let query run_param item =
+  let query run_param ~host_io item =
     if item = "date" then
-      begin Ketrew.Host_io.get_shell_command_output
-          (Ketrew_pure.Host.of_string "/tmp") "date"
+      begin Ketrew.Host_io.get_shell_command_output host_io
+          ~host:(Ketrew.EDSL.Host.parse "/tmp") "date"
         >>< function
         | `Ok (o, _) -> return o
         | `Error e ->
           fail Log.(s "Command `date` failed: " % s (Ketrew.Error.to_string e))
       end
     else (* call Ketrew.Daemonize's function: *)
-      query run_param item
+      query ~host_io run_param item
 end
 
 (*M

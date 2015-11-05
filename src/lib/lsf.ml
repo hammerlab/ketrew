@@ -125,7 +125,7 @@ let additional_queries = function
     "script", Log.(s "Monitored-script used");
   ]
 
-let query run_parameters item =
+let query run_parameters ~host_io item =
   match run_parameters with
   | `Created _ ->
     begin match item with
@@ -139,18 +139,18 @@ let query run_parameters item =
       return (markup run_parameters |> Display_markup.serialize)
     | "log" ->
       let log_file = Monitored_script.log_file rp.script in
-      Host_io.grab_file_or_log rp.created.host log_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host out_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host err_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host monitored_script_path
+      Host_io.grab_file_or_log host_io ~host:rp.created.host monitored_script_path
     | "bjobs" ->
-      begin Host_io.get_shell_command_output rp.created.host
+      begin Host_io.get_shell_command_output host_io ~host:rp.created.host
           (fmt "bjobs -l %d" rp.lsf_id)
         >>< function
         | `Ok (o, _) -> return o
@@ -158,7 +158,7 @@ let query run_parameters item =
           fail Log.(s "Command `bjobs -l <ID>` failed: " % s (Error.to_string e))
       end
     | "bpeek" ->
-      begin Host_io.get_shell_command_output rp.created.host
+      begin Host_io.get_shell_command_output host_io ~host:rp.created.host
           (fmt "bpeek %d" rp.lsf_id)
         >>< function
         | `Ok (o, _) -> return o
@@ -168,56 +168,58 @@ let query run_parameters item =
     | other -> fail Log.(s "Unknown query: " % sf "%S" other)
     end
 
-let start: run_parameters -> (_, _) Deferred_result.t = function
-| `Running _ ->
-  fail_fatal "Wrong state: already running"
-| `Created created ->
-  begin
-    fresh_playground_or_fail created.host
-    >>= fun playground ->
-    let script = Monitored_script.create ~playground created.program in
-    let monitored_script_path = script_path ~playground in
-    Host_io.ensure_directory created.host playground
-    >>= fun () ->
-    let content = Monitored_script.to_string script in
-    Host_io.put_file ~content created.host ~path:monitored_script_path
-    >>= fun () ->
-    let out = out_file_path ~playground in
-    let err = err_file_path ~playground in
-    let cmd =
-      let option o ~f = Option.value_map o ~f ~default:"" in
-      String.concat ~sep:" " [
-        "bsub";
-        fmt "-o %s" (Path.to_string out);
-        fmt "-e %s" (Path.to_string err);
-        (option created.queue (fmt "-q '%s'"));
+let start rp ~host_io =
+  match rp with
+  | `Running _ ->
+    fail_fatal "Wrong state: already running"
+  | `Created created ->
+    begin
+      fresh_playground_or_fail ~host_io created.host
+      >>= fun playground ->
+      let script = Monitored_script.create ~playground created.program in
+      let monitored_script_path = script_path ~playground in
+      Host_io.ensure_directory host_io ~host:created.host ~path:playground
+      >>= fun () ->
+      let content = Monitored_script.to_string script in
+      Host_io.put_file ~content host_io ~host:created.host
+        ~path:monitored_script_path
+      >>= fun () ->
+      let out = out_file_path ~playground in
+      let err = err_file_path ~playground in
+      let cmd =
+        let option o ~f = Option.value_map o ~f ~default:"" in
+        String.concat ~sep:" " [
+          "bsub";
+          fmt "-o %s" (Path.to_string out);
+          fmt "-e %s" (Path.to_string err);
+          (option created.queue (fmt "-q '%s'"));
           (option created.name (fmt "-J '%s'"));
-        (option created.wall_limit (fmt "-W '%s'"));
-        (option created.project (fmt "-P '%s'"));
-        (option created.processors (function
-           | `Min m -> fmt "-n %d -R 'span[hosts=1]'" m
-           | `Min_max (mi, ma) -> fmt "-n %d,%d -R 'span[hosts=1]'" mi ma));
-        fmt "< %s"
-          (Path.to_string_quoted monitored_script_path)
-      ]
-    in
-    Log.(s "Cmd: " % s cmd %n  @ verbose);
-    Host_io.get_shell_command_output created.host cmd
-    >>= fun (stdout, stderr) ->
-    Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
-         % s "Err: " % s stderr @ verbose);
-    begin match parse_bsub_output stdout with
-    | Some lsf_id ->
-      return (`Running {lsf_id; playground; script; created})
-    | None ->
-      fail_fatal (fmt "bsub did not give a JOB ID: %S %S" stdout stderr)
+          (option created.wall_limit (fmt "-W '%s'"));
+          (option created.project (fmt "-P '%s'"));
+          (option created.processors (function
+             | `Min m -> fmt "-n %d -R 'span[hosts=1]'" m
+             | `Min_max (mi, ma) -> fmt "-n %d,%d -R 'span[hosts=1]'" mi ma));
+          fmt "< %s"
+            (Path.to_string_quoted monitored_script_path)
+        ]
+      in
+      Log.(s "Cmd: " % s cmd %n  @ verbose);
+      Host_io.get_shell_command_output host_io ~host:created.host cmd
+      >>= fun (stdout, stderr) ->
+      Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
+           % s "Err: " % s stderr @ verbose);
+      begin match parse_bsub_output stdout with
+      | Some lsf_id ->
+        return (`Running {lsf_id; playground; script; created})
+      | None ->
+        fail_fatal (fmt "bsub did not give a JOB ID: %S %S" stdout stderr)
+      end
     end
-  end
-  >>< classify_and_transform_errors
+    >>< classify_and_transform_errors
 
-let get_lsf_job_status host lsf_id =
+let get_lsf_job_status ~host_io host lsf_id =
   let cmd = fmt "bjobs -l %d" lsf_id in
-  Host_io.get_shell_command_output host cmd
+  Host_io.get_shell_command_output host_io ~host cmd
   >>= fun (stdout, stderr) ->
   Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
        % s "Err: " % s stderr @ verbose);
@@ -248,53 +250,55 @@ let get_lsf_job_status host lsf_id =
   in
   return ketrew_status
 
-let update = function
-| `Created _ -> fail_fatal "not running"
-| `Running run as run_parameters ->
-  begin
-    get_log_of_monitored_script ~host:run.created.host ~script:run.script
-    >>= fun log_opt ->
-    begin match Option.bind log_opt  List.last with
-    | Some (`Success date) ->
-      return (`Succeeded run_parameters)
-    | Some (`Failure (date, label, ret)) ->
-      return (`Failed (run_parameters, fmt "%s returned %s" label ret))
-    | None | Some _->
-      get_lsf_job_status run.created.host run.lsf_id
-      >>= fun status ->
-      begin match status with
-      | `Failed ->
-        return (`Failed (run_parameters, fmt "LSF status"))
-      | `Running ->
-        return (`Still_running run_parameters)
-      | `Done ->
-        (* To be sure we need to get again the log file, because there could
-           have been a race condition. *) 
-        get_log_of_monitored_script ~host:run.created.host ~script:run.script
-        >>= fun log_opt ->
-        begin match Option.bind log_opt List.last with
-        | None -> (* no log at all *)
-          return (`Failed (run_parameters, "no log file"))
-        | Some (`Success  date) ->
-          return (`Succeeded run_parameters)
-        | Some other ->
-          return (`Failed (run_parameters, "failure in log"))
+let update rp ~host_io =
+  match rp with
+  | `Created _ -> fail_fatal "not running"
+  | `Running run as run_parameters ->
+    begin
+      get_log_of_monitored_script ~host_io ~host:run.created.host
+        ~script:run.script
+      >>= fun log_opt ->
+      begin match Option.bind log_opt  List.last with
+      | Some (`Success date) ->
+        return (`Succeeded run_parameters)
+      | Some (`Failure (date, label, ret)) ->
+        return (`Failed (run_parameters, fmt "%s returned %s" label ret))
+      | None | Some _->
+        get_lsf_job_status ~host_io run.created.host run.lsf_id
+        >>= fun status ->
+        begin match status with
+        | `Failed ->
+          return (`Failed (run_parameters, fmt "LSF status"))
+        | `Running ->
+          return (`Still_running run_parameters)
+        | `Done ->
+          (* To be sure we need to get again the log file, because there could
+             have been a race condition. *) 
+          get_log_of_monitored_script ~host_io ~host:run.created.host
+            ~script:run.script
+          >>= fun log_opt ->
+          begin match Option.bind log_opt List.last with
+          | None -> (* no log at all *)
+            return (`Failed (run_parameters, "no log file"))
+          | Some (`Success  date) ->
+            return (`Succeeded run_parameters)
+          | Some other ->
+            return (`Failed (run_parameters, "failure in log"))
+          end
         end
       end
     end
-  end
-  >>< classify_and_transform_errors
+    >>< classify_and_transform_errors
 
-let kill run_parameters =
-  begin
-    match run_parameters with
-    | `Created _ -> fail_fatal "not running"
-    | `Running run as run_parameters ->
-      begin
-        let cmd = fmt "bkill %d" run.lsf_id in
-        Host_io.get_shell_command_output run.created.host cmd
-        >>= fun (_, _) ->
-        return (`Killed run_parameters)
-      end
+let kill run_parameters ~host_io =
+  begin match run_parameters with
+  | `Created _ -> fail_fatal "not running"
+  | `Running run as run_parameters ->
+    begin
+      let cmd = fmt "bkill %d" run.lsf_id in
+      Host_io.get_shell_command_output host_io ~host:run.created.host cmd
+      >>= fun (_, _) ->
+      return (`Killed run_parameters)
+    end
   end
   >>< classify_and_transform_errors

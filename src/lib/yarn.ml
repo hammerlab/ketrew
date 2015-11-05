@@ -195,17 +195,17 @@ let find_resource_manager_url stdout_stderr =
   end
 
 
-let get_application_id daemonize_run_param =
-  Daemonize.query daemonize_run_param "stdout"
+let get_application_id ~host_io daemonize_run_param =
+  Daemonize.query daemonize_run_param ~host_io "stdout"
   >>= fun stdout ->
-  Daemonize.query daemonize_run_param "stderr"
+  Daemonize.query daemonize_run_param ~host_io "stderr"
   >>= fun stderr ->
   find_application_id (stdout ^ stderr)
 
-let get_application_id_and_rm_url daemonize_run_param =
-  Daemonize.query daemonize_run_param "stdout"
+let get_application_id_and_rm_url ~host_io daemonize_run_param =
+  Daemonize.query daemonize_run_param ~host_io "stdout"
   >>= fun stdout ->
-  Daemonize.query daemonize_run_param "stderr"
+  Daemonize.query daemonize_run_param ~host_io "stderr"
   >>= fun stderr ->
   let both = stdout ^ stderr in
   find_application_id  both
@@ -229,8 +229,8 @@ let parse_status str =
   | Some (_ :: "KILLED" :: _) -> `Failed
   | Some _ | None -> `Unknown
 
-let yarn_api_get_app_raw rp =
-  get_application_id_and_rm_url rp.daemonized_script
+let yarn_api_get_app_raw ~host_io rp =
+  get_application_id_and_rm_url rp.daemonized_script ~host_io
   >>= fun (appid, rm_url) ->
   Log.(s "Got app id: " % quote appid
        % s " and url: " % uri rm_url @ verbose);
@@ -251,8 +251,8 @@ let parse_yarn_api_app_json s =
   end
 
   
-let yarn_api_get_app_markup rp =
-  yarn_api_get_app_raw rp
+let yarn_api_get_app_markup ~host_io rp =
+  yarn_api_get_app_raw ~host_io rp
   >>= fun json_string ->
   parse_yarn_api_app_json json_string
   >>= fun json ->
@@ -293,7 +293,7 @@ let yarn_api_get_app_markup rp =
   in
   return (json_to_markup json |> Display_markup.serialize)
 
-let query run_param item =
+let query run_param ~host_io item =
   match run_param with
   | `Created _ ->
     begin match item with
@@ -305,24 +305,25 @@ let query run_param item =
     let host = rp.created.host in
     begin match item with
     | "status"  ->
-      get_application_id rp.daemonized_script
+      get_application_id rp.daemonized_script ~host_io
       >>= fun app_id ->
-      shell_command_output_or_log ~host (fmt "yarn application -status %s" app_id)
+      shell_command_output_or_log ~host_io ~host
+        (fmt "yarn application -status %s" app_id)
     | "logs" ->
-      get_application_id rp.daemonized_script
+      get_application_id rp.daemonized_script ~host_io
       >>= fun app_id ->
       let tmp_file = Filename.concat "/tmp" (Unique_id.create ()) in
-      shell_command_output_or_log ~host
+      shell_command_output_or_log ~host_io ~host
         (fmt "yarn logs -applicationId %s > %s" app_id tmp_file)
       >>= fun (_ : string) ->
-      Host_io.grab_file_or_log host (Path.absolute_file_exn tmp_file)
+      Host_io.grab_file_or_log host_io ~host (Path.absolute_file_exn tmp_file)
     | "api-app-raw" ->
-      yarn_api_get_app_raw rp
+      yarn_api_get_app_raw ~host_io rp
     | "ketrew-markup/api-app" ->
-      yarn_api_get_app_markup rp
+      yarn_api_get_app_markup ~host_io rp
     | "ketrew-markup/status" ->
       return (markup run_param |> Display_markup.serialize)
-    | other -> Daemonize.query rp.daemonized_script other
+    | other -> Daemonize.query rp.daemonized_script ~host_io other
     end
 
 let hadoop_distshell_call
@@ -339,47 +340,50 @@ let hadoop_distshell_call
    "-container_vcores"; Int.to_string container_vcores;
    "-timeout"; timeout]
 
-let start = function
-| `Created ({host; program; daemonize_using; daemon_start_timeout} as created) ->
-  let call_script, actual_program =
-    match program with
-    | `Distributed_shell (params, p) ->
-      let {hadoop_bin; distributed_shell_shell_jar;
-           container_memory; container_vcores;
-           timeout; application_name} = params in
-      let container_memory =
-        match container_memory with
-        | `GB i -> fmt "%d" (i * 1024)
-        | `MB i -> fmt "%d" i
-        | `Raw s -> s
-      in
-      let timeout =
-        match timeout with
-        | `Raw s -> s
-        | `Seconds secs -> fmt "%d" (secs * 1000)
-      in
-      (Some (
-          hadoop_distshell_call ~hadoop_bin ~container_vcores
-            ~distshell_jar:distributed_shell_shell_jar
-            ~container_memory ~timeout ~application_name),
-       p)
-    | `Yarn_application p -> (None, p)
-  in
-  let `Long_running (_, daemonize_run_param) =
-    Daemonize.create
-      ~starting_timeout:daemon_start_timeout
-      ~host actual_program ~using:daemonize_using
-      ?call_script ~no_log_is_ok:true in
-  Daemonize.(start (deserialize_exn daemonize_run_param))
-  >>= fun daemonized_script ->
-  return (`Running {created; daemonized_script})
-| `Running _ -> fail (`Fatal "Already running")
+let start rp ~host_io =
+  begin match rp with
+  | `Created created ->
+    let {host; program; daemonize_using; daemon_start_timeout} = created in
+    let call_script, actual_program =
+      match program with
+      | `Distributed_shell (params, p) ->
+        let {hadoop_bin; distributed_shell_shell_jar;
+             container_memory; container_vcores;
+             timeout; application_name} = params in
+        let container_memory =
+          match container_memory with
+          | `GB i -> fmt "%d" (i * 1024)
+          | `MB i -> fmt "%d" i
+          | `Raw s -> s
+        in
+        let timeout =
+          match timeout with
+          | `Raw s -> s
+          | `Seconds secs -> fmt "%d" (secs * 1000)
+        in
+        (Some (
+            hadoop_distshell_call ~hadoop_bin ~container_vcores
+              ~distshell_jar:distributed_shell_shell_jar
+              ~container_memory ~timeout ~application_name),
+         p)
+      | `Yarn_application p -> (None, p)
+    in
+    let `Long_running (_, daemonize_run_param) =
+      Daemonize.create
+        ~starting_timeout:daemon_start_timeout
+        ~host actual_program ~using:daemonize_using
+        ?call_script ~no_log_is_ok:true in
+    Daemonize.(start ~host_io (deserialize_exn daemonize_run_param))
+    >>= fun daemonized_script ->
+    return (`Running {created; daemonized_script})
+  | `Running _ -> fail (`Fatal "Already running")
+  end
 
-let update run_parameters =
+let update run_parameters ~host_io =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
-    Daemonize.update run.daemonized_script
+    Daemonize.update ~host_io run.daemonized_script
     >>= fun daemon_updated ->
     let make_new_rp old_one =
       return (`Running {run with daemonized_script = old_one}) in
@@ -395,9 +399,10 @@ let update run_parameters =
       begin
         begin
           let host = run.created.host in
-          get_application_id run.daemonized_script
+          get_application_id ~host_io run.daemonized_script
           >>= fun app_id ->
-          shell_command_output_or_log ~host (fmt "yarn application -status %s" app_id)
+          shell_command_output_or_log ~host_io ~host
+            (fmt "yarn application -status %s" app_id)
           >>= fun application_status_string ->
           begin match parse_status application_status_string with
           | `Succeeded -> return (`Succeeded new_rp)
@@ -414,7 +419,7 @@ let update run_parameters =
     end
   end
 
-let kill run_parameters =
+let kill run_parameters ~host_io =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
@@ -422,10 +427,10 @@ let kill run_parameters =
     begin
       (* We try to kill with yarn but we just log any potential error
          without failing. *)
-      get_application_id run.daemonized_script
+      get_application_id ~host_io run.daemonized_script
       >>< function
       | `Ok app_id ->
-        shell_command_output_or_log ~host
+        shell_command_output_or_log ~host_io ~host
           (fmt "yarn application -kill %s" app_id)
         >>< begin function
         | `Ok output ->
@@ -442,7 +447,7 @@ let kill run_parameters =
         return ()
     end
     >>= fun () ->
-    Daemonize.kill run.daemonized_script
+    Daemonize.kill ~host_io run.daemonized_script
     >>= fun (`Killed rp) ->
     return (`Killed (`Running {run with daemonized_script = rp}))
   end

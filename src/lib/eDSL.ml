@@ -37,7 +37,11 @@ module Host = struct
       ?playground
       ?port ?user ?name str
 
-  let parse = of_string
+  let parse x =
+    match of_string x with
+    | `Error (`Host_uri_parsing_error (uri, error)) ->
+      failwith (fmt "Error while parsing URI %S: %s" uri error)
+    | `Ok u -> u
 
   let cmdliner_term 
       ?(doc="URI of the host (e.g. \

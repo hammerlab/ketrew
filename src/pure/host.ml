@@ -50,6 +50,7 @@ end
 type connection = [
   | `Localhost
   | `Ssh of Ssh.t
+  | `Named of string
 ] [@@deriving yojson]
 type default_shell ={
   binary: string option;
@@ -86,6 +87,7 @@ let markup {name; connection; playground; default_shell; execution_timeout} =
     "Connection",
     begin match connection with
     | `Localhost -> Text "Local-host"
+    | `Named n -> textf "Named: %S" n
     | `Ssh {Ssh. address; port; user; add_ssh_options} ->
       concat [
         path (fmt "ssh://%s%s%s"
@@ -128,20 +130,31 @@ let ssh
   create ?playground ?default_shell Option.(value name ~default:address)
     ~connection:(`Ssh {Ssh. address; port; user; add_ssh_options})
 
-let of_uri uri =
+let of_uri_exn uri =
   let connection =
-    Option.value_map ~default:`Localhost (Uri.host uri) ~f:(fun address ->
+    match Uri.scheme uri, Uri.host uri with
+    | None, None -> `Localhost
+    | Some "named", Some name -> `Named name
+    | Some "ssh", Some address
+    | None, Some address ->
         let add_ssh_options =
           Option.value ~default:[] (Uri.get_query_param' uri "ssh-option")
           @ Option.value ~default:[] (Uri.get_query_param' uri "ssh-options")
         in
         let user = Uri.userinfo uri in
-        `Ssh {Ssh.address; port = Uri.port uri; user; add_ssh_options})
+        `Ssh {Ssh.address; port = Uri.port uri; user; add_ssh_options}
+    | Some other, _ -> 
+      failwith (fmt "Unkown scheme: %S" other)
   in
   let playground =
     match Uri.path uri with
     | "" -> None
     | rel when Filename.is_relative rel ->
+      (* It seems `path` returns a relative path only when there is no host
+         Uri.(of_string "path" |> path) = "path"
+         Uri.(of_string "ssh:path" |> path)  = "path"
+         The second one should have failed earlier (scheme without host)
+      *)
       let cwd = Sys.getcwd () in
       Some (Path.absolute_directory_exn (Filename.concat cwd rel))
     | p -> Some (Path.absolute_directory_exn p)
@@ -165,12 +178,20 @@ let of_uri uri =
   create ?playground ~connection ?default_shell ?execution_timeout
     (Uri.to_string uri)
 
+let of_uri uri =
+  let open Result in
+  try of_uri_exn uri |> return with
+  | Failure f -> fail (`Host_uri_parsing_error (Uri.to_string uri, f))
+  | e ->
+    fail (`Host_uri_parsing_error (Uri.to_string uri, Printexc.to_string e))
+
 let to_uri t =
   let scheme, host, port, userinfo, add_ssh_options =
     match t.connection with
     | `Ssh {Ssh.address; port; user; add_ssh_options} ->
       Some "ssh", Some address, port, user, add_ssh_options
     | `Localhost -> None, None, None, None, []
+    | `Named n -> Some "named", Some n, None, None, []
   in
   let query =
     let {binary; command_name; options; command_option} =

@@ -21,9 +21,6 @@
 open Ketrew_pure.Internal_pervasives
 open Unix_io
 
-type t = Ketrew_pure.Host.t
-
-
 module Ssh = struct
 
   open Ketrew_pure.Host.Ssh
@@ -130,6 +127,7 @@ module Error = struct
        <host : string; stdout: string option; stderr: string option; message: string>
   | `System of [> `Sleep of float ] * [> `Exn of exn ]
   | `Timeout of float
+  | `Named_host_not_found of bytes
   | `Ssh_failure of
        [> `Wrong_log of string
        | `Wrong_status of Unix_process.Exit_code.t ] * string ]
@@ -142,6 +140,7 @@ module Error = struct
     | `System _ | `Timeout _
     | `Unix_exec _ -> `Unix
     | `Execution _ | `Non_zero _ -> `Execution
+    | `Named_host_not_found _
     | `Ssh_failure _ -> `Ssh
 
   let log e =
@@ -152,6 +151,8 @@ module Error = struct
     | `System (`Sleep time, `Exn e) ->
       Log.(s "System error: sleep " % f time % s " failed: " % exn e)
     | `Timeout t -> Log.(s "Timed-out " % parens (f t % s " sec"))
+    | `Named_host_not_found name ->
+      Log.(s "Named-host not found: " % quote name)
     | `Execution exec ->
       Log.(
         s "Process execution failed: "
@@ -185,12 +186,25 @@ type timeout = [
   | `At_most_seconds of float
 ]
 
+
+type host = Ketrew_pure.Host.t
+
+type t = {
+  named_hosts: (string, host) Hashtbl.t;
+}
+let create () = {named_hosts = Hashtbl.create 42}
+
+let resolve_named_host t ~name =
+  try return (Hashtbl.find t.named_hosts name)
+  with _ -> fail_host (`Named_host_not_found name)
+
+(* TODO: put this in `t` *)
 let default_timeout_upper_bound = ref 60.
 
-let run_with_timeout ?timeout t ~run =
+let run_with_timeout ?timeout t ~host ~run =
   let actual_timeout =
     let pick_minimum f =
-      match Ketrew_pure.Host.execution_timeout t  with
+      match Ketrew_pure.Host.execution_timeout host  with
       | Some fe when fe < f -> Some fe
       | _ -> Some f
     in
@@ -198,8 +212,8 @@ let run_with_timeout ?timeout t ~run =
     | Some `None -> None
     | None -> pick_minimum !default_timeout_upper_bound
     | Some (`At_most_seconds f) -> pick_minimum f
-    | Some (`Host_default) -> Ketrew_pure.Host.execution_timeout t 
-    | Some (`Seconds t) -> Some t in
+    | Some (`Host_default) -> Ketrew_pure.Host.execution_timeout host 
+    | Some (`Seconds s) -> Some s in
   let log = Log.(parens (s "timeout: " % OCaml.option f actual_timeout)) in
   match actual_timeout with
   | None -> run ~log ()
@@ -214,7 +228,7 @@ let run_with_timeout ?timeout t ~run =
     ]
     (* Pvem_lwt_unix.System.with_timeout t ~f:(run ~log) *)
 
-let execute ?timeout t argl =
+let execute ?timeout t ~host argl =
   let final_log = ref Log.empty in
   let ret out err exited =
     let kv k v = Log.(brakets (s k % s " → " % v) |> indent) in
@@ -225,22 +239,22 @@ let execute ?timeout t argl =
       method stdout = out method stderr = err method exited = exited
     end)
   in
-  let run ~log () =
+  let rec run ~log ~host () =
     final_log := Log.( !final_log % s "Host.execute "
-                       % s (Ketrew_pure.Host.to_string_hum t)
+                       % s (Ketrew_pure.Host.to_string_hum host)
                        % OCaml.list s argl % sp % log);
-    match Ketrew_pure.Host.connection t  with
+    match Ketrew_pure.Host.connection host  with
     | `Localhost ->
       begin Unix_process.exec argl
         >>< function
         | `Ok (out, err, `Exited n) -> ret out err n
         | `Ok (out, err, other) ->
-          fail_exec t ~out ~err (System.Shell.status_to_string other)
+          fail_exec host ~out ~err (System.Shell.status_to_string other)
         | `Error (`Process _ as process_error) ->
           let msg = Unix_process.error_to_string process_error in
           Log.(s "Ssh-cmd " % OCaml.list (sf "%S") argl
                % s " failed: " %s msg @ verbose);
-          fail_exec t msg
+          fail_exec host msg
       end
     | `Ssh ssh ->
       begin Ssh.generic_ssh_exec ssh argl
@@ -248,8 +262,12 @@ let execute ?timeout t argl =
         | `Ok (out, err, exited) -> ret out err exited
         | `Error e -> fail (`Host e)
       end
+    | `Named name ->
+      resolve_named_host t ~name
+      >>= fun host ->
+      run ~log ~host ()
   in
-  begin run_with_timeout ?timeout t ~run
+  begin run_with_timeout ?timeout t ~host ~run:(run ~host)
     >>< fun result ->
     Log.(!final_log @ very_verbose);
     match result with
@@ -270,44 +288,48 @@ let override_shell ?with_shell t =
   in
   shell
 
-let get_shell_command_output ?timeout ?with_shell t cmd =
-  execute ?timeout t (override_shell ?with_shell t cmd)
+let get_shell_command_output ?timeout ?with_shell t ~host cmd =
+  execute ?timeout t ~host (override_shell ?with_shell host cmd)
   >>= fun execution ->
   match execution#exited with
   | 0 -> return (execution#stdout, execution#stderr)
   | n -> fail_host (`Non_zero (cmd, n))
 
-let get_shell_command_return_value ?timeout ?with_shell t cmd =
-  execute ?timeout t (override_shell ?with_shell t cmd)
+let get_shell_command_return_value ?timeout ?with_shell t ~host cmd =
+  execute ?timeout t ~host (override_shell ?with_shell host cmd)
   >>= fun execution ->
   return execution#exited
 
-let run_shell_command ?timeout ?with_shell t cmd =
-  get_shell_command_output ?timeout ?with_shell t cmd
+let run_shell_command ?timeout ?with_shell t ~host cmd =
+  get_shell_command_output ?timeout ?with_shell t ~host cmd
   >>= fun (_, _) ->
   return ()
 
 
-let do_files_exist ?timeout ?with_shell t paths =
+let do_files_exist ?timeout ?with_shell t ~host paths =
   let cmd =
     List.map paths ~f:Ketrew_pure.Path.exists_shell_condition
     |> String.concat ~sep:" && " in
-  get_shell_command_return_value ?timeout ?with_shell t cmd
+  get_shell_command_return_value ?timeout ?with_shell t ~host cmd
   >>= fun ret ->
   return (ret = 0)
 
-let get_fresh_playground t =
+let get_fresh_playground t ~host =
   let fresh = Unique_id.create () in
-  Option.map (Ketrew_pure.Host.playground t) (fun pg ->
+  Option.map (Ketrew_pure.Host.playground host) (fun pg ->
       Ketrew_pure.Path.(concat pg (relative_directory_exn fresh)))
 
-let ensure_directory ?timeout ?with_shell t ~path =
+let ensure_directory ?timeout ?with_shell t ~host ~path =
   let cmd = fmt "mkdir -p %s" Ketrew_pure.Path.(to_string_quoted path) in
-  run_shell_command ?timeout ?with_shell t cmd
+  run_shell_command ?timeout ?with_shell t ~host cmd
 
-let put_file ?timeout t ~path ~content =
-  match Ketrew_pure.Host.connection t with
+let rec put_file ?timeout t ~host ~path ~content =
+  match Ketrew_pure.Host.connection host with
   | `Localhost -> IO.write_file ~content Ketrew_pure.Path.(to_string path)
+  | `Named name ->
+    resolve_named_host t ~name
+    >>= fun host ->
+    put_file ?timeout t ~host ~path ~content
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_put_file" in
     let run ~log () =
@@ -322,10 +344,10 @@ let put_file ?timeout t ~path ~content =
           let msg = Unix_process.error_to_string process_error in
           Log.(s "Scp-cmd " % OCaml.list (sf "%S") scp_cmd  % sp % log
                % s " failed: " %s msg @ verbose);
-          fail_exec t msg
+          fail_exec host msg
       end
     in
-    begin run_with_timeout ?timeout t ~run
+    begin run_with_timeout ?timeout t ~host ~run
       >>< function
       | `Ok o -> return o
       | `Error (`IO _ as e) -> fail e
@@ -334,9 +356,9 @@ let put_file ?timeout t ~path ~content =
       | `Error (`Timeout _ as e) -> fail (`Host e)
     end
 
-let get_file ?timeout t ~path =
+let rec get_file ?timeout t ~host ~path =
   let open Ketrew_pure in
-  match Ketrew_pure.Host.connection t with
+  match Ketrew_pure.Host.connection host with
   | `Localhost ->
     begin IO.read_file Path.(to_string path)
       >>< function
@@ -345,10 +367,14 @@ let get_file ?timeout t ~path =
         Log.(s "I/O, writing " % s path % s " → " % exn ex @ verbose);
         fail (`Cannot_read_file ("localhost", path))
     end
+  | `Named name ->
+    resolve_named_host t ~name
+    >>= fun host ->
+    get_file ?timeout t ~host ~path
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_get_file" in
     let scp_cmd = Ssh.(scp_pull ssh ~dest:temp ~src:[Path.to_string path]) in
-    begin run_with_timeout ?timeout t
+    begin run_with_timeout ?timeout t ~host
         ~run:(fun ~log () ->
             Unix_process.succeed scp_cmd
             >>= fun _ ->
@@ -373,8 +399,8 @@ let get_file ?timeout t ~path =
     end
 
 
-let grab_file_or_log ?timeout host path =
-  begin get_file ?timeout host ~path
+let grab_file_or_log ?timeout t ~host path =
+  begin get_file ?timeout t ~host ~path
     >>< function
     | `Ok c -> return c
     | `Error (`Cannot_read_file _) ->
@@ -383,4 +409,6 @@ let grab_file_or_log ?timeout host path =
       fail Log.(s "I/O error: " % s (IO.error_to_string e))
     | `Error (`Timeout time) ->
       fail Log.(s "Timeout: " % f time)
+    | `Error (`Host (`Named_host_not_found name)) ->
+      fail Log.(s "Named host not found: " % quote name)
   end

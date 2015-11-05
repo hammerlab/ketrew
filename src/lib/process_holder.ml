@@ -515,7 +515,8 @@ let all_ssh_ids_and_names t =
     )
     t.active_processes (return [])
 
-let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
+let answer_message t ~host_io msg :
+  (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
   | `Start_ssh_connetion connection ->
     start_ssh_connection t ~ketrew_bin:global_executable_path connection
@@ -543,8 +544,9 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
       { Protocol.Process_sub_protocol.Command.connection; id; command } ->
     get_ssh_connection t ~id:connection
     >>= fun ssh ->
-    let host = Ssh_connection.as_host ssh in
-    Host_io.get_shell_command_output host command
+    of_result (Ssh_connection.as_host ssh)
+    >>= fun host ->
+    Host_io.get_shell_command_output host_io ~host command
     >>= fun (stdout, stderr) ->
     return (`Command_output {
         Protocol.Process_sub_protocol.Command_output.id; stdout; stderr
@@ -568,6 +570,8 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
       | `Timeout f -> fmt "Operation timeouted: %f s." f
       | `Not_an_ssh_connection id -> fmt "not an SSH connection: %s" id
       | `Failure s -> fmt "failure: %s" s
+      | `Host_uri_parsing_error (uri, e) ->
+        fmt "Error while parsing Host URI %S: %s" uri e
       | `Host _
       | `Shell _ as eshell -> Error.to_string eshell
     in

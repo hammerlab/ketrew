@@ -28,16 +28,16 @@ module Command = struct
 
   open Target.Command
 
-  let get_output {host; action} =
+  let get_output ~host_io {host; action} =
     let cmd = Program.to_single_shell_command action in
-    Host_io.get_shell_command_output host cmd
+    Host_io.get_shell_command_output host_io host cmd
 
-  let get_return_value {host; action} =
+  let get_return_value ~host_io {host; action} =
     let cmd = Program.to_single_shell_command action in
-    Host_io.get_shell_command_return_value host cmd
+    Host_io.get_shell_command_return_value host_io ~host cmd
 
-  let run t =
-    get_output t (* TODO optimize to not record the output *)
+  let run t ~host_io =
+    get_output ~host_io t (* TODO optimize to not record the output *)
     >>= fun (_, _) ->
     return ()
 
@@ -49,21 +49,21 @@ module Volume = struct
 
   open Target.Volume
 
-  let exists t =
+  let exists t ~host_io =
     let paths = all_paths t in
-    Host_io.do_files_exist t.host paths
+    Host_io.do_files_exist host_io ~host:t.host paths
 
-  let get_size t =
+  let get_size t ~host_io =
     let paths = all_paths t in
     (* let cmds = List.map paths ~f:Path.size_shell_command in *)
     begin
-      exists t
+      exists ~host_io t
       >>= function
       | true ->
         Deferred_list.while_sequential paths (fun path ->
             let cmd = Path.size_shell_command path in
             Log.(s "while_sequential : " % quote cmd @ warning);
-            Host_io.get_shell_command_output t.host cmd
+            Host_io.get_shell_command_output host_io ~host:t.host cmd
             >>= fun (str, _) ->
             match  String.strip str |> Int.of_string with
             | None -> 
@@ -84,17 +84,17 @@ end
 
 open Target.Condition
 
-let rec eval = 
+let rec eval ~host_io = 
   function
   | `Satisfied -> return true
   | `Never -> return false
-  | `Volume_exists v -> Volume.exists v
+  | `Volume_exists v -> Volume.exists ~host_io v
   | `Volume_size_bigger_than (v, sz) ->
-    Volume.get_size v
+    Volume.get_size ~host_io v
     >>= fun size ->
     return (size >= sz)
   | `Command_returns (c, ret) ->
-    Command.get_return_value c  
+    Command.get_return_value ~host_io c  
     >>= fun return_value ->
     return (ret = return_value)
   | `And list_of_conditions -> 
@@ -102,14 +102,14 @@ let rec eval =
     let rec go = function
     | [] -> return true
     | cond :: rest ->
-      eval cond
+      eval ~host_io cond
       >>= function
       | true -> go rest
       | false -> return false
     in
     go list_of_conditions
 
-let bool = eval
+let bool ~host_io = eval ~host_io
   
 
 (*

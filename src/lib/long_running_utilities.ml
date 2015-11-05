@@ -51,28 +51,29 @@ let classify_and_transform_errors :
       fail_fatal (Error.to_string e)
     end
 
-let fresh_playground_or_fail host =
-  begin match Host_io.get_fresh_playground host with
+let fresh_playground_or_fail ~host_io host =
+  begin match Host_io.get_fresh_playground host_io ~host:host with
   | None ->
     fail_fatal (fmt  "Host %s: Missing playground" (Host.to_string_hum host))
   | Some playground -> return playground
   end
 
-let get_log_of_monitored_script ~host ~script =
+let get_log_of_monitored_script ~host_io ~host ~script =
   let log_file = Monitored_script.log_file script in
-  begin Host_io.get_file host ~path:log_file
+  begin Host_io.get_file host_io ~host:host ~path:log_file
     >>< function
     | `Ok c -> return (Some c)
     | `Error (`Cannot_read_file _) -> return None
     | `Error (`Timeout _ as e) -> fail e
+    | `Error (`Host (`Named_host_not_found _) as e) -> fail e
   end
   >>= fun log_content ->
   let log = Option.map ~f:Monitored_script.parse_log log_content in
   return log
 
-let get_pid_of_monitored_script ~host ~script =
+let get_pid_of_monitored_script ~host_io ~host ~script =
   let pid_file = Monitored_script.pid_file script in
-  begin Host_io.get_file host ~path:pid_file
+  begin Host_io.get_file host_io ~host:host ~path:pid_file
     >>< function
     | `Ok c ->
       Log.(s "get_pid_of_monitored_script, got: " % quote c @ verbose);
@@ -81,12 +82,13 @@ let get_pid_of_monitored_script ~host ~script =
       Log.(s "get_pid_of_monitored_script: cannot-read-file: "
              % quote s1 % s ", " % quote s2 @ verbose);
       return None
-    | `Error (`Timeout _ as e) -> fail e
+    | `Error (`Timeout _ as e)
+    | `Error (`Host (`Named_host_not_found _) as e) -> fail e
   end
 
 
-let shell_command_output_or_log ~host cmd =
-  begin Host_io.get_shell_command_output host cmd
+let shell_command_output_or_log ~host_io ~host cmd =
+  begin Host_io.get_shell_command_output host_io ~host cmd
     >>< function
     | `Ok (o, _) -> return o
     | `Error e ->

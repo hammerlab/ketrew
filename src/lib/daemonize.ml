@@ -101,11 +101,12 @@ let log rp = ["Daemonize", Display_markup.log (markup rp)]
 let python_using_path ~playground =
   Path.(concat playground (relative_file_exn "daemonizator.py"))
 
-let get_pid run =
+let get_pid run ~host_io =
   match run.pid with
   | Some p -> return (Some p)
   | None ->
-    get_pid_of_monitored_script ~host:run.created.host ~script:run.script
+    get_pid_of_monitored_script
+      ~host_io ~host:run.created.host ~script:run.script
 
 
 let additional_queries = function
@@ -122,7 +123,7 @@ let additional_queries = function
     "ketrew-markup/status", Log.(s "Get the status as Markup");
   ]
 
-let query run_parameters item =
+let query run_parameters ~host_io item =
   match run_parameters with
   | `Created _ ->
     begin match item with
@@ -136,22 +137,23 @@ let query run_parameters item =
       return (markup run_parameters |> Display_markup.serialize)
     | "log" ->
       let log_file = Monitored_script.log_file rp.script in
-      Host_io.grab_file_or_log rp.created.host log_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host log_file
     | "stdout" ->
       let out_file = out_file_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host out_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host out_file
     | "stderr" ->
       let err_file = err_file_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host err_file
+      Host_io.grab_file_or_log host_io ~host:rp.created.host err_file
     | "script" ->
       let monitored_script_path = script_path ~playground:rp.playground in
-      Host_io.grab_file_or_log rp.created.host monitored_script_path
+      Host_io.grab_file_or_log
+        host_io ~host:rp.created.host monitored_script_path
     | "check-process" ->
       begin
-        get_pid rp
+        get_pid ~host_io rp
         >>= begin function
         | Some pid ->
-          Host_io.get_shell_command_output rp.created.host
+          Host_io.get_shell_command_output host_io ~host:rp.created.host
             (fmt "ps -g %d" pid)
         | None ->
           fail `No_pid
@@ -211,9 +213,9 @@ if __name__ == '__main__':
     (Path.to_string out)
     (Path.to_string err)
 
-let start rp =
+let start rp ~host_io =
   let created = created rp in
-  begin match Host_io.get_fresh_playground created.host with
+  begin match Host_io.get_fresh_playground host_io ~host:created.host with
   | None ->
     fail_fatal (fmt  "Host %s: Missing playground"
                   (Host.to_string_hum created.host))
@@ -221,14 +223,15 @@ let start rp =
     let monitored_script =
       Monitored_script.create ~playground created.program in
     let monitored_script_path = script_path ~playground in
-    Host_io.ensure_directory created.host playground
+    Host_io.ensure_directory host_io ~host:created.host ~path:playground
     >>= fun () ->
     let content =
       let write_pid =          (* the python-script creates the process group *)
         match created.using with     (* so, it will write the PID itself *)
         | `Nohup_setsid -> true | `Python_daemon -> false in
       Monitored_script.to_string ~write_pid monitored_script in
-    Host_io.put_file ~content created.host ~path:monitored_script_path
+    Host_io.put_file
+      ~content host_io ~host:created.host ~path:monitored_script_path
     >>= fun () ->
     let out = out_file_path ~playground in
     let err = err_file_path ~playground in
@@ -245,7 +248,7 @@ let start rp =
            |> List.map ~f:Filename.quote
            |> String.concat ~sep:" ")
           (Path.to_string_quoted out) (Path.to_string_quoted err) in
-      Host_io.run_shell_command created.host cmd
+      Host_io.run_shell_command host_io ~host:created.host cmd
       >>= fun () ->
       Log.(s "daemonize: Ran " % s cmd @ very_verbose);
       return ()
@@ -255,9 +258,9 @@ let start rp =
         make_python_script ~out ~err ~pid_file ~call_script
           monitored_script_path in
       let path = python_using_path ~playground in
-      Host_io.put_file ~content created.host ~path
+      Host_io.put_file ~content host_io ~host:created.host ~path
       >>= fun () ->
-      Host_io.run_shell_command created.host
+      Host_io.run_shell_command host_io ~host:created.host
         (fmt "python %s" (Path.to_string_quoted path))
     end
     >>= fun () ->
@@ -279,11 +282,12 @@ let start rp =
     end
   end
 
-let update run_parameters =
+let update run_parameters ~host_io =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run as run_parameters ->
-    get_log_of_monitored_script ~host:run.created.host ~script:run.script
+    get_log_of_monitored_script ~host_io ~host:run.created.host
+      ~script:run.script
     >>= fun log_opt ->
     begin match Option.bind log_opt  List.last with
     | Some (`Success date) ->
@@ -291,7 +295,7 @@ let update run_parameters =
     | Some (`Failure (date, label, ret)) ->
       return (`Failed (run_parameters, fmt "%s returned %s" label ret))
     | None | Some _->
-      get_pid run
+      get_pid ~host_io run
       >>= fun pid ->
       let elapsed = Time.(now ()) -. run.start_time in
       begin match pid with
@@ -310,7 +314,7 @@ let update run_parameters =
       | Some p ->
         let new_run_parameters = `Running {run with pid = Some p} in
         let cmd = fmt "ps -g %d" p in
-        Host_io.get_shell_command_return_value run.created.host cmd
+        Host_io.get_shell_command_return_value host_io ~host:run.created.host cmd
         >>= fun ps_return ->
         begin match ps_return with
         | 0 -> (* most likely still running *)
@@ -318,7 +322,8 @@ let update run_parameters =
         | n -> (* not running, for “sure” *)
           (* we fetch the log file again, because the process could have
              finished between the last fetch and the call to `ps`. *)
-          get_log_of_monitored_script ~host:run.created.host ~script:run.script
+          get_log_of_monitored_script ~host_io ~host:run.created.host
+            ~script:run.script
           >>= fun log_opt ->
           begin match Option.bind log_opt List.last with
           | None when elapsed <= run.created.starting_timeout ->
@@ -339,11 +344,11 @@ let update run_parameters =
     end
   end >>< classify_and_transform_errors
 
-let kill run_parameters =
+let kill run_parameters ~host_io =
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
-  | `Running run as run_parameters ->
-    get_pid run
+  | `Running run ->
+    get_pid ~host_io run
     >>= fun pid ->
     begin match pid with
     | None ->
@@ -354,7 +359,7 @@ let kill run_parameters =
     | Some p ->
       let cmd = fmt "kill -- -%d" p in
       Log.(s "Killing group " % i p % s " with " % sf "%S" cmd @ very_verbose);
-      Host_io.run_shell_command run.created.host cmd
+      Host_io.run_shell_command host_io ~host:run.created.host cmd
       >>= fun () ->
       return (`Killed run_parameters)
     end

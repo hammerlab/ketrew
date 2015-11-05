@@ -73,8 +73,9 @@ let test_ssh () =
   >>= fun () ->
   pause () >>= fun () ->
   display_logs "after good password + 1 sec " >>= fun () ->
-  let host = Host.of_string (Ssh_connection.host_uri t) in
-  Ketrew.Host_io.get_shell_command_output host
+  let host = Ketrew.EDSL.Host.parse (Ssh_connection.host_uri t) in
+  let host_io = Ketrew.Host_io.create () in
+  Ketrew.Host_io.get_shell_command_output host_io ~host
     ~timeout:(`Seconds 2.)
     "uname -a"
   >>= fun (stdout, stderr) ->

@@ -156,3 +156,5 @@ val restart_target: t -> Ketrew_pure.Target.id ->
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
+
+val host_io: t -> Host_io.t
