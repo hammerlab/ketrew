@@ -200,6 +200,15 @@ let resolve_named_host t ~name =
   try return (Hashtbl.find t.named_hosts name)
   with _ -> fail_host (`Named_host_not_found name)
 
+let set_named_host t ~name connection =
+  Hashtbl.add t.named_hosts name connection;
+  return ()
+
+let delete_named_host t ~name =
+  Hashtbl.remove t.named_hosts name;
+  return ()
+
+
 (* TODO: put this in `t` *)
 let default_timeout_upper_bound = ref 60.
 

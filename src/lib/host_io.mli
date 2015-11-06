@@ -132,6 +132,12 @@ type timeout = [
 
 *)
 
+
+val set_named_host: t  -> name: string -> Host.t -> (unit, 'a) Deferred_result.t
+
+val delete_named_host: t  -> name: string -> (unit, 'a) Deferred_result.t
+
+
 val execute: ?timeout:timeout -> t -> host:Host.t -> string list ->
   (<stdout: string; stderr: string; exited: int>,
    [> `Host of _ Error.execution ]) Deferred_result.t
