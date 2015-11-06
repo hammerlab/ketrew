@@ -57,7 +57,7 @@ module Process_sub_protocol : sig
     }
   end
   type up = [
-    | `Start_ssh_connetion of string
+    | `Start_ssh_connetion of string * string (* name × connection-uri *)
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string

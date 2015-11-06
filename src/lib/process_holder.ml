@@ -323,6 +323,7 @@ We need to comunicate with that process:
 
   type t = {
     ketrew_bin: string;
+    host_name: string;
     json_log: string;
     fifo_to_daemon: string;
     fifo_from_daemon: string;
@@ -335,7 +336,7 @@ We need to comunicate with that process:
     mutable fd_to_askpass: Lwt_unix.file_descr option;
   }
 
-  let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") connection =
+  let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") ~name connection =
     let json_log = Filename.temp_file "ketrew-json-log" ".json" in
     let fifo_to_daemon = make_pipe () in
     let fifo_from_daemon = make_pipe () in
@@ -365,7 +366,7 @@ We need to comunicate with that process:
     let ssh =
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; control_path;
        connection; command; process; session_id_file; fifo_questions;
-       fd_to_askpass = None}
+       fd_to_askpass = None; host_name = name}
     in
     ssh
 
@@ -393,11 +394,12 @@ We need to comunicate with that process:
 
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
-       session_id_file; control_path;
+       session_id_file; control_path; host_name;
        command = the_command; process; fifo_questions; fd_to_askpass} =
     let questions = Reactive.Source.value fifo_questions in
     Display_markup.(
       description_list [
+        "Name", text host_name;
         "Ketrew-bin", path ketrew_bin;
         "JSON-logfile", path json_log;
         "FIFO-to-daemon", path fifo_to_daemon;
@@ -516,8 +518,8 @@ let start_process t ?bin argl =
   Hashtbl.add t.active_processes id (`Process p);
   return id
 
-let start_ssh_connection t ?ketrew_bin ?command connection =
-  let s = Ssh_connection.create ?ketrew_bin ?command connection in
+let start_ssh_connection t ?ketrew_bin ?command ~name connection =
+  let s = Ssh_connection.create ?ketrew_bin ?command ~name connection in
   let id = Unique_id.create  () in
   Hashtbl.add t.active_processes id (`Ssh_connection s);
   return s
@@ -553,9 +555,13 @@ let all_ssh_ids_and_names t =
 let answer_message t ~host_io msg :
   (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
-  | `Start_ssh_connetion connection ->
-    start_ssh_connection t ~ketrew_bin:global_executable_path connection
-    >>= fun (_ : Ssh_connection.t) ->
+  | `Start_ssh_connetion (name, connection) ->
+    start_ssh_connection t ~ketrew_bin:global_executable_path ~name connection
+    >>= fun (ssh : Ssh_connection.t) ->
+    of_result (Ssh_connection.as_host ssh)
+    >>= fun host ->
+    Host_io.set_named_host host_io ~name host
+    >>= fun () ->
     return (`Ok)
   | `Get_all_ssh_ids ->
     all_ssh_ids_and_names t

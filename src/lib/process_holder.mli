@@ -52,7 +52,8 @@ module Ssh_connection : sig
   (**/**)
 
   type t
-  val create: ?ketrew_bin:string -> ?command:string -> string -> t
+  val create:
+    ?ketrew_bin:string -> ?command:string -> name: string -> string -> t
   val markup_with_daemon_logs :
     t ->
     (Ketrew_pure.Internal_pervasives.Display_markup.t, 'a) Unix_io.t
