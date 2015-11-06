@@ -119,6 +119,7 @@ let markup {name; connection; playground; default_shell; execution_timeout} =
 let localhost 
     ?execution_timeout ?default_shell ?playground ?(name="localhost") () = 
   create ~connection:`Localhost ?default_shell ?playground name
+    ?execution_timeout
 
 let tmp_on_localhost = 
   localhost ~playground:(Path.absolute_directory_exn "/tmp")
@@ -129,6 +130,11 @@ let ssh
     ?port ?user ?name address =
   create ?playground ?default_shell Option.(value name ~default:address)
     ~connection:(`Ssh {Ssh. address; port; user; add_ssh_options})
+    ?execution_timeout
+
+let named ?execution_timeout ?default_shell ?playground name =
+  create ?playground ?default_shell name ~connection:(`Named name)
+    ?execution_timeout
 
 let of_uri_exn uri =
   let connection =
