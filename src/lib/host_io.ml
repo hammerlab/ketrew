@@ -91,7 +91,7 @@ module Ssh = struct
     ["scp"; ssh_batch_option ssh]
     @ ssh.add_ssh_options
     @ (match ssh.port with
-      | Some p -> ["-P"; "port"]
+      | Some p -> ["-P"; Int.to_string p]
       | None -> [])
     @ src
     @ (match ssh.user with
@@ -103,7 +103,7 @@ module Ssh = struct
     ["scp"; ssh_batch_option ssh]
     @ ssh.add_ssh_options
     @ (match ssh.port with
-      | Some p -> ["-P"; "port"]
+      | Some p -> ["-P"; Int.to_string p]
       | None -> [])
     @ (List.map src ~f:(fun src_item ->
         match ssh.user with
