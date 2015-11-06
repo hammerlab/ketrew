@@ -43,8 +43,9 @@ let classify_and_transform_errors :
     | `Fatal _ as e -> fail e
     | `Host he as e ->
       begin match Host_io.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
+      | `Connectivity | `Local_system ->
+        fail (`Recoverable (Error.to_string e))
+      | `Command_execution -> fail_fatal (Error.to_string e)
       end
     | `Timeout _ -> fail (`Recoverable "timeout")
     | `IO _ | `System _ as e ->

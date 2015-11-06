@@ -80,13 +80,15 @@ module Error: sig
         | `Wrong_status of Unix_process.Exit_code.t ] *
         string
     | `Unix_exec of string ] ->
-    [ `Execution | `Ssh | `Unix ]
+    [ `Command_execution | `Connectivity | `Local_system ]
   (**
      Get a glance at the gravity of the situation: {ul
-     {li [`Unix]: a function of the kind {!Unix.exec} failed.}
-     {li [`Ssh]: SSH failed to run something but it does not mean that the
-     actual command is wrong.}
-     {li [`Execution]: SSH/[Unix] succeeded but the command failed.}
+     {li [`Local_system]: a function of the kind {!Unix.exec} failed.}
+     {li [`Connectivity]: [Host_io] failed to run something but it does not
+          mean that the actual command is wrong; connectivity can be
+          restored later.}
+     {li [`Command_execution]: the system and networking did their job
+          but the particular command failed.}
      } *)
 
   val log :

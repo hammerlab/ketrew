@@ -267,20 +267,7 @@ let start rp ~host_io =
     return (`Running {pid = None; playground;  created;
                       script = monitored_script; start_time = Time.now ()})
   end
-  >>< begin function
-  | `Ok o -> return o
-  | `Error e ->
-    begin match e with
-    | `Fatal _ as e -> fail e
-    | `Host he as e ->
-      begin match Host_io.Error.classify he with
-      | `Ssh | `Unix -> fail (`Recoverable (Error.to_string e))
-      | `Execution -> fail_fatal (Error.to_string e)
-      end
-    | `IO _ | `System _ as e ->
-      fail_fatal (Error.to_string e)
-    end
-  end
+  >>< classify_and_transform_errors
 
 let update run_parameters ~host_io =
   begin match run_parameters with

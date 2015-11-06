@@ -137,11 +137,13 @@ module Error = struct
 
   let classify (e : _ non_zero_execution) =
     match e with
-    | `System _ | `Timeout _
-    | `Unix_exec _ -> `Unix
-    | `Execution _ | `Non_zero _ -> `Execution
+    | `System _
+    | `Unix_exec _ -> `Local_system
+    | `Execution _
+    | `Non_zero _ -> `Command_execution
+    | `Timeout _
     | `Named_host_not_found _
-    | `Ssh_failure _ -> `Ssh
+    | `Ssh_failure _ -> `Connectivity
 
   let log e =
     let kv k v = Log.(brakets (s k % s " → " % v)) in
