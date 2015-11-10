@@ -201,8 +201,7 @@ The EDSL: Defining Workflows
 ### Overview
 
 The EDSL is an OCaml library where functions are used to build a
-workflow data-structure. Then, one function:
-[Ketrew.Client.submit](http://seb.mondet.org/software/ketrew/api/Ketrew.Client.html#VALsubmit)
+workflow data-structure. Then, one function: `Ketrew.Client.submit`
 is used to submit workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
@@ -214,7 +213,7 @@ can start,
 - *fallbacks:* targets that will be activated if the target fails, and
 - *successes:* targets that will be activated only *after* a target succeeds.
 
-See the [target](src/lib/eDSL.mli#L176)
+See the `Ketrew.EDSL.target`
 function documentation for details. Any OCaml program can use the EDSL (script, compiled,
 or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
 
