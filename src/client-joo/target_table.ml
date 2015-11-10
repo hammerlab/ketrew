@@ -902,7 +902,11 @@ module Html = struct
                         span []);
                     ]
                   | `Arbitrary_index -> td [pcdata (fmt "%d" (index + 1))]
-                  | `Name -> td [pcdata (Target.Summary.name trgt)]
+                  | `Name -> td [local_anchor
+                                   ~on_click:Reactive.(fun _ ->
+                                       target_link_on_click id;
+                                       false)
+                                   [pcdata (Target.Summary.name trgt)]]
                   | `Id -> td [pcdata (Target.Summary.id trgt)]
                   | `Backend ->
                     begin match Target.Summary.build_process trgt with
