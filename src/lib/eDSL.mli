@@ -192,7 +192,7 @@ val target :
     wait to be ativated by another target (through [depends_on] or
     [on_{success,failure}_activate]) (default:
     [false], i.e., inactive). Usual workflows should not set this
-    value since the function {!Ketrew.Cliean.submit} will activate the
+    value since the function {!Ketrew.Client.submit} will activate the
     toplevel target automatically.
   - [?depends_on]: list of the dependencies of the target.
   - [?make]: the build-process used to “build” the target; where the

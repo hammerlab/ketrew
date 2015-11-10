@@ -6,12 +6,12 @@ Ketrew: Keep Track of Experimental Workflows
 - an OCaml library providing an EDSL API to define complex and convoluted
 workflows (interdependent steps/programs using a lot of data, with many
 parameter variations, running on different *hosts* with various schedulers).
-- an engine taking care of orchestrating the run of those workflows,
-and keeping track everything that succeeds, fails, or gets lost.
-Ketrew can be a standalone application, or use a client-server architecture.
+- an client-server application to make to interact with these workflows.
+The engine at heart of the server takes care of orchestrating the run of those
+workflows, and keeping track of everything that succeeds, fails, or gets lost.
 
 This is the master branch of Ketrew.
-See also the documentation for the latest release: 
+See also the documentation for the latest release:
 [2.0.0](http://seb.mondet.org/software/ketrew/doc.2.0.0/index.html).
 
 If you have any question, you may submit an
@@ -27,8 +27,9 @@ any Unix platform.
 
 ### From Opam
 
-If you have `opam` [up and running](http://opam.ocaml.org/doc/Install.html),
-just install Ketrew:
+If you have [opam](http://opam.ocaml.org/) up and running, just install Ketrew
+while choose a database backend (you may pick both and choose later in the
+config-file):
 
     opam install  (sqlite | postgresql) [ssl | tls]  ketrew
 
@@ -38,73 +39,129 @@ just install Ketrew:
   with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
   `tls`, *experimental*).
 
-This gets you the `ketrew` executable and the `ketrew_pure` and `ketrew`
-libraries.
+This gets you the
 
-Then, at runtime, you need the `ssh` client in the `$PATH`.
+  - a `ketrew` executable that can be used to schedule and run workflows.
+  - the [ketrew](http://seb.mondet.org/software/ketrew/api/Ketrew.html) library,
+    that handles the messy orchestration of those tasks and, significantly,
+    has the [EDSL](http://seb.mondet.org/software/ketrew/api/Ketrew.EDSL.html)
+    to write workflows.
 
-*Optional*: Ketrew, like any Lwt-based piece of software, will be much faster and
-scalable when `libev` is detected and used as a backend.
-Use `opam install conf-libev` to tell opam that `libev` is
+Remember that at runtime you'll need `ssh` in your `$PATH` to execute commands on
+foreign hosts.
+
+*Optional*: Ketrew, like any [Lwt](http://ocsigen.org/lwt/)-based piece of
+software, will be much faster and scalable when `libev` is detected and used
+as a backend. Use `opam install conf-libev` to tell opam that `libev` is
 [installed](http://opam.ocaml.org/packages/conf-libev/conf-libev.4-11/), which
-you can ensure with `brew install libev` on MacOSX, `apt-get install libev-dev`
-on Debian/Ubuntu, or `yum install libev-devel` on CentOS (which requires
-`export C_INCLUDE_PATH=/usr/include/libev/` and
-`export LIBRARY_PATH=/usr/lib64/` before `opam install conf-libev`).
+you can ensure with
+
+  - `brew install libev` on MacOSX
+  - `apt-get install libev-dev`on Debian/Ubuntu,
+  - `yum install libev-devel` on CentOS (which requires
+    `export C_INCLUDE_PATH=/usr/include/libev/` and `export LIBRARY_PATH=/usr/lib64/`
+
+before `opam install conf-libev`.
 
 ### Without Opam
 
 See the [development documentation](src/doc/Developer_Documentation.md) to find
-out how to build Ketrew (and its dependencies) from the sources.
+out how to build Ketrew (and its dependencies) from source.
 
 
 Getting Started
 ---------------
 
 Ketrew is very flexible and hence may seem difficult to understand, let's get a
-very minimalistic workflow running.
+minimal workflow running.
 
-The first time you use Ketrew, you need to configure it, simplest by calling
-`ketrew init`, and please choose an authentication token:
+Before you can use Ketrew, you need to configure it:
 
-    rm -fr ~/.ketrew/ # if you had a previous configuration there
-    ketrew init --with-token my-not-so-secret-token
-    
-by default this will configure Ketrew in `$HOME/.ketrew/` with a client/server
-mode **not** using TLS on port `8756` and with a local Sqlite database
-(use the option `--use-database URI` to choose another
-[database backend](src/doc/Database_Backends.md)).
-See `ketrew init --help` for more
-options, you can even ask it to generate self-signed TLS certificates.
-See also the [documentation](src/doc/The_Configuration_File.md)
-on the configuration file learn how to tweak it.
+    $ ketrew init
 
-You can check that the client or the server are configured:
+By default this will configure Ketrew in
 
-    ketrew print-configuration
-    ketrew print-configuration --configuration-profile server
-    ketrew print-configuration -P daemon
+    $ ls $HOME/.ketrew/
+    authorized_tokens	configuration.ml
 
-You may then start a server:
+You can check that the client or the server are configured (the client is
+returned by default) by using the `print-configuration` subcommand:
 
-    KETREW_PROFILE=daemon ketrew start-server
+    $ ketrew print-configuration
+    [ketrew]
+        Mode: Client
+        Connection: "http://127.0.0.1:8756"
+        Auth-token: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4="
+        UI:
+            Colors: with colors
+            Get-key: uses `cbreak`
+            Explorer:
+                Default request: Targets younger than 1.5 days
+                Targets-per-page: 6
+                Targets-to-prefectch: 6
+        Misc:
+            Debug-level: 0
+            Plugins: None
 
-and then open the GUI:
 
-    ketrew gui
+For the server (using `pc`, a command alias for `print-configuration`):
 
-which is just trying to load
-<http://127.0.0.1:8756/gui?token=my-not-so-secret-token> ☺
+    $ ketrew pc server
+    [ketrew]
+    Mode: Server
+    Engine:
+        Database: "/Users/leonidrozenberg/.ketrew/database"
+        Unix-failure: does not turn into target failure
+        Host-timeout-upper-bound:
+        Maximum-successive-attempts: 10
+        Concurrent-automaton-steps: 4
+    UI:
+        Colors: with colors
+        Get-key: uses `cbreak`
+        Explorer:
+            Default request: Targets younger than 1.5 days
+            Targets-per-page: 6
+            Targets-to-prefectch: 6
+    HTTP-server:
+        Authorized tokens:
+            Inline (Name: 755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=,
+            Value: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=")
+            Path: "/Users/leonidrozenberg/.ketrew/authorized_tokens"
+        Daemonize: false
+        Command Pipe: Some "/Users/leonidrozenberg/.ketrew/command.pipe"
+        Log-path: Some "/Users/leonidrozenberg/.ketrew/server-log"
+        Return-error-messages: true
+        Max-blocking-time: 300.
+        Block-step-time: 3.
+        Listen: HTTP: 8756
+    Misc:
+        Debug-level: 0
+        Plugins: None
 
-You can always stop the server or check its status:
+Furthermore `daemon` is a shortcut for starting the `server` in
+[daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
+now start a server:
 
-    ketrew stop -P daemon
-    ketrew status -P daemon
+    $ ketrew start-server --profile daemon
+
+Let's open the GUI:
+
+    $ ketrew gui
+
+Which should open your browser.
+
+<div><img width="100%" src="src/doc/images/preview1.png"/></div>
+
+Back at the command line can always check the server's status (and introduce
+the shorter command line argument `-P`, instead of `--profile`):
+
+    $ ketrew status -P daemon
+    [ketrew] The server appears to be doing well.
 
 The `ketrew submit` sub-command can create tiny workflows:
 
     ketrew submit --wet-run --tag 1st-workflow --tag command-line --daemonize /tmp/KT,"du -sh $HOME"
-    
+
 The job will appear on the WebUI and you can inspect/restart/kill it.
 
 <div>
@@ -112,98 +169,144 @@ The job will appear on the WebUI and you can inspect/restart/kill it.
   src="https://cloud.githubusercontent.com/assets/617111/9421006/17bceb36-483a-11e5-8845-bb2234697a14.gif">
 </div>
 
+
 If you don't like Web UI's you can use the text-based UI:
 
-    ketrew interact
+    $ ketrew interact
+    [ketrew]
+        Main menu
+        Press a single key:
+        * [q]: Quit
+        * [v]: Toggle verbose
+        * [s]: Display current status
+        * [l]: Loop displaying the status
+        * [k]: Kill targets
+        * [e]: The Target Explorer™
 
+Finally to stop the server:
+
+    $ ketrew stop -P daemon
+    [ketrew] Server killed.
+
+As you can see, just from the command line, you can use `ketrew submit` to
+launch tasks. But to go further we need to use an EDSL.
 
 The EDSL: Defining Workflows
 ----------------------------
 
-The previous section uses `ketrew submit` to launch an extremely simple
-workflow, to go further we need the EDSL.
-
 ### Overview
 
-The EDSL is an OCaml library where all the functions are used to build a
-workflow data-structure. Then, one function: `Ketrew.Client.submit` is used to
-submit workflows to the engine.
+The EDSL is an OCaml library where functions are used to build a
+workflow data-structure. Then, one function:
+[Ketrew.Client.submit](http://seb.mondet.org/software/ketrew/api/Ketrew.Client.html#VALsubmit)
+is used to submit workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
 
 There are 3 kinds of links between targets:
 
-- *dependencies:* targets that need to be ensured or
-run before a target can start,
-- *fallbacks:* targets that will be activated
-if the target fails, and
-- *success-triggers:* targets that will be activated only *after* a target
-succeeds.
+- *dependencies:* targets that need to be ensured or satisifed before a target
+can start,
+- *fallbacks:* targets that will be activated if the target fails, and
+- *successes:* targets that will be activated only *after* a target succeeds.
 
-Any OCaml program can use the EDSL (script, compiled, or even inside the
-toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
+See the [target](src/lib/eDSL.mli#L176)
+function documentation for details. Any OCaml program can use the EDSL (script, compiled,
+or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
 
 
 ### Example
 
-This example is a “single-target” workflow that runs an arbitrary shell command
-on an [LSF-based](http://en.wikipedia.org/wiki/Platform_LSF) cluster:
+The following script extends the previous shell based example with the capability to send emails upon the success or failure of your command.
 
 ```ocaml
 #use "topfind"
 #thread
 #require "ketrew"
-let run_command_with_lsf cmd =
+
+let run_command_with_daemonize ~cmd ~email =
   let module KEDSL = Ketrew.EDSL in
-  let host =
-    (* `Host.parse` takes an URI and creates a “Host” datastructue: a place to
-       run stuff.  *)
-    KEDSL.Host.parse
-      "ssh://user42@MyLSFCluster/home/user42/ketrew-playground/?shell=bash"
-    (* This one is an SSH host, named `MyLSFCluster`.
-       The directory `/home/user42/ketrew-playground/` will be used by Ketrew
-       to monitor the jobs. *)
+
+  (* Where to run stuff *)
+  let host = KEDSL.Host.tmp_on_localhost in
+
+  (* A “program” is a datastructure representing an “extended shell script”. *)
+  let program = KEDSL.Program.sh cmd in
+
+  (* A “build process” is a method for making things.
+     
+     In this case, `daemonize` creates a datastructure that represents a job
+     running our program on the host. *)
+  let build_process = KEDSL.daemonize ~host program in
+
+  (* A target that Ketrew will activate after cmd completes *)
+  let email_target ~success =
+    let sstring = if success then "succeeded" else "failed" in
+    let e_program =
+      KEDSL.Program.shf "echo \"'%s' %s\" | mail -s \"Status update\" %s"
+        cmd sstring
+        email
+    in
+    let e_process = KEDSL.daemonize ~host e_program in
+    KEDSL.target ("email result " ^ sstring) ~make:e_process 
   in
-  let program =
-    (* A “program” is a datastructure representing “extended shell scripts”.
-       `Program.sh` creates one out a shell command. *)
-    KEDSL.Program.sh cmd in
-  let lsf_build_process =
-    (* “build process” is a method for making things:
-       `lsf` creates a datastructure that represents a job running a `program`
-       with the LSF scheduling engine, on the host `host`.  *)
-    KEDSL.lsf
-      ~queue:"normal-people" ~wall_limit:"1:30"
-      ~processors:(`Min_max (1,1)) ~host program
-  in
-  (* The function `KEDSL.target` creates a node in the workflow graph.
-     This one is very simple, it has a name and a build-process,
-     and since it doesn't have dependencies or fallbacks, it is a
-     “single-node” workflow: *)
-  KEDSL.target
-     "run_command_with_lsf"
-     ~make:lsf_build_process
+
+  (* The function `KEDSL.target` creates a node in the workflow graph. *)
+  KEDSL.target "daemonize command"
+    ~make:build_process
+    ~on_success_activate:[email_target true]
+    ~on_failure_activate:[email_target false]
 
 let () =
-  let workflow =
-     (* Create the  workflow with the first argument of the command line: *)
-     run_command_with_lsf Sys.argv.(1) in
+  (* Grab the command line arguments. *)
+  let cmd   = Sys.argv.(1) in
+  let email = Sys.argv.(2) in
+
+  (* Create the  workflow with the first argument of the command line: *)
+  let workflow = run_command_with_daemonize ~cmd ~email in
+
   (* Then, `Client.submit` is the only function that “does” something, it
      submits the workflow to the engine: *)
   Ketrew.Client.submit workflow
-  (* If Ketrew is in Standalone mode, this means writing the workflow in the
-     database (nothing runs yet, you need to run Ketrew's engine yourself).
-     If Ketrew is in Client-Server mode, this means sending the workflow to the
-     server over HTTPS. The server will start running the workflow right away.  *)
+
 ```
 
-If you actually have access to an LSF cluster and want to try this workflow,
-put it in a file `my_second_workflow.ml`, and simply:
+You can run this [script](src/example_scripts/daemonize_workflow.ml) from the shell
+with
 
-    ocaml my_second_workflow.ml 'du -sh $HOME'
+    ocaml daemonize_workflow.ml 'du -sh $HOME' myaddress@email.com
+    
+Checking in with the gui, we'll have a couple of new targets:
+
+<div><img width="100%" src="src/doc/images/preview2.png"/></div>
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
+
+Troubleshooting
+---------------
+
+- Trying to use use Sqlite3 on MacOSX, and `opam` fail? These
+  [instructions](https://github.com/smondet/trakeva#sqlite3-on-macosx)
+  should be helpful.
+- `opam` and `ssl` errors when install `ketrew`? Please see this
+  [issue](https://github.com/hammerlab/ketrew/issues/214).
+- When reconfiguring `Ketrew` between versions it may be helpful to delete old configurations:
+
+        $ rm -fr $HOME/.ketrew/
+
+- During configuration it is recommended that you pass an authentication token,
+  as opposed to having Ketrew generate one for you:
+
+        $ ketrew init --with-token my-not-so-secret-token
+
+- On a Mac and the EDSL example didn't work? Unfortunately, there's no
+  [setsid](http://man7.org/linux/man-pages/man1/setsid.1.html) utility
+  which is the default way of daemonizing processes in Ketrew.
+  Use the `` `Python_daemon`` technique for forking:
+        
+        $ let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
+
 
 
 Where to Go Next
