@@ -214,7 +214,7 @@ There are 3 kinds of links between targets:
 
 See the `Ketrew.EDSL.target` function documentation for details. Any OCaml
 program can use the EDSL (script, compiled, or even inside the toplevel), see
-the [documentation of the EDSL API](src/lib/eDSL.mli).
+the documentation of the EDSL API: the module `Ketrew.EDSL`.
 
 ### Example
 
