@@ -150,7 +150,11 @@ Let's open the GUI:
 
 Which should open your browser.
 
-<div><img width="100%" src="src/doc/images/preview1.png"/></div>
+<div>
+<img  width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/11070327/07e7f63e-87a9-11e5-9a55-1e5f1baedb29.png"
+>
+</div>
 
 Back at the command line can always check the server's status (and introduce
 the shorter command line argument `-P`, instead of `--profile`):
@@ -278,7 +282,11 @@ with
     
 Checking in with the gui, we'll have a couple of new targets:
 
-<div><img width="100%" src="src/doc/images/preview2.png"/></div>
+<div>
+<img width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/11070354/32521fb2-87a9-11e5-993e-550db476cbd7.png"
+</div>
+
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
