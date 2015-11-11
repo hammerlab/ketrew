@@ -200,6 +200,7 @@ module State : sig
       message: string option;
       more_info: string list;
       finished: bool;
+      depth: int;
     } [@@deriving yojson]
 
     val time: item ->  float

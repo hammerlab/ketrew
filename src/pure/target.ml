@@ -583,6 +583,7 @@ type state = [
       message: string option;
       more_info: string list;
       finished: bool;
+      depth: int;
     }
     [@@deriving yojson]
 
@@ -590,7 +591,7 @@ type state = [
       history: item list;
     } [@@deriving yojson]
 
-    let item state =
+    let item state ~depth =
       let finished =
         match state with
         | `Finished _ -> true
@@ -600,7 +601,7 @@ type state = [
       let (`Time time, `Log message, `Info too_much) = summary state in
       let more_info =
         List.remove_consecutive_duplicates too_much ~equal:((=)) in
-      {time; message; name; simple; more_info; finished}
+      {time; message; name; simple; more_info; finished; depth}
 
     let time item = item.time
     let simple item = item.simple
@@ -621,47 +622,28 @@ type state = [
 
     let of_state state =
       let rec dive acc t =
-        let item = item t in
-        (*
-        Log.(s "Item: " % s item.name % sp % OCaml.list quote item.more_info
-             @ verbose);
-          *)
+        let item depth = item t ~depth in
         let history_opt, bookkeeping_opt = contents t in
         let stack =
-          let similar_item one two =
+          let similar_item one_f two_f =
+            let one = one_f 4242 in
+            let two = two_f 4242 in (* We create fake ones for comparing *)
             one.simple = two.simple
             && one.name = two.name
             && one.message = two.message
             && one.more_info = two.more_info
           in
           match acc with
-          | one :: more when similar_item one item ->
-(*
-            Log.(s "Skipping Item: " % s item.name % sp % OCaml.list quote item.more_info
-             @ verbose); *)
-            item :: more
+          | one :: more when similar_item one item -> item :: more
           | _ -> item :: acc
         in
         match history_opt with
         | Some history ->
           dive stack history.previous_state
         | None ->
-          List.rev stack
+          List.rev (List.mapi stack ~f:(fun depth item_f -> item_f depth))
       in
       let history = dive [] state in
-      (*
-      List.iter history (fun item ->
-        Log.(s "Item: " % s item.name % sp % OCaml.list quote item.more_info
-             @ verbose);
-        );
-      exit 3
-         *)
-        (*
-        if item.finished |> not then (
-          Log.(s "item not finished !" @ error);
-          exit 3
-        );
-           *)
       {history}
 
     let since {history} date =
@@ -670,7 +652,7 @@ type state = [
       | history -> Some { history }
 
     let merge one two =
-      let compare a b = ~- (Float.compare a.time b.time) in
+      let compare a b = ~- (Int.compare a.depth b.depth) in
       {history =
          List.rev_append one.history two.history
          |> List.dedup ~compare
