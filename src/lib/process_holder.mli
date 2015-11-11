@@ -21,6 +21,8 @@
 (** A container for internal server-side processes (for now SSH
     connections/tunnels). *)
 
+open Unix_io
+
 (** A module encapsulating daemonized SSH connections, the functions
     {!Ssh_connection.setsid_ssh} is exposed to the {!Command_line} module
     for the ["ketrew internal-ssh"] command.
@@ -43,7 +45,7 @@ module Ssh_connection : sig
           | `File_exists of string
           | `Write_file_exn of Unix_io.IO.path * exn
           | `Wrong_path of string ] ])
-      Unix_io.t
+      Deferred_result.t
   (** Daemonize an SSH connection with a control-path as a
       control-master, one can communicate with the client (as an SSH
       ["ASKPASS"] program) with the [pipe_in] and [pipe_out] named
@@ -56,9 +58,9 @@ module Ssh_connection : sig
     ?ketrew_bin:string -> ?command:string -> name: string -> string -> t
   val markup_with_daemon_logs :
     t ->
-    (Ketrew_pure.Internal_pervasives.Display_markup.t, 'a) Unix_io.t
+    (Ketrew_pure.Internal_pervasives.Display_markup.t, 'a) Deferred_result.t
   val write_to_fifo:
-    t -> bytes -> (unit, [> `Failure of bytes ]) Unix_io.t
+    t -> bytes -> (unit, [> `Failure of bytes ]) Deferred_result.t
   val host_uri: t -> string
   val kill :
     t ->
@@ -71,7 +73,7 @@ module Ssh_connection : sig
           | `Exn of exn
           | `Signaled of int
           | `Stopped of int ] ])
-      Unix_io.t
+      Deferred_result.t
 
   (**/**)
 
@@ -80,7 +82,7 @@ end
 type t
 (** The container for mnoitored server-side processes. *)
 
-val load : unit -> (t, 'a) Unix_io.t
+val load : unit -> (t, 'a) Deferred_result.t
 (** Create a new process-holder. *)
 
 val unload :
@@ -96,12 +98,12 @@ val unload :
              | `Signaled of int
              | `Stopped of int ] ]
           list ])
-    Unix_io.t
+    Deferred_result.t
 (** Destroy a process-holder by attempting to kill all its processes. *)
 
 
 val answer_message: t ->
   host_io:Host_io.t ->
   Ketrew_pure.Protocol.Process_sub_protocol.up ->
-  (Ketrew_pure.Protocol.Process_sub_protocol.down, 'a) Unix_io.t
+  (Ketrew_pure.Protocol.Process_sub_protocol.down, 'a) Deferred_result.t
 (** Answer a request from the sub-protocol of the process-holder. *)
