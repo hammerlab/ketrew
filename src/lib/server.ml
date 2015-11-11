@@ -99,7 +99,11 @@ module Server_state = struct
         Hashtbl.t;
     deferred_queries: Deferred_queries.t;
     process_holder: Process_holder.t;
+    mutable status : [ `On | `Off ]; (* For now the status just tracks
+                                        whetther `shut_down` has
+                                        occured or not *)
   }
+
 (*M
 The `loop_traffic_light` is “red” for the server  by default but some services
 can set it to `Green to wake it up earlier and do things.
@@ -113,7 +117,7 @@ M*)
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
      all_connections = Hashtbl.create 42; process_holder;
-     deferred_queries = Deferred_queries.create ()}
+     deferred_queries = Deferred_queries.create (); status = `On}
 
   let markup t =
     let open Display_markup in
@@ -460,26 +464,31 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | "/gui"      -> gui_service ~server_state ~body req
   | other       -> wrong_request "Wrong path" other
 
+(** {2 Start/Stop The Server} *)
+
 
 (* Server's graceful sefl-shut-down. *)
 let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
-  Process_holder.unload server_state.process_holder
-  >>< fun ph_unload_result ->
-  Engine.unload server_state.state
-  >>< fun engine_unload_result ->
-  let display_errors_and_exit e =
-    log_error e Log.(s "Could not unload engine");
-    Log.(s "Errors while shutting down the server:" %n
-         % a Error.to_string e @ error);
-    exit 10 in
-  begin match ph_unload_result, engine_unload_result with
-  | (`Ok (), `Ok ()) -> exit 0
-  | `Error e, `Ok ()
-  | `Ok (), `Error e -> display_errors_and_exit e
-  | `Error e1, `Error e2 -> display_errors_and_exit (`List [e1; e2])
+  begin match server_state.status with
+  | `Off -> exit 0
+  | `On ->
+    Process_holder.unload server_state.process_holder
+    >>< fun ph_unload_result ->
+    Engine.unload server_state.state
+    >>< fun engine_unload_result ->
+    let display_errors_and_exit e =
+      log_error e Log.(s "Could not unload engine");
+      Log.(s "Errors while shutting down the server:" %n
+           % a Error.to_string e @ error);
+      exit 10 in
+    server_state.status <- `Off;
+    begin match ph_unload_result, engine_unload_result with
+    | (`Ok (), `Ok ()) -> exit 0
+    | `Error e, `Ok ()
+    | `Ok (), `Error e -> display_errors_and_exit e
+    | `Error e1, `Error e2 -> display_errors_and_exit (`List [e1; e2])
+    end
   end
-
-(** {2 Start/Stop The Server} *)
 
 (* Text commands that we can send to the server via the pipe *)
 module Commands = struct
@@ -848,6 +857,16 @@ let start ~configuration  =
   let server_state =
     Server_state.create
       ~process_holder ~authentication ~state:engine configuration in
+  log_info Log.(s "Start-Server: Setup “At-Exit” hooks");
+  (* Set at-exit hooks. *)
+  Lwt_main.at_exit Lwt.(fun () ->
+      shut_down server_state
+      >>= fun _ ->
+      return ());
+  let (_ : Lwt_unix.signal_handler_id) =
+    Lwt_unix.on_signal Sys.sigint (fun id ->
+        Log.(sf "Catching SIGINT (handler id: %d)" id @verbose);
+        exit 0) in
   log_info Log.(s "Start-Server: Starting the Engine loop");
   start_engine_loop ~server_state;
   log_info Log.(s "Start-Server: Starting listening on command-pipe");
