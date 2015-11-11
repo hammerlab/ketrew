@@ -83,6 +83,23 @@ type t
 val load : unit -> (t, 'a) Unix_io.t
 (** Create a new process-holder. *)
 
+val unload :
+  t ->
+  (unit,
+   [> `List of
+        [> `Failure of bytes
+        | `IO of [> `Read_file_exn of bytes * exn ]
+        | `Shell of
+             bytes *
+             [> `Exited of int
+             | `Exn of exn
+             | `Signaled of int
+             | `Stopped of int ] ]
+          list ])
+    Unix_io.t
+(** Destroy a process-holder by attempting to kill all its processes. *)
+
+
 val answer_message: t ->
   host_io:Host_io.t ->
   Ketrew_pure.Protocol.Process_sub_protocol.up ->

@@ -80,7 +80,7 @@ module Process = struct
       >>= fun _ ->
       log_process_action process "Closing";
       return (`Ok ())
-    end 
+    end
       (fun e ->
          Log.(s "Error in stop: " % exn e @ error);
          return (`Ok ()))
@@ -139,7 +139,7 @@ end
 module Ssh_connection = struct
 
   let make_pipe ?name () =
-    let fifo = 
+    let fifo =
       match name with
       | None  -> Filename.temp_file "ketrew-ssh-askpass" ".pipe"
       | Some s -> s in
@@ -232,7 +232,7 @@ We need to comunicate with that process:
         meta_log (session_log "Script written")
         >>= fun () ->
         let process =
-          Process.start 
+          Process.start
             ["bash"; "-c";
              fmt
                "unset SSH_AUTH_SOCK; \
@@ -441,6 +441,7 @@ We need to comunicate with that process:
     | Some i -> return i
     | None -> fail (`Failure (fmt "Session-ID not an integer: %S" content))
     end
+
   let kill t =
     session_pid t
     >>= fun pid ->
@@ -491,9 +492,11 @@ We need to comunicate with that process:
     | `Exited 0 ->
       return (`Alive (if can_write then `Askpass_waiting_for_input else `Idle))
     | `Signaled _
-    | `Stopped _ 
+    | `Stopped _
     | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
     end
+
+  let log t = markup t |> Display_markup.log
 
 end
 
@@ -508,9 +511,31 @@ type t = {
 
 let create () = {active_processes = Hashtbl.create 42}
 
+let kill_all t =
+  let as_list =
+    Hashtbl.fold (fun id p prev -> (id, p) :: prev) t.active_processes []
+  in
+  Deferred_list.for_concurrent as_list ~f:(fun (id, proc) ->
+      begin match proc with
+      | `Ssh_connection ssh ->
+        Log.(s "Killing " % Ssh_connection.log ssh  @ verbose);
+        Ssh_connection.kill ssh
+      | `Process process ->
+        Process.stop process
+      end
+    )
+  >>= fun ((_ : unit list), errors) ->
+  begin match errors with
+  | [] -> return ()
+  | _ :: _ as e -> fail (`List e)
+  end
+
 let load () =
   let t = create () in
   return t
+
+let unload t =
+  kill_all t
 
 let start_process t ?bin argl =
   let p = Process.start ?bin argl in
@@ -528,7 +553,7 @@ let get t ~id =
   match Hashtbl.find t.active_processes id with
   | t -> return t
   | exception _ -> fail (`Missing_data id)
-        
+
 let get_ssh_connection t ~id =
   get t ~id
   >>= begin function
@@ -581,7 +606,7 @@ let answer_message t ~host_io msg :
     end
     >>= fun () ->
     return `Ok
-  | `Send_command 
+  | `Send_command
       { Protocol.Process_sub_protocol.Command.connection; id; command } ->
     get_ssh_connection t ~id:connection
     >>= fun ssh ->
@@ -617,4 +642,3 @@ let answer_message t ~host_io msg :
       | `Shell _ as eshell -> Error.to_string eshell
     in
     return (`Error msg)
-
