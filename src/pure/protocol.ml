@@ -68,7 +68,7 @@ module Process_sub_protocol = struct
     } [@@deriving yojson]
   end
   type up = [
-    | `Start_ssh_connetion of string
+    | `Start_ssh_connetion of string * string
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
@@ -77,7 +77,10 @@ module Process_sub_protocol = struct
   ] [@@deriving yojson]
 
   module Ssh_connection = struct
-    type status = [ `Alive | `Dead of string ] [@@deriving yojson]
+    type status = [
+      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Dead of string
+    ] [@@deriving yojson]
     type t = {
       id: string;
       uri: string;

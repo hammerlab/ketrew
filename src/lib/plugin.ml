@@ -152,7 +152,7 @@ let additional_queries target =
           []
         end)
 
-let call_query ~target query =
+let call_query ~target ~host_io query =
   with_run_parameters target
     ~fail:(fun () -> fail Log.(s "Target has no queries: " % Target.log target))
     ~f:(fun ~plugin rp ->
@@ -161,7 +161,7 @@ let call_query ~target query =
           let module Long_running = (val m : LONG_RUNNING) in
           begin try
             let c = Long_running.deserialize_exn rp in
-            Long_running.query c query
+            Long_running.query ~host_io c query
           with e ->
             fail Log.(s "Run-parameters deserialization" % exn e)
           end

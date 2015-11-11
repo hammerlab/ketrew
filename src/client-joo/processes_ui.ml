@@ -112,9 +112,9 @@ let launch_update_ssh_connections t =
       send_process_messsage t (`Process (`Get_all_ssh_ids))
     )
 
-let start_ssh_connection t connection =
+let start_ssh_connection t ~name ~uri =
   asynchronously (fun () ->
-      send_process_messsage t (`Process (`Start_ssh_connetion connection))
+      send_process_messsage t (`Process (`Start_ssh_connetion (name, uri)))
     )
 
 let update_logs t ~id =
@@ -377,7 +377,9 @@ module Html = struct
             false) in
     let status_badge () =
       match status with
-      | `Alive -> Bootstrap.icon_success ~title:"Alive"
+      | `Alive `Idle -> Bootstrap.icon_success ~title:"Alive & Kicking"
+      | `Alive `Askpass_waiting_for_input ->
+        Bootstrap.icon_unknown ~title:"Alive but waiting for input"
       | `Dead s -> Bootstrap.icon_wrong ~title:(fmt "Dead: %s" s)
     in
     Reactive_node.div Reactive.(
@@ -444,6 +446,7 @@ module Html = struct
               [
                 Bootstrap.(
                   let ssh_uri = ref "ssh://" in
+                  let host_name = ref "" in
                   Input_group.make [
                     Input_group.addon [
                       pcdata "Enter SSH URI (like ssh://user@example.com:42)";
@@ -453,13 +456,25 @@ module Html = struct
                       ~on_input:(fun str -> ssh_uri := str)
                       ~on_keypress:(function
                         | 13 ->
-                          start_ssh_connection t !ssh_uri;
+                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
+                        | other ->
+                          Log.(s "on_keypress → " % i other  @ verbose));
+                    Input_group.addon [
+                      pcdata "Enter a name for this connection";
+                    ];
+                    Input_group.text_input `Text
+                      ~value:!host_name
+                      ~on_input:(fun str -> host_name := str)
+                      ~on_keypress:(function
+                        | 13 ->
+                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
                         | other ->
                           Log.(s "on_keypress → " % i other  @ verbose));
                     Input_group.button_group [
                       button [pcdata "Go!"] ~on_click:(fun _ ->
-                          start_ssh_connection t !ssh_uri;
+                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           false);
                     ]
                   ]

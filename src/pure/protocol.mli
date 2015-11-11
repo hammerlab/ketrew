@@ -57,7 +57,7 @@ module Process_sub_protocol : sig
     }
   end
   type up = [
-    | `Start_ssh_connetion of string
+    | `Start_ssh_connetion of string * string (* name × connection-uri *)
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
@@ -65,7 +65,10 @@ module Process_sub_protocol : sig
     | `Kill of string
   ]
   module Ssh_connection : sig
-    type status = [ `Alive | `Dead of string ]
+    type status = [
+      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Dead of string
+    ]
     type t = {
       id: string;
       uri: string;

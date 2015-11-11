@@ -268,8 +268,8 @@ let get_list_of_target_ids t ~query =
 let call_query t ~target query =
   match t with
   | `Standalone s ->
-    let open Standalone in
-    Plugin.call_query ~target query
+    let host_io = Engine.host_io s.Standalone.engine in
+    Plugin.call_query ~target query ~host_io
   | `Http_client c ->
     Http_client.call_query c ~target query
     >>< begin function 

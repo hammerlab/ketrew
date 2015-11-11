@@ -92,9 +92,20 @@ val ssh :
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
 
+val named :
+  ?execution_timeout:Time.t ->
+  ?default_shell:default_shell ->
+  ?playground:Path.t ->
+  string -> t
+(** Create an "named" host, the actual connection will be resolved
+    form the name by the engine. *)
+
+
 val shell_of_default_shell: t -> string -> string list
 
-val of_uri: Uri.t -> t
+val of_uri :
+  Uri.t ->
+  (t, [> `Host_uri_parsing_error of bytes * bytes ]) Pvem.Result.t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
     the “path” part of the URI is the playground.
 
@@ -106,7 +117,7 @@ val of_uri: Uri.t -> t
     - a ["timeout"] value can be defined (in seconds) for all system/SSH calls.
 
     For example
-    [of_string "//user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42"]
+    [of_string "ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42"]
     will be like using 
     {[
       ssh ~default_shell:(default_shell  "bash"
@@ -117,9 +128,10 @@ val of_uri: Uri.t -> t
 
 *)
 
-val of_string: string -> t
+val of_string: string ->
+  (t, [> `Host_uri_parsing_error of bytes * bytes ]) Pvem.Result.t
 (** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
-  string into a host, see {!of_uri}. *)
+    string into a host, see {!of_uri}. *)
 
 val to_uri: t -> Uri.t
 (** Convert a [Host.t] to an URI representing it. *)
@@ -136,5 +148,5 @@ val markup: t -> Display_markup.t
 val execution_timeout: t -> Time.t option
 (** The execution timeout configured for the host. *)
 
-val connection: t -> [ `Localhost | `Ssh of Ssh.t ]
+val connection: t -> [ `Localhost | `Ssh of Ssh.t | `Named of string ]
 val playground: t -> Path.t option

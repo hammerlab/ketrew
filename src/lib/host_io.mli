@@ -19,7 +19,8 @@
 (**************************************************************************)
 
 (** Definition of a host; a place to run commands or handle files. *)
-open Ketrew_pure.Internal_pervasives
+open Ketrew_pure
+open Internal_pervasives
 open Unix_io
 
 
@@ -46,6 +47,7 @@ module Error: sig
         [> `Wrong_log of string
         | `Wrong_status of Unix_process.Exit_code.t ] * string 
     | `System of [> `Sleep of float ] * [> `Exn of exn ]
+    | `Named_host_not_found of bytes
     | `Timeout of float
   ]
 
@@ -72,24 +74,28 @@ module Error: sig
     | `Non_zero of string * int
     | `System of [ `Sleep of float ] * [ `Exn of exn ]
     | `Timeout of float
+    | `Named_host_not_found of bytes
     | `Ssh_failure of
         [> `Wrong_log of string
         | `Wrong_status of Unix_process.Exit_code.t ] *
         string
     | `Unix_exec of string ] ->
-    [ `Execution | `Ssh | `Unix ]
+    [ `Command_execution | `Connectivity | `Local_system ]
   (**
      Get a glance at the gravity of the situation: {ul
-     {li [`Unix]: a function of the kind {!Unix.exec} failed.}
-     {li [`Ssh]: SSH failed to run something but it does not mean that the
-     actual command is wrong.}
-     {li [`Execution]: SSH/[Unix] succeeded but the command failed.}
+     {li [`Local_system]: a function of the kind {!Unix.exec} failed.}
+     {li [`Connectivity]: [Host_io] failed to run something but it does not
+          mean that the actual command is wrong; connectivity can be
+          restored later.}
+     {li [`Command_execution]: the system and networking did their job
+          but the particular command failed.}
      } *)
 
   val log :
     [< `Unix_exec of string
     | `Non_zero of (string * int)
     | `System of [< `Sleep of float ] * [< `Exn of exn ]
+    | `Named_host_not_found of bytes
     | `Timeout of float
     | `Execution of
          < host : string; message : string; stderr : string option;
@@ -101,7 +107,9 @@ module Error: sig
 
 end
 
-type t = Ketrew_pure.Host.t
+type t
+
+val create: unit -> t
 
 val default_timeout_upper_bound: float ref
 (** Default (upper bound) of the `?timeout` arguments. *)
@@ -124,7 +132,13 @@ type timeout = [
 
 *)
 
-val execute: ?timeout:timeout -> t -> string list ->
+
+val set_named_host: t  -> name: string -> Host.t -> (unit, 'a) Deferred_result.t
+
+val delete_named_host: t  -> name: string -> (unit, 'a) Deferred_result.t
+
+
+val execute: ?timeout:timeout -> t -> host:Host.t -> string list ->
   (<stdout: string; stderr: string; exited: int>,
    [> `Host of _ Error.execution ]) Deferred_result.t
 (** Generic execution which tries to behave like [Unix.execv] even
@@ -142,7 +156,7 @@ val shell_sh: sh:string -> shell
 val get_shell_command_output :
   ?timeout:timeout ->
   ?with_shell:shell ->
-  t ->
+  t -> host:Host.t ->
   string ->
   (string * string, [> `Host of  _ Error.non_zero_execution]) Deferred_result.t
 (** Run a shell command on the host, and return its [(stdout, stderr)] pair
@@ -151,7 +165,7 @@ val get_shell_command_output :
 val get_shell_command_return_value :
   ?timeout:timeout ->
   ?with_shell:shell ->
-  t ->
+  t -> host:Host.t ->
   string ->
   (int, [> `Host of _ Error.execution ]) Deferred_result.t
 (** Run a shell command on the host, and return its exit status value. *)
@@ -159,7 +173,7 @@ val get_shell_command_return_value :
 val run_shell_command :
   ?timeout:timeout ->
   ?with_shell:shell ->
-  t ->
+  t -> host:Host.t ->
   string ->
   (unit, [> `Host of  _ Error.non_zero_execution])  Deferred_result.t
 (** Run a shell command on the host (succeeds {i iff } the exit status is [0]).
@@ -168,27 +182,27 @@ val run_shell_command :
 val do_files_exist :
   ?timeout:timeout ->
   ?with_shell:shell ->
-  t ->
+  t -> host:Host.t ->
   Ketrew_pure.Path.t list ->
   (bool, [> `Host of _ Error.execution ])
   Deferred_result.t
 (** Check existence of a list of files/directories. *)
 
 val get_fresh_playground :
-  t -> Ketrew_pure.Path.t option
+  t -> host:Host.t -> Ketrew_pure.Path.t option
 (** Get a new subdirectory in the host's playground *)
 
 val ensure_directory :
   ?timeout:timeout ->
   ?with_shell:shell ->
-  t ->
+  t -> host:Host.t ->
   path:Ketrew_pure.Path.t ->
   (unit, [> `Host of _ Error.non_zero_execution ]) Deferred_result.t
 (** Make sure the directory [path] exists on the host. *)
 
 val put_file :
   ?timeout:timeout ->
-  t ->
+  t -> host:Host.t ->
   path: Ketrew_pure.Path.t ->
   content:string ->
   (unit,
@@ -199,17 +213,17 @@ val put_file :
 
 val get_file :
   ?timeout:timeout ->
-  t ->
+  t -> host:Host.t ->
   path:Ketrew_pure.Path.t ->
   (string,
    [> `Cannot_read_file of string * string
-    | `Timeout of Time.t ])
-  Deferred_result.t
+   | `Host of [> `Named_host_not_found of bytes ]
+   | `Timeout of Time.t ]) Deferred_result.t
 (** Read the file from the host at [path]. *)
 
 val grab_file_or_log:
   ?timeout:timeout ->
-  t -> 
+  t -> host:Host.t -> 
   Ketrew_pure.Path.t ->
   (string, Log.t) Deferred_result.t
 (** Weakly typed version of {!get_file}, it fails with a {!Log.t}

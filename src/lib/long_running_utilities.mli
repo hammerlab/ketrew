@@ -37,17 +37,19 @@ val script_path : playground:Ketrew_pure.Path.t -> Ketrew_pure.Path.t
 val classify_and_transform_errors :
   ('a,
    [< `Fatal of string
-   | `Host of
+   | `Host of 
         [ `Execution of
-            < host : string; message : string; stderr : string option;
-              stdout : string option >
-        | `Non_zero of string * int
+            < host : bytes; message : bytes; stderr : bytes option;
+              stdout : bytes option >
+        | `Named_host_not_found of bytes
+        | `Non_zero of bytes * int
         | `Ssh_failure of
-            [ `Wrong_log of string
-            | `Wrong_status of Unix_process.Exit_code.t ] * string
+            [ `Wrong_log of bytes
+            | `Wrong_status of Unix_process.Exit_code.t ] * 
+            bytes
         | `System of [ `Sleep of float ] * [ `Exn of exn ]
         | `Timeout of float
-        | `Unix_exec of string ]
+        | `Unix_exec of bytes ]
    | `IO of
         [< `Exn of exn
         | `File_exists of string
@@ -83,10 +85,13 @@ val classify_and_transform_errors :
     {!Ketrew_pure.Host.Error.classify}.  *)
 
 val fresh_playground_or_fail :
-  Ketrew_pure.Host.t -> (Ketrew_pure.Path.t, [> `Fatal of string ]) Deferred_result.t
+  host_io:Host_io.t ->
+  Ketrew_pure.Host.t ->
+  (Ketrew_pure.Path.t, [> `Fatal of string ]) Deferred_result.t
 (** Get a fresh-playground from a [Host.t]. *)
 
 val get_log_of_monitored_script :
+  host_io:Host_io.t ->
   host:Ketrew_pure.Host.t ->
   script:Ketrew_pure.Monitored_script.t ->
   ([ `After of string * string * string
@@ -95,17 +100,21 @@ val get_log_of_monitored_script :
    | `Failure of string * string * string
    | `Start of string
    | `Success of string ] list option,
-   [> `Timeout of Time.t ])
-  Deferred_result.t
+   [> `Host of [> `Named_host_not_found of bytes ]
+   | `Timeout of float ]) Deferred_result.t
 (** Fetch and parse the [log] file of a monitored-script. *)
 
 val get_pid_of_monitored_script :
+  host_io:Host_io.t ->
   host:Ketrew_pure.Host.t ->
   script:Ketrew_pure.Monitored_script.t ->
-  (int option, [> `Timeout of Time.t ]) Deferred_result.t
+  (int option,
+   [> `Host of [> `Named_host_not_found of bytes ]
+   | `Timeout of float ]) Deferred_result.t
 (** Fetch and parse the [pid] file of a monitored-script. *)
 
 val shell_command_output_or_log :
+  host_io:Host_io.t ->
   host:Ketrew_pure.Host.t ->
   string -> (string, Log.t) Deferred_result.t
 (** Call {!Host_io.get_shell_command_output} and transform errors

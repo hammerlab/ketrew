@@ -41,11 +41,13 @@ module type LONG_RUNNING = sig
       and assumes that no exception will be thrown in that case. *)
 
   val start: run_parameters ->
+    host_io:Host_io.t ->
     (run_parameters, Host_io.Error.classified) Deferred_result.t
   (** Start the long-running computation, the returned [run_parameters] will be
       stored and used for the first call to {!update}. *)
 
   val update: run_parameters ->
+    host_io:Host_io.t ->
     ([`Succeeded of run_parameters
      | `Failed of run_parameters * string
      | `Still_running of run_parameters], Host_io.Error.classified) Deferred_result.t
@@ -54,6 +56,7 @@ module type LONG_RUNNING = sig
       will receive those parameters. *)
 
   val kill: run_parameters ->
+    host_io:Host_io.t ->
     ([`Killed of run_parameters], Host_io.Error.classified) Deferred_result.t
   (** Kill the long-running computation. *)
 
@@ -64,6 +67,8 @@ module type LONG_RUNNING = sig
   (** List of potential [(query, description)] pairs that can be passed
       to {!query}. *)
 
-  val query: run_parameters -> string -> (string, Log.t) Deferred_result.t
+  val query: run_parameters ->
+    host_io:Host_io.t ->
+    string -> (string, Log.t) Deferred_result.t
   (** Perform a query. *)
 end

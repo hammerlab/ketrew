@@ -24,21 +24,11 @@ open Ketrew_pure.Internal_pervasives
 
 open Unix_io
 
-val bool: Ketrew_pure.Target.Condition.t ->
+val bool:
+  host_io:Host_io.t ->
+  Ketrew_pure.Target.Condition.t ->
     (bool,
-     [> `Host of
-          [> `Execution of
-               < host : string; message : string;
-                 stderr : string option; stdout : string option >
-          | `Non_zero of string * int
-          | `Ssh_failure of
-               [> `Wrong_log of string
-               | `Wrong_status of Unix_process.Exit_code.t ] *
-               string
-          | `System of [> `Sleep of float ] * [> `Exn of exn ]
-          | `Timeout of float
-          | `Unix_exec of string ]
-            Host_io.Error.execution
+     [> `Host of  _ Host_io.Error.non_zero_execution 
      | `Volume of [> `No_size of Log.t ] ]) Deferred_result.t
 
 

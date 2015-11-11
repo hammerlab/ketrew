@@ -26,6 +26,7 @@ open Long_running
 type t = {
   data: Persistent_data.t;
   configuration: Configuration.engine;
+  host_io: Host_io.t;
 }
 
 open Logging.Global
@@ -36,8 +37,9 @@ include Make_module_error_and_info(struct
 let create configuration =
   Persistent_data.create (Configuration.database_parameters configuration)
   >>= fun data ->
-  return {data; configuration}
+  return {data; configuration; host_io = Host_io.create ()}
 
+let host_io t = t.host_io
 
 let unload t =
   Persistent_data.unload t.data
@@ -96,7 +98,8 @@ module Run_automaton = struct
                     ~bookkeeping ~previous_attempts)
         end
         >>= fun run_parameters ->
-        Long_running.start run_parameters
+        let host_io = t.host_io in
+        Long_running.start ~host_io run_parameters
         >>< function
         | `Ok rp ->
           let run_parameters = Long_running.serialize rp in
@@ -169,7 +172,8 @@ module Run_automaton = struct
     | Some m ->
       let module Long_running = (val m : LONG_RUNNING) in
       let run_parameters = Long_running.deserialize_exn run_parameters in
-      begin Long_running.kill run_parameters
+      let host_io = t.host_io in
+      begin Long_running.kill ~host_io run_parameters
         >>< function
         | `Ok (`Killed rp) ->
           let run_parameters = Long_running.serialize rp in
@@ -186,11 +190,12 @@ module Run_automaton = struct
 
   let _check_process t ~target ~bookkeeping =
     let {Target.Automaton. plugin_name; run_parameters} = bookkeeping in
+    let host_io = t.host_io in
     begin match Plugin.find_plugin plugin_name with
     | Some m ->
       let module Long_running = (val m : LONG_RUNNING) in
       let run_parameters = Long_running.deserialize_exn run_parameters in
-      begin Long_running.update run_parameters
+      begin Long_running.update ~host_io run_parameters
         >>< function
         | `Ok (`Still_running run_parameters) ->
           let run_parameters = Long_running.serialize run_parameters in
@@ -245,7 +250,8 @@ module Run_automaton = struct
       return (make_new_target ~log:("Attempt to start") starting_attemp)
     | `Eval_condition (condition, make_new_target) ->
       begin
-        Eval_condition.bool condition
+        let host_io = t.host_io in
+        Eval_condition.bool ~host_io condition
         >>< function
         | `Ok answer ->
           return (make_new_target ?log:None (`Ok answer))

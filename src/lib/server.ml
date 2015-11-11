@@ -255,7 +255,8 @@ module Engine_instructions = struct
     log_info
       Log.(s "Calling query " % quote query % s " on " % Target.log target);
     begin
-      Plugin.call_query ~target query
+      let host_io = Engine.host_io server_state.state in
+      Plugin.call_query ~host_io ~target query
       >>< function
       | `Ok string ->
         return (`Query_result string)
@@ -392,7 +393,9 @@ let answer_message ~server_state ?token msg =
         return msg)
   | `Process p_msg ->
     with_capability `Play_with_process_holder (fun ~server_state ->
-          Process_holder.answer_message server_state.process_holder p_msg)
+        let host_io = Engine.host_io server_state.state in
+        Process_holder.answer_message ~host_io
+          server_state.process_holder p_msg)
     >>= fun p_down ->
     return (`Process p_down)
 

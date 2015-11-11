@@ -39,7 +39,7 @@ val additional_queries: Ketrew_pure.Target.t -> (string * Log.t) list
 (** Get the potential additional queries ([(key, description)] pairs) that can
     be called on the target. *)
 
-val call_query:  target:Ketrew_pure.Target.t -> string ->
+val call_query: target:Ketrew_pure.Target.t -> host_io:Host_io.t -> string ->
   (string, Log.t) Deferred_result.t
 (** Call a query on a target. *)
 

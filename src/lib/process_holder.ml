@@ -323,6 +323,7 @@ We need to comunicate with that process:
 
   type t = {
     ketrew_bin: string;
+    host_name: string;
     json_log: string;
     fifo_to_daemon: string;
     fifo_from_daemon: string;
@@ -332,9 +333,10 @@ We need to comunicate with that process:
     command: string;
     process: Process.t;
     fifo_questions: (Time.t * string) list Reactive.Source.t;
+    mutable fd_to_askpass: Lwt_unix.file_descr option;
   }
 
-  let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") connection =
+  let create ?(ketrew_bin = "ketrew") ?(command = "/bin/sh") ~name connection =
     let json_log = Filename.temp_file "ketrew-json-log" ".json" in
     let fifo_to_daemon = make_pipe () in
     let fifo_from_daemon = make_pipe () in
@@ -363,7 +365,8 @@ We need to comunicate with that process:
       ] in
     let ssh =
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; control_path;
-       connection; command; process; session_id_file; fifo_questions}
+       connection; command; process; session_id_file; fifo_questions;
+       fd_to_askpass = None; host_name = name}
     in
     ssh
 
@@ -391,11 +394,12 @@ We need to comunicate with that process:
 
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
-       session_id_file; control_path;
-       command = the_command; process; fifo_questions} =
+       session_id_file; control_path; host_name;
+       command = the_command; process; fifo_questions; fd_to_askpass} =
     let questions = Reactive.Source.value fifo_questions in
     Display_markup.(
       description_list [
+        "Name", text host_name;
         "Ketrew-bin", path ketrew_bin;
         "JSON-logfile", path json_log;
         "FIFO-to-daemon", path fifo_to_daemon;
@@ -428,9 +432,6 @@ We need to comunicate with that process:
       ]
     )
 
-  let write_to_fifo t content =
-    IO.with_out_channel (`Append_to_file t.fifo_to_daemon) ~f:(fun out ->
-        IO.write out content)
 
   let session_pid t =
     IO.read_file t.session_id_file
@@ -445,18 +446,54 @@ We need to comunicate with that process:
     >>= fun pid ->
     System.Shell.do_or_fail (fmt "kill -- -%d" pid)
 
-  let session_status t =
+  let file_descriptor_to_askpass t =
+    begin match t.fd_to_askpass with
+    | Some fd -> return fd
+    | None ->
+      wrap_deferred
+        ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
+            let open Lwt in
+            Lwt_unix.(openfile t.fifo_to_daemon
+                        [O_APPEND; O_NONBLOCK; O_WRONLY] 0o770)
+            >>= fun fd ->
+            t.fd_to_askpass <- Some fd;
+            return fd)
+    end
+
+  let can_write_to_fifo t =
+    file_descriptor_to_askpass t
+    >>< function
+    | `Ok fd -> return true
+    | `Error s ->
+      Log.(s "The fifo: " % quote t.fifo_to_daemon % s " is not writable"
+           @ verbose);
+      return false
+
+  let write_to_fifo t content =
+    file_descriptor_to_askpass t
+    >>= fun fd ->
+    wrap_deferred
+      ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
+          let open Lwt in
+          Lwt_unix.write_string fd content 0 (String.length content)
+          >>= fun (_ : int) ->
+          t.fd_to_askpass <- None;
+          Lwt_unix.close fd)
+
+  let get_status t =
     session_pid t
     >>= fun pid ->
     System.Shell.execute (fmt "ps -g %d" pid)
     >>= fun (_,_, process_status) ->
+    can_write_to_fifo t
+    >>= fun can_write ->
     begin match process_status with
-    | `Exited 0 -> return `Alive
+    | `Exited 0 ->
+      return (`Alive (if can_write then `Askpass_waiting_for_input else `Idle))
     | `Signaled _
     | `Stopped _ 
     | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
     end
-
 
 end
 
@@ -481,8 +518,8 @@ let start_process t ?bin argl =
   Hashtbl.add t.active_processes id (`Process p);
   return id
 
-let start_ssh_connection t ?ketrew_bin ?command connection =
-  let s = Ssh_connection.create ?ketrew_bin ?command connection in
+let start_ssh_connection t ?ketrew_bin ?command ~name connection =
+  let s = Ssh_connection.create ?ketrew_bin ?command ~name connection in
   let id = Unique_id.create  () in
   Hashtbl.add t.active_processes id (`Ssh_connection s);
   return s
@@ -504,7 +541,7 @@ let all_ssh_ids_and_names t =
       prev_m >>= fun prev ->
       begin match x with
       | `Ssh_connection ssh ->
-        Ssh_connection.session_status ssh
+        Ssh_connection.get_status ssh
         >>= fun status ->
         let next =
           {Protocol.Process_sub_protocol.Ssh_connection.
@@ -515,11 +552,16 @@ let all_ssh_ids_and_names t =
     )
     t.active_processes (return [])
 
-let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
+let answer_message t ~host_io msg :
+  (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
-  | `Start_ssh_connetion connection ->
-    start_ssh_connection t ~ketrew_bin:global_executable_path connection
-    >>= fun (_ : Ssh_connection.t) ->
+  | `Start_ssh_connetion (name, connection) ->
+    start_ssh_connection t ~ketrew_bin:global_executable_path ~name connection
+    >>= fun (ssh : Ssh_connection.t) ->
+    of_result (Ssh_connection.as_host ssh)
+    >>= fun host ->
+    Host_io.set_named_host host_io ~name host
+    >>= fun () ->
     return (`Ok)
   | `Get_all_ssh_ids ->
     all_ssh_ids_and_names t
@@ -543,8 +585,9 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
       { Protocol.Process_sub_protocol.Command.connection; id; command } ->
     get_ssh_connection t ~id:connection
     >>= fun ssh ->
-    let host = Ssh_connection.as_host ssh in
-    Host_io.get_shell_command_output host command
+    of_result (Ssh_connection.as_host ssh)
+    >>= fun host ->
+    Host_io.get_shell_command_output host_io ~host command
     >>= fun (stdout, stderr) ->
     return (`Command_output {
         Protocol.Process_sub_protocol.Command_output.id; stdout; stderr
@@ -568,6 +611,8 @@ let answer_message t msg : (Protocol.Process_sub_protocol.down, 'a) Unix_io.t =
       | `Timeout f -> fmt "Operation timeouted: %f s." f
       | `Not_an_ssh_connection id -> fmt "not an SSH connection: %s" id
       | `Failure s -> fmt "failure: %s" s
+      | `Host_uri_parsing_error (uri, e) ->
+        fmt "Error while parsing Host URI %S: %s" uri e
       | `Host _
       | `Shell _ as eshell -> Error.to_string eshell
     in
