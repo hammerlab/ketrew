@@ -461,6 +461,24 @@ let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
   | other       -> wrong_request "Wrong path" other
 
 
+(* Server's graceful sefl-shut-down. *)
+let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
+  Process_holder.unload server_state.process_holder
+  >>< fun ph_unload_result ->
+  Engine.unload server_state.state
+  >>< fun engine_unload_result ->
+  let display_errors_and_exit e =
+    log_error e Log.(s "Could not unload engine");
+    Log.(s "Errors while shutting down the server:" %n
+         % a Error.to_string e @ error);
+    exit 10 in
+  begin match ph_unload_result, engine_unload_result with
+  | (`Ok (), `Ok ()) -> exit 0
+  | `Error e, `Ok ()
+  | `Ok (), `Error e -> display_errors_and_exit e
+  | `Error e1, `Error e2 -> display_errors_and_exit (`List [e1; e2])
+  end
+
 (** {2 Start/Stop The Server} *)
 
 (* Text commands that we can send to the server via the pipe *)
@@ -486,12 +504,9 @@ module Commands = struct
   let die server_state file_path =
     log_info Log.(s "Server killed by “die” command "
                     % parens (OCaml.string file_path));
-    Engine.unload server_state.state
-    >>< function
-      | `Ok () -> exit 0
-      | `Error e ->
-        log_error e Log.(s "Could not unload engine");
-        exit 10
+    shut_down server_state
+    >>= fun `Never_returns ->
+    return ()
 
   let reload_authentication ~server_state =
     Authentication.reload server_state.authentication
