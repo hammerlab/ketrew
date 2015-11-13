@@ -807,14 +807,26 @@ module Html = struct
         ]
       in
       Reactive_node.div Reactive.(
-          Signal.tuple_2
+          Signal.tuple_3
             (Source.signal state) 
             (Source.signal target_table.target_ids)
+            (Source.signal target_table.filter_results_number)
           |> Signal.map ~f:(function
-            | Ready, _ | _, None -> []
-            | Are_you_sure, Some ids -> [ui ~ids]
-            | In_progress, _ ->
-              [pcdata "Sending Kill message "; Bootstrap.loader_gif ()]
+            | Ready, _, _ | _, None, _ -> []
+            | Are_you_sure, Some ids, total
+              when Target_id_set.length ids = total -> [ui ~ids]
+            | Are_you_sure, Some ids, total ->
+              [Bootstrap.error_box [
+                  pcdata
+                    (fmt
+                       "The number of results of your filter-query (%d) \
+                        is too big; such massive killings are not yet \
+                        supported, please refine your query."
+                       total)
+                ]]
+            | In_progress, _, _ ->
+              [Bootstrap.warning_box [
+                  pcdata "Sending Kill message "; Bootstrap.loader_gif ()]]
             )
           |> Signal.list
         )
@@ -831,7 +843,7 @@ module Html = struct
             false)
         [Reactive_node.pcdata
            (Reactive.Source.map_signal state (function
-              | Are_you_sure -> fmt "Cancel %d Killings" total
+              | Are_you_sure -> "Cancel Killings"
               | Ready -> "Kill 'Em All"
               | In_progress -> "Killing in progress …"))]
   end
