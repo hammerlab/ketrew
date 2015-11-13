@@ -176,6 +176,16 @@ To remove the instrumentation just use `omake clean; omake` without
 Bisect (You'll see errors in the JS-Console: “`caml_mutex_new` not
 implemented”).
 
+### Slow Down The Server
+
+In order to test the WebUI in more adverse conditions, the server can be asked
+to answer HTTP queries artificially slow:
+
+    KETREW_DEBUG_SLOW_SERVER=1.,0.5 kdserver start
+
+The 2 floating-point numbers `x,y` mean that, at each HTTP request, the server
+will pause for `Random.float x +. y` seconds.
+
 How to Release
 --------------
 

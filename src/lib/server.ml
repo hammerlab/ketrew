@@ -672,6 +672,18 @@ let start_engine_loop ~server_state =
   in
   Lwt.ignore_result (loop time_step)
 
+let debug_make_server_slow () =
+  try
+    let spec = Sys.getenv "KETREW_DEBUG_SLOW_SERVER" in
+    let random, minimum =
+      match String.split ~on:(`Character ',') spec with
+      | [] -> 2.0, 1.0
+      | [one] -> float_of_string one, 1.
+      | one :: two :: _ -> float_of_string one, float_of_string two
+    in
+    System.sleep (Random.float random +. minimum)
+  with _ -> return ()
+
 let start_listening_on_connections ~server_state =
   let return_error_messages, how =
     Configuration.return_error_messages server_state.server_configuration,
@@ -706,6 +718,8 @@ let start_listening_on_connections ~server_state =
           end;
           handle_request ~server_state ~body request 
           >>= fun high_level_answer ->
+          (debug_make_server_slow () >>= fun _ -> return ())
+          >>= fun () ->
           begin match high_level_answer with
           | `Ok `Unit ->
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
