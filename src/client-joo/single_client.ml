@@ -716,9 +716,11 @@ let restart_target t ~id ~on_result =
   call_unit_message t ~id ~on_result
     ~name:"restart" ~message:(`Restart_targets [id])
 
+let kill_targets t ~ids ~on_result =
+  call_unit_message t ~id:(String.concat ~sep:"-" ids) ~on_result
+    ~name:"kill" ~message:(`Kill_targets ids)
 let kill_target t ~id ~on_result =
-  call_unit_message t ~id ~on_result
-    ~name:"kill" ~message:(`Kill_targets [id])
+  kill_targets t ~ids:[id] ~on_result
 
 module Html = struct
 
@@ -1046,6 +1048,7 @@ module Html = struct
                       |> Signal.map ~f:(function
                         | `Target_table ->
                           Target_table.Html.render client.target_table
+                            ~kill_targets:(kill_targets client)
                             ~get_target:(fun id ->
                                 Target_cache.get_target_summary_signal
                                   client.target_cache ~id)

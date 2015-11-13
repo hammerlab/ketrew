@@ -35,6 +35,10 @@ module Html: sig
   val title: t -> [> Html5_types.span ] Reactive_html5.H5.elt
 
   val render :
+    kill_targets:(
+      ids: string list ->
+      on_result:([ `Error of string | `Ok of unit ] -> unit) ->
+      unit) ->
     get_target:(bytes ->
                 Local_cache.Target_cache.target_knowledge
                   Reactive.signal) ->
