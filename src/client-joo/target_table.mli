@@ -20,7 +20,7 @@ val add_target_ids:
   ?server_time:Ketrew_pure.Internal_pervasives.Time.t ->
   string list -> unit
 
-val set_filter_results_number: t -> int -> unit
+val modify_filter_results_number: t -> (int -> int) -> unit
 
 val visible_target_ids: t -> string list option Reactive.Signal.t
 

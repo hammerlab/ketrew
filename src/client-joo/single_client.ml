@@ -417,13 +417,15 @@ let start_list_of_ids_loop t =
             ]
           );
         begin if first_time && not and_block then
-            Target_table.set_filter_results_number t.target_table (List.length l)
+            Target_table.modify_filter_results_number t.target_table
+              (fun _ -> List.length l)
         end;
         Target_table.add_target_ids ?server_time t.target_table l;
         return ()
       | `Deferred_list_of_target_ids (answer_id, big) ->
         begin if first_time && not and_block then
-            Target_table.set_filter_results_number t.target_table big;
+            Target_table.modify_filter_results_number t.target_table
+              (fun _ -> big);
         end;
         get_ids false (`Get_deferred (answer_id, 0, min 100 big))
       | other ->

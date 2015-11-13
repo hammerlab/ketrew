@@ -477,6 +477,9 @@ let visible_target_ids t =
           Some ids)
   )
 
+let modify_filter_results_number t f =
+  Reactive.Source.modify t.filter_results_number f
+
 let add_target_ids t ?server_time l =
   let current =
     Reactive.(Source.signal t.target_ids |> Signal.value)
@@ -486,12 +489,13 @@ let add_target_ids t ?server_time l =
   | Some s -> Reactive.Source.set t.target_ids_last_updated (Some s)
   | None -> ()
   end;
-  Reactive.Source.set t.target_ids
-    (Some (Target_id_set.add_list current l));
+  let new_one = Target_id_set.add_list current l in
+  Reactive.Source.set t.target_ids (Some new_one);
+  modify_filter_results_number t (fun current ->
+      max current (Target_id_set.length new_one)
+    );
   ()
 
-let set_filter_results_number t n =
-  Reactive.Source.set t.filter_results_number n
 
 module Html = struct
 
