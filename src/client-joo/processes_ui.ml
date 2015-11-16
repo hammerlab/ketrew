@@ -381,6 +381,8 @@ module Html = struct
       | `Alive `Askpass_waiting_for_input ->
         Bootstrap.icon_unknown ~title:"Alive but waiting for input"
       | `Dead s -> Bootstrap.icon_wrong ~title:(fmt "Dead: %s" s)
+      | `Configured ->
+        Bootstrap.icon_unknown ~title:"Configured"
     in
     Reactive_node.div Reactive.(
         (logs_signal t ~id) |> Signal.map ~f:(function

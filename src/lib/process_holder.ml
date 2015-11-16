@@ -503,13 +503,16 @@ type active_process = [
   | `Process of Process.t
 ]
 type t = {
+  preconfigured: (string * Configuration.ssh_connection) list;
   mutable active_processes: (string, active_process) Hashtbl.t;
 }
 
-let create () = {active_processes = Hashtbl.create 42}
+let create ?(preconfigure=[]) () =
+  {preconfigured = List.map preconfigure ~f:(fun p -> Unique_id.create (), p);
+   active_processes = Hashtbl.create 42}
 
-let load () =
-  let t = create () in
+let load ?preconfigure () =
+  let t = create ?preconfigure () in
   return t
 
 let start_process t ?bin argl =
@@ -537,6 +540,11 @@ let get_ssh_connection t ~id =
   end
 
 let all_ssh_ids_and_names t =
+  let configured =
+    List.map t.preconfigured ~f:(fun (id, sshc) ->
+        let name, uri = Configuration.ssh_connection_name_uri sshc in
+        {Protocol.Process_sub_protocol.Ssh_connection.
+          id; uri; status = `Configured}) in
   Hashtbl.fold (fun id x prev_m ->
       prev_m >>= fun prev ->
       begin match x with
@@ -551,6 +559,15 @@ let all_ssh_ids_and_names t =
       end
     )
     t.active_processes (return [])
+  >>= fun started ->
+  let ret = (configured @ started) in
+  Log.(s "all_ssh_ids_and_names: " % i (List.length  ret)
+       % s " elements: "
+       % OCaml.list (fun s ->
+           quote s.Protocol.Process_sub_protocol.Ssh_connection.uri)
+         ret
+       @ verbose);
+  return  ret
 
 let answer_message t ~host_io msg :
   (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =

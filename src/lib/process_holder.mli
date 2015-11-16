@@ -80,7 +80,9 @@ end
 type t
 (** The container for mnoitored server-side processes. *)
 
-val load : unit -> (t, 'a) Unix_io.t
+val load :
+  ?preconfigure: Configuration.ssh_connection list ->
+  unit -> (t, 'a) Unix_io.t
 (** Create a new process-holder. *)
 
 val answer_message: t ->

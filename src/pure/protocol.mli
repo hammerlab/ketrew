@@ -68,6 +68,7 @@ module Process_sub_protocol : sig
     type status = [
       | `Alive of [ `Askpass_waiting_for_input | `Idle ]
       | `Dead of string
+      | `Configured
     ]
     type t = {
       id: string;

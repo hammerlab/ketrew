@@ -80,6 +80,7 @@ module Process_sub_protocol = struct
     type status = [
       | `Alive of [ `Askpass_waiting_for_input | `Idle ]
       | `Dead of string
+      | `Configured
     ] [@@deriving yojson]
     type t = {
       id: string;
