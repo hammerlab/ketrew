@@ -477,6 +477,9 @@ let visible_target_ids t =
           Some ids)
   )
 
+let modify_filter_results_number t f =
+  Reactive.Source.modify t.filter_results_number f
+
 let add_target_ids t ?server_time l =
   let current =
     Reactive.(Source.signal t.target_ids |> Signal.value)
@@ -486,12 +489,13 @@ let add_target_ids t ?server_time l =
   | Some s -> Reactive.Source.set t.target_ids_last_updated (Some s)
   | None -> ()
   end;
-  Reactive.Source.set t.target_ids
-    (Some (Target_id_set.add_list current l));
+  let new_one = Target_id_set.add_list current l in
+  Reactive.Source.set t.target_ids (Some new_one);
+  modify_filter_results_number t (fun current ->
+      max current (Target_id_set.length new_one)
+    );
   ()
 
-let set_filter_results_number t n =
-  Reactive.Source.set t.filter_results_number n
 
 module Html = struct
 
@@ -766,11 +770,94 @@ module Html = struct
         );
     ]
 
+  module Mass_killing = struct
+
+    type state =
+      | Ready
+      | Are_you_sure
+      | In_progress
+
+    let create () = Reactive.Source.create Ready
+
+    let control_ui target_table ~state ~kill_targets =
+      let open H5 in
+      let question ~ids =
+        match ids with
+        | set when Target_id_set.is_empty set ->
+          Reactive.Source.set state Ready; ""
+        | set ->
+          fmt "Are you 100%% sure that you want to \
+               try to kill these %d nodes? "
+            (Target_id_set.length set)
+      in
+      let ui ~ids =
+        let module Booig = Bootstrap.Input_group in
+        Booig.make [
+          Booig.addon [strong [pcdata (question ~ids)]];
+          Booig.button_group [
+            Bootstrap.button [pcdata "Yes"]
+              ~on_click:(fun _ ->
+                  Reactive.Source.set state In_progress;
+                  kill_targets ~ids:(Target_id_set.to_list ids)
+                    ~on_result:(fun _ ->
+                        Reactive.Source.set state Ready;
+                      );
+                  false);
+            Bootstrap.button [pcdata "No"]
+              ~on_click:(fun _ ->
+                  Reactive.Source.set state Ready;
+                  false);
+          ]
+        ]
+      in
+      Reactive_node.div Reactive.(
+          Signal.tuple_3
+            (Source.signal state) 
+            (Source.signal target_table.target_ids)
+            (Source.signal target_table.filter_results_number)
+          |> Signal.map ~f:(function
+            | Ready, _, _ | _, None, _ -> []
+            | Are_you_sure, Some ids, total
+              when Target_id_set.length ids = total -> [ui ~ids]
+            | Are_you_sure, Some ids, total ->
+              [Bootstrap.error_box [
+                  pcdata
+                    (fmt
+                       "The number of results of your filter-query (%d) \
+                        is too big; such massive killings are not yet \
+                        supported, please refine your query."
+                       total)
+                ]]
+            | In_progress, _, _ ->
+              [Bootstrap.warning_box [
+                  pcdata "Sending Kill message "; Bootstrap.loader_gif ()]]
+            )
+          |> Signal.list
+        )
+
+    let button state ~total =
+      let open H5 in
+      Bootstrap.button
+        ~enabled:(0 < total)
+        ~on_click:(fun _ ->
+            Reactive.Source.modify state (function
+              | Ready -> Are_you_sure
+              | Are_you_sure -> Ready
+              | In_progress -> In_progress);
+            false)
+        [Reactive_node.pcdata
+           (Reactive.Source.map_signal state (function
+              | Are_you_sure -> "Cancel Killings"
+              | Ready -> "Kill 'Em All"
+              | In_progress -> "Killing in progress …"))]
+  end
+
   let render
-      ~get_target ~target_link_on_click ~get_target_status
+      ~kill_targets ~get_target ~target_link_on_click ~get_target_status
       target_table =
     let open H5 in
     let showing = target_table.showing in
+    let mass_killing_ui = Mass_killing.create () in
     let controls =
       Reactive_node.div Reactive.(
           Signal.tuple_3
@@ -855,6 +942,7 @@ module Html = struct
                   [pcdata (fmt "End [%d, %d]"
                              (max 0 (total - n_count + 1))
                              total)];
+                Mass_killing.button mass_killing_ui ~total;
               ];
             )
           |> Signal.singleton)
@@ -897,7 +985,7 @@ module Html = struct
                               a_title "Link to this page with the filter set \
                                        to only this target (shareable link).";]
                           [Bootstrap.label_default [pcdata "∞"]]
-                          (* [pcdata "🔗"] → does not render well *)
+                      (* [pcdata "🔗"] → does not render well *)
                       | None ->
                         span []);
                     ]
@@ -955,6 +1043,7 @@ module Html = struct
     (* div ~a:[a_class ["container"]] [ *)
     Bootstrap.panel ~body:[
       controls;
+      Mass_killing.control_ui target_table ~state:mass_killing_ui ~kill_targets;
       filter_ui target_table;
       the_table
     ]

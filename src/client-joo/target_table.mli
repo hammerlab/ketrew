@@ -20,7 +20,7 @@ val add_target_ids:
   ?server_time:Ketrew_pure.Internal_pervasives.Time.t ->
   string list -> unit
 
-val set_filter_results_number: t -> int -> unit
+val modify_filter_results_number: t -> (int -> int) -> unit
 
 val visible_target_ids: t -> string list option Reactive.Signal.t
 
@@ -35,6 +35,10 @@ module Html: sig
   val title: t -> [> Html5_types.span ] Reactive_html5.H5.elt
 
   val render :
+    kill_targets:(
+      ids: string list ->
+      on_result:([ `Error of string | `Ok of unit ] -> unit) ->
+      unit) ->
     get_target:(bytes ->
                 Local_cache.Target_cache.target_knowledge
                   Reactive.signal) ->

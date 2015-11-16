@@ -417,13 +417,15 @@ let start_list_of_ids_loop t =
             ]
           );
         begin if first_time && not and_block then
-            Target_table.set_filter_results_number t.target_table (List.length l)
+            Target_table.modify_filter_results_number t.target_table
+              (fun _ -> List.length l)
         end;
         Target_table.add_target_ids ?server_time t.target_table l;
         return ()
       | `Deferred_list_of_target_ids (answer_id, big) ->
         begin if first_time && not and_block then
-            Target_table.set_filter_results_number t.target_table big;
+            Target_table.modify_filter_results_number t.target_table
+              (fun _ -> big);
         end;
         get_ids false (`Get_deferred (answer_id, 0, min 100 big))
       | other ->
@@ -716,9 +718,11 @@ let restart_target t ~id ~on_result =
   call_unit_message t ~id ~on_result
     ~name:"restart" ~message:(`Restart_targets [id])
 
+let kill_targets t ~ids ~on_result =
+  call_unit_message t ~id:(String.concat ~sep:"-" ids) ~on_result
+    ~name:"kill" ~message:(`Kill_targets ids)
 let kill_target t ~id ~on_result =
-  call_unit_message t ~id ~on_result
-    ~name:"kill" ~message:(`Kill_targets [id])
+  kill_targets t ~ids:[id] ~on_result
 
 module Html = struct
 
@@ -1046,6 +1050,7 @@ module Html = struct
                       |> Signal.map ~f:(function
                         | `Target_table ->
                           Target_table.Html.render client.target_table
+                            ~kill_targets:(kill_targets client)
                             ~get_target:(fun id ->
                                 Target_cache.get_target_summary_signal
                                   client.target_cache ~id)
