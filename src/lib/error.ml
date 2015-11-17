@@ -62,7 +62,10 @@ let log_client_error error_value =
     in
     s "HTTP Call" % sp % parens (act % s " → " % error_log)
 
-let to_string = function
+let rec to_string = function
+| `List l ->
+  fmt "List of errors: [%s]"
+    (String.concat ~sep:"; " (List.map l ~f:to_string))
 | `Not_a_directory dir ->
   fmt "%S is not a directory" dir
 | `Wrong_command_line sl ->
