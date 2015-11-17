@@ -370,6 +370,8 @@ We need to comunicate with that process:
     in
     ssh
 
+  let name s = s.host_name
+
   let get_daemon_logs t =
     IO.read_file t.json_log
     >>= fun logs ->
@@ -544,16 +546,17 @@ let all_ssh_ids_and_names t =
     List.map t.preconfigured ~f:(fun (id, sshc) ->
         let name, uri = Configuration.ssh_connection_name_uri sshc in
         {Protocol.Process_sub_protocol.Ssh_connection.
-          id; uri; status = `Configured}) in
+          id; name; uri; status = `Configured}) in
   Hashtbl.fold (fun id x prev_m ->
       prev_m >>= fun prev ->
       begin match x with
       | `Ssh_connection ssh ->
         Ssh_connection.get_status ssh
         >>= fun status ->
+        let name = Ssh_connection.name ssh in
         let next =
           {Protocol.Process_sub_protocol.Ssh_connection.
-            id; uri = Ssh_connection.host_uri ssh; status} :: prev in
+            id; name; uri = Ssh_connection.host_uri ssh; status} :: prev in
         return next
       | `Process _ -> return prev
       end
@@ -572,9 +575,24 @@ let all_ssh_ids_and_names t =
 let answer_message t ~host_io msg :
   (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
-  | `Start_ssh_connetion (name, connection) ->
-    start_ssh_connection t ~ketrew_bin:global_executable_path ~name connection
-    >>= fun (ssh : Ssh_connection.t) ->
+  | `Start_ssh_connetion spec ->
+    begin match spec with
+    | `New (name, connection) ->
+      start_ssh_connection t ~ketrew_bin:global_executable_path ~name connection
+      >>= fun ssh ->
+      return (name, ssh)
+    | `Configured id ->
+      begin match List.find t.preconfigured ~f:(fun (i, _) -> i = id) with
+      | Some (_, sshc) ->
+        let name, uri = Configuration.ssh_connection_name_uri sshc in
+        start_ssh_connection t ~ketrew_bin:global_executable_path ~name uri
+        >>= fun ssh ->
+        return (name, ssh)
+      | None ->
+        fail (`Missing_data id)
+      end
+    end
+    >>= fun (name, (ssh : Ssh_connection.t)) ->
     of_result (Ssh_connection.as_host ssh)
     >>= fun host ->
     Host_io.set_named_host host_io ~name host

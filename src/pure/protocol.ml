@@ -68,7 +68,10 @@ module Process_sub_protocol = struct
     } [@@deriving yojson]
   end
   type up = [
-    | `Start_ssh_connetion of string * string
+    | `Start_ssh_connetion of [
+        | `New of string * string (* name × connection-uri *)
+        | `Configured of string
+      ]
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
@@ -84,6 +87,7 @@ module Process_sub_protocol = struct
     ] [@@deriving yojson]
     type t = {
       id: string;
+      name: string;
       uri: string;
       status: status;
     } [@@deriving yojson]

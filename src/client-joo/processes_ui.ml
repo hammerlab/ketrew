@@ -57,10 +57,10 @@ let current_logs_markup t ~id =
   Reactive.Source.map_signal source ~f:begin function
   | Some logs ->
     begin match Display_markup.deserialize_exn logs with
-    | o -> `Ok o
+    | o -> `Ok (Some o)
     | exception e -> `Error Display_markup.(textf "%s" (Printexc.to_string e))
     end
-  | None -> `Error Display_markup.(text "No logs in cache …")
+  | None -> `Ok None
   end
 
 let logs_signal t ~id =
@@ -112,9 +112,15 @@ let launch_update_ssh_connections t =
       send_process_messsage t (`Process (`Get_all_ssh_ids))
     )
 
-let start_ssh_connection t ~name ~uri =
+let start_new_ssh_connection t ~name ~uri =
   asynchronously (fun () ->
-      send_process_messsage t (`Process (`Start_ssh_connetion (name, uri)))
+      send_process_messsage t
+        (`Process (`Start_ssh_connetion (`New (name, uri))))
+    )
+let start_configured_ssh_connection t ~id =
+  asynchronously (fun () ->
+      send_process_messsage t
+        (`Process (`Start_ssh_connetion (`Configured (id))))
     )
 
 let update_logs t ~id =
@@ -360,69 +366,100 @@ module Html = struct
         |> Signal.singleton
       )
 
-  let single_connection_reactive_div t ~uri ~id ~status =
+  let single_connection_reactive_div t ~uri ~name ~id ~status =
     let open H5 in
     let send_input_to_askpass_ui = Send_input_to_askpass.create t ~id in
     let send_command_ui = Send_command_ui.create t ~id in
     let kill_ui = Kill_ui.create ~id t in
-    let hide_stuff () =
-      Bootstrap.button [pcdata "Unexpand"]
+    let hide_show text =
+      Bootstrap.button [pcdata text]
         ~on_click:(fun _ ->
-            Reactive.Source.set (logs_visibility t ~id) false;
+            Reactive.Source.modify (logs_visibility t ~id) (fun current ->
+                (if not current then update_logs t ~id);
+                not current);
             false) in
     let reload () =
       Bootstrap.button [pcdata "Reload"]
-        ~on_click:(fun _ ->
-            update_logs t ~id;
-            false) in
+        ~on_click:(fun _ -> update_logs t ~id; false) in
     let status_badge () =
       match status with
-      | `Alive `Idle -> Bootstrap.icon_success ~title:"Alive & Kicking"
+      | `Alive `Idle ->
+        Bootstrap.label_success [pcdata "Alive & Kicking"]
       | `Alive `Askpass_waiting_for_input ->
-        Bootstrap.icon_unknown ~title:"Alive but waiting for input"
-      | `Dead s -> Bootstrap.icon_wrong ~title:(fmt "Dead: %s" s)
+        Bootstrap.label_warning [pcdata "Waiting for input"]
+      | `Dead s ->
+        Bootstrap.label_danger [pcdata (fmt "Dead: %s" s)]
       | `Configured ->
-        Bootstrap.icon_unknown ~title:"Configured"
+        Bootstrap.label_default [pcdata "Configured"]
+    in
+    let name () = strong [pcdata name] ~a:[a_title uri] in
+    let first_line hs_text =
+      let with_hs = [hide_show hs_text; pcdata " ";] in
+      let line = [
+        status_badge (); pcdata " ";
+        name (); pcdata " ";
+        code [summarize_string ~max_length:40 uri];
+      ] in
+      begin match status with
+      | `Configured -> line @ [
+          pcdata " ";
+          local_anchor [pcdata "Start New Instance"]
+            ~on_click:(fun _ ->
+                start_configured_ssh_connection t ~id;
+                false);
+        ]
+      | `Alive _ | `Dead _ -> line @ with_hs
+      end
+    in
+    let visible_stuf mrkopt =
+      begin match status with
+      | `Configured -> div []
+      | `Dead _ ->
+        div [
+          reload ();
+          display_commands t ~id;
+          begin match mrkopt with
+          | Some m -> Bootstrap.success_box [Markup.to_html m]
+          | None -> div []
+          end;
+        ]
+      | `Alive details ->
+        div [
+          reload ();
+          begin match details with
+          |  `Askpass_waiting_for_input ->
+            Send_input_to_askpass.button send_input_to_askpass_ui
+          | `Idle -> Send_command_ui.button send_command_ui
+          end;
+          Kill_ui.render kill_ui;
+          Send_input_to_askpass.render send_input_to_askpass_ui;
+          Send_command_ui.render send_command_ui;
+          display_commands t ~id;
+          begin match mrkopt with
+          | Some m -> Bootstrap.success_box [Markup.to_html m]
+          | None -> div []
+          end;
+        ]
+      end
+    in
+    let item visiblity =
+      match visiblity with
+      | `Invisible -> div (first_line  "+")
+      | `Error mrk ->
+        div (
+          (first_line  "-")
+          @ [
+            div [
+              reload ();
+              Bootstrap.error_box [Markup.to_html mrk];
+            ];
+          ]
+        )
+      | `Visible mrkopt ->
+        div (first_line "-" @ [ visible_stuf mrkopt ])
     in
     Reactive_node.div Reactive.(
-        (logs_signal t ~id) |> Signal.map ~f:(function
-          | `Invisible ->
-            div [
-              status_badge ();
-              code [summarize_string ~max_length:50 uri];
-              Bootstrap.button [pcdata "Expand"]
-                ~on_click:(fun _ ->
-                    update_logs t ~id;
-                    Reactive.Source.set (logs_visibility t ~id) true;
-                    false);
-            ]
-          | `Error m ->
-            div [
-              status_badge ();
-              code [pcdata uri];
-              div [
-                hide_stuff ();
-                reload ();
-                Bootstrap.error_box [Markup.to_html m];
-              ];
-            ]
-          | `Visible m ->
-            div [
-              status_badge ();
-              code [pcdata uri];
-              div [
-                hide_stuff ();
-                reload ();
-                Send_input_to_askpass.button send_input_to_askpass_ui;
-                Send_command_ui.button send_command_ui;
-                Kill_ui.render kill_ui;
-                Send_input_to_askpass.render send_input_to_askpass_ui;
-                Send_command_ui.render send_command_ui;
-                display_commands t ~id;
-                Bootstrap.success_box [Markup.to_html m];
-              ];
-            ]
-          )
+        (logs_signal t ~id) |> Signal.map ~f:item
         |> Signal.singleton
       )
 
@@ -458,7 +495,7 @@ module Html = struct
                       ~on_input:(fun str -> ssh_uri := str)
                       ~on_keypress:(function
                         | 13 ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
                         | other ->
                           Log.(s "on_keypress → " % i other  @ verbose));
@@ -470,13 +507,13 @@ module Html = struct
                       ~on_input:(fun str -> host_name := str)
                       ~on_keypress:(function
                         | 13 ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
                         | other ->
                           Log.(s "on_keypress → " % i other  @ verbose));
                     Input_group.button_group [
                       button [pcdata "Go!"] ~on_click:(fun _ ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           false);
                     ]
                   ]
@@ -490,9 +527,9 @@ module Html = struct
     let open H5 in
     let list_of_connections l =
       ul (
-        List.map l ~f:(fun {Ssh_connection.id; uri; status} ->
+        List.map l ~f:(fun {Ssh_connection.id; name; uri; status} ->
             li [
-              single_connection_reactive_div t ~uri ~id ~status;
+              single_connection_reactive_div t ~uri ~name ~id ~status;
             ])
       );
     in

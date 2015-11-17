@@ -57,7 +57,10 @@ module Process_sub_protocol : sig
     }
   end
   type up = [
-    | `Start_ssh_connetion of string * string (* name × connection-uri *)
+    | `Start_ssh_connetion of [
+        | `New of string * string (* name × connection-uri *)
+        | `Configured of string
+      ]
     | `Get_all_ssh_ids
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
@@ -72,6 +75,7 @@ module Process_sub_protocol : sig
     ]
     type t = {
       id: string;
+      name: string;
       uri: string;
       status: status;
     }
