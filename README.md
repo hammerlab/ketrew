@@ -41,11 +41,9 @@ config-file):
 
 This gets you the
 
-  - a `ketrew` executable that can be used to schedule and run workflows.
-  - the [ketrew](http://seb.mondet.org/software/ketrew/api/Ketrew.html) library,
-    that handles the messy orchestration of those tasks and, significantly,
-    has the [EDSL](http://seb.mondet.org/software/ketrew/api/Ketrew.EDSL.html)
-    to write workflows.
+- a `ketrew` executable that can be used to schedule and run workflows,
+- an OCaml library also called `ketrew` that handles the messy orchestration of
+  those tasks and, significantly, has the `Ketrew.EDSL` to write workflows.
 
 Remember that at runtime you'll need `ssh` in your `$PATH` to execute commands on
 foreign hosts.
@@ -150,7 +148,11 @@ Let's open the GUI:
 
 Which should open your browser.
 
-<div><img width="100%" src="src/doc/images/preview1.png"/></div>
+<div>
+<img  width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/11070327/07e7f63e-87a9-11e5-9a55-1e5f1baedb29.png"
+>
+</div>
 
 Back at the command line can always check the server's status (and introduce
 the shorter command line argument `-P`, instead of `--profile`):
@@ -197,27 +199,27 @@ The EDSL: Defining Workflows
 ### Overview
 
 The EDSL is an OCaml library where functions are used to build a
-workflow data-structure. Then, one function:
-[Ketrew.Client.submit](http://seb.mondet.org/software/ketrew/api/Ketrew.Client.html#VALsubmit)
+workflow data-structure. Then, one function: `Ketrew.Client.submit`
 is used to submit workflows to the engine.
 
 A workflow is a Graph of “**targets**”.
 
 There are 3 kinds of links between targets:
 
-- *dependencies:* targets that need to be ensured or satisifed before a target
-can start,
-- *fallbacks:* targets that will be activated if the target fails, and
-- *successes:* targets that will be activated only *after* a target succeeds.
+- `depends_on`: targets that need to be ensured or satisifed before a target
+  can start,
+- `on_failure_activate`: targets that will be activated if the target fails, and
+- `on_success_activate`: targets that will be activated only *after* a target
+  succeeds.
 
-See the [target](src/lib/eDSL.mli#L176)
-function documentation for details. Any OCaml program can use the EDSL (script, compiled,
-or even inside the toplevel), see the [documentation of the EDSL API](src/lib/eDSL.mli).
-
+See the `Ketrew.EDSL.target` function documentation for details. Any OCaml
+program can use the EDSL (script, compiled, or even inside the toplevel), see
+the documentation of the EDSL API: the module `Ketrew.EDSL`.
 
 ### Example
 
-The following script extends the previous shell based example with the capability to send emails upon the success or failure of your command.
+The following script extends the previous shell based example with the
+capability to send emails upon the success or failure of your command.
 
 ```ocaml
 #use "topfind"
@@ -237,17 +239,17 @@ let run_command_with_daemonize ~cmd ~email =
      
      In this case, `daemonize` creates a datastructure that represents a job
      running our program on the host. *)
-  let build_process = KEDSL.daemonize ~host program in
+  let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
 
-  (* A target that Ketrew will activate after cmd completes *)
+  (* A function that creates a target that uses `mail` to signal the user
+     of `success` or `failure`: *)
   let email_target ~success =
-    let sstring = if success then "succeeded" else "failed" in
+    let message = if success then "succeeded" else "failed" in
     let e_program =
       KEDSL.Program.shf "echo \"'%s' %s\" | mail -s \"Status update\" %s"
-        cmd sstring
-        email
+        cmd message email
     in
-    let e_process = KEDSL.daemonize ~host e_program in
+    let e_process = KEDSL.daemonize ~using:`Python_daemon ~host e_program in
     KEDSL.target ("email result " ^ sstring) ~make:e_process 
   in
 
@@ -271,14 +273,18 @@ let () =
 
 ```
 
-You can run this [script](src/example_scripts/daemonize_workflow.ml) from the shell
-with
+You can run this [script](src/example_scripts/daemonize_workflow.ml) from the
+shell with
 
     ocaml daemonize_workflow.ml 'du -sh $HOME' myaddress@email.com
     
 Checking in with the gui, we'll have a couple of new targets:
 
-<div><img width="100%" src="src/doc/images/preview2.png"/></div>
+<div>
+<img width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/11070354/32521fb2-87a9-11e5-993e-550db476cbd7.png"
+</div>
+
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
@@ -291,21 +297,23 @@ Troubleshooting
   should be helpful.
 - `opam` and `ssl` errors when install `ketrew`? Please see this
   [issue](https://github.com/hammerlab/ketrew/issues/214).
-- When reconfiguring `Ketrew` between versions it may be helpful to delete old configurations:
+- When reconfiguring `Ketrew` between versions it may be helpful to delete old
+  configurations:
 
         $ rm -fr $HOME/.ketrew/
 
 - During configuration it is recommended that you pass an authentication token,
   as opposed to having Ketrew generate one for you:
 
-        $ ketrew init --with-token my-not-so-secret-token
+        $ ketrew init --with-token my-secret-token
 
-- On a Mac and the EDSL example didn't work? Unfortunately, there's no
-  [setsid](http://man7.org/linux/man-pages/man1/setsid.1.html) utility
-  which is the default way of daemonizing processes in Ketrew.
-  Use the `` `Python_daemon`` technique for forking:
+- If you are trying the example workflow on a system that does not have Python
+  installed you can use another deamonization method (we use `` `Python_daemon``
+  by default above because
+  [setsid](http://man7.org/linux/man-pages/man1/setsid.1.html) is missing on
+  MacOSX):
         
-        $ let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
+        let build_process = KEDSL.daemonize ~using:`Nohup_setsid ~host program in
 
 
 
