@@ -248,15 +248,41 @@ module Html = struct
 
   end
 
-  module Send_input_to_askpass =
-    Make_send_input_ui(
-    struct
-      let is_password_like = true
-      let button_text = "Send Input to ASK-PASS"
-      let input_question =
-        "Enter your input (most likely a password/passphrase)"
-      let send_input = send_input_to_askpass
-    end)
+  module Send_input_to_askpass = struct
+    module Send_input_default = Make_send_input_ui(struct
+        let is_password_like = true
+        let button_text = "Send Input to ASK-PASS"
+        let input_question =
+          "Enter your input (most likely a password/passphrase)"
+        let send_input = send_input_to_askpass
+      end)
+    let render t ~id ~questions =
+      let open H5 in
+      let send_input_to_askpass_ui =
+        Send_input_default.create t ~id in
+      Bootstrap.warning_box [
+        h4 [pcdata "Waiting For Input"];
+        begin match questions with
+        | [] ->
+          div [
+            pcdata "There are no questions from the ";
+            code [pcdata "ASKPASS"]; pcdata " program.";
+          ]
+        | more ->
+          div [
+            code [pcdata "ASKPASS"]; pcdata " program asked: ";
+            ul (List.map more ~f:(fun (date, q) ->
+                li [
+                  pcdata (fmt "On %s: " (Markup.date_to_string date));
+                  code [pcdata q]
+                ]));
+          ]
+        end;
+        Send_input_default.button send_input_to_askpass_ui;
+        Send_input_default.render send_input_to_askpass_ui;
+      ]
+  end
+
   module Send_command_ui =
     Make_send_input_ui(
     struct
@@ -368,7 +394,6 @@ module Html = struct
 
   let single_connection_reactive_div t ~uri ~name ~id ~status =
     let open H5 in
-    let send_input_to_askpass_ui = Send_input_to_askpass.create t ~id in
     let send_command_ui = Send_command_ui.create t ~id in
     let kill_ui = Kill_ui.create ~id t in
     let hide_show text =
@@ -385,7 +410,7 @@ module Html = struct
       match status with
       | `Alive `Idle ->
         Bootstrap.label_success [pcdata "Alive & Kicking"]
-      | `Alive `Askpass_waiting_for_input ->
+      | `Alive (`Askpass_waiting_for_input _) ->
         Bootstrap.label_warning [pcdata "Waiting for input"]
       | `Dead s ->
         Bootstrap.label_danger [pcdata (fmt "Dead: %s" s)]
@@ -426,13 +451,12 @@ module Html = struct
       | `Alive details ->
         div [
           reload ();
+          Kill_ui.render kill_ui;
           begin match details with
-          |  `Askpass_waiting_for_input ->
-            Send_input_to_askpass.button send_input_to_askpass_ui
+          |  `Askpass_waiting_for_input questions ->
+            Send_input_to_askpass.render t ~id ~questions
           | `Idle -> Send_command_ui.button send_command_ui
           end;
-          Kill_ui.render kill_ui;
-          Send_input_to_askpass.render send_input_to_askpass_ui;
           Send_command_ui.render send_command_ui;
           display_commands t ~id;
           begin match mrkopt with

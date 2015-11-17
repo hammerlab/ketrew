@@ -490,8 +490,11 @@ We need to comunicate with that process:
     can_write_to_fifo t
     >>= fun can_write ->
     begin match process_status with
-    | `Exited 0 ->
-      return (`Alive (if can_write then `Askpass_waiting_for_input else `Idle))
+    | `Exited 0 when can_write ->
+      let questions =
+        Reactive.Source.value t.fifo_questions in
+      return (`Alive (`Askpass_waiting_for_input questions))
+    | `Exited 0 -> return (`Alive `Idle)
     | `Signaled _
     | `Stopped _ 
     | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))

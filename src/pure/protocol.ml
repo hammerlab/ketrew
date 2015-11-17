@@ -81,7 +81,7 @@ module Process_sub_protocol = struct
 
   module Ssh_connection = struct
     type status = [
-      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Alive of [ `Askpass_waiting_for_input of (float * bytes) list | `Idle ]
       | `Dead of string
       | `Configured
     ] [@@deriving yojson]

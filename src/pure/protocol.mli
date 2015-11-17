@@ -69,7 +69,7 @@ module Process_sub_protocol : sig
   ]
   module Ssh_connection : sig
     type status = [
-      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Alive of [ `Askpass_waiting_for_input of (float * bytes) list | `Idle ]
       | `Dead of string
       | `Configured
     ]
