@@ -192,16 +192,18 @@ type timeout = [
 type host = Ketrew_pure.Host.t
 
 type t = {
-  named_hosts: (string, host) Hashtbl.t;
+  named_hosts: (string, Ketrew_pure.Host.Ssh.t) Hashtbl.t;
 }
 let create () = {named_hosts = Hashtbl.create 42}
 
-let resolve_named_host t ~name =
-  try return (Hashtbl.find t.named_hosts name)
+let resolve_named_host t ~name ~host =
+  try
+    let ssh_connection = Hashtbl.find t.named_hosts name in
+    return (Ketrew_pure.Host.with_ssh_connection host ssh_connection)
   with _ -> fail_host (`Named_host_not_found name)
 
-let set_named_host t ~name connection =
-  Hashtbl.add t.named_hosts name connection;
+let set_named_host t ~name ssh =
+  Hashtbl.add t.named_hosts name ssh;
   return ()
 
 let delete_named_host t ~name =
@@ -274,7 +276,7 @@ let execute ?timeout t ~host argl =
         | `Error e -> fail (`Host e)
       end
     | `Named name ->
-      resolve_named_host t ~name
+      resolve_named_host t ~name ~host
       >>= fun host ->
       run ~log ~host ()
   in
@@ -338,7 +340,7 @@ let rec put_file ?timeout t ~host ~path ~content =
   match Ketrew_pure.Host.connection host with
   | `Localhost -> IO.write_file ~content Ketrew_pure.Path.(to_string path)
   | `Named name ->
-    resolve_named_host t ~name
+    resolve_named_host t ~name ~host
     >>= fun host ->
     put_file ?timeout t ~host ~path ~content
   | `Ssh ssh ->
@@ -379,7 +381,7 @@ let rec get_file ?timeout t ~host ~path =
         fail (`Cannot_read_file ("localhost", path))
     end
   | `Named name ->
-    resolve_named_host t ~name
+    resolve_named_host t ~name ~host
     >>= fun host ->
     get_file ?timeout t ~host ~path
   | `Ssh ssh ->
