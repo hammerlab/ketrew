@@ -48,6 +48,10 @@ type authorized_tokens = [
   | `Path of string
   | `Inline of string * string
 ] [@@deriving yojson]
+type ssh_connection = {
+  ssh_uri: string;
+  ssh_name: string;
+} [@@deriving yojson] 
 type server = {
   authorized_tokens: authorized_tokens list;
   listen_to: [
@@ -63,6 +67,7 @@ type server = {
   max_blocking_time: (float [@default 300.]);
   block_step_time: (float [@default 3.]);
   read_only_mode: (bool [@default false]);
+  ssh_connections: (ssh_connection list [@default []]);
 } [@@deriving yojson]
 type client = {
   connection: string;
@@ -233,6 +238,10 @@ let client ?(ui=default_ui) ~token connection =
 let authorized_token ~name value = `Inline (name, value)
 let authorized_tokens_path p = `Path p
 
+let ssh_connection ~uri ssh_name = {ssh_uri = uri; ssh_name}
+let ssh_connection_name_uri {ssh_uri; ssh_name} = (ssh_name, ssh_uri)
+let ssh_connections server = server.ssh_connections
+
 let server
     ?ui ?engine
     ?(authorized_tokens=[]) ?(return_error_messages=false)
@@ -240,12 +249,14 @@ let server
     ?(max_blocking_time = 300.)
     ?(block_step_time = 3.)
     ?(read_only_mode = false)
+    ?(ssh_connections = [])
     listen_to =
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path;
-            max_blocking_time; block_step_time; read_only_mode;})
+            max_blocking_time; block_step_time; read_only_mode;
+            ssh_connections})
 
 
 let plugins t = t.plugins

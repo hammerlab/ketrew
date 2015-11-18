@@ -82,7 +82,9 @@ end
 type t
 (** The container for mnoitored server-side processes. *)
 
-val load : unit -> (t, 'a) Deferred_result.t
+val load :
+  ?preconfigure: Configuration.ssh_connection list ->
+  unit -> (t, 'a) Deferred_result.t
 (** Create a new process-holder. *)
 
 val unload :

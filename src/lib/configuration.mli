@@ -139,6 +139,14 @@ val authorized_tokens_path: string -> authorized_tokens
       v}
   *)
 
+type ssh_connection
+(** Preconfigured named SSH connections. *)
+
+val ssh_connection:  uri: string -> string -> ssh_connection
+(** Create a named {!ssh_connection} (cf. {!sever}). *)
+
+val ssh_connection_name_uri: ssh_connection -> string * string
+
 type server
 (** The configuration of the server. *)
 
@@ -153,6 +161,7 @@ val server:
   ?max_blocking_time: float ->
   ?block_step_time: float ->
   ?read_only_mode: bool ->
+  ?ssh_connections:ssh_connection list ->
   [ `Tcp of int | `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
@@ -183,6 +192,7 @@ val server:
       hopefully disapear soon) (seconds, default [3.]).
     - [read_only_mode]:
       run the server in read-only mode (default [false]).
+    - [ssh_connections]: preconfigure named SSH connections (default [[]]).
     = [`Tcp port]: configure the server the unsercurely listen on [port].
     - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
       server to listen on [port].
@@ -268,6 +278,8 @@ val server_engine: server -> engine
 val server_configuration: t -> server option
 (** Get the potentiel server configuration. *)
 
+val ssh_connections: server -> ssh_connection list
+    
 val authorized_tokens: server ->
   [ `Path of string | `Inline of (string * string)] list
 (** The path to the [authorized_tokens] file. *)

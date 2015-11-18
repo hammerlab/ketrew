@@ -860,7 +860,8 @@ let start ~configuration  =
       return ()
   end
   >>= fun () ->
-  Process_holder.load ()
+  Process_holder.load
+    ~preconfigure:(Configuration.ssh_connections configuration) ()
   >>= fun process_holder ->
   Log.(s "Start-Server: Loading the Engine" @ verbose);
   Engine.load (Configuration.server_engine configuration) 

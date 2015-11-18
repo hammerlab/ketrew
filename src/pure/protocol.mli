@@ -57,20 +57,25 @@ module Process_sub_protocol : sig
     }
   end
   type up = [
-    | `Start_ssh_connetion of string * string (* name × connection-uri *)
+    | `Start_ssh_connetion of [
+        | `New of string * string (* name × connection-uri *)
+        | `Configured of string (* id *)
+      ]
     | `Get_all_ssh_ids
-    | `Get_logs of string * [ `Full ]
-    | `Send_ssh_input of string * string
+    | `Get_logs of string * [ `Full ] (* id *)
+    | `Send_ssh_input of string * string (* id × input-string *)
     | `Send_command of Command.t
-    | `Kill of string
+    | `Kill of string (* id *)
   ]
   module Ssh_connection : sig
     type status = [
-      | `Alive of [ `Askpass_waiting_for_input | `Idle ]
+      | `Alive of [ `Askpass_waiting_for_input of (float * bytes) list | `Idle ]
       | `Dead of string
+      | `Configured
     ]
     type t = {
       id: string;
+      name: string;
       uri: string;
       status: status;
     }

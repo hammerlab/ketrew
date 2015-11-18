@@ -18,12 +18,25 @@ module Ssh_connection = Protocol.Process_sub_protocol.Ssh_connection
 module Ssh_command_output = Protocol.Process_sub_protocol.Command_output
 module Ssh_command = Protocol.Process_sub_protocol.Command
 
+module Item_visiblity = struct
+  type t = No | Simple | Details
+  let default = No
+  let hide_show = function
+  | No -> Simple
+  | other -> No
+  let with_details details_now =
+    function
+    | No -> No
+    | _ when details_now -> Details
+    | _ -> Simple
+end
+
 type t = {
   client: Protocol_client.t;
   ssh_connections: Ssh_connection.t list Reactive.Source.t;
   ssh_connections_status: deferred_status Reactive.Source.t;
   logs_cache : (string, string option Reactive.Source.t) Hashtbl.t;
-  logs_visibility: (string, bool Reactive.Source.t) Hashtbl.t;
+  items_visibility: (string, Item_visiblity.t Reactive.Source.t) Hashtbl.t;
   ssh_commands: Ssh_command.t list Reactive.Source.t;
   ssh_command_outputs: Ssh_command_output.t list Reactive.Source.t;
 }
@@ -33,16 +46,16 @@ let create client =
   let ssh_command_outputs = Reactive.Source.create [] in
   let ssh_connections_status = Reactive.Source.create `Ok in
   let logs_cache = Hashtbl.create 42 in
-  let logs_visibility = Hashtbl.create 42 in
+  let items_visibility = Hashtbl.create 42 in
   {client; ssh_connections; ssh_connections_status;
-   logs_cache; logs_visibility; ssh_commands; ssh_command_outputs}
+   logs_cache; items_visibility; ssh_commands; ssh_command_outputs}
 
-let logs_visibility t ~id =
-  match Hashtbl.find t.logs_visibility id with
+let items_visibility t ~id =
+  match Hashtbl.find t.items_visibility id with
   | v -> v
   | exception _ ->
-    let v = Reactive.Source.create false in
-    Hashtbl.add t.logs_visibility id v;
+    let v = Reactive.Source.create Item_visiblity.default in
+    Hashtbl.add t.items_visibility id v;
     v
 let current_logs t ~id =
     match Hashtbl.find t.logs_cache id with
@@ -57,21 +70,23 @@ let current_logs_markup t ~id =
   Reactive.Source.map_signal source ~f:begin function
   | Some logs ->
     begin match Display_markup.deserialize_exn logs with
-    | o -> `Ok o
+    | o -> `Ok (Some o)
     | exception e -> `Error Display_markup.(textf "%s" (Printexc.to_string e))
     end
-  | None -> `Error Display_markup.(text "No logs in cache …")
+  | None -> `Ok None
   end
 
 let logs_signal t ~id =
+  let open Item_visiblity in
   Reactive.(
     Signal.tuple_2
-      (Source.signal (logs_visibility t ~id))
+      (Source.signal (items_visibility t ~id))
       (current_logs_markup t ~id)
     |> Signal.map ~f:(function
-      | (false, _) -> `Invisible
-      | (true, `Ok s) -> `Visible s
-      | (true, `Error e) -> `Error e
+      | (No, _) -> `Invisible
+      | (other, `Error e) -> `Error e
+      | (Simple, `Ok s) -> `Visible (false, s)
+      | (Details, `Ok s) -> `Visible (true, s)
       )
   )
 
@@ -112,9 +127,15 @@ let launch_update_ssh_connections t =
       send_process_messsage t (`Process (`Get_all_ssh_ids))
     )
 
-let start_ssh_connection t ~name ~uri =
+let start_new_ssh_connection t ~name ~uri =
   asynchronously (fun () ->
-      send_process_messsage t (`Process (`Start_ssh_connetion (name, uri)))
+      send_process_messsage t
+        (`Process (`Start_ssh_connetion (`New (name, uri))))
+    )
+let start_configured_ssh_connection t ~id =
+  asynchronously (fun () ->
+      send_process_messsage t
+        (`Process (`Start_ssh_connetion (`Configured (id))))
     )
 
 let update_logs t ~id =
@@ -242,15 +263,41 @@ module Html = struct
 
   end
 
-  module Send_input_to_askpass =
-    Make_send_input_ui(
-    struct
-      let is_password_like = true
-      let button_text = "Send Input to ASK-PASS"
-      let input_question =
-        "Enter your input (most likely a password/passphrase)"
-      let send_input = send_input_to_askpass
-    end)
+  module Send_input_to_askpass = struct
+    module Send_input_default = Make_send_input_ui(struct
+        let is_password_like = true
+        let button_text = "Send Input to ASK-PASS"
+        let input_question =
+          "Enter your input (most likely a password/passphrase)"
+        let send_input = send_input_to_askpass
+      end)
+    let render t ~id ~questions =
+      let open H5 in
+      let send_input_to_askpass_ui =
+        Send_input_default.create t ~id in
+      Bootstrap.warning_box [
+        h4 [pcdata "Waiting For Input"];
+        begin match questions with
+        | [] ->
+          div [
+            pcdata "There are no questions from the ";
+            code [pcdata "ASKPASS"]; pcdata " program.";
+          ]
+        | more ->
+          div [
+            code [pcdata "ASKPASS"]; pcdata " program asked: ";
+            ul (List.map more ~f:(fun (date, q) ->
+                li [
+                  pcdata (fmt "On %s: " (Markup.date_to_string date));
+                  code [pcdata q]
+                ]));
+          ]
+        end;
+        Send_input_default.button send_input_to_askpass_ui;
+        Send_input_default.render send_input_to_askpass_ui;
+      ]
+  end
+
   module Send_command_ui =
     Make_send_input_ui(
     struct
@@ -360,68 +407,105 @@ module Html = struct
         |> Signal.singleton
       )
 
-  let single_connection_reactive_div t ~uri ~id ~status =
+  let single_connection_reactive_div t ~uri ~name ~id ~status =
     let open H5 in
-    let send_input_to_askpass_ui = Send_input_to_askpass.create t ~id in
     let send_command_ui = Send_command_ui.create t ~id in
     let kill_ui = Kill_ui.create ~id t in
-    let hide_stuff () =
-      Bootstrap.button [pcdata "Unexpand"]
+    let hide_show text =
+      Bootstrap.button [strong [pcdata text]]
         ~on_click:(fun _ ->
-            Reactive.Source.set (logs_visibility t ~id) false;
-            false) in
-    let reload () =
-      Bootstrap.button [pcdata "Reload"]
-        ~on_click:(fun _ ->
-            update_logs t ~id;
+            Reactive.Source.modify (items_visibility t ~id) ~f:(fun current ->
+                 update_logs t ~id;
+                 Item_visiblity.hide_show current);
             false) in
     let status_badge () =
       match status with
-      | `Alive `Idle -> Bootstrap.icon_success ~title:"Alive & Kicking"
-      | `Alive `Askpass_waiting_for_input ->
-        Bootstrap.icon_unknown ~title:"Alive but waiting for input"
-      | `Dead s -> Bootstrap.icon_wrong ~title:(fmt "Dead: %s" s)
+      | `Alive `Idle ->
+        Bootstrap.label_success [pcdata "Alive & Kicking"]
+      | `Alive (`Askpass_waiting_for_input _) ->
+        Bootstrap.label_warning [pcdata "Waiting for input"]
+      | `Dead s ->
+        Bootstrap.label_danger [pcdata (fmt "Dead: %s" s)]
+      | `Configured ->
+        Bootstrap.label_default [pcdata "Configured"]
+    in
+    let name () = strong [pcdata name] ~a:[a_title uri] in
+    let first_line hs_text =
+      let with_hs = [hide_show hs_text; pcdata " ";] in
+      let line = [
+        status_badge (); pcdata " ";
+        name (); pcdata " ";
+        code [summarize_string ~max_length:40 uri];
+      ] in
+      begin match status with
+      | `Configured -> line @ [
+          pcdata " ";
+          local_anchor [pcdata "Start New Instance"]
+            ~on_click:(fun _ ->
+                start_configured_ssh_connection t ~id;
+                false);
+        ]
+      | `Alive _ | `Dead _ -> line @ with_hs
+      end
+    in
+    let details_div ~with_details mrkopt =
+      match with_details with
+      | true ->
+        begin match mrkopt with
+        | Some m -> Bootstrap.success_box [Markup.to_html m]
+        | None -> Bootstrap.warning_box [pcdata "No details avaialable"]
+        end;
+      | false -> div [] in
+    let details_button ~with_details =
+      Bootstrap.button
+        [pcdata (if with_details then "Hide Details" else "Show Details")]
+        ~on_click:(fun _ ->
+            Reactive.Source.modify (items_visibility t ~id) ~f:(fun current ->
+                (if not with_details then update_logs t ~id else ());
+                Item_visiblity.with_details (not with_details) current);
+          false)
+    in
+    let visible_stuf ~with_details mrkopt =
+      begin match status with
+      | `Configured -> div []
+      | `Dead _ ->
+        div [
+          details_button ~with_details;
+          display_commands t ~id;
+          details_div ~with_details mrkopt;
+        ]
+      | `Alive details ->
+        div [
+          details_button ~with_details;
+          Kill_ui.render kill_ui;
+          begin match details with
+          |  `Askpass_waiting_for_input questions ->
+            Send_input_to_askpass.render t ~id ~questions
+          | `Idle -> Send_command_ui.button send_command_ui
+          end;
+          Send_command_ui.render send_command_ui;
+          display_commands t ~id;
+          details_div ~with_details mrkopt;
+        ]
+      end
+    in
+    let item visiblity =
+      match visiblity with
+      | `Invisible -> div (first_line  "+")
+      | `Error mrk ->
+        div (
+          (first_line  "-")
+          @ [
+            div [
+              Bootstrap.error_box [Markup.to_html mrk];
+            ];
+          ]
+        )
+      | `Visible (with_details, mrkopt) ->
+        div (first_line "-" @ [ visible_stuf ~with_details mrkopt ])
     in
     Reactive_node.div Reactive.(
-        (logs_signal t ~id) |> Signal.map ~f:(function
-          | `Invisible ->
-            div [
-              status_badge ();
-              code [summarize_string ~max_length:50 uri];
-              Bootstrap.button [pcdata "Expand"]
-                ~on_click:(fun _ ->
-                    update_logs t ~id;
-                    Reactive.Source.set (logs_visibility t ~id) true;
-                    false);
-            ]
-          | `Error m ->
-            div [
-              status_badge ();
-              code [pcdata uri];
-              div [
-                hide_stuff ();
-                reload ();
-                Bootstrap.error_box [Markup.to_html m];
-              ];
-            ]
-          | `Visible m ->
-            div [
-              status_badge ();
-              code [pcdata uri];
-              div [
-                hide_stuff ();
-                reload ();
-                Send_input_to_askpass.button send_input_to_askpass_ui;
-                Send_command_ui.button send_command_ui;
-                Kill_ui.render kill_ui;
-                Send_input_to_askpass.render send_input_to_askpass_ui;
-                Send_command_ui.render send_command_ui;
-                display_commands t ~id;
-                Bootstrap.success_box [Markup.to_html m];
-              ];
-            ]
-          )
-        |> Signal.singleton
+        (logs_signal t ~id) |> Signal.map ~f:item |> Signal.singleton
       )
 
   let controls_header t ~can_update =
@@ -456,7 +540,7 @@ module Html = struct
                       ~on_input:(fun str -> ssh_uri := str)
                       ~on_keypress:(function
                         | 13 ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
                         | other ->
                           Log.(s "on_keypress → " % i other  @ verbose));
@@ -468,13 +552,13 @@ module Html = struct
                       ~on_input:(fun str -> host_name := str)
                       ~on_keypress:(function
                         | 13 ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
                         | other ->
                           Log.(s "on_keypress → " % i other  @ verbose));
                     Input_group.button_group [
                       button [pcdata "Go!"] ~on_click:(fun _ ->
-                          start_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
                           false);
                     ]
                   ]
@@ -488,9 +572,9 @@ module Html = struct
     let open H5 in
     let list_of_connections l =
       ul (
-        List.map l ~f:(fun {Ssh_connection.id; uri; status} ->
+        List.map l ~f:(fun {Ssh_connection.id; name; uri; status} ->
             li [
-              single_connection_reactive_div t ~uri ~id ~status;
+              single_connection_reactive_div t ~uri ~name ~id ~status;
             ])
       );
     in
