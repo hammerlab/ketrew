@@ -37,26 +37,47 @@ module Host: sig
   (** Alias for the host type. *)
 
   val parse : string -> t
-  (** Parse an URI string into a host.
+  (** Parse a
+      {{:https://en.wikipedia.org/wiki/Uniform_Resource_Identifier}URI}
+      string into a Ketrew-host.
 
-      For example:
-      ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
+      The “scheme” and “host” part of the URI define the connection type:
 
-      - ["ssh:"] means to connect with SSH (if a hostname is defined this is the
-      default and only way).
-      - ["user"] is the user to connect as.
-      - ["SomeHost"] is the hostname, if the “host-connection” part of the URI is
-      not provided, “localhost” will be assumed (and SSH won't be used).
-      - ["42"] is the port.
-      - ["/tmp/pg"] is the “playground”; a directory where the Ketrew-engine will
-      create temporary and monitoring files.
-      - ["shell=bash,-l,--init-file,bouh,-c"] the option [shell] define the
-      shell, and the options, to use on the host.
-      - ["timeout=42.5"] is the execution timeout, an optional float setting the
-      maximal duration Ketrew will wait for SSH commands to return.
-      - ["ssh-option=-K"] are options to pass to the SSH client.
+      - {b SSH Hosts}: use ["ssh:"] as the scheme means (if a hostname is
+        defined but no scheme, SSH is the default).
+        Then you can add a user, a hostname, and a port number.
+        You can aslo add options to pass to the SSH client through the
+        URI's query parameters ["ssh-option=-K"].
+      - {b Named hosts}: use the scheme ["named://"] and the hostname
+        as a {i name}. Named hosts are dynamic connections managed by the
+        Ketrew server.
+      - {b Engine's host}: if no scheme, and no host part are
+        provided, Ketrew will create a host for the local-host (the
+        host where the Engine is running).
 
-      See also {!Host.of_uri}. *)
+      The “path” part of the URI defines the “playground”; a directory
+      where the Ketrew-engine will create temporary and monitoring files.
+      
+      Other query options can be used to configure the host:
+      
+      - ["shell=<comma-separated-list-of-command-line-arguments"]
+        defines the shell, with more command-line options, to use on
+        the host.
+      - ["timeout=<float>"] is the execution timeout, an optional
+        float setting the maximal duration Ketrew will wait for SSH
+        commands to return.
+
+      Examples:
+
+      - ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
+        is an SSH host.
+      - ["named://TheNameOfTheHost/tmp/ketrew-playground/"] is a named
+        host: Ketrew will try to find its active connection called
+        ["TheNameOfTheHost"] and use it at every call.
+      - ["/tmp/KT?shell=ksh,-c"] is the engine's host, using ["tmp/KT"]
+        as a playground, and ["ksh"] as a shell.
+
+      See also {!Ketrew_pure.Host.of_uri}. *)
 
   val tmp_on_localhost: t
 
