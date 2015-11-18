@@ -100,6 +100,7 @@ val named :
 (** Create an "named" host, the actual connection will be resolved
     form the name by the engine. *)
 
+val with_ssh_connection: t -> Ssh.t -> t
 
 val shell_of_default_shell: t -> string -> string list
 

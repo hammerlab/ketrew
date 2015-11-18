@@ -136,6 +136,9 @@ let named ?execution_timeout ?default_shell ?playground name =
   create ?playground ?default_shell name ~connection:(`Named name)
     ?execution_timeout
 
+let with_ssh_connection named ssh_connection =
+  {named with connection = `Ssh ssh_connection}
+
 let of_uri_exn uri =
   let connection =
     match Uri.scheme uri, Uri.host uri with
