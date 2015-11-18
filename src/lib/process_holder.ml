@@ -382,17 +382,27 @@ We need to comunicate with that process:
     | `Error e -> fail (`Failure (fmt "parsing %s: %s" t.json_log e))
     end
 
+  let ssh_options t =
+    ["-oControlMaster=auto"; fmt "-oControlPath=%s" t.control_path;]
+
   let host_uri t =
     let uri = Uri.of_string t.connection in
     Uri.add_query_param uri
-      ("ssh-option", [
-          "-oControlMaster=auto";
-          fmt "-oControlPath=%s" t.control_path;
-        ])
+      ("ssh-option", ssh_options t)
     |> Uri.to_string
 
   let as_host t =
     host_uri t |> Host.of_string
+
+  let as_ssh_connection t =
+    let uri = Uri.of_string t.connection in
+    {
+      Ketrew_pure.Host.Ssh.
+      address = (Uri.host uri |> Option.value ~default:"127.0.0.1");
+      port = Uri.port uri;
+      user = Uri.user uri;
+      add_ssh_options = ssh_options t
+    }
 
   let markup
       {ketrew_bin; json_log; fifo_to_daemon; fifo_from_daemon; connection;
@@ -621,9 +631,8 @@ let answer_message t ~host_io msg :
       end
     end
     >>= fun (name, (ssh : Ssh_connection.t)) ->
-    of_result (Ssh_connection.as_host ssh)
-    >>= fun host ->
-    Host_io.set_named_host host_io ~name host
+    let ssh_connection = Ssh_connection.as_ssh_connection ssh in
+    Host_io.set_named_host host_io ~name ssh_connection
     >>= fun () ->
     return (`Ok)
   | `Get_all_ssh_ids ->
