@@ -59,13 +59,13 @@ module Process_sub_protocol : sig
   type up = [
     | `Start_ssh_connetion of [
         | `New of string * string (* name × connection-uri *)
-        | `Configured of string
+        | `Configured of string (* id *)
       ]
     | `Get_all_ssh_ids
-    | `Get_logs of string * [ `Full ]
-    | `Send_ssh_input of string * string
+    | `Get_logs of string * [ `Full ] (* id *)
+    | `Send_ssh_input of string * string (* id × input-string *)
     | `Send_command of Command.t
-    | `Kill of string
+    | `Kill of string (* id *)
   ]
   module Ssh_connection : sig
     type status = [
