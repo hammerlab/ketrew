@@ -837,6 +837,28 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "explore" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run the interactive Target Explorer." ~man:[])
   in
+  let daemonize_anything_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun command ->
+            Lwt_daemon.daemonize
+              ~syslog:false
+              ~stdin:`Dev_null ~stdout:`Dev_null ~stderr:`Dev_null
+              ~directory:"/"  ~umask:`Keep ();
+            Unix_process.succeed ["sh"; "-c"; command]
+            >>= fun (_, _) ->
+            return ()
+          )
+        $ Arg.(
+            info ["command"] ~docv:"CMD" ~doc:"The command to daemonize."
+            |> opt (some string) None |> required)
+      )
+      ~info:(
+        info "daemonize-anything" ~version
+          ~sdocs:"COMMON OPTIONS"
+          ~doc:"Daemnize Anything." ~man:[])
+  in
   let start_server_cmd =
     let open Term in
     sub_command
@@ -972,6 +994,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
       internal_ssh_command;
+      daemonize_anything_cmd;
     ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
