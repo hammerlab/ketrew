@@ -305,21 +305,33 @@ let configuration = function
    - render all the dependencies/failure-callbacks/success-callbacks,
    - writes errors to Log
 *)
-let user_command_list t =
+let flatten_to_pure_targets t =
+  let module T = Ketrew_pure.Target in
   t#activate;
-  let rec go_through_deps t =
-    t#render ::
-    List.concat_map t#depends_on ~f:go_through_deps
-    @ List.concat_map t#on_failure_activate ~f:go_through_deps
-    @ List.concat_map t#on_success_activate ~f:go_through_deps
-  in
-  let targets =
-    (go_through_deps t)
-    |> List.dedup ~compare:Target.(fun ta tb -> compare (id ta) (id tb))
-  in
-  match targets with
-  | first :: more -> (first, more)
-  | [] -> assert false (* there is at least the argument one *)
+  let todo = ref [t] in
+  let to_return = ref [] in
+  let add_todos l =
+    List.iter l (* not_already_done *) ~f:(fun x ->
+        match
+          List.exists !todo ~f:(fun y -> x#id = y#id)
+          || List.exists !to_return ~f:(fun y -> T.id y = x#id)
+        with
+        | true -> ()
+        | false -> todo := x :: !todo) in
+  let add_to_return t =
+    to_return := t#render :: !to_return in
+  let rec go_through_deps () =
+    match !todo with
+    | t :: more ->
+      add_to_return t; (* In !todo, so was not in !to_return. *)
+      add_todos t#depends_on;
+      add_todos t#on_failure_activate;
+      add_todos t#on_success_activate;
+      todo := List.filter !todo ~f:(fun x -> x#id <> t#id);
+      go_through_deps ();
+    | [] -> () in
+  go_through_deps ();
+  !to_return
 
 let rec add_tags_to_workflow (t : EDSL.user_target) ~tags =
   t#add_tags tags;
@@ -332,14 +344,13 @@ let submit ?override_configuration ?add_tags t =
   begin match add_tags with
   | None -> () | Some tags -> add_tags_to_workflow t ~tags
   end;
-  let active, dependencies = user_command_list t in
+  let targets = flatten_to_pure_targets t in
   let configuration =
     Configuration.load_exn
       (match override_configuration with
       | Some c -> `Override c | None -> `Guess) in
   match Lwt_main.run (
-      as_client ~configuration ~f:(fun ~client ->
-          add_targets client (active :: dependencies))
+      as_client ~configuration ~f:(fun ~client -> add_targets client targets)
     ) with
   | `Ok () -> ()
   | `Error e ->
