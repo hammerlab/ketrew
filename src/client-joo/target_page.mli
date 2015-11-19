@@ -11,10 +11,10 @@ val create:
   reload_query_result:(query:string -> unit) ->
   available_queries:Local_cache.Target_cache.query_description
       Reactive.Signal.t ->
-  get_query_result:(query:bytes ->
-                    [ `Error of bytes
+  get_query_result:(query:string ->
+                    [ `Error of string
                     | `None
-                    | `String of float * bytes ] Reactive.signal) ->
+                    | `String of float * string ] Reactive.signal) ->
   t
 
 val eq: t -> t -> bool

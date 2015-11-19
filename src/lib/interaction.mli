@@ -71,7 +71,7 @@ val build_sublist_of_targets :
     ([> `Cancel | `Go of string list ],
      [> `Client of Client.Error.t
       | `Database of Trakeva.Error.t
-      | `Database_unavailable of bytes
+      | `Database_unavailable of string
       | `Failure of string
       | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
       | `Missing_data of string

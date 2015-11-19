@@ -22,8 +22,8 @@ val call :
   (Ketrew_pure.Protocol.Down_message.t,
    [> `Protocol_client of
         [> `JSONP of [> `Exn of exn | `Timeout ]
-        | `Parsing_message of bytes * exn
-        | `Wrong_xhr_status of int * bytes
+        | `Parsing_message of string * exn
+        | `Wrong_xhr_status of int * string
         | `Xhr_timeout
         ] ])
     Pvem_js.t
@@ -35,7 +35,7 @@ module Error: sig
       | `JSONP of
           [< `Exn of exn | `Timeout ]
       | `Parsing_message of string * exn
-      | `Wrong_xhr_status of int * bytes 
+      | `Wrong_xhr_status of int * string 
       | `Xhr_timeout
     ] ->
     string

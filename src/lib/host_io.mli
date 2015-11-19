@@ -47,7 +47,7 @@ module Error: sig
         [> `Wrong_log of string
         | `Wrong_status of Unix_process.Exit_code.t ] * string 
     | `System of [> `Sleep of float ] * [> `Exn of exn ]
-    | `Named_host_not_found of bytes
+    | `Named_host_not_found of string
     | `Timeout of float
   ]
 
@@ -74,7 +74,7 @@ module Error: sig
     | `Non_zero of string * int
     | `System of [ `Sleep of float ] * [ `Exn of exn ]
     | `Timeout of float
-    | `Named_host_not_found of bytes
+    | `Named_host_not_found of string
     | `Ssh_failure of
         [> `Wrong_log of string
         | `Wrong_status of Unix_process.Exit_code.t ] *
@@ -95,7 +95,7 @@ module Error: sig
     [< `Unix_exec of string
     | `Non_zero of (string * int)
     | `System of [< `Sleep of float ] * [< `Exn of exn ]
-    | `Named_host_not_found of bytes
+    | `Named_host_not_found of string
     | `Timeout of float
     | `Execution of
          < host : string; message : string; stderr : string option;
@@ -219,7 +219,7 @@ val get_file :
   path:Ketrew_pure.Path.t ->
   (string,
    [> `Cannot_read_file of string * string
-   | `Host of [> `Named_host_not_found of bytes ]
+   | `Host of [> `Named_host_not_found of string ]
    | `Timeout of Time.t ]) Deferred_result.t
 (** Read the file from the host at [path]. *)
 

@@ -33,18 +33,18 @@ val start: configuration:Configuration.server ->
    [> `Database of Trakeva.Error.t
    | `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
-   | `Failure of bytes
-   | `IO of [> `Read_file_exn of bytes * exn ]
-   | `Missing_data of bytes
-   | `Server_status_error of bytes
-   | `Start_server_error of bytes
-   | `Database_unavailable of bytes
+   | `Failure of string
+   | `IO of [> `Read_file_exn of string * exn ]
+   | `Missing_data of string
+   | `Server_status_error of string
+   | `Start_server_error of string
+   | `Database_unavailable of string
    | `System of
-        [> `File_info of bytes
-        | `List_directory of bytes
-        | `Remove of bytes ] *
+        [> `File_info of string
+        | `List_directory of string
+        | `Remove of string ] *
         [> `Exn of exn ]
-   | `Target of [> `Deserilization of bytes ] ]) Deferred_result.t
+   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Start the server according to its configuration.  *)
 
 

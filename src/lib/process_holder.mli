@@ -60,15 +60,15 @@ module Ssh_connection : sig
     t ->
     (Ketrew_pure.Internal_pervasives.Display_markup.t, 'a) Deferred_result.t
   val write_to_fifo:
-    t -> bytes -> (unit, [> `Failure of bytes ]) Deferred_result.t
+    t -> string -> (unit, [> `Failure of string ]) Deferred_result.t
   val host_uri: t -> string
   val kill :
     t ->
     (unit,
-     [> `Failure of bytes
-     | `IO of [> `Read_file_exn of bytes * exn ]
+     [> `Failure of string
+     | `IO of [> `Read_file_exn of string * exn ]
      | `Shell of
-          bytes *
+          string *
           [> `Exited of int
           | `Exn of exn
           | `Signaled of int
@@ -91,10 +91,10 @@ val unload :
   t ->
   (unit,
    [> `List of
-        [> `Failure of bytes
-        | `IO of [> `Read_file_exn of bytes * exn ]
+        [> `Failure of string
+        | `IO of [> `Read_file_exn of string * exn ]
         | `Shell of
-             bytes *
+             string *
              [> `Exited of int
              | `Exn of exn
              | `Signaled of int

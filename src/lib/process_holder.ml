@@ -291,7 +291,7 @@ We need to comunicate with that process:
 
 
   let read_fifo fifo =
-    let read_buffer = String.make 1 'B' in
+    let read_buffer = Bytes.make 1 'B' in
     wrap_deferred
       ~on_exn:(fun e -> `Failure (Printexc.to_string e)) (fun () ->
           let open Lwt in
@@ -305,7 +305,7 @@ We need to comunicate with that process:
             read fd read_buffer 0 1
             >>= function
             | 0 -> return None
-            | 1 -> return (Some (String.get_exn read_buffer 0))
+            | 1 -> return (Some (Bytes.get read_buffer 0))
             | more -> fail (Failure (fmt "read_char got %d bytes" more))
           in
           let rec read_all acc fd =

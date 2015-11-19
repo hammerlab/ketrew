@@ -47,7 +47,7 @@ type t = {
   reload_query_result: query:string -> unit;
   reload_available_queries: unit -> unit;
   get_query_result: query:string ->
-    [ `Error of bytes | `None | `String of (Time.t * bytes) ] Reactive.Signal.t;
+    [ `Error of string | `None | `String of (Time.t * string) ] Reactive.Signal.t;
 }
 let create ~target_cache ~id
     ~restart_target ~kill_target ~target_link_on_click_handler
