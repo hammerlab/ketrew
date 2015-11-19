@@ -169,6 +169,7 @@ let query run_parameters item =
 
 let make_python_script ~out ~err ~pid_file ~call_script monitored_script_path =
   fmt {python|
+# -*- coding: utf-8 -*-
 import os               # Miscellaneous OS interfaces.
 import sys              # System-specific parameters and functions.
 import subprocess
