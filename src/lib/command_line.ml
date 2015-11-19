@@ -844,6 +844,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   let command = 
                     global_executable_path ^ " " ^
                     (Sys.argv |> Array.to_list |> List.tl_exn
+                     |> List.map ~f:Filename.quote
                      |> String.concat ~sep:" ") ^ " --already-daemonized" 
                   in
                   let to_exec = 
