@@ -255,7 +255,7 @@ let generate_token () =
   |> B64.encode ~alphabet:B64.uri_safe_alphabet 
 
 let initialize_configuration
-    ?use_database ~tokens ~tls ~port ~debug_level config_path =
+    ~use_database ~tokens ~tls ~port ~debug_level config_path =
   let tokens = if tokens = [] then [generate_token ()] else tokens in
   System.ensure_directory_path config_path
   >>= fun () ->
@@ -290,10 +290,29 @@ let () =
 open Ketrew.Configuration
 let debug_level = %d
 |ocaml} debug_level in
-  let db_params =
-    match use_database with
-    | None  -> config_path // "database"
-    | Some s -> s in
+  begin match use_database with
+  | `Default ->
+    let default = "sqlite" in
+    let set = Trakeva_of_uri.available_backends in
+    begin match List.mem default ~set with
+    | true ->
+      return (config_path // "database")
+    | false ->
+      Log.(s "The " % quote default % s " backend was not available at \
+              Trakeva's compile time" %sp
+           % parens (s "available backends: "
+                     % OCaml.list quote set) % n
+           % s "Please use for example: \
+                -use-database \
+                postgresql://pg.example.com:4242/database" % n
+           % s "see also \
+                http://seb.mondet.org/software/ketrew/Database_Backends.html"
+           @ error);
+      fail (`Failure "Cannot create configuration")
+    end
+  | `User_set s -> return s
+  end
+  >>= fun db_params ->
   let engine =
     fmt {ocaml|
 let engine =
@@ -568,8 +587,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   in
   let make_profile_arg args =
     let at, names = match args with
-      | [] -> Arg.(pos 0 (some string) None), []
-      | p  -> Arg.(opt (some string) None), p
+    | [] -> Arg.(pos 0 (some string) None), []
+    | p  -> Arg.(opt (some string) None), p
     in
     Arg.(value & at & info names
            ~docs:common_options_section ~docv:"NAME"
@@ -604,7 +623,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                    | _ -> `Don't
                  in
                  initialize_configuration
-                   ?use_database ~tls ~port ~debug_level ~tokens config_path)
+                   ~use_database ~tls ~port ~debug_level ~tokens config_path)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
@@ -628,13 +647,18 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
           $ Arg.(
+              pure (function
+                | None -> `Default
+                | Some s -> `User_set s)
+              $
               let doc =
                 fmt "Use the given URI for the database configuration \
                      (the default being a Sqlite DB in the configuration \
                      directory, available backends: %s)."
                   (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
               info ["use-database"] ~docv:"URI" ~doc
-              |> opt (some string) None |> value) 
+              |> opt (some string) None |> value
+            ) 
         ) in
   let start_gui =
     sub_command
