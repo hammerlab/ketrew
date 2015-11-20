@@ -305,7 +305,7 @@ let configuration = function
    - render all the dependencies/failure-callbacks/success-callbacks,
    - writes errors to Log
 *)
-let flatten_to_pure_targets t =
+let flatten_to_pure_targets ?add_tags t =
   let module T = Ketrew_pure.Target in
   t#activate;
   let todo = ref [t] in
@@ -319,6 +319,10 @@ let flatten_to_pure_targets t =
         | true -> ()
         | false -> todo := x :: !todo) in
   let add_to_return t =
+    begin match add_tags with
+    | None -> ()
+    | Some tags -> t#add_tags tags
+    end;
     to_return := t#render :: !to_return in
   let rec go_through_deps () =
     match !todo with
@@ -333,18 +337,8 @@ let flatten_to_pure_targets t =
   go_through_deps ();
   !to_return
 
-let rec add_tags_to_workflow (t : EDSL.user_target) ~tags =
-  t#add_tags tags;
-  List.iter t#depends_on (add_tags_to_workflow ~tags);
-  List.iter t#on_success_activate (add_tags_to_workflow ~tags);
-  List.iter t#on_failure_activate (add_tags_to_workflow ~tags);
-  ()
-
 let submit ?override_configuration ?add_tags t =
-  begin match add_tags with
-  | None -> () | Some tags -> add_tags_to_workflow t ~tags
-  end;
-  let targets = flatten_to_pure_targets t in
+  let targets = flatten_to_pure_targets t ?add_tags in
   let configuration =
     Configuration.load_exn
       (match override_configuration with
