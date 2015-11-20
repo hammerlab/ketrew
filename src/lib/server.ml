@@ -624,7 +624,7 @@ let start_listening_on_command_pipe ~server_state =
     wrap_deferred
       ~on_exn:(fun e -> `Start_server_error (Printexc.to_string e))
       (fun () ->
-         Lwt_io.open_file ~buffer_size:16
+         Lwt_io.open_file
            ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND] ~perm:0o660
            ~mode:Lwt_io.input file_path)
     >>= read_loop ~server_state ~file_path
