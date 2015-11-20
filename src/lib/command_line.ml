@@ -503,59 +503,24 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
   end
 
   
-let daemonize_if_applicable config =
-  let exit_parent () =
-    (* in case some library add at-exit hooks:
-       cf. https://github.com/ocsigen/lwt/blob/master/src/unix/lwt_daemon.ml#L60
-    *)
-    Lwt_sequence.iter_node_l Lwt_sequence.remove Lwt_main.exit_hooks;
-    exit 0
+
+let redirect_log_output_exn_no_lwt path =
+  Sys.command (fmt "mkdir -p %s" (Filename.quote path)) |> ignore;
+  let file_name = path // "debug.txt" in
+  let out =
+    UnixLabels.(
+      openfile ~perm:0o700 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
+      |> out_channel_of_descr)
   in
-  match config with
-  | `Do_not_daemonize -> ()
-  | `Daemonize_with log_path_opt ->
-    (* Cf. http://stackoverflow.com/questions/3095566/linux-daemonize *)
-    begin match Unix.fork () with
-    | pid when pid <> 0 ->
-      Log.(s "Session leader goes to the background as " % i pid @ verbose);
-      exit_parent ();
-    | _ ->
-      let retsetsid = Unix.setsid () in
-      Log.(s "Daemonizing: setsid → " % i retsetsid @ verbose);
-      begin match Unix.fork () with
-      | pid when pid <> 0 ->
-        Log.(s "Child of session-leader goes to the background as " % i pid @ verbose);
-        exit_parent ();
-      | _ ->
-        begin match log_path_opt with
-        | None -> ()
-        | Some path ->
-          Sys.command (fmt "mkdir -p %s" (Filename.quote path)) |> ignore;
-          let file_name = path // "debug.txt" in
-          let out =
-            UnixLabels.(
-              openfile ~perm:0o700 file_name ~mode:[O_APPEND; O_CREAT; O_WRONLY]
-              |> out_channel_of_descr)
-          in
-          global_with_color := false;
-          Log.(s "Daemonizing: Logging to " % quote file_name @ verbose);
-          let pid = Unix.getpid () in
-          global_log_print_string := begin fun s ->
-            Printf.fprintf out "####### %s (PID: %d)\n%s%!"
-              Time.(now () |> to_filename) pid s
-          end;
-        end;
-        Unix.chdir "/";
-        ignore (Unix.umask 0);
-        Unix.close Unix.stdin;
-        Unix.close Unix.stdout;
-        Unix.close Unix.stderr;
-        let dev_null = Unix.openfile "/dev/null" [Unix.O_RDWR] 0o666 in
-        Unix.dup2 dev_null Unix.stdin;
-        Unix.dup2 dev_null Unix.stdout;
-        Unix.dup2 dev_null Unix.stderr;
-      end;
-    end
+  global_with_color := false;
+  Log.(s "Daemonizing: Logging to " % quote file_name @ verbose);
+  let pid = Unix.getpid () in
+  global_log_print_string := begin fun s ->
+    Printf.fprintf out "####### %s (PID: %d)\n%s%!"
+      Time.(now () |> to_filename) pid s
+  end;
+  ()
+
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
@@ -861,23 +826,66 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "explore" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run the interactive Target Explorer." ~man:[])
   in
+  let daemonize_anything_cmd =
+    let open Term in
+    sub_command
+      ~term:(
+        pure (fun command ->
+            Lwt_daemon.daemonize
+              ~syslog:false
+              ~stdin:`Dev_null ~stdout:`Dev_null ~stderr:`Dev_null
+              ~directory:"/"  ~umask:`Keep ();
+            Unix_process.succeed ["sh"; "-c"; command]
+            >>= fun (_, _) ->
+            return ()
+          )
+        $ Arg.(
+            info ["command"] ~docv:"CMD" ~doc:"The command to daemonize."
+            |> opt (some string) None |> required)
+      )
+      ~info:(
+        info "daemonize-anything" ~version
+          ~sdocs:"COMMON OPTIONS"
+          ~doc:"Daemnize Anything." ~man:[])
+  in
   let start_server_cmd =
     let open Term in
     sub_command
       ~term:(
-        pure (fun configuration ->
+        pure (fun configuration already_a_daemon ->
             match Configuration.mode configuration with
             | `Server srv ->
-              daemonize_if_applicable
-                Configuration.(
-                  match daemon srv, log_path srv  with
-                  | true, popt -> `Daemonize_with popt
-                  | false, _ -> `Do_not_daemonize
-                );
-              Server.start srv
+              Configuration.(
+                match daemon srv, already_a_daemon  with
+                | false, _
+                | _, true ->
+                  begin match log_path srv with
+                  | None -> ()
+                  | Some path -> redirect_log_output_exn_no_lwt path
+                  end;
+                  Server.start srv
+                | true, false ->
+                  let command = 
+                    global_executable_path ^ " " ^
+                    (Sys.argv |> Array.to_list |> List.tl_exn
+                     |> List.map ~f:Filename.quote
+                     |> String.concat ~sep:" ") ^ " --already-daemonized" 
+                  in
+                  let to_exec = 
+                    [global_executable_path; "daemonize-anything";
+                     "--command"; command] in
+                  Log.(s "Calling " % OCaml.list quote to_exec @ normal);
+                  Unix_process.succeed to_exec
+                  >>= fun (_,_) ->
+                  return ()
+              )
             | other -> fail (`Failure "not a server")
           )
-        $ configuration_arg)
+        $ configuration_arg
+        $ Arg.(info ["already-daemonized"]
+                 ~doc:"Tell the server that this is an already \
+                       daemonized process" |> flag |> value)
+      )
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Start the server." ~man:[])
@@ -996,6 +1004,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
       internal_ssh_command;
+      daemonize_anything_cmd;
     ] in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
