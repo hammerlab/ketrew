@@ -3,18 +3,18 @@ Ketrew: Keep Track of Experimental Workflows
 
 **Ketrew** is:
 
-- an OCaml library providing an EDSL API to define complex and convoluted
+1. An OCaml library providing an EDSL API to define complex and convoluted
 workflows (interdependent steps/programs using a lot of data, with many
-parameter variations, running on different *hosts* with various schedulers).
-- an client-server application to make to interact with these workflows.
-The engine at heart of the server takes care of orchestrating the run of those
-workflows, and keeping track of everything that succeeds, fails, or gets lost.
+parameter variations, running on different hosts with various schedulers).
+2. A client-server application to interact with these workflows.
+The engine at heart of the server takes care of orchestrating workflows,
+and keeps track of everything that succeeds, fails, or gets lost.
 
 This is the master branch of Ketrew.
 See also the documentation for the latest release:
 [2.0.0](http://seb.mondet.org/software/ketrew/doc.2.0.0/index.html).
 
-If you have any question, you may submit an
+If you have any questions, you may submit an
 [issue](https://github.com/hammerlab/ketrew/issues), or join
 the authors on the public “Slack” channel of the Hammer Lab:
 [![Slack Status](http://publicslack.hammerlab.org/badge.svg)](http://publicslack.hammerlab.org)
@@ -39,11 +39,11 @@ config-file):
   with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
   `tls`, *experimental*).
 
-This gets you the
+This gets you
 
 - a `ketrew` executable that can be used to schedule and run workflows,
 - an OCaml library also called `ketrew` that handles the messy orchestration of
-  those tasks and, significantly, has the `Ketrew.EDSL` to write workflows.
+  those tasks and exports the `Ketrew.EDSL` module used to write workflows.
 
 Remember that at runtime you'll need `ssh` in your `$PATH` to execute commands on
 foreign hosts.
@@ -70,14 +70,15 @@ out how to build Ketrew (and its dependencies) from source.
 Getting Started
 ---------------
 
-Ketrew is very flexible and hence may seem difficult to understand, let's get a
-minimal workflow running.
+Ketrew is very flexible and hence may seem difficult to understand at first. 
+Let's get a minimal workflow running.
 
 Before you can use Ketrew, you need to configure it:
 
     $ ketrew init
 
-By default this will configure Ketrew in
+By default this will write a configuration file & list of authorized tokens
+for the Ketrew server in
 
     $ ls $HOME/.ketrew/
     authorized_tokens	configuration.ml
@@ -136,7 +137,7 @@ For the server (using `pc`, a command alias for `print-configuration`):
         Debug-level: 0
         Plugins: None
 
-Furthermore `daemon` is a shortcut for starting the `server` in
+Furthermore, `daemon` is a shortcut for starting the `server` in
 [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
 now start a server:
 
@@ -154,8 +155,8 @@ src="https://cloud.githubusercontent.com/assets/617111/11070327/07e7f63e-87a9-11
 >
 </div>
 
-Back at the command line can always check the server's status (and introduce
-the shorter command line argument `-P`, instead of `--configuration-profile`):
+Back at the command line you can always check the server's status (using the
+shorter command line argument `-P`, instead of `--configuration-profile`):
 
     $ ketrew status -P daemon
     [ketrew] The server appears to be doing well.
@@ -199,12 +200,12 @@ The EDSL: Defining Workflows
 ### Overview
 
 The EDSL is an OCaml library where functions are used to build a
-workflow data-structure. Then, one function: `Ketrew.Client.submit`
-is used to submit workflows to the engine.
+workflow data-structure. `Ketrew.Client.submit` is used to submit
+that datastructure to the engine.
 
-A workflow is a Graph of “**targets**”.
+A workflow is a graph of targets (nodes).
 
-There are 3 kinds of links between targets:
+There are three kinds of links (edges) between targets:
 
 - `depends_on`: targets that need to be ensured or satisifed before a target
   can start,
@@ -213,12 +214,12 @@ There are 3 kinds of links between targets:
   succeeds.
 
 See the `Ketrew.EDSL.target` function documentation for details. Any OCaml
-program can use the EDSL (script, compiled, or even inside the toplevel), see
-the documentation of the EDSL API: the module `Ketrew.EDSL`.
+program can use the EDSL (script, compiled, or even inside the toplevel). See
+the documentation of the EDSL API (`Ketrew.EDSL`).
 
 ### Example
 
-The following script extends the previous shell based example with the
+The following script extends the previous shell-based example with the
 capability to send emails upon the success or failure of your command.
 
 ```ocaml
@@ -229,7 +230,7 @@ capability to send emails upon the success or failure of your command.
 let run_command_with_daemonize ~cmd ~email =
   let module KEDSL = Ketrew.EDSL in
 
-  (* Where to run stuff *)
+  (* Where to run stuff: in this case, the tmp directory on the server's localhost. *)
   let host = KEDSL.Host.tmp_on_localhost in
 
   (* A “program” is a datastructure representing an “extended shell script”. *)
