@@ -106,7 +106,7 @@ val shell_of_default_shell: t -> string -> string list
 
 val of_uri :
   Uri.t ->
-  (t, [> `Host_uri_parsing_error of bytes * bytes ]) Pvem.Result.t
+  (t, [> `Host_uri_parsing_error of string * string ]) Pvem.Result.t
 (** Get a [Host.t] from an URI (library {{:https://github.com/mirage/ocaml-uri}ocaml-uri});
     the “path” part of the URI is the playground.
 
@@ -130,7 +130,7 @@ val of_uri :
 *)
 
 val of_string: string ->
-  (t, [> `Host_uri_parsing_error of bytes * bytes ]) Pvem.Result.t
+  (t, [> `Host_uri_parsing_error of string * string ]) Pvem.Result.t
 (** Parse an {{:http://www.ietf.org/rfc/rfc3986.txt}RFC-3986}-compliant
     string into a host, see {!of_uri}. *)
 

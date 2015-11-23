@@ -28,7 +28,7 @@ val create :
   database_parameters:string ->
   (t,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -41,7 +41,7 @@ val get_target:
   Target.id ->
   (Ketrew_pure.Target.t,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -50,7 +50,7 @@ val all_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [>  `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -148,17 +148,17 @@ module Synchronize: sig
     string ->
     (unit,
      [> `Database of Trakeva.Error.t
-     | `Database_unavailable of bytes
+     | `Database_unavailable of string
      | `IO of
-          [> `Read_file_exn of bytes * exn
-          | `Write_file_exn of bytes * exn ]
-     | `Missing_data of bytes
-     | `Not_a_directory of bytes
+          [> `Read_file_exn of string * exn
+          | `Write_file_exn of string * exn ]
+     | `Missing_data of string
+     | `Not_a_directory of string
      | `System of
-          [> `File_info of bytes
-          | `List_directory of bytes
-          | `Make_directory of bytes ] *
+          [> `File_info of string
+          | `List_directory of string
+          | `Make_directory of string ] *
           [> `Exn of exn | `Wrong_access_rights of int ]
-     | `Target of [> `Deserilization of bytes ] ])
+     | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
 end

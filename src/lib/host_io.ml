@@ -127,7 +127,7 @@ module Error = struct
        <host : string; stdout: string option; stderr: string option; message: string>
   | `System of [> `Sleep of float ] * [> `Exn of exn ]
   | `Timeout of float
-  | `Named_host_not_found of bytes
+  | `Named_host_not_found of string
   | `Ssh_failure of
        [> `Wrong_log of string
        | `Wrong_status of Unix_process.Exit_code.t ] * string ]

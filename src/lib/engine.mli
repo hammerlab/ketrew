@@ -31,9 +31,9 @@ val with_engine:
   (engine:t ->
    (unit, [> `Database of Trakeva.Error.t
           | `Failure of string
-          | `Missing_data of bytes
+          | `Missing_data of string
           | `Database_unavailable of Ketrew_pure.Target.id
-          | `Target of [> `Deserilization of bytes ]
+          | `Target of [> `Deserilization of string ]
           | `Dyn_plugin of
                [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
           ] as 'merge_error) Deferred_result.t) ->
@@ -44,10 +44,10 @@ val load:
   configuration:Configuration.engine ->
   (t,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Failure of string
-   | `Missing_data of bytes
-   | `Target of [> `Deserilization of bytes ]
+   | `Missing_data of string
+   | `Target of [> `Deserilization of string ]
    | `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
    ]) Deferred_result.t
@@ -75,7 +75,7 @@ val add_targets :
 val get_target: t -> Unique_id.t ->
   (Ketrew_pure.Target.t,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -85,7 +85,7 @@ val all_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
     | `Missing_data of Ketrew_pure.Target.id
@@ -98,7 +98,7 @@ val get_list_of_target_ids: t ->
   Ketrew_pure.Protocol.Up_message.target_query ->
   (Ketrew_pure.Target.id list,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `Missing_data of string
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Get only the Ids of the targets for a given “query”:
@@ -131,7 +131,7 @@ end
 val get_status : t -> Ketrew_pure.Target.id ->
   (Ketrew_pure.Target.State.t,
    [> `Database of Trakeva.Error.t
-   | `Database_unavailable of bytes
+   | `Database_unavailable of string
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
    | `Missing_data of string

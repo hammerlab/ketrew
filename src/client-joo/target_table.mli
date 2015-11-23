@@ -39,11 +39,11 @@ module Html: sig
       ids: string list ->
       on_result:([ `Error of string | `Ok of unit ] -> unit) ->
       unit) ->
-    get_target:(bytes ->
+    get_target:(string ->
                 Local_cache.Target_cache.target_knowledge
                   Reactive.signal) ->
-    target_link_on_click:(bytes -> unit) ->
-    get_target_status:(bytes ->
+    target_link_on_click:(string -> unit) ->
+    get_target_status:(string ->
                        Ketrew_pure.Target.State.Flat.t Reactive.signal) ->
     t -> [> Html5_types.div ] Reactive_html5.H5.elt
 end

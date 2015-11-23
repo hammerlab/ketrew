@@ -39,17 +39,17 @@ val classify_and_transform_errors :
    [< `Fatal of string
    | `Host of 
         [ `Execution of
-            < host : bytes; message : bytes; stderr : bytes option;
-              stdout : bytes option >
-        | `Named_host_not_found of bytes
-        | `Non_zero of bytes * int
+            < host : string; message : string; stderr : string option;
+              stdout : string option >
+        | `Named_host_not_found of string
+        | `Non_zero of string * int
         | `Ssh_failure of
-            [ `Wrong_log of bytes
+            [ `Wrong_log of string
             | `Wrong_status of Unix_process.Exit_code.t ] * 
-            bytes
+            string
         | `System of [ `Sleep of float ] * [ `Exn of exn ]
         | `Timeout of float
-        | `Unix_exec of bytes ]
+        | `Unix_exec of string ]
    | `IO of
         [< `Exn of exn
         | `File_exists of string
@@ -100,7 +100,7 @@ val get_log_of_monitored_script :
    | `Failure of string * string * string
    | `Start of string
    | `Success of string ] list option,
-   [> `Host of [> `Named_host_not_found of bytes ]
+   [> `Host of [> `Named_host_not_found of string ]
    | `Timeout of float ]) Deferred_result.t
 (** Fetch and parse the [log] file of a monitored-script. *)
 
@@ -109,7 +109,7 @@ val get_pid_of_monitored_script :
   host:Ketrew_pure.Host.t ->
   script:Ketrew_pure.Monitored_script.t ->
   (int option,
-   [> `Host of [> `Named_host_not_found of bytes ]
+   [> `Host of [> `Named_host_not_found of string ]
    | `Timeout of float ]) Deferred_result.t
 (** Fetch and parse the [pid] file of a monitored-script. *)
 

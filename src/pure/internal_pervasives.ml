@@ -127,7 +127,7 @@ module Json = struct
     module Of_v0 (T: sig
         type t
         val to_yojson : t -> Yojson.Safe.json
-        val of_yojson : Yojson.Safe.json -> [ `Error of bytes | `Ok of t ]
+        val of_yojson : Yojson.Safe.json -> [ `Error of string | `Ok of t ]
       end) : WITH_VERSIONED_SERIALIZATION with type t := T.t = struct
       type 'a versioned = V0 of 'a [@@deriving yojson]
       let to_json t =
