@@ -24,3 +24,5 @@ gen/
 /ketrew-synth-workflows
 /ketrew-test-process-holding
 /ketrew-workflow-examples
+/.merlin
+/.ocamlinit
