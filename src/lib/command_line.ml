@@ -561,13 +561,19 @@ let redirect_log_output_exn_no_lwt path =
   end;
   ()
 
-let do_start_the_server srv =
-  begin match Configuration.log_path srv with
-  | None -> Server.start srv
+let do_start_the_server ?say_hi_to configuration =
+  let just_before_listening () =
+    match say_hi_to with
+    | None -> return ()
+    | Some fifo -> IO.write_file fifo ~content:"hi\n"
+  in
+  begin match Configuration.log_path configuration with
+  | None ->
+    Server.start ~configuration ~just_before_listening
   | Some path ->
     redirect_log_output_exn_no_lwt path;
     begin
-      Server.start srv
+      Server.start ~configuration ~just_before_listening
       >>< function
       | `Ok () -> return ()
       | `Error e ->
@@ -581,6 +587,60 @@ let do_start_the_server srv =
         >>= fun () ->
         fail e
     end
+  end
+
+let daemonize_start_server ~no_status srv =
+  let fifo =
+    Filename.get_temp_dir_name () // Unique_id.create () in
+  let command = 
+    global_executable_path ^ " " ^
+    (Sys.argv |> Array.to_list |> List.tl_exn
+     |> List.map ~f:Filename.quote
+     |> String.concat ~sep:" ")
+    ^ " --already-daemonized " ^ Filename.quote fifo
+  in
+  let of_lwt f =
+    wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
+  of_lwt (fun () -> Lwt_unix.mkfifo fifo 0o600)
+  >>= fun () ->
+  let to_exec = 
+    [global_executable_path; "daemonize-anything";
+     "--command"; command] in
+  Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
+  Unix_process.succeed to_exec
+  >>= fun (_,_) ->
+  begin match no_status with
+  | false ->
+    Log.(s "Started the daemon, now waiting for the \
+            server status." @ normal);
+    begin
+      System.with_timeout 10. ~f:(fun () ->
+          of_lwt (fun () ->
+              Lwt_io.open_file
+                ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND]
+                ~perm:0o660
+                ~mode:Lwt_io.input fifo)
+          >>= fun pipe ->
+          of_lwt (fun () -> Lwt_io.read_line pipe)
+          >>= fun content ->
+          Log.(s "Read " % quote fifo % s " and got "
+               % quote content @ verbose); 
+          (System.sleep 1. >>< fun _ -> return ()))
+      >>< function
+      | `Ok () -> return ()
+      | `Error (`Failure _ as e)
+      | `Error (`IO _ as e) -> fail e
+      | `Error (`System _)
+      | `Error (`Timeout _) ->
+        Log.(s "Reading " % quote fifo
+             % s " with timeout " % f 10.
+             % s " failed." @ error);
+        return ()
+    end  
+    >>= fun () ->
+    display_server_status
+      ~configuration:srv ~while_starting:true
+  | true -> return ()
   end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
@@ -906,38 +966,18 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               Configuration.(
                 match daemon srv, already_a_daemon  with
                 | false, _
-                | _, true ->
-                  do_start_the_server srv
-                | true, false ->
-                  let command = 
-                    global_executable_path ^ " " ^
-                    (Sys.argv |> Array.to_list |> List.tl_exn
-                     |> List.map ~f:Filename.quote
-                     |> String.concat ~sep:" ") ^ " --already-daemonized" 
-                  in
-                  let to_exec = 
-                    [global_executable_path; "daemonize-anything";
-                     "--command"; command] in
-                  Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
-                  Unix_process.succeed to_exec
-                  >>= fun (_,_) ->
-                  begin match no_status with
-                  | false ->
-                    Log.(s "Started the daemon, now waiting for the \
-                            server status." @ normal);
-                    (System.sleep 3.0 >>< fun _ -> return ())
-                    >>= fun () ->
-                    display_server_status
-                      ~configuration:srv ~while_starting:true
-                  | true -> return ()
-                  end
+                | _, Some _ ->
+                  do_start_the_server srv ?say_hi_to:already_a_daemon
+                | true, None ->
+                  daemonize_start_server srv ~no_status
               )
             | other -> fail (`Failure "not a server")
           )
         $ configuration_arg
         $ Arg.(info ["already-daemonized"]
                  ~doc:"Tell the server that this is an already \
-                       daemonized process" |> flag |> value)
+                       daemonized process"
+               |> opt (some string) None |> value)
         $ Arg.(info ["no-status"]
                  ~doc:"Don't try to get the server status after starting a \
                        daemon" |> flag |> value)
