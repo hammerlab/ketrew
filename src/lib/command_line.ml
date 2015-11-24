@@ -564,7 +564,8 @@ let redirect_log_output_exn_no_lwt path =
 let do_start_the_server ?say_hi_to configuration =
   let just_before_listening () =
     match say_hi_to with
-    | None -> return ()
+    | None
+    | Some "none" -> return ()
     | Some fifo -> IO.write_file fifo ~content:"hi\n"
   in
   begin match Configuration.log_path configuration with
@@ -591,18 +592,24 @@ let do_start_the_server ?say_hi_to configuration =
   end
 
 let daemonize_start_server ~no_status srv =
-  let fifo =
-    Filename.get_temp_dir_name () // Unique_id.create () in
+  let status_fifo =
+    if no_status then None
+    else Some (Filename.get_temp_dir_name () // Unique_id.create ()) in
   let command = 
     global_executable_path ^ " " ^
     (Sys.argv |> Array.to_list |> List.tl_exn
      |> List.map ~f:Filename.quote
      |> String.concat ~sep:" ")
-    ^ " --already-daemonized " ^ Filename.quote fifo
+    ^ (match status_fifo with
+      | None  -> " --already-daemonized none"
+      | Some path -> " --already-daemonized " ^ Filename.quote path) 
   in
   let of_lwt f =
     wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
-  of_lwt (fun () -> Lwt_unix.mkfifo fifo 0o600)
+  of_lwt (fun () ->
+      match status_fifo with
+      | None  -> Lwt.return ()
+      | Some path -> Lwt_unix.mkfifo path 0o600)
   >>= fun () ->
   let to_exec = 
     [global_executable_path; "daemonize-anything";
@@ -610,8 +617,8 @@ let daemonize_start_server ~no_status srv =
   Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
   Unix_process.succeed to_exec
   >>= fun (_,_) ->
-  begin match no_status with
-  | false ->
+  begin match status_fifo with
+  | Some fifopath ->
     Log.(s "Started the daemon, now waiting for the \
             server status." @ normal);
     begin
@@ -620,11 +627,11 @@ let daemonize_start_server ~no_status srv =
               Lwt_io.open_file
                 ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND]
                 ~perm:0o660
-                ~mode:Lwt_io.input fifo)
+                ~mode:Lwt_io.input fifopath)
           >>= fun pipe ->
           of_lwt (fun () -> Lwt_io.read_line pipe)
           >>= fun content ->
-          Log.(s "Read " % quote fifo % s " and got "
+          Log.(s "Read " % quote fifopath % s " and got "
                % quote content @ verbose); 
           (System.sleep 1. >>< fun _ -> return ()))
       >>< function
@@ -633,7 +640,7 @@ let daemonize_start_server ~no_status srv =
       | `Error (`IO _ as e) -> fail e
       | `Error (`System _)
       | `Error (`Timeout _) ->
-        Log.(s "Reading " % quote fifo
+        Log.(s "Reading " % quote fifopath
              % s " with timeout " % f 10.
              % s " failed." @ error);
         return ()
@@ -641,7 +648,7 @@ let daemonize_start_server ~no_status srv =
     >>= fun () ->
     display_server_status
       ~configuration:srv ~while_starting:true
-  | true -> return ()
+  | None -> return ()
   end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
@@ -975,9 +982,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
             | other -> fail (`Failure "not a server")
           )
         $ configuration_arg
-        $ Arg.(info ["already-daemonized"]
+        $ Arg.(info ["already-daemonized"] ~docv:"FIFO"
                  ~doc:"Tell the server that this is an already \
-                       daemonized process"
+                       daemonized process, and to potentiall write to the \
+                       pipe $(docv) "
                |> opt (some string) None |> value)
         $ Arg.(info ["no-status"]
                  ~doc:"Don't try to get the server status after starting a \
