@@ -161,9 +161,7 @@ module Filter = struct
   let create () =
     let default () =
       let ast =
-        (if !global_debug_level > 0 then `All
-         else `Created_in_the_past (`Weeks 2.))
-      in
+        `And [`Created_in_the_past (`Weeks 4.); `Status `Activated_by_user;] in
       {ast} in
     List.find_map Url.Current.arguments  ~f:(function
       | ("?filter", t)
