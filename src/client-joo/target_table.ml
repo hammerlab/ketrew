@@ -84,7 +84,7 @@ module Filter = struct
 
 
   exception Syntax_error of string
-  let of_lisp v =
+  let of_lisp filter_string =
     begin try
       let fail ?sexp ffmt =
         Printf.ksprintf (fun s ->
@@ -144,9 +144,13 @@ module Filter = struct
         | other ->
           fail ~sexp "Syntax error while parsing top-level expression"
       in
-      let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
-      let ast = parse_sexp sexp in
-      `Ok {ast}
+      begin match String.strip filter_string with
+      | "" -> `Ok { ast = `All }
+      | v ->
+        let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+        let ast = parse_sexp sexp in
+        `Ok {ast}
+      end
     with
     | Syntax_error s -> `Error s
     | Failure s -> `Error s
