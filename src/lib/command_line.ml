@@ -580,9 +580,10 @@ let do_start_the_server ?say_hi_to configuration =
         let content =
           let pid = Unix.getpid () in
           fmt "%s (PID: %d)\n%s%!"
-            Time.(now () |> to_filename) pid (Error.to_string e)
-        in
+            Time.(now () |> to_filename) pid (Error.to_string e) in
         Printf.eprintf "ERROR: Starting the server failed:\n%s\n%!" content;
+        just_before_listening ()
+        >>= fun () ->
         IO.write_file (path // server_error_filename) ~content
         >>= fun () ->
         fail e
