@@ -84,7 +84,7 @@ module Filter = struct
 
 
   exception Syntax_error of string
-  let of_lisp v =
+  let of_lisp filter_string =
     begin try
       let fail ?sexp ffmt =
         Printf.ksprintf (fun s ->
@@ -144,9 +144,13 @@ module Filter = struct
         | other ->
           fail ~sexp "Syntax error while parsing top-level expression"
       in
-      let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
-      let ast = parse_sexp sexp in
-      `Ok {ast}
+      begin match String.strip filter_string with
+      | "" -> `Ok { ast = `All }
+      | v ->
+        let sexp = Sexplib.Sexp.of_string ("(" ^ v ^ ")") in
+        let ast = parse_sexp sexp in
+        `Ok {ast}
+      end
     with
     | Syntax_error s -> `Error s
     | Failure s -> `Error s
@@ -157,9 +161,7 @@ module Filter = struct
   let create () =
     let default () =
       let ast =
-        (if !global_debug_level > 0 then `All
-         else `Created_in_the_past (`Weeks 2.))
-      in
+        `And [`Created_in_the_past (`Weeks 4.); `Status `Activated_by_user;] in
       {ast} in
     List.find_map Url.Current.arguments  ~f:(function
       | ("?filter", t)
