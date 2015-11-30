@@ -502,7 +502,47 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
       | Some s -> s :: rev_sorted_dir)
   end
 
-  
+let server_error_filename = "server_start_error.txt"
+
+let display_server_status ~configuration ~while_starting =
+  Server.status ~configuration
+  >>= fun stat ->
+  begin match stat with
+  | `Running ->
+    Log.(s "The server appears to "
+         % s (if while_starting then "have started well." else "be doing well.")
+         @ normal);
+    return ()
+  | `Wrong_response response ->
+    Log.(s "Weird, there is a server on that port but its response was: "
+         % sexp Cohttp.Response.sexp_of_t response @ warning);
+    return ()
+  | `Not_responding why when while_starting ->
+    Log.(s "The server seems to have failed to start"
+         % sp % parens (s why) % s "." @ normal);
+    begin match Configuration.log_path configuration with
+    | None ->
+      Log.(s "No log-path was configured, cannot get the actual start-error"
+           @ warning);
+      return ()
+    | Some path ->
+      begin IO.read_file (path // server_error_filename)
+        >>< function
+        | `Ok content ->
+          Log.(s "Here is the latest start-error:"
+               % verbatim ("\n" ^ content) @normal);
+          return ()
+        | `Error e ->
+          Log.(s "Cannot read the server-start error:" %n
+               % s (IO.error_to_string e) @ error);
+          return ()
+      end
+    end
+  | `Not_responding why ->
+    Log.(s "The server does not seem to be running"
+         % sp % parens (s why) % s "." @ normal);
+    return ()
+  end
 
 let redirect_log_output_exn_no_lwt path =
   Sys.command (fmt "mkdir -p %s" (Filename.quote path)) |> ignore;
@@ -521,6 +561,95 @@ let redirect_log_output_exn_no_lwt path =
   end;
   ()
 
+let do_start_the_server ?say_hi_to configuration =
+  let just_before_listening () =
+    match say_hi_to with
+    | None
+    | Some "none" -> return ()
+    | Some fifo -> IO.write_file fifo ~content:"hi\n"
+  in
+  begin match Configuration.log_path configuration with
+  | None ->
+    Server.start ~configuration ~just_before_listening
+  | Some path ->
+    redirect_log_output_exn_no_lwt path;
+    begin
+      Server.start ~configuration ~just_before_listening
+      >>< function
+      | `Ok () -> return ()
+      | `Error e ->
+        let content =
+          let pid = Unix.getpid () in
+          fmt "%s (PID: %d)\n%s%!"
+            Time.(now () |> to_filename) pid (Error.to_string e) in
+        Printf.eprintf "ERROR: Starting the server failed:\n%s\n%!" content;
+        just_before_listening ()
+        >>= fun () ->
+        IO.write_file (path // server_error_filename) ~content
+        >>= fun () ->
+        fail e
+    end
+  end
+
+let daemonize_start_server ~no_status srv =
+  let status_fifo =
+    if no_status then None
+    else Some (Filename.get_temp_dir_name () // Unique_id.create ()) in
+  let command = 
+    global_executable_path ^ " " ^
+    (Sys.argv |> Array.to_list |> List.tl_exn
+     |> List.map ~f:Filename.quote
+     |> String.concat ~sep:" ")
+    ^ (match status_fifo with
+      | None  -> " --already-daemonized none"
+      | Some path -> " --already-daemonized " ^ Filename.quote path) 
+  in
+  let of_lwt f =
+    wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
+  of_lwt (fun () ->
+      match status_fifo with
+      | None  -> Lwt.return ()
+      | Some path -> Lwt_unix.mkfifo path 0o600)
+  >>= fun () ->
+  let to_exec = 
+    [global_executable_path; "daemonize-anything";
+     "--command"; command] in
+  Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
+  Unix_process.succeed to_exec
+  >>= fun (_,_) ->
+  begin match status_fifo with
+  | Some fifopath ->
+    Log.(s "Started the daemon, now waiting for the \
+            server status." @ normal);
+    begin
+      System.with_timeout 10. ~f:(fun () ->
+          of_lwt (fun () ->
+              Lwt_io.open_file
+                ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND]
+                ~perm:0o660
+                ~mode:Lwt_io.input fifopath)
+          >>= fun pipe ->
+          of_lwt (fun () -> Lwt_io.read_line pipe)
+          >>= fun content ->
+          Log.(s "Read " % quote fifopath % s " and got "
+               % quote content @ verbose); 
+          (System.sleep 1. >>< fun _ -> return ()))
+      >>< function
+      | `Ok () -> return ()
+      | `Error (`Failure _ as e)
+      | `Error (`IO _ as e) -> fail e
+      | `Error (`System _)
+      | `Error (`Timeout _) ->
+        Log.(s "Reading " % quote fifopath
+             % s " with timeout " % f 10.
+             % s " failed." @ error);
+        return ()
+    end  
+    >>= fun () ->
+    display_server_status
+      ~configuration:srv ~while_starting:true
+  | None -> return ()
+  end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
 let make_command_alias cmd ?(options="") name =
@@ -688,27 +817,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "status" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Get info about this instance.")
       ~term: Term.(
-          pure (fun configuration loop  ->
-              match Configuration.mode configuration  with
-              | `Client _ | `Standalone _ ->
-                let loop = if loop then Some 2. else None in
-                Client.as_client ~configuration ~f:(display_status ~loop)
-              | `Server s ->
-                Server.status ~configuration:s
-                >>= fun stat ->
-                begin match stat with
-                | `Running ->
-                  Log.(s "The server appears to be doing well." @ normal);
-                  return ()
-                | `Wrong_response response ->
-                  Log.(s "There is a server on that port but its response was: "
-                       % sexp Cohttp.Response.sexp_of_t response @ warning);
-                  return ()
-                | `Not_responding why ->
-                  Log.(s "The server does not seem to be running"
-                       % sp % parens (s why) % s "." @ normal);
-                  return ()
-                end)
+          pure begin fun configuration loop  ->
+            match Configuration.mode configuration  with
+            | `Client _ | `Standalone _ ->
+              let loop = if loop then Some 2. else None in
+              Client.as_client ~configuration ~f:(display_status ~loop)
+            | `Server s ->
+              display_server_status ~configuration:s ~while_starting:false
+          end
           $ configuration_arg
           $ Arg.(value @@ flag
                  @@ info ["L"; "loop"]
@@ -852,39 +968,28 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
     let open Term in
     sub_command
       ~term:(
-        pure (fun configuration already_a_daemon ->
+        pure (fun configuration already_a_daemon no_status ->
             match Configuration.mode configuration with
             | `Server srv ->
               Configuration.(
                 match daemon srv, already_a_daemon  with
                 | false, _
-                | _, true ->
-                  begin match log_path srv with
-                  | None -> ()
-                  | Some path -> redirect_log_output_exn_no_lwt path
-                  end;
-                  Server.start srv
-                | true, false ->
-                  let command = 
-                    global_executable_path ^ " " ^
-                    (Sys.argv |> Array.to_list |> List.tl_exn
-                     |> List.map ~f:Filename.quote
-                     |> String.concat ~sep:" ") ^ " --already-daemonized" 
-                  in
-                  let to_exec = 
-                    [global_executable_path; "daemonize-anything";
-                     "--command"; command] in
-                  Log.(s "Calling " % OCaml.list quote to_exec @ normal);
-                  Unix_process.succeed to_exec
-                  >>= fun (_,_) ->
-                  return ()
+                | _, Some _ ->
+                  do_start_the_server srv ?say_hi_to:already_a_daemon
+                | true, None ->
+                  daemonize_start_server srv ~no_status
               )
             | other -> fail (`Failure "not a server")
           )
         $ configuration_arg
-        $ Arg.(info ["already-daemonized"]
+        $ Arg.(info ["already-daemonized"] ~docv:"FIFO"
                  ~doc:"Tell the server that this is an already \
-                       daemonized process" |> flag |> value)
+                       daemonized process, and to potentiall write to the \
+                       pipe $(docv) "
+               |> opt (some string) None |> value)
+        $ Arg.(info ["no-status"]
+                 ~doc:"Don't try to get the server status after starting a \
+                       daemon" |> flag |> value)
       )
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS"

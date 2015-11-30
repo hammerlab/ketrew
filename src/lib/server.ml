@@ -841,7 +841,7 @@ let status ~configuration =
   end
 
 
-let start ~configuration  =
+let start ~just_before_listening ~configuration  =
   Log.(s "Set preemptive bounds: 10, 52" @ verbose);
   Lwt_preemptive.init 10 52 (fun str ->
       Log.(s " Lwt_preemptive error: " % s str @ error);
@@ -889,4 +889,6 @@ let start ~configuration  =
   >>= fun () ->
   Log.(s "Start-Server: Starting listening on connections" @ verbose);
   log_info Log.(s "Start-Server: Starting listening on connections");
+  just_before_listening ()
+  >>= fun () ->
   start_listening_on_connections ~server_state

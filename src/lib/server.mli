@@ -28,23 +28,31 @@ open Ketrew_pure.Internal_pervasives
 open Unix_io
 
 
-val start: configuration:Configuration.server ->
-  (unit,
-   [> `Database of Trakeva.Error.t
-   | `Dyn_plugin of
-        [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
-   | `Failure of string
-   | `IO of [> `Read_file_exn of string * exn ]
-   | `Missing_data of string
-   | `Server_status_error of string
-   | `Start_server_error of string
-   | `Database_unavailable of string
-   | `System of
-        [> `File_info of string
-        | `List_directory of string
-        | `Remove of string ] *
-        [> `Exn of exn ]
-   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+val start :
+  just_before_listening:(
+    unit ->
+    (unit,
+     [> `Database of Trakeva.Error.t
+     | `Database_unavailable of string
+     | `Dyn_plugin of
+          [> `Dynlink_error of Dynlink.error
+          | `Findlib of exn ]
+     | `Failure of string
+     | `IO of
+          [> `Read_file_exn of string * exn ]
+     | `Missing_data of string
+     | `Server_status_error of string
+     | `Start_server_error of string
+     | `System of
+          [> `File_info of string
+          | `List_directory of string
+          | `Remove of string ] *
+          [> `Exn of exn ]
+     | `Target of
+          [> `Deserilization of string ] ]
+     as 'propagated_error) Unix_io.t) ->
+  configuration:Configuration.server ->
+  (unit, 'propagated_error) Unix_io.t
 (** Start the server according to its configuration.  *)
 
 
