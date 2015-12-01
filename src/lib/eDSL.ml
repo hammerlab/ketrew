@@ -59,6 +59,8 @@ module Host = struct
 
 end
 
+(* The deprecated API (more dynamically typed): *)
+
 class type user_artifact = object
 
   method path : string
@@ -207,6 +209,106 @@ let yarn_distributed_shell
       (distributed_shell_program
          ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores 
          ~container_memory ~timeout ~application_name program))
+
+(* The (chronologically) second API: *)
+
+
+type 'product workflow_node = <
+  product : 'product;
+  target: user_target;
+> constraint 'product = < is_done : Condition.t option ; .. >
+
+type workflow_edge =
+  | Depends_on: 'a workflow_node -> workflow_edge
+  | On_success_activate: _ workflow_node -> workflow_edge
+  | On_failure_activate: _ workflow_node -> workflow_edge
+  | Empty_edge: workflow_edge
+
+let depends_on l =  Depends_on l
+let on_success_activate n = On_success_activate n
+let on_failure_activate n = On_failure_activate n
+
+type nothing = < is_done : Condition.t option >
+let nothing  = object method is_done = None end
+
+let workflow_node
+    ?active
+    ?make ?done_when ?metadata
+    ?equivalence
+    ?(tags=[]) ?name ?(edges=[])
+    (product: 'product) : 'product workflow_node =
+  let user_target =
+    let done_when =
+      match done_when with
+      | Some s -> Some s
+      | None -> product#is_done
+    in
+    let depends_on =
+      List.filter_map edges ~f:(function
+        | Depends_on we -> Some we#target
+        | _ -> None) in
+    let on_success_activate =
+      List.filter_map edges ~f:(function
+        | On_success_activate we -> Some we#target
+        | _ -> None) in
+    let on_failure_activate =
+      List.filter_map edges ~f:(function
+        | On_failure_activate we -> Some we#target
+        | _ -> None) in
+    let actual_name = Option.value name ~default:"Biokepi" in
+    let tags = "biokepi" :: tags in
+    target
+      actual_name
+      ?equivalence ~tags
+      ~on_success_activate ~on_failure_activate ~depends_on
+      ?active ?make ?metadata ?done_when
+  in
+  object
+    method product = product
+    method target = user_target
+  end
+
+type single_file = <
+  exists: Ketrew_pure.Target.Condition.t;
+  is_done: Ketrew_pure.Target.Condition.t option;
+  path : string;
+  is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
+>
+let single_file ?(host= Host.tmp_on_localhost) path : single_file =
+  let basename = Filename.basename path in
+  object
+    val vol =
+      Ketrew_pure.Target.Volume.(
+        create ~host
+          ~root:(Ketrew_pure.Path.absolute_directory_exn (Filename.dirname path))
+          (file basename))
+    method path = path
+    method exists = `Volume_exists vol
+    method is_done = Some (`Volume_exists vol)
+    method is_bigger_than n = `Volume_size_bigger_than (vol, n)
+  end
+
+let forget_product node : nothing workflow_node =
+  object method product = nothing  method target = node#target end
+
+type file_workflow = single_file workflow_node
+type phony_workflow = nothing workflow_node
+
+type list_of_files = <
+  is_done: Ketrew_pure.Target.Condition.t option;
+  paths : string list;
+>
+let list_of_files ?host paths =
+  object
+    val files = List.map paths ~f:(fun p -> single_file ?host p)
+    method is_done =
+      Some (`And (List.filter_map files ~f:(fun f -> f#is_done)))
+    method paths = paths
+  end
+
+
+
+
 
 let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =
   let escape c = fmt "\027[%sm" c  in
