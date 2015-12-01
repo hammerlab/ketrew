@@ -145,8 +145,21 @@ kscli run loop > kscli_01.out
 echo "Output file kscli_01.out"
 tail -n 50 kscli_01.out
 
-# Biokepi is now out of sync with master:
-# echo "Try to compile Biokepi"
-# opam pin add biokepi -k git --yes https://github.com/hammerlab/biokepi.git
-# opam install --yes biokepi
+
+echo "### Re-do the Getting Started:"
+echo "* init"
+ketrew init
+echo "* start daemon"
+ketrew start -P daemon
+echo "* submit mini-workflow"
+ketrew submit --wet-run --tag 1st-workflow --tag command-line --daemonize /tmp/KT,"ls -la"
+
+echo "* submit lsf-example"
+ocaml src/example_scripts/lsf_example.ml 'ls -la'
+echo "* submit daemonize-example"
+ocaml src/example_scripts/daemonize_workflow.ml 'ls -la' 'hello@example.com'
+
+echo "* loop until nothing moves"
+ketrew status --loop
+
 
