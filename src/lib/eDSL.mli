@@ -214,126 +214,6 @@ val forget_product:
   'any_product workflow_node ->
   unknown_product workflow_node 
 
-(** {3 Legacy Deprecated API: Artifacts and Targets} *)
-
-(** {4 Artifacts} *)
-
-(** Artifacts are things to be built (they may already exist), most often
-    file-tree-locations on a given [host] (see also {!Artifact.t}).
-*)
-class type user_artifact = object
-
-  method path : string
-  (** Return the path of the artifact if the artifact is a volume containing
-      a single file or directory. *)
-
-  method exists : Target.Condition.t
-  (** Get “exists” condition (for the [~done_when] argument of {!target}. *)
-
-  method is_bigger_than: int -> Target.Condition.t
-  (** Get the “is bigger than <size>” condition. *)
-end
-
-val file: ?host:Host.t -> string -> user_artifact
-(** Create a volume containing one file. *)
-
-val unit : user_artifact
-(** The artifact that is “never done” (i.e. the target associated will always
-    be (re-)run if activated). *)
-
-(** {4 Targets} *)
-
-(** Targets are the nodes in the workflow arborescence (see also
-    {!Target.t}). *)
-class type user_target =
-  object
-
-    method name : string
-    (** Get the name of the target *)
-
-    method metadata: [ `String of string ] option
-    (** The metadata that has been set for the target ({i work-in-progress}). *)
-
-    method product: user_artifact
-    (** The user-artifact produced by the target, if known (raises exception if
-        unknown). *)
-
-    (**/**)
-    method activate : unit
-    (** Activate the target. *)
-    method is_active: bool
-    method id: Internal_pervasives.Unique_id.t
-    method render: Target.t
-    method depends_on: user_target list
-    method on_failure_activate: user_target list
-    method on_success_activate: user_target list
-    method add_tags: string list -> unit
-    (**/**)
-  end
-
-val target :
-  ?active:bool ->
-  ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
-  ?done_when:Target.Condition.t ->
-  ?metadata:[ `String of string ] ->
-  ?product:user_artifact ->
-  ?equivalence:Target.Equivalence.t ->
-  ?on_failure_activate:user_target list ->
-  ?on_success_activate:user_target list ->
-  ?tags: string list ->
-  string -> user_target
-(** Construct a new target, the node of a workflow graph. The main
-    argument (the [string]) is its name, then all optional arguments mean:
-
-  - [?active]: whether this target should be started by the engine or
-    wait to be ativated by another target (through [depends_on] or
-    [on_{success,failure}_activate]) (default:
-    [false], i.e., inactive). Usual workflows should not set this
-    value since the function {!Ketrew.Client.submit} will activate the
-    toplevel target automatically.
-  - [?depends_on]: list of the dependencies of the target.
-  - [?make]: the build-process used to “build” the target; where the
-    computation happens.
-  - [?done_when]: the condition that the target ensures (checked
-    before potentially running and after running).
-  - [?metadata]: arbitrary metadata to attach to the target.
-  - [?product]: the {!user_artifact} that the target embeds (returned
-    by the [#product] method of the target).
-  - [?equivalence]: how to tell if two targets are equivalent (and
-    then will be merged by the engine). The default is
-    [`Same_active_condition] which means that if two targets have the
-    same non-[None] [?done_when] argument they will be considered
-    equivalent (i.e. they try to “ensure the same condition”).
-  - [?on_failure_activate]: targets to activate when this target fails.
-  - [?on_success_activate]: targets to activate when this target succeeds.
-  - [?tags]: arbitrary tags to add to the target (e.g. for
-    search/filter in the UI)
-
-*)
-
-val file_target:
-  ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
-  ?metadata:[ `String of string ] ->
-  ?name:string ->
-  ?host:Host.t ->
-  ?equivalence:Target.Equivalence.t ->
-  ?on_failure_activate:user_target list ->
-  ?on_success_activate:user_target list ->
-  ?tags: string list ->
-  string ->
-  user_target
-(** Create a file {!user_artifact} and the {!user_target} that produces it.
-
-    The [?product] of the target will be the file given as argument on
-    the host given by the [?host] option (default: localhost using ["/tmp"]).
-    
-    The [?done_when] condition will be the existence of that file.
-    
-    This can be seen as a classical [make]-like file-producing target,
-    but on any arbitrary host.
-*)
 
 val daemonize :
   ?starting_timeout:float ->
@@ -440,7 +320,136 @@ val yarn_distributed_shell :
 *)
 
 
-(** {2 Utilities } *)
+(** {3 Legacy Deprecated API: Artifacts and Targets}
+
+This is the old and deprecated API to build workflows.
+    
+Using functions like {!target} is still possible but they will trigger
+a compilation warning e.g. ["Warning 3: deprecated: Ketrew.EDSL.target"].
+
+*)
+
+(** {4 Artifacts}
+
+Artifacts are things to be built (they may already exist), most often
+file-tree-locations on a given [host].
+*)
+class type user_artifact = object
+
+  method path : string
+  (** Return the path of the artifact if the artifact is a volume containing
+      a single file or directory. *)
+
+  method exists : Target.Condition.t
+  (** Get “exists” condition (for the [~done_when] argument of {!target}. *)
+
+  method is_bigger_than: int -> Target.Condition.t
+  (** Get the “is bigger than <size>” condition. *)
+end
+
+val file: ?host:Host.t -> string -> user_artifact
+(** Create a volume containing one file. *)
+
+val unit : user_artifact
+(** The artifact that is “never done” (i.e. the target associated will always
+    be (re-)run if activated). *)
+
+(** {4 Targets} *)
+
+(** Targets are the nodes in the workflow arborescence (see also
+    {!Target.t}). *)
+class type user_target =
+  object
+
+    method name : string
+    (** Get the name of the target *)
+
+    method metadata: [ `String of string ] option
+    (** The metadata that has been set for the target ({i work-in-progress}). *)
+
+    method product: user_artifact
+    (** The user-artifact produced by the target, if known (raises exception if
+        unknown). *)
+
+    (**/**)
+    method activate : unit
+    (** Activate the target. *)
+    method is_active: bool
+    method id: Internal_pervasives.Unique_id.t
+    method render: Target.t
+    method depends_on: user_target list
+    method on_failure_activate: user_target list
+    method on_success_activate: user_target list
+    method add_tags: string list -> unit
+    (**/**)
+  end
+
+val target :
+  ?active:bool ->
+  ?depends_on:user_target list ->
+  ?make:Target.Build_process.t ->
+  ?done_when:Target.Condition.t ->
+  ?metadata:[ `String of string ] ->
+  ?product:user_artifact ->
+  ?equivalence:Target.Equivalence.t ->
+  ?on_failure_activate:user_target list ->
+  ?on_success_activate:user_target list ->
+  ?tags: string list ->
+  string -> user_target
+  [@@ocaml.deprecated]
+(** Construct a new target, the node of a workflow graph. The main
+    argument (the [string]) is its name, then all optional arguments mean:
+
+  - [?active]: whether this target should be started by the engine or
+    wait to be ativated by another target (through [depends_on] or
+    [on_{success,failure}_activate]) (default:
+    [false], i.e., inactive). Usual workflows should not set this
+    value since the function {!Ketrew.Client.submit} will activate the
+    toplevel target automatically.
+  - [?depends_on]: list of the dependencies of the target.
+  - [?make]: the build-process used to “build” the target; where the
+    computation happens.
+  - [?done_when]: the condition that the target ensures (checked
+    before potentially running and after running).
+  - [?metadata]: arbitrary metadata to attach to the target.
+  - [?product]: the {!user_artifact} that the target embeds (returned
+    by the [#product] method of the target).
+  - [?equivalence]: how to tell if two targets are equivalent (and
+    then will be merged by the engine). The default is
+    [`Same_active_condition] which means that if two targets have the
+    same non-[None] [?done_when] argument they will be considered
+    equivalent (i.e. they try to “ensure the same condition”).
+  - [?on_failure_activate]: targets to activate when this target fails.
+  - [?on_success_activate]: targets to activate when this target succeeds.
+  - [?tags]: arbitrary tags to add to the target (e.g. for
+    search/filter in the UI)
+
+*)
+
+val file_target:
+  ?depends_on:user_target list ->
+  ?make:Target.Build_process.t ->
+  ?metadata:[ `String of string ] ->
+  ?name:string ->
+  ?host:Host.t ->
+  ?equivalence:Target.Equivalence.t ->
+  ?on_failure_activate:user_target list ->
+  ?on_success_activate:user_target list ->
+  ?tags: string list ->
+  string ->
+  user_target
+  [@@ocaml.deprecated]
+(** Create a file {!user_artifact} and the {!user_target} that produces it.
+
+    The [?product] of the target will be the file given as argument on
+    the host given by the [?host] option (default: localhost using ["/tmp"]).
+    
+    The [?done_when] condition will be the existence of that file.
+    
+    This can be seen as a classical [make]-like file-producing target,
+    but on any arbitrary host.
+*)
+(** {4 Utilities } *)
 
 val to_display_string :
   ?ansi_colors:bool ->
