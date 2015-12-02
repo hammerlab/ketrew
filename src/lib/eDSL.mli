@@ -139,7 +139,84 @@ module Condition: sig
 
 end
 
-(** {3 Artifacts} *)
+(** {3 Workflow Nodes and Edges} *)
+
+module Internal_representation : sig
+  (* We expose this type because we want to preserve backwards
+     compatibility. The function `Ketrew.Client.submit` has to expect an
+     `EDSL.user_target` so to avoid code duplcation we mimic it with the
+     “workflow_node” API. The ideal would be to have
+     `Ketrew.Client.submit` take a list of `Target.t` values as argument
+     and have `workflow_node#render` produce directly that list. 
+  *)
+  (**/**)
+  type t =
+    < activate : unit;
+      add_tags : string list -> unit;
+      id : Ketrew_pure.Internal_pervasives.Unique_id.t;
+      depends_on : t list;
+      on_failure_activate : t list;
+      on_success_activate : t list;
+      render : Ketrew_pure.Target.t;  >
+    (**/**)
+end
+
+type 'a product = 'a
+  constraint 'a = < is_done : Condition.t option ; .. >
+
+(* The main building bloc of the worfklow graph: *)
+type 'product workflow_node = <
+  product : 'product product;
+  render: Internal_representation.t;
+>
+
+type workflow_edge
+
+val depends_on: 'any workflow_node -> workflow_edge
+val on_success_activate: 'any workflow_node -> workflow_edge
+val on_failure_activate: 'any workflow_node -> workflow_edge
+
+val workflow_node:
+  ?name:string ->
+  ?active:bool ->
+  ?make:Ketrew_pure.Target.Build_process.t ->
+  ?done_when:Condition.t ->
+  ?metadata:[ `String of string ] ->
+  ?equivalence:Ketrew_pure.Target.Equivalence.t ->
+  ?tags:string list ->
+  ?edges:workflow_edge list ->
+  'product product ->
+  'product workflow_node
+
+type unknown_product = < is_done : Condition.t option >
+
+type never_done = < is_done : Condition.t option >
+val never_done: never_done product
+
+type single_file = <
+  exists: Ketrew_pure.Target.Condition.t;
+  is_done: Ketrew_pure.Target.Condition.t option;
+  path : string;
+  is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
+>
+val single_file: ?host:Host.t -> string -> single_file product
+
+
+type list_of_files = <
+  is_done: Ketrew_pure.Target.Condition.t option;
+  paths : string list;
+>
+val list_of_files:
+  ?host:Host.t ->
+  string list -> list_of_files product
+
+val forget_product:
+  'any_product workflow_node ->
+  unknown_product workflow_node 
+
+(** {3 Legacy Deprecated API: Artifacts and Targets} *)
+
+(** {4 Artifacts} *)
 
 (** Artifacts are things to be built (they may already exist), most often
     file-tree-locations on a given [host] (see also {!Artifact.t}).
@@ -164,7 +241,7 @@ val unit : user_artifact
 (** The artifact that is “never done” (i.e. the target associated will always
     be (re-)run if activated). *)
 
-(** {3 Targets} *)
+(** {4 Targets} *)
 
 (** Targets are the nodes in the workflow arborescence (see also
     {!Target.t}). *)

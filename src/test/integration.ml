@@ -67,19 +67,19 @@ module Test_host = struct
   let to_kill_file = test_dir // "targets-to-kill"
 
   let test_target ?depends_on ?(and_then = []) ~name ~make should =
-    let open Ketrew.EDSL in
+    let module K = Ketrew.EDSL in
     let result_file = tmp (name ^ "-result") in
     let expectations_file = tmp (name ^ "-expectation") in
     let on_success_activate =
-      target (sprintf "register-success-of-%s" name)
+      K.target (sprintf "register-success-of-%s" name)
         ~make:(write_file ~content:"OK" result_file)
       :: and_then in
     let on_failure_activate =
-      target (sprintf "register-failure-of-%s" name)
+      K.target (sprintf "register-failure-of-%s" name)
         ~make:(write_file ~content:"KO" result_file)
       :: and_then in
     let t =
-      target name
+      K.target name
         ~tags:["to-kill"] ?depends_on ~make
         ~on_success_activate ~on_failure_activate in
     begin match should with
@@ -160,11 +160,11 @@ https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
 
   let prepare ?(force_hostname=true)
       ?on_success_activate ?on_failure_activate t =
-    let open Ketrew.EDSL in
+    let module K = Ketrew.EDSL in
     let host = Test_host.as_host () in
     let init =
       let from_git url =
-        let open Program in
+        let open K.Program in
         [shf "if [ -d %s ] ; then echo 'Already cloned' ; else \
               mkdir -p %s && cd %s && \
               git clone %s.git && \
@@ -175,10 +175,10 @@ https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
            (Filename.basename url) (Filename.quote t.dir);
         ]
       in
-      file_target ~name:(namify t "init-vagrant")
+      K.file_target ~name:(namify t "init-vagrant")
         (t.dir // "Vagrantfile")
         ~host
-        ~make:(Test_host.do_on Program.(
+        ~make:(Test_host.do_on K.Program.(
             chain (
               match t.initialization with
               | `Precise64 -> [
@@ -208,18 +208,18 @@ https://github.com/vangj/vagrant-hadoop-2.4.1-spark-1.0.1
     in
     let running =
       (* re-running `vagrant up` on a running machine does not fail. *)
-      target (namify t "vagrant-up")
+      K.target (namify t "vagrant-up")
         ~depends_on:[init]
-        ~make:(Test_host.do_on Program.(
+        ~make:(Test_host.do_on K.Program.(
             in_dir t && exec ["vagrant"; "up"]))
     in
     let make_ssh_config =
-      target (* not a `file_target`, because we want this file regenerated 
+      K.target (* not a `file_target`, because we want this file regenerated 
                 every time. We set the `product` but not the “condition”. *)
         (namify t "vagrant-ssh-config")
         ~depends_on:[running] ?on_success_activate ?on_failure_activate
-        ~product:(file ~host:(Test_host.as_host ()) t.ssh_config)
-        ~make:(Test_host.do_on Program.(
+        ~product:(K.file ~host:(Test_host.as_host ()) t.ssh_config)
+        ~make:(Test_host.do_on K.Program.(
             in_dir t
             && shf "vagrant ssh-config %s > %s"
               (match force_hostname with
@@ -619,21 +619,21 @@ https://groups.google.com/forum/#!topic/openlava-users/ezYDlyeb1wk
         ))
 
   let lsf_job ?on_success_activate ?on_failure_activate ~box () =
-    let open Ketrew.EDSL in
+    let module K = Ketrew.EDSL in
     let output = "/tmp/du-sh-dollar-home" in
     let host = Vagrant_box.as_host box in
     let name = "lsf-1" in
-    file_target ~host ~name output ?on_success_activate ?on_failure_activate
+    K.file_target ~host ~name output ?on_success_activate ?on_failure_activate
       ~depends_on:[ ensure_lsf_is_running ~box ]
       ~tags:["integration"; "lsf"]
       ~make:(
-        lsf ~host ~name Program.(shf "du -sh $HOME > %s" output
-                                 && exec ["cat"; output])
+        K.lsf ~host ~name K.Program.(shf "du -sh $HOME > %s" output
+                                     && exec ["cat"; output])
           ~queue:"normal"
       )
 
   let test_lsf_job box should =
-    let open Ketrew.EDSL in
+    let module K = Ketrew.EDSL in
     let host = Vagrant_box.as_host box in
     let name =
       sprintf "lsf-test-that-%s"
@@ -644,13 +644,13 @@ https://groups.google.com/forum/#!topic/openlava-users/ezYDlyeb1wk
         ensure_lsf_is_running ~box;
       ]
       ~make:(
-        lsf ~host ~name ~queue:"normal"
-          Program.(
+        K.lsf ~host ~name ~queue:"normal"
+          K.Program.(
             match should with
             | `Should_fail -> sh "ls /somewierd/path/"
             | `Should_succeed -> sh "du -sh $HOME"
           )
-        )
+      )
 
   let run_all_tests box =
     Ketrew.EDSL.target "LSF tests common ancestor"
@@ -702,20 +702,20 @@ let finish_pbs_setup ~box () =
              ~program:Program.( chain (List.map ~f:sh setup)))
 
 let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
-  let open Ketrew.EDSL in
+  let module K = Ketrew.EDSL in
   let setup = finish_pbs_setup ~box () in
   match kind with
   | `Always_runs ->
     let host = Vagrant_box.as_host box in
     let name = "pbs-2" in
-    target name ?on_success_activate ?on_failure_activate
+    K.target name ?on_success_activate ?on_failure_activate
       ~depends_on:[setup]
       ~tags:["integration"; "pbs"]
-      ~make:( pbs ~host ~name Program.( 
+      ~make:(K.pbs ~host ~name K.Program.( 
           shf "echo \"PBS-2 Starts:\n%s\""
             (List.map ~f:(fun s -> sprintf "%s: $%s\n" s s)
                ["PBS_O_HOST"; "PBS_SERVER"]
-            |> String.concat ~sep:"")
+             |> String.concat ~sep:"")
           && sh "echo PBS-2 Starts >&2"
           && sh "sleep 10"
           && sh "echo PBS-2 Ends"
@@ -724,11 +724,11 @@ let pbs_job ?on_success_activate ?on_failure_activate ~box kind =
     let output = "/tmp/du-sh-slash" in
     let host = Vagrant_box.as_host box in
     let name = "pbs-1" in
-    file_target ~host ~name output ?on_success_activate ?on_failure_activate
+    K.file_target ~host ~name output ?on_success_activate ?on_failure_activate
       ~depends_on:[setup]
       ~tags:["integration"; "pbs"]
       ~make:(
-        pbs ~host ~name Program.(
+        K.pbs ~host ~name K.Program.(
             sh "sleep 42"
             && shf "du -sh $HOME > %s" output
             && exec ["cat"; output])

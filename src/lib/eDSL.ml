@@ -212,32 +212,88 @@ let yarn_distributed_shell
 
 (* The (chronologically) second API: *)
 
+(* The common denominator between the legacy API and the “worfklow node” one: *)
+(* type target_to_submit *)
+module Internal_representation = struct
+  type t =
+    < activate : unit;
+      add_tags : string list -> unit;
+      id : Ketrew_pure.Internal_pervasives.Unique_id.t;
+      depends_on : t list;
+      on_failure_activate : t list;
+      on_success_activate : t list;
+      render : Ketrew_pure.Target.t;  >
+end
+let target_to_submit
+    ?(active = false)
+    ?(depends_on = [])
+    ?(on_failure_activate = [])
+    ?(on_success_activate = [])
+    ?(name: string option)
+    ?(make: Target.Build_process.t = Target.Build_process.nop)
+    ?done_when
+    ?metadata
+    ?equivalence
+    ?(tags = [])
+    ()
+  =
+  let id = Unique_id.create () in
+  object (self)
+    val mutable active = active
+    val mutable additional_tags = []
+    val name = 
+      match name with
+      | None -> id
+      | Some s -> s
+    method id = id
+    method depends_on = depends_on
+    method on_failure_activate = on_failure_activate
+    method on_success_activate = on_success_activate
+    method activate = active <- true
+    method add_tags tags =
+      additional_tags <- additional_tags @ tags |> List.dedup
+    method render =
+      Target.create ?metadata
+        ~id:self#id
+        ~depends_on:(List.map depends_on ~f:(fun t -> t#id))
+        ~on_failure_activate:(List.map on_failure_activate ~f:(fun t -> t#id))
+        ~on_success_activate:(List.map on_success_activate ~f:(fun t -> t#id))
+        ~name:name ?condition:done_when
+        ?equivalence ~tags:(tags @ additional_tags)
+        ~make ()
+      |> (fun x ->
+          if active then Target.activate_exn ~reason:`User x else x)
+  end
 
+type 'a product = 'a
+  constraint 'a = < is_done : Condition.t option ; .. >
+
+(* The main building bloc of the worfklow graph: *)
 type 'product workflow_node = <
-  product : 'product;
-  target: user_target;
-> constraint 'product = < is_done : Condition.t option ; .. >
+  product : 'product product;
+  render: Internal_representation.t;
+>
 
+(* We use a GADT to hide the `'product` type-parameter with an
+   existential type. We can put any kind of edge in the same list this
+   way: *)
 type workflow_edge =
   | Depends_on: 'a workflow_node -> workflow_edge
   | On_success_activate: _ workflow_node -> workflow_edge
   | On_failure_activate: _ workflow_node -> workflow_edge
-  | Empty_edge: workflow_edge
 
 let depends_on l =  Depends_on l
 let on_success_activate n = On_success_activate n
 let on_failure_activate n = On_failure_activate n
 
-type nothing = < is_done : Condition.t option >
-let nothing  = object method is_done = None end
-
 let workflow_node
+    ?name
     ?active
     ?make ?done_when ?metadata
     ?equivalence
-    ?(tags=[]) ?name ?(edges=[])
+    ?(tags=[]) ?(edges=[])
     (product: 'product) : 'product workflow_node =
-  let user_target =
+  let target_to_submit =
     let done_when =
       match done_when with
       | Some s -> Some s
@@ -245,35 +301,40 @@ let workflow_node
     in
     let depends_on =
       List.filter_map edges ~f:(function
-        | Depends_on we -> Some we#target
+        | Depends_on we -> Some we#render
         | _ -> None) in
     let on_success_activate =
       List.filter_map edges ~f:(function
-        | On_success_activate we -> Some we#target
+        | On_success_activate we -> Some we#render
         | _ -> None) in
     let on_failure_activate =
       List.filter_map edges ~f:(function
-        | On_failure_activate we -> Some we#target
+        | On_failure_activate we -> Some we#render
         | _ -> None) in
-    let actual_name = Option.value name ~default:"Biokepi" in
     let tags = "biokepi" :: tags in
-    target
-      actual_name
+    target_to_submit ()
+      ?name
       ?equivalence ~tags
       ~on_success_activate ~on_failure_activate ~depends_on
       ?active ?make ?metadata ?done_when
   in
   object
     method product = product
-    method target = user_target
+    method render = target_to_submit
   end
+
+type never_done = < is_done : Condition.t option >
+let never_done  = object method is_done = None end
+
+
+type unknown_product = < is_done : Condition.t option >
 
 type single_file = <
   exists: Ketrew_pure.Target.Condition.t;
   is_done: Ketrew_pure.Target.Condition.t option;
   path : string;
   is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
->
+> product
 let single_file ?(host= Host.tmp_on_localhost) path : single_file =
   let basename = Filename.basename path in
   object
@@ -288,12 +349,16 @@ let single_file ?(host= Host.tmp_on_localhost) path : single_file =
     method is_bigger_than n = `Volume_size_bigger_than (vol, n)
   end
 
-let forget_product node : nothing workflow_node =
-  object method product = nothing  method target = node#target end
+let forget_product (node: _ workflow_node) =
+  object
+    method product = object method is_done = node#product#is_done end
+    method render = node#render
+  end
 
+(*
 type file_workflow = single_file workflow_node
 type phony_workflow = nothing workflow_node
-
+*)
 type list_of_files = <
   is_done: Ketrew_pure.Target.Condition.t option;
   paths : string list;

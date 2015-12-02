@@ -163,3 +163,9 @@ val submit:
     One can add tags to all the targets in the workflow before
     submitting with the [add_tags] option.
 *)
+
+val submit_workflow:
+  ?override_configuration:Configuration.t ->
+  ?add_tags:string list ->
+  'any EDSL.product EDSL.workflow_node ->
+  unit
