@@ -240,59 +240,69 @@ The passphrase for GPG must be in a file `~/.backup_passphrase` as
   M*)
 let make_targz_on_host ?(gpg=true) ?dest_prefix ~host ~dir () =
   let open Ketrew.EDSL in
-  let daemonize = daemonize ~using:`Python_daemon in
+  let run_program: Program.t -> Build_process.t =
+    fun p -> daemonize ~using:`Python_daemon ~host p in
   let dest_base =
     match dest_prefix with
     | Some s -> s
     | None -> sprintf  "/tmp/backup_from_ketrew_cli"
   in
-  let destination ext =
+  let destination_product ext =
     (* `destination` creates “volume-artifacts” for a given file
        extension. *)
-    file ~host (sprintf "%s.%s" dest_base ext)
+    single_file ~host (sprintf "%s.%s" dest_base ext)
   in
-  let targz = destination "tar.gz" in
-  let make_targz =
-    target ~done_when:targz#exists "make-tar.gz" ~depends_on:[]
-      ~make:(daemonize ~host
+  let make_targz : single_file workflow_node = 
+    let product = (destination_product "tar.gz") in
+    workflow_node product ~name:"make-tar.gz"
+      ~make:(run_program
                Program.(
                  shf "cd %s/../" dir
-                 && shf  "tar cfz '%s' '%s'" targz#path (Filename.basename dir)))
-      (* A first target using `daemonize`
-         see [nohup(1)](http://linux.die.net/man/1/nohup)
-         and [setsid(1)](http://linux.die.net/man/1/setsid). *)
+                 &&
+                 shf  "tar cfz '%s' '%s'" product#path (Filename.basename dir)))
   in
-  let md5 = destination "md5" in
   let md5_targz =
-    target ~done_when:md5#exists "make-md5-of-tar.gz" ~depends_on:[make_targz]
-      ~make:(daemonize ~host
-               Program.(shf "md5sum '%s' > '%s'" targz#path md5#path))
+    let md5_product = destination_product "md5" in  
+    workflow_node md5_product
+      ~name:"make-md5-of-tar.gz"
+      ~edges:[depends_on  make_targz]
+      ~make:(run_program
+               Program.(shf "md5sum '%s' > '%s'"
+                          make_targz#product#path md5_product#path))
   in
-  let gpg_targets () = (* `gpg` is a list of targets, lazily `[gpg-c, rm-tar.gz]` *)
-    let gpg_file = destination "tar.gz.gpg" in
+  let gpg_targets () =
+    let delete_the_targz =
+      workflow_node without_product
+        ~name:"rm-tar.gz"
+        ~make:(run_program (Program.shf "rm -f '%s'" make_targz#product#path))
+    in
+    let gpg_file = destination_product "tar.gz.gpg" in
     let make_it =
-      target "make-gpg-of-tar.gz" ~done_when:gpg_file#exists
-        ~depends_on:[make_targz; md5_targz]
-        ~make:(daemonize ~host
+      workflow_node gpg_file
+        ~name:"make-gpg-of-tar.gz"
+        ~edges:[
+          depends_on make_targz;
+          depends_on md5_targz;
+          on_success_activate delete_the_targz;
+        ]
+        ~make:(run_program
                  Program.(
                    sh ". ~/.backup_passphrase"
                    && shf "gpg -c --passphrase $BACKUP_PASSPHRASE -o '%s' '%s'"
-                     gpg_file#path targz#path)) in
-    let clean_up =
-      target "rm-tar.gz" ~depends_on:[make_it]
-        ~make:(daemonize ~host (Program.shf "rm -f '%s'" targz#path )) in
-    [make_it; clean_up]
+                     gpg_file#path make_targz#product#path)) in
+    make_it
   in
   let common_ancestor =
-    let depends_on =
+    let edges =
       match gpg with
-      | false -> [make_targz; md5_targz]
-      | true ->  gpg_targets ()
+      | false -> [ depends_on md5_targz]
+      | true ->  [ depends_on (gpg_targets ())]
     in
-    target "make-targz common ancestor" ~depends_on
+    workflow_node without_product
+      ~name:"Backup workflow common ancestor" ~edges
   in
   (* By running the common-ancestor we pull and activate all the targets to do. *)
-  Ketrew.Client.submit common_ancestor
+  Ketrew.Client.submit_workflow common_ancestor
 
 (*M
 
