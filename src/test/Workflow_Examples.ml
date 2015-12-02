@@ -54,7 +54,7 @@ let say fmt = ksprintf (fun s -> printf "%s\n%!" s) fmt
 Workflows
 ---------
 
-### Example From The README
+### Simple Example With LSF
 
 This function is a more “parametrized” version of the example in the
 `README.md` file (`host` and `queue` come from the command line).
@@ -64,8 +64,9 @@ M*)
 let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew.Client.submit (
-    target "run_command_with_lsf"
+  Ketrew.Client.submit_workflow (
+    workflow_node never_done
+      ~name:"run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
   )
@@ -81,8 +82,9 @@ M*)
 let run_command_with_nohup ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew.Client.submit (
-    target (sprintf "NhSs: %S" cmd)
+  Ketrew.Client.submit_workflow (
+    workflow_node never_done
+      ~name:(sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
 (*M
@@ -99,8 +101,9 @@ M*)
 let run_command_with_python_method ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  Ketrew.Client.submit (
-    target (sprintf "Pyd: %S" cmd)
+  Ketrew.Client.submit_workflow (
+    workflow_node never_done
+      ~name:(sprintf "Pyd: %S" cmd)
       ~make:(daemonize (Program.sh cmd)
                ~using:`Python_daemon ~host
                ~call_script:(fun script -> ["bash"; "--verbose"; script]))
@@ -129,8 +132,8 @@ let run_command_with_yarn ~host cmd =
       (* do not put spaces up there, it can break Yarn *)
       (Program.sh cmd)
   in
-  Ketrew.Client.submit (
-    target (sprintf "Yarn: %S" cmd) ~make
+  Ketrew.Client.submit_workflow (
+    workflow_node never_done ~name:(sprintf "Yarn: %S" cmd) ~make
   )
 
 (*M
@@ -140,25 +143,27 @@ let run_command_with_yarn ~host cmd =
 
 This function runs a workflow with no less than 2 nodes!
 
-- `target2` depends on `target1`.
-- We call `submit` on `target2` (the last target, i.e. the root of the dependency
-  arborescence).
-- `target1` will run and if it succeeds `target2` will run.
+- `node2` depends on `node1`.
+- We call `submit_workflow` on `node2` (the last one, i.e. the root of
+  the dependency arborescence).
+- `node1` will run and if it succeeds `node2` will run.
 
 M*)
 let run_2_commands_with_python_method ~host cmd1 cmd2 =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  let target1 =
-    target (sprintf "Pyd: %S" cmd1)
+  let node1 =
+    workflow_node never_done
+      ~name:(sprintf "Pyd: %S" cmd1)
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd1) ~host)
   in
-  let target2 =
-    target (sprintf "Pyd: %S" cmd2)
-      ~depends_on:[ target1 ]
+  let node2 =
+    workflow_node never_done
+      ~name:(sprintf "Pyd: %S" cmd2)
+      ~edges:[depends_on node1]
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd2) ~host)
   in
-  Ketrew.Client.submit target2
+  Ketrew.Client.submit_workflow node2
 (*M
 For example:
 
@@ -172,8 +177,8 @@ will run `du -sh` in `$HOME` and then in `$HOME/tmp` in the host `"/tmp"`
 This function creates a 2-nodes workflow that fails because of the condition
 if the first target is not ensured by the build-process it runs.
 
-- the function `make_target` is partial application of `EDSL.target` with an
-  additional argument `~cmd`.
+- the function `make_node` is partial application of
+  `EDSL.workflow_node` with an additional argument `~cmd`.
 - `target_with_condition` is a target that is supposed to ensure that
 `impossible_file` exists (which `ls /tmp` won't do).
     - `impossible_file` is a datastructure representing a file on a given host.
@@ -184,21 +189,22 @@ M*)
 let fail_because_of_condition ~host =
   let open Ketrew.EDSL in
   let host = Host.parse host in
-  let make_target ~cmd =
-    target ~make:(daemonize ~using:`Python_daemon Program.(sh cmd) ~host)
+  let make_node ~cmd =
+    workflow_node ~make:(daemonize ~using:`Python_daemon Program.(sh cmd) ~host)
   in
   let target_with_condition =
-    let impossible_file = file ~host "/some-inexistent-file" in 
-    make_target "Failing-target"
+    let impossible_file = single_file ~host "/some-inexistent-file" in 
+    make_node impossible_file
+      ~name:"Failing-target"
       ~cmd:"ls /tmp"
-      ~done_when:impossible_file#exists
   in
   let target2 =
-    make_target "Won't-run because of failed dependency"
+    make_node never_done
+      ~name:"Won't-run because of failed dependency"
       ~cmd:"ls /tmp"
-      ~depends_on:[ target_with_condition ]
+      ~edges:[depends_on target_with_condition ]
   in
-  Ketrew.Client.submit target2
+  Ketrew.Client.submit_workflow target2
 (*M
 
 The Explorer™ will show the failed targets:
