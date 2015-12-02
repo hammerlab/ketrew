@@ -151,7 +151,8 @@ module Internal_representation : sig
   *)
   (**/**)
   type t =
-    < activate : unit;
+    < name : string;
+      activate : unit;
       add_tags : string list -> unit;
       id : Ketrew_pure.Internal_pervasives.Unique_id.t;
       depends_on : t list;
@@ -214,6 +215,10 @@ val forget_product:
   'any_product workflow_node ->
   unknown_product workflow_node 
 
+val workflow_to_string:
+  ?ansi_colors:bool ->
+  ?indentation:int ->
+  'any workflow_node -> string
 
 val daemonize :
   ?starting_timeout:float ->

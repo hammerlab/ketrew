@@ -216,7 +216,8 @@ let yarn_distributed_shell
 (* type target_to_submit *)
 module Internal_representation = struct
   type t =
-    < activate : unit;
+    < name : string;
+      activate : unit;
       add_tags : string list -> unit;
       id : Ketrew_pure.Internal_pervasives.Unique_id.t;
       depends_on : t list;
@@ -241,7 +242,7 @@ let target_to_submit
   object (self)
     val mutable active = active
     val mutable additional_tags = []
-    val name = 
+    method name = 
       match name with
       | None -> id
       | Some s -> s
@@ -258,7 +259,7 @@ let target_to_submit
         ~depends_on:(List.map depends_on ~f:(fun t -> t#id))
         ~on_failure_activate:(List.map on_failure_activate ~f:(fun t -> t#id))
         ~on_success_activate:(List.map on_success_activate ~f:(fun t -> t#id))
-        ~name:name ?condition:done_when
+        ~name:self#name ?condition:done_when
         ?equivalence ~tags:(tags @ additional_tags)
         ~make ()
       |> (fun x ->
@@ -371,11 +372,7 @@ let list_of_files ?host paths =
     method paths = paths
   end
 
-
-
-
-
-let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =
+let to_display_string_internal ?(ansi_colors=false) ?(indentation=2) (ut : Internal_representation.t ) =
   let escape c = fmt "\027[%sm" c  in
   let color c t = if ansi_colors then escape c ^ t ^ escape "0" else t in
   let bold_red t =  color "1;31" t in
@@ -401,3 +398,10 @@ let to_display_string ?(ansi_colors=false) ?(indentation=2) ut =
   in
   dump_workflow ut
 
+
+let to_display_string ?ansi_colors ?indentation (ut : user_target) =
+  to_display_string_internal ?ansi_colors ?indentation
+    (ut :> Internal_representation.t)
+
+let workflow_to_string ?ansi_colors ?indentation w =
+  to_display_string_internal ?ansi_colors ?indentation (w#render :> Internal_representation.t)
