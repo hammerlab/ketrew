@@ -65,7 +65,7 @@ let run_command_with_lsf ~host ~queue cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   Ketrew.Client.submit_workflow (
-    workflow_node never_done
+    workflow_node without_product
       ~name:"run_command_with_lsf"
       ~make:(lsf (Program.sh cmd)
                ~queue ~wall_limit:"1:30" ~processors:(`Min_max (1,1)) ~host)
@@ -83,7 +83,7 @@ let run_command_with_nohup ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   Ketrew.Client.submit_workflow (
-    workflow_node never_done
+    workflow_node without_product
       ~name:(sprintf "NhSs: %S" cmd)
       ~make:(daemonize ~using:`Nohup_setsid  (Program.sh cmd) ~host)
   )
@@ -102,7 +102,7 @@ let run_command_with_python_method ~host cmd =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   Ketrew.Client.submit_workflow (
-    workflow_node never_done
+    workflow_node without_product
       ~name:(sprintf "Pyd: %S" cmd)
       ~make:(daemonize (Program.sh cmd)
                ~using:`Python_daemon ~host
@@ -133,7 +133,7 @@ let run_command_with_yarn ~host cmd =
       (Program.sh cmd)
   in
   Ketrew.Client.submit_workflow (
-    workflow_node never_done ~name:(sprintf "Yarn: %S" cmd) ~make
+    workflow_node without_product ~name:(sprintf "Yarn: %S" cmd) ~make
   )
 
 (*M
@@ -153,12 +153,12 @@ let run_2_commands_with_python_method ~host cmd1 cmd2 =
   let open Ketrew.EDSL in
   let host = Host.parse host in
   let node1 =
-    workflow_node never_done
+    workflow_node without_product
       ~name:(sprintf "Pyd: %S" cmd1)
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd1) ~host)
   in
   let node2 =
-    workflow_node never_done
+    workflow_node without_product
       ~name:(sprintf "Pyd: %S" cmd2)
       ~edges:[depends_on node1]
       ~make:(daemonize ~using:`Python_daemon (Program.sh cmd2) ~host)
@@ -199,7 +199,7 @@ let fail_because_of_condition ~host =
       ~cmd:"ls /tmp"
   in
   let target2 =
-    make_node never_done
+    make_node without_product
       ~name:"Won't-run because of failed dependency"
       ~cmd:"ls /tmp"
       ~edges:[depends_on target_with_condition ]

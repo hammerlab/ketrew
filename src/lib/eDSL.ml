@@ -323,8 +323,8 @@ let workflow_node
     method render = target_to_submit
   end
 
-type never_done = < is_done : Condition.t option >
-let never_done  = object method is_done = None end
+type not_already_done = < is_done : Condition.t option >
+let without_product  = object method is_done = None end
 
 
 type unknown_product = < is_done : Condition.t option >

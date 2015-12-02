@@ -190,8 +190,8 @@ val workflow_node:
 
 type unknown_product = < is_done : Condition.t option >
 
-type never_done = < is_done : Condition.t option >
-val never_done: never_done product
+type not_already_done = < is_done : Condition.t option >
+val without_product : not_already_done
 
 type single_file = <
   exists: Ketrew_pure.Target.Condition.t;
