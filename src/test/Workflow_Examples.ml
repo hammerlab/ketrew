@@ -315,7 +315,7 @@ command:
 - `go` → build Ketrew on the on vagrant VM
 - `clean` → shutdown and delete the VM
 
-M*)
+  M*)
 let run_ketrew_on_vagrant what_to_do =
   let open Ketrew.EDSL in
   let (//) = Filename.concat in
@@ -324,12 +324,13 @@ let run_ketrew_on_vagrant what_to_do =
   let vagrant_host = Host.parse (tmp_dir // "playground") in
   let do_on_vagrant_host p =
     daemonize ~using:`Python_daemon ~host:vagrant_host p in
-  let ssh_config = file ~host:vagrant_host (tmp_dir // "ssh_config") in
+  let ssh_config =
+    single_file ~host:vagrant_host (tmp_dir // "ssh_config") in
   match what_to_do with
   | `Prepare ->
     let init =
-      file_target ~name:"init-vagrant" (vagrant_tmp // "Vagrantfile")
-        ~host:vagrant_host 
+      workflow_node ~name:"init-vagrant" 
+        (single_file ~host:vagrant_host (vagrant_tmp // "Vagrantfile"))
         ~make:(do_on_vagrant_host Program.(
             exec ["mkdir"; "-p"; vagrant_tmp]
             && exec ["cd"; vagrant_tmp]
@@ -337,16 +338,18 @@ let run_ketrew_on_vagrant what_to_do =
           ))
     in
     let running =
-      target "vagrant-up"
-        ~depends_on:[init]
+      workflow_node without_product ~name:"vagrant-up"
+        (* TODO: create a product that uses `vagrant status` *)
+        ~edges:[depends_on init]
         ~make:(do_on_vagrant_host Program.(
             exec ["cd"; vagrant_tmp]
             && exec ["vagrant"; "up"]))
     in
     let make_ssh_config =
-      target (* not a `file_target`, because we want this file regenerated 
-                every time *)
-        "vagrant-ssh-config" ~depends_on:[running]
+      workflow_node without_product
+        (* not a single-file workflow-node, because we want this file
+           regenerated every time *)
+        ~name:"vagrant-ssh-config" ~edges:[depends_on running]
         ~make:(do_on_vagrant_host Program.(
             exec ["cd"; vagrant_tmp]
             && shf "vagrant ssh-config --host Vagrew > %s" ssh_config#path))
@@ -361,8 +364,8 @@ let run_ketrew_on_vagrant what_to_do =
     let do_on_vagrant_box p =
       daemonize ~using:`Nohup_setsid ~host:vagrant_box p in
     let get_c_dependencies =
-      target "apt-get-c-deps"
-        ~depends_on:[]
+      workflow_node without_product
+        ~name:"apt-get-c-deps"
         ~make:(do_on_vagrant_box Program.(
             sh "echo GO"
             && sh "sudo apt-get update"
@@ -370,9 +373,9 @@ let run_ketrew_on_vagrant what_to_do =
           ))
     in
     let get_opam =
-      file_target ~name:"apt-get-opam"
-        ~host:vagrant_box "/usr/bin/opam"
-        ~depends_on:[get_c_dependencies]
+      workflow_node (single_file ~host:vagrant_box "/usr/bin/opam")
+        ~name:"apt-get-opam"
+        ~edges:[depends_on get_c_dependencies]
         (* `get_opam` does not really depend on `get_c_dependencies` but
            `apt-get` does not work in parallel, so we need to make things
            sequential. *)
@@ -380,23 +383,25 @@ let run_ketrew_on_vagrant what_to_do =
             sh "echo GO"
             && sh "sudo apt-get update"
             && sh "sudo apt-get install -y python-software-properties"
-          && sh "sudo add-apt-repository -y ppa:avsm/ocaml41+opam11"
-          && sh "sudo apt-get update -qq"
-          && sh "sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra aspcud opam"
-        ))
+            && sh "sudo add-apt-repository -y ppa:avsm/ocaml41+opam11"
+            && sh "sudo apt-get update -qq"
+            && sh "sudo apt-get install -qq ocaml ocaml-native-compilers camlp4-extra aspcud opam"
+          ))
     in
     let init_opam =
-      file_target ~name:"init-opam"
-        "/home/vagrant/.opam/opam-init/init.sh"
-        ~depends_on:[get_opam]
-        ~host:vagrant_box
+      workflow_node
+        (single_file ~host:vagrant_box "/home/vagrant/.opam/opam-init/init.sh")
+        ~name:"init-opam"
+        ~edges:[depends_on get_opam]
         ~make:(do_on_vagrant_box Program.( sh "opam init"))
     in
     let install_ketrew compiler =
-      file_target ~name:"opam-install-ketrew"
-        ~depends_on:[init_opam; get_c_dependencies]
-        ~host:vagrant_box
-        (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler)
+      workflow_node
+        (single_file ~host:vagrant_box 
+           (sprintf "/home/vagrant/.opam/%s/bin/ketrew" compiler))
+        ~name:"opam-install-ketrew"
+        ~edges:[depends_on init_opam; depends_on get_c_dependencies]
+
         ~make:(do_on_vagrant_box Program.(
             shf "opam switch %s" compiler
             && sh "opam remote add smondet https://github.com/smondet/dev-opam-repo.git || echo smondet_remote_already_there"
@@ -405,18 +410,22 @@ let run_ketrew_on_vagrant what_to_do =
             && sh "opam install -y ketrew"
           ))
     in
-    install_ketrew "system"
+    (* We forget the product so that all branches of the `match..with`
+       have the same type *)
+    install_ketrew "system" |> forget_product
   | `Clean ->
     let kill =
-      target "kill-vagrant"
+      workflow_node without_product
+        ~name:"kill-vagrant"
         ~make:(do_on_vagrant_host Program.(
             exec ["cd"; vagrant_tmp]
             && exec ["vagrant"; "destroy"; "-f"]
           ))
     in
     let rm_temp =
-      target "rm-temp"
-        ~depends_on:[kill]
+      workflow_node without_product
+        ~name:"rm-temp"
+        ~edges:[depends_on kill]
         ~make:(do_on_vagrant_host Program.(exec ["rm"; "-fr"; vagrant_tmp]))
     in
     rm_temp
@@ -488,13 +497,17 @@ let () =
   | "failing-product" :: host :: [] ->
     fail_because_of_condition ~host
   | "CI" :: more ->
+    let add_tags = ["ketrew-on-vagrant"; "workflow-examples" ] @ more in
     begin match more with
     | "prepare" :: [] ->
-      Ketrew.Client.submit (run_ketrew_on_vagrant `Prepare)
+      Ketrew.Client.submit_workflow (run_ketrew_on_vagrant `Prepare)
+        ~add_tags
     | "go" :: [] ->
-      Ketrew.Client.submit (run_ketrew_on_vagrant `Go)
+      Ketrew.Client.submit_workflow (run_ketrew_on_vagrant `Go)
+        ~add_tags
     | "clean" :: [] ->
-      Ketrew.Client.submit (run_ketrew_on_vagrant `Clean)
+      Ketrew.Client.submit_workflow (run_ketrew_on_vagrant `Clean)
+        ~add_tags
     | other ->
       say "usage: %s CI {prepare,go,clean}" Sys.argv.(0);
       failwith "Wrong command line"
