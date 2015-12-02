@@ -26,8 +26,9 @@ M*)
 open Printf
 let () =
   let open Ketrew.EDSL in
-  Ketrew.Client.submit (
-    target (sprintf "%S with dummy-plugin" Sys.argv.(1))
+  Ketrew.Client.submit_workflow (
+    workflow_node without_product
+      ~name:(sprintf "%S with dummy-plugin" Sys.argv.(1))
       ~make:(Dummy_plugin_test_lib.Dummy_plugin.create
                ~host:(Host.parse "/tmp")
                (Program.sh Sys.argv.(1)))
