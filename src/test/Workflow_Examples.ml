@@ -219,121 +219,8 @@ The Explorer™ will show the failed targets:
     {([Host /tmp?shell=sh%2C-c]) (Root: /) (Tree: Single path:
     "some-inexistent-file")} exists)
 
-### Website Building Workfow
-
-A function that creates a workflow that builds the website for given list of
-Git-branches.
-
-It used to be simple but got pretty complex with time as it
-was really used to build Ketrew's
-[website](http://seb.mondet.org/software/ketrew/):
-
-- take a list of branch names (`[]` meaning “default branch”)
-- clone the repository in a temporary locations
-- *for each branch:* checkout the branch, and build the documentation
-- checkout the `gh-pages` branch
-- put `_doc/` at the top-level
-- commit and push back to the **current repository
-
-The workflow can also fail in many ways (e.g. Git commit forbidden because of
-nothing is new) which show ketrew's handling of errors in dependencies.
 
 M*)
-let deploy_website branches =
-  let open Ketrew.EDSL in
-  let host = (Host.parse "/tmp") in
-  let local_deamonize = daemonize ~host ~using:`Python_daemon in
-  let current_path = Sys.getenv "PWD" in
-  let dest_path =
-    sprintf "/tmp/deploy_website_%s"
-      (Ketrew_pure.Internal_pervasives.Unique_id.create ())
-  in
-  let target ?(add_tags=[]) = target ~tags:("website" :: add_tags) in
-  let clone_repo =
-    let readme = file (sprintf "%s/ketrew/README.md" dest_path) in
-    target (sprintf "Clone to %s" dest_path)
-      ~done_when:(readme#exists)
-      ~make:(local_deamonize
-               Program.(
-                 shf "mkdir -p %s" dest_path
-                 && shf "cd %s" dest_path
-                 && shf "git clone %s" current_path))
-  in
-  let in_cloned_repo = Program.shf "cd %s/ketrew" dest_path in
-  (* A function that creates a target that checks-out a given git branch
-     (and actively verifies that it was successful) *)
-  let check_out ~depends_on branch =
-    target (sprintf "Check out %s" branch)
-      ~depends_on:(clone_repo :: depends_on)
-      ~make:(local_deamonize
-               Program.(
-                 in_cloned_repo
-                 && shf "git checkout %s || git checkout -t origin/%s"
-                   branch branch
-                 && shf "[ \"`git symbolic-ref --short HEAD`\" = \"%s\" ]" branch
-               ))
-  in
-  let build_doc_prgram =
-    Program.(
-      in_cloned_repo && sh "bash ./please.sh clean build doc") in
-  let make_doc =
-    match branches with
-    | [] ->
-      target "Make documentation (default branch)" 
-        ~depends_on:[clone_repo]
-        ~make:(local_deamonize build_doc_prgram)
-    | more -> 
-      (* we build a chain of targets depending on each other:
-         clone_repo -> check_out branch1 -> build_doc ->
-         -> check_out branch2 -> build_doc -> ...
-         -> check_out last_branch -> build_doc
-      *)
-      List.fold_left ~init:clone_repo more ~f:(fun previous_dep branch ->
-          let co = check_out ~depends_on:[previous_dep] branch in
-          target (sprintf "Make documentation (branch %s)" branch)
-            ~depends_on:[co]
-            ~make:(local_deamonize build_doc_prgram))
-  in
-  let check_out_gh_pages =
-    (* first target with dependencies: the two previous ones *)
-    check_out ~depends_on:[make_doc] "gh-pages" in
-  let move_website =
-    target "Move _doc/" ~depends_on:[check_out_gh_pages]
-      ~make:(local_deamonize 
-               Program.(in_cloned_repo && sh "rsync -a _doc/ .")) in
-  (* if there is nothing to commit, `git commit -a` will return 1, 
-     so we use `ancestor` (without dependencies) as a fallback.
-     But `ancestor` will also be run in case of success. *)
-  let ancestor ~depends_on status =
-    target (sprintf "Common ancestor: %s" status) ~depends_on
-      ~add_tags:["end-of-workflow"]
-      ~make:(local_deamonize
-               Program.(
-                 shf "echo 'Status: %S'" status
-                 && chain
-                   (List.map branches ~f:(function
-                      | "master" ->
-                        shf "echo 'See file://%s/ketrew/index.html'" dest_path
-                      | br ->
-                        shf "echo 'See file://%s/ketrew/%s/index.html'"
-                          dest_path br)
-                   )))
-  in
-  let commit_website =
-    target "Commit" ~depends_on:[move_website]
-      ~make:(local_deamonize
-               Program.(
-                 in_cloned_repo
-                 && shf "git add api *.html *.svg %s "
-                   (String.concat ~sep:" " (List.filter ~f:((<>) "master") branches))
-                 && sh "git commit -a -m 'update website'"
-                 && shf "git push origin gh-pages"
-               ))
-      ~on_failure_activate:[ancestor "Failed" ~depends_on:[]]
-  in
-  (* `submit` will activate the target `ancestor` and then `commit_website`, and
-     add all their (transitive) dependencies to the system.  *)
-  Ketrew.Client.submit (ancestor "Success" ~depends_on:[commit_website])
 
 (*M
 
@@ -574,12 +461,6 @@ M*)
 let () =
   let argl = Array.to_list Sys.argv in
   match List.tl_exn argl with
-  | "website" :: more_args ->
-    say "Deploying website for %s"
-      (match more_args with
-       | [] -> "The current branch"
-       | _ -> "branches: " ^ String.concat ~sep:", " more_args);
-    deploy_website more_args
   | "tgz" :: more_args ->
     begin match more_args with
     | host_uri :: dir :: [] ->
