@@ -190,6 +190,10 @@ module Condition = struct
 
 end
 
+module Build_process = struct
+  type t = Target.Build_process.t
+end
+
 let daemonize  = Daemonize.create
 
 let lsf = Lsf.create

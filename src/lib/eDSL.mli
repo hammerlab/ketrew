@@ -139,6 +139,10 @@ module Condition: sig
 
 end
 
+module Build_process : sig
+  type t = Target.Build_process.t
+end
+
 (** {3 Workflow Nodes and Edges} *)
 
 module Internal_representation : sig
@@ -180,7 +184,7 @@ val on_failure_activate: 'any workflow_node -> workflow_edge
 val workflow_node:
   ?name:string ->
   ?active:bool ->
-  ?make:Ketrew_pure.Target.Build_process.t ->
+  ?make:Build_process.t ->
   ?done_when:Condition.t ->
   ?metadata:[ `String of string ] ->
   ?equivalence:Ketrew_pure.Target.Equivalence.t ->
@@ -227,7 +231,7 @@ val daemonize :
   ?host:Host.t ->
   ?no_log_is_ok: bool ->
   Program.t ->
-  Target.Build_process.t
+  Build_process.t
 (** Create a “daemonize” build process:
 
     - [?host]: the [Host.t] on which the program is to be run.
@@ -253,7 +257,7 @@ val lsf :
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
   ?project:string ->
-  Program.t -> Target.Build_process.t
+  Program.t -> Build_process.t
 (** Create an “LSF” build process. *)
 
 val pbs :
@@ -264,8 +268,7 @@ val pbs :
   ?processors:int ->
   ?email_user:[ `Always of string | `Never ] ->
   ?shell:string ->
-  Program.t ->
-  [> `Long_running of string * string ]
+  Program.t -> Build_process.t
 (** Create a “PSB” build process. *)
 
 
@@ -273,7 +276,7 @@ val yarn_application :
   ?host:Host.t ->
   ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
   ?daemon_start_timeout:float ->
-  Program.t -> [> `Long_running of string * string ]
+  Program.t -> Build_process.t
 (** Create a build process that requests resources from Yarn, the
     command must be an application in the Yarn sense (i.e.
     a program that is going to contact Yarn by itself to request
@@ -296,7 +299,7 @@ val yarn_distributed_shell :
   container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
   timeout:[ `Raw of string | `Seconds of int ] ->
   application_name:string ->
-  Program.t -> [> `Long_running of string * string ]
+  Program.t -> Build_process.t
 (** Create a build process that will use Hadoop's `DistributedShell`  class
     to request a container to run the given arbitrary program.
 
@@ -392,7 +395,7 @@ class type user_target =
 val target :
   ?active:bool ->
   ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
+  ?make:Build_process.t ->
   ?done_when:Target.Condition.t ->
   ?metadata:[ `String of string ] ->
   ?product:user_artifact ->
@@ -433,7 +436,7 @@ val target :
 
 val file_target:
   ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
+  ?make:Build_process.t ->
   ?metadata:[ `String of string ] ->
   ?name:string ->
   ?host:Host.t ->
