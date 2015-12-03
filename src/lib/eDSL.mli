@@ -139,90 +139,11 @@ module Condition: sig
 
 end
 
+(** {3 Build Processes } *)
+
 module Build_process : sig
   type t = Target.Build_process.t
 end
-
-(** {3 Workflow Nodes and Edges} *)
-
-module Internal_representation : sig
-  (* We expose this type because we want to preserve backwards
-     compatibility. The function `Ketrew.Client.submit` has to expect an
-     `EDSL.user_target` so to avoid code duplcation we mimic it with the
-     “workflow_node” API. The ideal would be to have
-     `Ketrew.Client.submit` take a list of `Target.t` values as argument
-     and have `workflow_node#render` produce directly that list. 
-  *)
-  (**/**)
-  type t =
-    < name : string;
-      activate : unit;
-      add_tags : string list -> unit;
-      id : Ketrew_pure.Internal_pervasives.Unique_id.t;
-      depends_on : t list;
-      on_failure_activate : t list;
-      on_success_activate : t list;
-      render : Ketrew_pure.Target.t;  >
-    (**/**)
-end
-
-type 'a product = 'a
-  constraint 'a = < is_done : Condition.t option ; .. >
-
-(* The main building bloc of the worfklow graph: *)
-type 'product workflow_node = <
-  product : 'product product;
-  render: Internal_representation.t;
->
-
-type workflow_edge
-
-val depends_on: 'any workflow_node -> workflow_edge
-val on_success_activate: 'any workflow_node -> workflow_edge
-val on_failure_activate: 'any workflow_node -> workflow_edge
-
-val workflow_node:
-  ?name:string ->
-  ?active:bool ->
-  ?make:Build_process.t ->
-  ?done_when:Condition.t ->
-  ?metadata:[ `String of string ] ->
-  ?equivalence:Ketrew_pure.Target.Equivalence.t ->
-  ?tags:string list ->
-  ?edges:workflow_edge list ->
-  'product product ->
-  'product workflow_node
-
-type unknown_product = < is_done : Condition.t option >
-
-type not_already_done = < is_done : Condition.t option >
-val without_product : not_already_done
-
-type single_file = <
-  exists: Ketrew_pure.Target.Condition.t;
-  is_done: Ketrew_pure.Target.Condition.t option;
-  path : string;
-  is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
->
-val single_file: ?host:Host.t -> string -> single_file product
-
-
-type list_of_files = <
-  is_done: Ketrew_pure.Target.Condition.t option;
-  paths : string list;
->
-val list_of_files:
-  ?host:Host.t ->
-  string list -> list_of_files product
-
-val forget_product:
-  'any_product workflow_node ->
-  unknown_product workflow_node 
-
-val workflow_to_string:
-  ?ansi_colors:bool ->
-  ?indentation:int ->
-  'any workflow_node -> string
 
 val daemonize :
   ?starting_timeout:float ->
@@ -327,6 +248,161 @@ val yarn_distributed_shell :
 
 *)
 
+(** {3 Workflow Nodes and Edges} *)
+
+module Internal_representation : sig
+  (* We expose this type because we want to preserve backwards
+     compatibility. The function `Ketrew.Client.submit` has to expect an
+     `EDSL.user_target` so to avoid code duplcation we mimic it with the
+     “workflow_node” API. The ideal would be to have
+     `Ketrew.Client.submit` take a list of `Target.t` values as argument
+     and have `workflow_node#render` produce directly that list. 
+  *)
+  (**/**)
+  type t =
+    < name : string;
+      activate : unit;
+      add_tags : string list -> unit;
+      id : Ketrew_pure.Internal_pervasives.Unique_id.t;
+      depends_on : t list;
+      on_failure_activate : t list;
+      on_success_activate : t list;
+      render : Ketrew_pure.Target.t;  >
+    (**/**)
+end
+
+type 'a product = 'a
+  constraint 'a = < is_done : Condition.t option ; .. >
+(** The type of the things produced by workflow nodes.
+    A product is an object that has at least one method giving its
+    {!Condition.t}. *)
+
+type 'product workflow_node = <
+  product : 'product product;
+  render: Internal_representation.t;
+>
+(** The main building bloc of the worfklow graph is workflow node, it
+    carries a “product” accessible with the [#product] method.
+
+    The [#render] method is used internally by
+    {!Ketrew.Client.submit_workflow}.
+ *)
+
+type workflow_edge
+(** The edges of the graph ([?edges] argument of the {!workflow_node}
+    function). *)
+
+val depends_on: 'any workflow_node -> workflow_edge
+(** Create a “dependency” edge. *)
+
+val on_success_activate: 'any workflow_node -> workflow_edge
+(** Create an edge with a node that will be activated after a node {i
+    succeeds}. *)
+
+val on_failure_activate: 'any workflow_node -> workflow_edge
+(** Create an edge with a node that will be activated after a node {i
+    fails}. *)
+
+val workflow_node:
+  ?name:string ->
+  ?active:bool ->
+  ?make:Build_process.t ->
+  ?done_when:Condition.t ->
+  ?metadata:[ `String of string ] ->
+  ?equivalence:Ketrew_pure.Target.Equivalence.t ->
+  ?tags:string list ->
+  ?edges:workflow_edge list ->
+  'product_type product ->
+  'product_type workflow_node
+(** Create a workflow node:
+
+    - [?name]: give a name to the node (visible in the UIs).
+    - [?active]: whether this node should be started by the engine or
+    wait to be ativated by another node (through an edge)
+    The default is [false], i.e., inactive, normal workflows should not
+    set this value since the function {!Ketrew.Client.submit_workflow}
+    will activate the toplevel node automatically.
+    - [?make]: the build-process used to “run/build” the node; where the
+    computation happens.
+    - [?done_when]: the condition that the node ensures (checked
+    before potentially running and after running, by default it is
+    provided by the product's [#is_done] method, this argument allows
+    to override it, for convenience).
+    - [?metadata]: arbitrary metadata to attach to the node.
+    - [?equivalence]: how to tell if two nodes are equivalent (and
+    then will be merged by the engine). The default is
+    [`Same_active_condition] which means that if two nodes have the
+    same non-[None] [?done_when] argument they will be considered
+    equivalent (i.e. they try to “ensure the same condition”).
+    - [?tags]: arbitrary tags to add to the node (e.g. for
+    search/filter in the UI)
+    - [?edges]: other nodes to links from the current node
+    (list of edges created with the {!depends_on},
+    {!on_failure_activate}, and {!on_success_activate} functions).
+    - ['product_type product]: the main argument of the function is
+    the artifact produced by the node (returned by the [#product]
+    method of the node).
+
+ *)
+
+type not_already_done = < is_done : Condition.t option >
+(** The type of “empty” products. *)
+
+val without_product : not_already_done
+(** Create an “empty” product, it won't require checking any condition,
+    so the node carrying it (unless
+    forced with the [?is_done] argument) will allways run.
+
+    This can be understood as a [".PHONY"] target in
+    {{:https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html}make}.
+*)
+
+type single_file = <
+  exists: Ketrew_pure.Target.Condition.t;
+  is_done: Ketrew_pure.Target.Condition.t option;
+  path : string;
+  is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
+>
+(** The type of products that carry a simple file (on a given
+    [Host.t]). *)
+
+val single_file: ?host:Host.t -> string -> single_file product
+(** Create a [single_file] product.
+
+    The path argument should be absolute since the notion of “current
+    directory” is very ill-defined when it comes to this kind of
+    distributed applications.
+ *)
+
+
+type list_of_files = <
+  is_done: Ketrew_pure.Target.Condition.t option;
+  paths : string list;
+>
+(** The type of products that carry a list of files (on a same [Host.t]). *)
+
+val list_of_files:
+  ?host:Host.t ->
+  string list -> list_of_files product
+(** Create a [list_of_files] product. *)
+
+val workflow_to_string:
+  ?ansi_colors:bool ->
+  ?indentation:int ->
+  'any workflow_node -> string
+(** Build a display-friendly string summarizing the workflow. *)
+
+type unknown_product = < is_done : Condition.t option >
+(** The type of the products that have been “hidden” or “forgotten,”
+    see {!forget_product}. *)
+
+val forget_product:
+  'any_product workflow_node ->
+  unknown_product workflow_node 
+(** “Cast” a node to the [unknown_product workflow_node] type, this is
+    useful to make some programs that generate workflows type check
+    (putting nodes into lists, or in different branches of a [match
+    .. with]). *)
 
 (** {3 Legacy Deprecated API: Artifacts and Targets}
 
