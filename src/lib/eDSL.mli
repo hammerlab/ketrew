@@ -293,14 +293,15 @@ type workflow_edge
     function). *)
 
 val depends_on: 'any workflow_node -> workflow_edge
-(** Create a “dependency” edge. *)
+(** Create a “dependency” edge, in other words, the node using the
+    edges “depends on” the node given as argument. *)
 
 val on_success_activate: 'any workflow_node -> workflow_edge
-(** Create an edge with a node that will be activated after a node {i
+(** Create an edge to a node that will be activated after a node {i
     succeeds}. *)
 
 val on_failure_activate: 'any workflow_node -> workflow_edge
-(** Create an edge with a node that will be activated after a node {i
+(** Create an edge to a node that will be activated after a node {i
     fails}. *)
 
 val workflow_node:
@@ -336,7 +337,7 @@ val workflow_node:
     equivalent (i.e. they try to “ensure the same condition”).
     - [?tags]: arbitrary tags to add to the node (e.g. for
     search/filter in the UI)
-    - [?edges]: other nodes to links from the current node
+    - [?edges]: links to other nodes from the current node
     (list of edges created with the {!depends_on},
     {!on_failure_activate}, and {!on_success_activate} functions).
     - ['product_type product]: the main argument of the function is
@@ -351,7 +352,7 @@ type not_already_done = < is_done : Condition.t option >
 val without_product : not_already_done
 (** Create an “empty” product, it won't require checking any condition,
     so the node carrying it (unless
-    forced with the [?is_done] argument) will allways run.
+    forced with the [?is_done] argument) will always run.
 
     This can be understood as a [".PHONY"] target in
     {{:https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html}make}.
@@ -371,7 +372,11 @@ val single_file: ?host:Host.t -> string -> single_file product
 
     The path argument should be absolute since the notion of “current
     directory” is very ill-defined when it comes to this kind of
-    distributed applications.
+    distributed application.
+    
+    The condition returned by the [#is_done] method (used by default
+    in any worfklow-node that uses the [single_file product]) is to
+    check the existence of the file.
  *)
 
 
@@ -384,7 +389,8 @@ type list_of_files = <
 val list_of_files:
   ?host:Host.t ->
   string list -> list_of_files product
-(** Create a [list_of_files] product. *)
+(** Create a [list_of_files] product ([#is_done] checks the existence
+    of all these files). *)
 
 val workflow_to_string:
   ?ansi_colors:bool ->
