@@ -207,7 +207,7 @@ A workflow is a graph of “workflow-nodes” (sometimes called “targets”).
 
 There are three kinds of links (edges) between nodes:
 
-- `depends_on`: nodes that need to be ensured or satisifed before a node
+- `depends_on`: nodes that need to be ensured or satisfied before a node
   can start,
 - `on_failure_activate`: nodes that will be activated if the node fails, and
 - `on_success_activate`: nodes that will be activated only *after* a node

@@ -273,7 +273,7 @@ let target_to_submit
 type 'a product = 'a
   constraint 'a = < is_done : Condition.t option ; .. >
 
-(* The main building bloc of the worfklow graph: *)
+(* The main building block of the worfklow graph: *)
 type 'product workflow_node = <
   product : 'product product;
   render: Internal_representation.t;
@@ -306,17 +306,16 @@ let workflow_node
     in
     let depends_on =
       List.filter_map edges ~f:(function
-        | Depends_on we -> Some we#render
+        | Depends_on node -> Some node#render
         | _ -> None) in
     let on_success_activate =
       List.filter_map edges ~f:(function
-        | On_success_activate we -> Some we#render
+        | On_success_activate node -> Some node#render
         | _ -> None) in
     let on_failure_activate =
       List.filter_map edges ~f:(function
-        | On_failure_activate we -> Some we#render
+        | On_failure_activate node -> Some node#render
         | _ -> None) in
-    let tags = "biokepi" :: tags in
     target_to_submit ()
       ?name
       ?equivalence ~tags

@@ -406,7 +406,8 @@ val forget_product:
 
 (** {3 Legacy Deprecated API: Artifacts and Targets}
 
-This is the old and deprecated API to build workflows.
+This is the old and deprecated API to build workflows (deprecated
+since Ketrew 2.1.0).
     
 Using functions like {!target} is still possible but they will trigger
 a compilation warning e.g. ["Warning 3: deprecated: Ketrew.EDSL.target"].
