@@ -30,14 +30,21 @@ let run_command_with_daemonize ~cmd ~email =
     in
     let e_process =
       KEDSL.daemonize ~using:`Python_daemon ~host e_program in
-    KEDSL.target ("email result " ^ sstring) ~make:e_process
+    KEDSL.workflow_node KEDSL.without_product
+      ~name:("email result " ^ sstring)
+      ~make:e_process
   in
 
-  (* The function `KEDSL.target` creates a node in the workflow graph. *)
-  KEDSL.target "daemonize command"
+  (* The function `KEDSL.workflow_node` creates a node in the workflow graph.
+     The value `KEDSL.without_product` means this node does not
+     “produce” anything, it is like a `.PHONY` target in `make`. *)
+  KEDSL.workflow_node KEDSL.without_product
+    ~name:"daemonize command"
     ~make:build_process
-    ~on_success_activate:[email_target true]
-    ~on_failure_activate:[email_target false]
+    ~edges:[
+      KEDSL.on_success_activate (email_target true);
+      KEDSL.on_failure_activate (email_target false);
+    ]
 
 let () =
   (* Grab the command line arguments. *)
@@ -47,6 +54,6 @@ let () =
   (* Create the  workflow with the first argument of the command line: *)
   let workflow = run_command_with_daemonize ~cmd ~email in
 
-  (* Then, `Client.submit` is the only function that “does” something, it
-     submits the workflow to the engine: *)
-  Ketrew.Client.submit workflow
+  (* Then, `Client.submit_workflow` is the only function that “does”
+     something, it submits the workflow to the engine: *)
+  Ketrew.Client.submit_workflow workflow
