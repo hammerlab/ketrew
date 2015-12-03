@@ -203,14 +203,14 @@ The EDSL is an OCaml library where functions are used to build a workflow
 data-structure. `Ketrew.Client.submit_workflow` is used to submit that
 datastructure to the engine.
 
-A workflow is a graph of targets (nodes).
+A workflow is a graph of “workflow-nodes” (sometimes called “targets”).
 
-There are three kinds of links (edges) between targets:
+There are three kinds of links (edges) between nodes:
 
-- `depends_on`: targets that need to be ensured or satisifed before a target
+- `depends_on`: nodes that need to be ensured or satisifed before a node
   can start,
-- `on_failure_activate`: targets that will be activated if the target fails, and
-- `on_success_activate`: targets that will be activated only *after* a target
+- `on_failure_activate`: nodes that will be activated if the node fails, and
+- `on_success_activate`: nodes that will be activated only *after* a node
   succeeds.
 
 See the `Ketrew.EDSL.workflow_node` function documentation for details. Any
@@ -245,7 +245,7 @@ let run_command_with_daemonize ~cmd ~email =
   let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
   *)
 
-  (* A target that Ketrew will activate after cmd completes *)
+  (* A node that Ketrew will activate after cmd completes *)
   let email_target ~success =
     let sstring = if success then "succeeded" else "failed" in
     let e_program =
