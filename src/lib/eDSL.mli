@@ -139,10 +139,291 @@ module Condition: sig
 
 end
 
-(** {3 Artifacts} *)
+(** {3 Build Processes } *)
 
-(** Artifacts are things to be built (they may already exist), most often
-    file-tree-locations on a given [host] (see also {!Artifact.t}).
+module Build_process : sig
+  type t = Target.Build_process.t
+end
+
+val daemonize :
+  ?starting_timeout:float ->
+  ?call_script:(string -> string list) ->
+  ?using:[`Nohup_setsid | `Python_daemon] ->
+  ?host:Host.t ->
+  ?no_log_is_ok: bool ->
+  Program.t ->
+  Build_process.t
+(** Create a “daemonize” build process:
+
+    - [?host]: the [Host.t] on which the program is to be run.
+    - [?starting_timeout]: how long to wait before considering that a
+      script failed to start (default: [5.] seconds).
+    - [?call_script]: function creating a [Unix.exec]-style command
+      given a shell script path 
+      (default: [(fun script -> ["bash"; script])]).
+    - [?using]: which method to use when damonizing on the [host]
+    (see {!Ketrew_daemonize} for more details).
+    - [?no_log_is_ok]: consider that if the script run does not
+      produce a log file, the process still has succeeded (the default
+      and most common is [false], this can be useful for example when
+      the [Program.t] or [call_script] do something special over the
+      network).
+
+*)
+
+val lsf :
+  ?host:Host.t ->
+  ?queue:string ->
+  ?name:string ->
+  ?wall_limit:string ->
+  ?processors:[ `Min of int | `Min_max of int * int ] ->
+  ?project:string ->
+  Program.t -> Build_process.t
+(** Create an “LSF” build process. *)
+
+val pbs :
+  ?host:Host.t ->
+  ?queue:string ->
+  ?name:string ->
+  ?wall_limit:[ `Hours of float ] ->
+  ?processors:int ->
+  ?email_user:[ `Always of string | `Never ] ->
+  ?shell:string ->
+  Program.t -> Build_process.t
+(** Create a “PSB” build process. *)
+
+
+val yarn_application :
+  ?host:Host.t ->
+  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
+  ?daemon_start_timeout:float ->
+  Program.t -> Build_process.t
+(** Create a build process that requests resources from Yarn, the
+    command must be an application in the Yarn sense (i.e.
+    a program that is going to contact Yarn by itself to request
+    containers):
+
+    - [?host]: the “login” node of the Yarn cluster (default: localhost).
+    - [?daemonize_using]: how to daemonize the process that calls and
+      waits-for the application-manager (default: [`Python_daemon]).
+    - [?daemon_start_timeout]: the timeout for the daemon.
+
+*)
+
+val yarn_distributed_shell :
+  ?host:Host.t ->
+  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
+  ?daemon_start_timeout:float ->
+  ?hadoop_bin:string ->
+  ?distributed_shell_shell_jar:string ->
+  ?container_vcores : int ->
+  container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
+  timeout:[ `Raw of string | `Seconds of int ] ->
+  application_name:string ->
+  Program.t -> Build_process.t
+(** Create a build process that will use Hadoop's `DistributedShell`  class
+    to request a container to run the given arbitrary program.
+
+    - [?host]: the “login” node of the Yarn cluster (default: localhost).
+    - [?daemonize_using]: how to daemonize the process that calls and
+      waits-for the application-manager (default: [`Python_daemon]).
+    - [?daemon_start_timeout]: the timeout for the daemon.
+    - [hadoop_bin]: the [hdaoop] executable (default: ["hadoop"]).
+    - [distributed_shell_shell_jar]:
+    path to the Jar file containing the
+    [org.apache.hadoop.yarn.applications.distributedshell.Client] class
+    (default: ["/opt/cloudera/parcels/CDH/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell.jar"]
+    which seems to be the default installation path when using Cloudera-manager).
+    - [container_vcores]: how many virtual cores to request (default [1]).
+    - [container_memory]: how much memory to request from Yarn for the container
+    ([`GB 42] for 42 GB; [`Raw some_string] to pass directly [some_string]
+    to the option ["-container_memory"] of [distributedshell.Cllient]).
+    - [timeout]: the “whole application” timeout
+    ([`Seconds (24 * 60 * 60)] for about a day, [`Raw some_string] to
+    pass directly [some_string] to the option ["-timeout"] of
+    [distributedshell.Cllient]).
+    - [application_name]: name of the application for Yarn (it is not
+      sanitized by Ketrew and, at least with some configurations, Yarn
+      can fail if this string contains spaces for example).
+
+*)
+
+(** {3 Workflow Nodes and Edges} *)
+
+module Internal_representation : sig
+  (* We expose this type because we want to preserve backwards
+     compatibility. The function `Ketrew.Client.submit` has to expect an
+     `EDSL.user_target` so to avoid code duplcation we mimic it with the
+     “workflow_node” API. The ideal would be to have
+     `Ketrew.Client.submit` take a list of `Target.t` values as argument
+     and have `workflow_node#render` produce directly that list. 
+  *)
+  (**/**)
+  type t =
+    < name : string;
+      activate : unit;
+      add_tags : string list -> unit;
+      id : Ketrew_pure.Internal_pervasives.Unique_id.t;
+      depends_on : t list;
+      on_failure_activate : t list;
+      on_success_activate : t list;
+      render : Ketrew_pure.Target.t;  >
+    (**/**)
+end
+
+type 'a product = 'a
+  constraint 'a = < is_done : Condition.t option ; .. >
+(** The type of the things produced by workflow nodes.
+    A product is an object that has at least one method giving its
+    {!Condition.t}. *)
+
+type 'product workflow_node = <
+  product : 'product product;
+  render: Internal_representation.t;
+>
+(** The main building bloc of the worfklow graph is workflow node, it
+    carries a “product” accessible with the [#product] method.
+
+    The [#render] method is used internally by
+    {!Ketrew.Client.submit_workflow}.
+ *)
+
+type workflow_edge
+(** The edges of the graph ([?edges] argument of the {!workflow_node}
+    function). *)
+
+val depends_on: 'any workflow_node -> workflow_edge
+(** Create a “dependency” edge, in other words, the node using the
+    edges “depends on” the node given as argument. *)
+
+val on_success_activate: 'any workflow_node -> workflow_edge
+(** Create an edge to a node that will be activated after a node {i
+    succeeds}. *)
+
+val on_failure_activate: 'any workflow_node -> workflow_edge
+(** Create an edge to a node that will be activated after a node {i
+    fails}. *)
+
+val workflow_node:
+  ?name:string ->
+  ?active:bool ->
+  ?make:Build_process.t ->
+  ?done_when:Condition.t ->
+  ?metadata:[ `String of string ] ->
+  ?equivalence:Ketrew_pure.Target.Equivalence.t ->
+  ?tags:string list ->
+  ?edges:workflow_edge list ->
+  'product_type product ->
+  'product_type workflow_node
+(** Create a workflow node:
+
+    - [?name]: give a name to the node (visible in the UIs).
+    - [?active]: whether this node should be started by the engine or
+    wait to be ativated by another node (through an edge)
+    The default is [false], i.e., inactive, normal workflows should not
+    set this value since the function {!Ketrew.Client.submit_workflow}
+    will activate the toplevel node automatically.
+    - [?make]: the build-process used to “run/build” the node; where the
+    computation happens.
+    - [?done_when]: the condition that the node ensures (checked
+    before potentially running and after running, by default it is
+    provided by the product's [#is_done] method, this argument allows
+    to override it, for convenience).
+    - [?metadata]: arbitrary metadata to attach to the node.
+    - [?equivalence]: how to tell if two nodes are equivalent (and
+    then will be merged by the engine). The default is
+    [`Same_active_condition] which means that if two nodes have the
+    same non-[None] [?done_when] argument they will be considered
+    equivalent (i.e. they try to “ensure the same condition”).
+    - [?tags]: arbitrary tags to add to the node (e.g. for
+    search/filter in the UI)
+    - [?edges]: links to other nodes from the current node
+    (list of edges created with the {!depends_on},
+    {!on_failure_activate}, and {!on_success_activate} functions).
+    - ['product_type product]: the main argument of the function is
+    the artifact produced by the node (returned by the [#product]
+    method of the node).
+
+ *)
+
+type not_already_done = < is_done : Condition.t option >
+(** The type of “empty” products. *)
+
+val without_product : not_already_done
+(** Create an “empty” product, it won't require checking any condition,
+    so the node carrying it (unless
+    forced with the [?is_done] argument) will always run.
+
+    This can be understood as a [".PHONY"] target in
+    {{:https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html}make}.
+*)
+
+type single_file = <
+  exists: Ketrew_pure.Target.Condition.t;
+  is_done: Ketrew_pure.Target.Condition.t option;
+  path : string;
+  is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
+>
+(** The type of products that carry a simple file (on a given
+    [Host.t]). *)
+
+val single_file: ?host:Host.t -> string -> single_file product
+(** Create a [single_file] product.
+
+    The path argument should be absolute since the notion of “current
+    directory” is very ill-defined when it comes to this kind of
+    distributed application.
+    
+    The condition returned by the [#is_done] method (used by default
+    in any worfklow-node that uses the [single_file product]) is to
+    check the existence of the file.
+ *)
+
+
+type list_of_files = <
+  is_done: Ketrew_pure.Target.Condition.t option;
+  paths : string list;
+>
+(** The type of products that carry a list of files (on a same [Host.t]). *)
+
+val list_of_files:
+  ?host:Host.t ->
+  string list -> list_of_files product
+(** Create a [list_of_files] product ([#is_done] checks the existence
+    of all these files). *)
+
+val workflow_to_string:
+  ?ansi_colors:bool ->
+  ?indentation:int ->
+  'any workflow_node -> string
+(** Build a display-friendly string summarizing the workflow. *)
+
+type unknown_product = < is_done : Condition.t option >
+(** The type of the products that have been “hidden” or “forgotten,”
+    see {!forget_product}. *)
+
+val forget_product:
+  'any_product workflow_node ->
+  unknown_product workflow_node 
+(** “Cast” a node to the [unknown_product workflow_node] type, this is
+    useful to make some programs that generate workflows type check
+    (putting nodes into lists, or in different branches of a [match
+    .. with]). *)
+
+(** {3 Legacy Deprecated API: Artifacts and Targets}
+
+This is the old and deprecated API to build workflows (deprecated
+since Ketrew 2.1.0).
+    
+Using functions like {!target} is still possible but they will trigger
+a compilation warning e.g. ["Warning 3: deprecated: Ketrew.EDSL.target"].
+
+*)
+
+(** {4 Artifacts}
+
+Artifacts are things to be built (they may already exist), most often
+file-tree-locations on a given [host].
 *)
 class type user_artifact = object
 
@@ -164,7 +445,7 @@ val unit : user_artifact
 (** The artifact that is “never done” (i.e. the target associated will always
     be (re-)run if activated). *)
 
-(** {3 Targets} *)
+(** {4 Targets} *)
 
 (** Targets are the nodes in the workflow arborescence (see also
     {!Target.t}). *)
@@ -197,7 +478,7 @@ class type user_target =
 val target :
   ?active:bool ->
   ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
+  ?make:Build_process.t ->
   ?done_when:Target.Condition.t ->
   ?metadata:[ `String of string ] ->
   ?product:user_artifact ->
@@ -206,6 +487,7 @@ val target :
   ?on_success_activate:user_target list ->
   ?tags: string list ->
   string -> user_target
+  [@@ocaml.deprecated]
 (** Construct a new target, the node of a workflow graph. The main
     argument (the [string]) is its name, then all optional arguments mean:
 
@@ -237,7 +519,7 @@ val target :
 
 val file_target:
   ?depends_on:user_target list ->
-  ?make:Target.Build_process.t ->
+  ?make:Build_process.t ->
   ?metadata:[ `String of string ] ->
   ?name:string ->
   ?host:Host.t ->
@@ -247,6 +529,7 @@ val file_target:
   ?tags: string list ->
   string ->
   user_target
+  [@@ocaml.deprecated]
 (** Create a file {!user_artifact} and the {!user_target} that produces it.
 
     The [?product] of the target will be the file given as argument on
@@ -257,113 +540,7 @@ val file_target:
     This can be seen as a classical [make]-like file-producing target,
     but on any arbitrary host.
 *)
-
-val daemonize :
-  ?starting_timeout:float ->
-  ?call_script:(string -> string list) ->
-  ?using:[`Nohup_setsid | `Python_daemon] ->
-  ?host:Host.t ->
-  ?no_log_is_ok: bool ->
-  Program.t ->
-  Target.Build_process.t
-(** Create a “daemonize” build process:
-
-    - [?host]: the [Host.t] on which the program is to be run.
-    - [?starting_timeout]: how long to wait before considering that a
-      script failed to start (default: [5.] seconds).
-    - [?call_script]: function creating a [Unix.exec]-style command
-      given a shell script path 
-      (default: [(fun script -> ["bash"; script])]).
-    - [?using]: which method to use when damonizing on the [host]
-    (see {!Ketrew_daemonize} for more details).
-    - [?no_log_is_ok]: consider that if the script run does not
-      produce a log file, the process still has succeeded (the default
-      and most common is [false], this can be useful for example when
-      the [Program.t] or [call_script] do something special over the
-      network).
-
-*)
-
-val lsf :
-  ?host:Host.t ->
-  ?queue:string ->
-  ?name:string ->
-  ?wall_limit:string ->
-  ?processors:[ `Min of int | `Min_max of int * int ] ->
-  ?project:string ->
-  Program.t -> Target.Build_process.t
-(** Create an “LSF” build process. *)
-
-val pbs :
-  ?host:Host.t ->
-  ?queue:string ->
-  ?name:string ->
-  ?wall_limit:[ `Hours of float ] ->
-  ?processors:int ->
-  ?email_user:[ `Always of string | `Never ] ->
-  ?shell:string ->
-  Program.t ->
-  [> `Long_running of string * string ]
-(** Create a “PSB” build process. *)
-
-
-val yarn_application :
-  ?host:Host.t ->
-  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
-  ?daemon_start_timeout:float ->
-  Program.t -> [> `Long_running of string * string ]
-(** Create a build process that requests resources from Yarn, the
-    command must be an application in the Yarn sense (i.e.
-    a program that is going to contact Yarn by itself to request
-    containers):
-
-    - [?host]: the “login” node of the Yarn cluster (default: localhost).
-    - [?daemonize_using]: how to daemonize the process that calls and
-      waits-for the application-manager (default: [`Python_daemon]).
-    - [?daemon_start_timeout]: the timeout for the daemon.
-
-*)
-
-val yarn_distributed_shell :
-  ?host:Host.t ->
-  ?daemonize_using:[ `Nohup_setsid | `Python_daemon ] ->
-  ?daemon_start_timeout:float ->
-  ?hadoop_bin:string ->
-  ?distributed_shell_shell_jar:string ->
-  ?container_vcores : int ->
-  container_memory:[ `GB of int | `MB of int | `Raw of string ] ->
-  timeout:[ `Raw of string | `Seconds of int ] ->
-  application_name:string ->
-  Program.t -> [> `Long_running of string * string ]
-(** Create a build process that will use Hadoop's `DistributedShell`  class
-    to request a container to run the given arbitrary program.
-
-    - [?host]: the “login” node of the Yarn cluster (default: localhost).
-    - [?daemonize_using]: how to daemonize the process that calls and
-      waits-for the application-manager (default: [`Python_daemon]).
-    - [?daemon_start_timeout]: the timeout for the daemon.
-    - [hadoop_bin]: the [hdaoop] executable (default: ["hadoop"]).
-    - [distributed_shell_shell_jar]:
-    path to the Jar file containing the
-    [org.apache.hadoop.yarn.applications.distributedshell.Client] class
-    (default: ["/opt/cloudera/parcels/CDH/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell.jar"]
-    which seems to be the default installation path when using Cloudera-manager).
-    - [container_vcores]: how many virtual cores to request (default [1]).
-    - [container_memory]: how much memory to request from Yarn for the container
-    ([`GB 42] for 42 GB; [`Raw some_string] to pass directly [some_string]
-    to the option ["-container_memory"] of [distributedshell.Cllient]).
-    - [timeout]: the “whole application” timeout
-    ([`Seconds (24 * 60 * 60)] for about a day, [`Raw some_string] to
-    pass directly [some_string] to the option ["-timeout"] of
-    [distributedshell.Cllient]).
-    - [application_name]: name of the application for Yarn (it is not
-      sanitized by Ketrew and, at least with some configurations, Yarn
-      can fail if this string contains spaces for example).
-
-*)
-
-
-(** {2 Utilities } *)
+(** {4 Utilities } *)
 
 val to_display_string :
   ?ansi_colors:bool ->

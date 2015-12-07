@@ -235,14 +235,14 @@ let submit ?add_tags ~configuration ~wet_run what =
         EDSL.daemonize ~using:`Python_daemon ~host:(EDSL.Host.parse host_str)
           EDSL.Program.(sh cmd)
       in
-      EDSL.target name ~make
+      EDSL.workflow_node EDSL.without_product ~name ~make
   in
   begin match wet_run with
   | true ->
-    Client.submit ~override_configuration:configuration ?add_tags workflow
+    Client.submit_workflow ~override_configuration:configuration ?add_tags workflow
   | false ->
     Log.(s "Dry-run: not submitting the workflow: " % n
-         % s (EDSL.to_display_string workflow)
+         % s (EDSL.workflow_to_string workflow)
          @ normal);
   end;
   return ()

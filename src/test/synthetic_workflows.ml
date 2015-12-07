@@ -36,11 +36,13 @@ let many_targets ~sexp ~host_str () =
     function
     | Sexp.Atom cmd ->
       let make = run cmd in
-      target ~make cmd ~tags:("atom" :: tags) ~metadata
+      workflow_node ~make ~name:cmd ~tags:("atom" :: tags) ~metadata
+        without_product
     | Sexp.List l ->
-      let depends_on = List.map make_targets l in
+      let edges = List.map (fun v -> depends_on (make_targets v)) l in
       let name = incr count_nodes; fmt "node-%d" !count_nodes in
-      target name ~depends_on ~tags:("list" :: tags) ~metadata
+      workflow_node ~name ~edges ~tags:("list" :: tags) ~metadata
+        without_product
   in
   Sexp.of_string sexp |> make_targets
 (*
@@ -57,11 +59,11 @@ let () =
   match Sys.argv |> Array.to_list |> List.tl_exn with
   | "sexp" :: "view" :: host_str :: sexp :: [] ->
     let str =
-      many_targets ~sexp ~host_str () |> Ketrew.EDSL.to_display_string in
+      many_targets ~sexp ~host_str () |> Ketrew.EDSL.workflow_to_string in
     Log.(s "Workflow: "%n % verbatim str @ normal);
     ()
   | "sexp" :: "submit" :: host_str :: sexp :: [] ->
-    many_targets ~sexp ~host_str () |> Ketrew.Client.submit
+    many_targets ~sexp ~host_str () |> Ketrew.Client.submit_workflow
   | other ->
     Log.(s "Usage: " %n
          %s "  ./...  sexp HOST SEXP " % n

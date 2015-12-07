@@ -152,10 +152,10 @@ val restart: t ->
     Deferred_result.t
 (** Restart a set of targets. *)
 
-val submit:
+val submit_workflow:
   ?override_configuration:Configuration.t ->
-  ?add_tags: string list ->
-  EDSL.user_target ->
+  ?add_tags:string list ->
+  'any EDSL.product EDSL.workflow_node ->
   unit
 (** Submit a high-level workflow description to the engine; this
     function calls [Lwt_main.run].
@@ -163,3 +163,13 @@ val submit:
     One can add tags to all the targets in the workflow before
     submitting with the [add_tags] option.
 *)
+
+val submit:
+  ?override_configuration:Configuration.t ->
+  ?add_tags: string list ->
+  EDSL.user_target ->
+  unit
+(** This is like {!submit_workflow} but for the deprecated/legacy API
+    (i.e. created with calls to {!EDSL.user_target}).
+*)
+

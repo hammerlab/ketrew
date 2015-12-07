@@ -24,12 +24,12 @@ let run_command_with_lsf cmd =
       ~queue:"normal-people" ~wall_limit:"1:30"
       ~processors:(`Min_max (1,1)) ~host program
   in
-  (* The function `KEDSL.target` creates a node in the workflow graph.
+  (* The function `KEDSL.workflow_node` creates a node in the workflow graph.
      This one is very simple, it has a name and a build-process,
      and since it doesn't have dependencies or fallbacks, it is a
      “single-node” workflow: *)
-  KEDSL.target
-     "run_command_with_lsf"
+  KEDSL.workflow_node KEDSL.without_product
+     ~name:"run_command_with_lsf"
      ~make:lsf_build_process
 
 let () =
@@ -38,7 +38,7 @@ let () =
      run_command_with_lsf Sys.argv.(1) in
   (* Then, `Client.submit` is the only function that “does” something, it
      submits the workflow to the engine: *)
-  Ketrew.Client.submit workflow
+  Ketrew.Client.submit_workflow workflow
   (* If Ketrew is in Standalone mode, this means writing the workflow in the
      database (nothing runs yet, you need to run Ketrew's engine yourself).
      If Ketrew is in Client-Server mode, this means sending the workflow to the

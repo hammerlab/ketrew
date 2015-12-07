@@ -199,23 +199,23 @@ The EDSL: Defining Workflows
 
 ### Overview
 
-The EDSL is an OCaml library where functions are used to build a
-workflow data-structure. `Ketrew.Client.submit` is used to submit
-that datastructure to the engine.
+The EDSL is an OCaml library where functions are used to build a workflow
+data-structure. `Ketrew.Client.submit_workflow` is used to submit that
+datastructure to the engine.
 
-A workflow is a graph of targets (nodes).
+A workflow is a graph of “workflow-nodes” (sometimes called “targets”).
 
-There are three kinds of links (edges) between targets:
+There are three kinds of links (edges) between nodes:
 
-- `depends_on`: targets that need to be ensured or satisifed before a target
+- `depends_on`: nodes that need to be ensured or satisfied before a node
   can start,
-- `on_failure_activate`: targets that will be activated if the target fails, and
-- `on_success_activate`: targets that will be activated only *after* a target
+- `on_failure_activate`: nodes that will be activated if the node fails, and
+- `on_success_activate`: nodes that will be activated only *after* a node
   succeeds.
 
-See the `Ketrew.EDSL.target` function documentation for details. Any OCaml
-program can use the EDSL (script, compiled, or even inside the toplevel). See
-the documentation of the EDSL API (`Ketrew.EDSL`).
+See the `Ketrew.EDSL.workflow_node` function documentation for details. Any
+OCaml program can use the EDSL (script, compiled, or even inside the
+toplevel). See the documentation of the EDSL API (`Ketrew.EDSL`).
 
 ### Example
 
@@ -230,35 +230,46 @@ capability to send emails upon the success or failure of your command.
 let run_command_with_daemonize ~cmd ~email =
   let module KEDSL = Ketrew.EDSL in
 
-  (* Where to run stuff: in this case, the tmp directory on the server's localhost. *)
+  (* Where to run stuff *)
   let host = KEDSL.Host.tmp_on_localhost in
 
   (* A “program” is a datastructure representing an “extended shell script”. *)
   let program = KEDSL.Program.sh cmd in
 
   (* A “build process” is a method for making things.
-     
+
      In this case, `daemonize` creates a datastructure that represents a job
      running our program on the host. *)
+  let build_process = KEDSL.daemonize ~host program in
+  (* On Mac OSX
   let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
+  *)
 
-  (* A function that creates a target that uses `mail` to signal the user
-     of `success` or `failure`: *)
+  (* A node that Ketrew will activate after cmd completes *)
   let email_target ~success =
-    let message = if success then "succeeded" else "failed" in
+    let sstring = if success then "succeeded" else "failed" in
     let e_program =
       KEDSL.Program.shf "echo \"'%s' %s\" | mail -s \"Status update\" %s"
-        cmd message email
+        cmd sstring
+        email
     in
-    let e_process = KEDSL.daemonize ~using:`Python_daemon ~host e_program in
-    KEDSL.target ("email result " ^ sstring) ~make:e_process 
+    let e_process =
+      KEDSL.daemonize ~using:`Python_daemon ~host e_program in
+    KEDSL.workflow_node KEDSL.without_product
+      ~name:("email result " ^ sstring)
+      ~make:e_process
   in
 
-  (* The function `KEDSL.target` creates a node in the workflow graph. *)
-  KEDSL.target "daemonize command"
+  (* The function `KEDSL.workflow_node` creates a node in the workflow graph.
+     The value `KEDSL.without_product` means this node does not
+     “produce” anything, it is like a `.PHONY` target in `make`. *)
+  KEDSL.workflow_node KEDSL.without_product
+    ~name:"daemonize command"
     ~make:build_process
-    ~on_success_activate:[email_target true]
-    ~on_failure_activate:[email_target false]
+    ~edges:[
+      KEDSL.on_success_activate (email_target true);
+      KEDSL.on_failure_activate (email_target false);
+    ]
 
 let () =
   (* Grab the command line arguments. *)
@@ -268,10 +279,9 @@ let () =
   (* Create the  workflow with the first argument of the command line: *)
   let workflow = run_command_with_daemonize ~cmd ~email in
 
-  (* Then, `Client.submit` is the only function that “does” something, it
-     submits the workflow to the engine: *)
-  Ketrew.Client.submit workflow
-
+  (* Then, `Client.submit_workflow` is the only function that “does”
+     something, it submits the workflow to the engine: *)
+  Ketrew.Client.submit_workflow workflow
 ```
 
 You can run this [script](src/example_scripts/daemonize_workflow.ml) from the

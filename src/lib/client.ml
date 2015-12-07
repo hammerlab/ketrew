@@ -337,7 +337,8 @@ let flatten_to_pure_targets ?add_tags t =
   go_through_deps ();
   !to_return
 
-let submit ?override_configuration ?add_tags t =
+let submit_generic
+    ?override_configuration ?add_tags (t : EDSL.Internal_representation.t) =
   let targets = flatten_to_pure_targets t ?add_tags in
   let configuration =
     Configuration.load_exn
@@ -351,3 +352,9 @@ let submit ?override_configuration ?add_tags t =
     Log.(s "Run-error: " % s (Error.to_string e) @ error);
     failwith (Error.to_string e)
 
+let submit ?override_configuration ?add_tags (t : EDSL.user_target)  =
+  submit_generic ?override_configuration ?add_tags
+    (t :> EDSL.Internal_representation.t)
+
+let submit_workflow ?override_configuration ?add_tags (t : _ EDSL.workflow_node) =
+  submit_generic ?override_configuration ?add_tags (t#render)
