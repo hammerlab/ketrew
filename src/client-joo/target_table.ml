@@ -274,8 +274,19 @@ module Filter = struct
             | Some old, Some `All -> Some `All
             | Some (`Created_after t1), Some (`Created_after t2) ->
               Some (`Created_after (min t1 t2)))
-      | `Not _ ->
-        None (* we reach the limits of this weird logic … *)
+      | `Not something ->
+        begin match something with
+        | `Has_tags _
+        | `Name _ | `Id _
+        | `Status _ -> None
+        | `All -> Some (`Created_after max_float)
+        | `Or ors -> to_time (`And (List.map ors ~f:(fun ast -> `Not ast)))
+        | `And ands -> to_time (`Or (List.map ands ~f:(fun ast -> `Not ast)))
+        | `Not renot -> to_time renot
+        | `Created_in_the_past t ->
+          (* This is the impossible to define for now. *)
+          None
+        end
     in
     let time_constraint :> Protocol.Up_message.time_constraint =
       Option.value (to_time ast) ~default:(`Created_after 42.) in
