@@ -28,6 +28,9 @@ module Server_status : sig
     preemptive_queue: int;
     libev: bool;
     database: string;
+    host_timeout_upper_bound: float option;
+    maximum_successive_attempts: int;
+    concurrent_automaton_steps: int;
     gc_minor_words : float;
     gc_promoted_words : float;
     gc_major_words : float;
@@ -41,6 +44,9 @@ module Server_status : sig
   }
   val create:
     database: string ->
+    host_timeout_upper_bound: float option ->
+    maximum_successive_attempts: int ->
+    concurrent_automaton_steps: int ->
     time:float -> read_only:bool ->
     tls:[ `Native | `OpenSSL | `None ] ->
     preemptive_bounds:int * int ->
