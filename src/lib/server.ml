@@ -345,12 +345,17 @@ let answer_get_server_status ~server_state =
     | Conduit_lwt_unix.Native  -> `Native
     | Conduit_lwt_unix.No_tls -> `None
   in
-  let database =
-    let configuration = server_state.server_configuration in
-    Configuration.database_parameters (Configuration.server_engine configuration)
-  in
+  let module C = Configuration in
+  let engine = Configuration.server_engine server_state.server_configuration in
+  let database = C.database_parameters engine in
+  let host_timeout_upper_bound = C.host_timeout_upper_bound engine in
+  let maximum_successive_attempts = C.maximum_successive_attempts engine in 
+  let concurrent_automaton_steps = C.concurrent_automaton_steps engine in
   let status =
     Protocol.Server_status.create ~database ~tls
+      ~host_timeout_upper_bound
+      ~maximum_successive_attempts
+      ~concurrent_automaton_steps
       ~time:Time.(now ())
       ~read_only:(Configuration.read_only_mode server_state.server_configuration)
       ~preemptive_bounds:(Lwt_preemptive.get_bounds ())

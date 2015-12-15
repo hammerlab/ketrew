@@ -266,7 +266,10 @@ val maximum_successive_attempts: engine -> int
   
 val concurrent_automaton_steps: engine -> int
 (** Get the maximum number of concurrent automaton steps. *)
-  
+
+val host_timeout_upper_bound : engine -> float option
+(** Get the upper bound for the timeout of SSH calls, if any. *)
+
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
 

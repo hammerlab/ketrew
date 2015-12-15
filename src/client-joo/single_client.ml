@@ -757,6 +757,9 @@ module Html = struct
       preemptive_queue (*  int *);
       libev (*  bool *);
       database;
+      host_timeout_upper_bound (* float *);
+      maximum_successive_attempts (* int *);
+      concurrent_automaton_steps (* int *);
       gc_minor_words  (*  float *);
       gc_promoted_words  (*  float *);
       gc_major_words  (*  float *);
@@ -810,6 +813,11 @@ module Html = struct
       "Preemptive → size of the waiting queue",  textf "%d" preemptive_queue;
       "LibEV", (if libev then text "Yes" else text "No");
       "Database", text database;
+      "host_timeout_upper_bound",
+      (match host_timeout_upper_bound with
+      | None -> text "None" | Some t -> time_span t);
+      "maximum_successive_attempts", int maximum_successive_attempts;
+      "concurrent_automaton_steps", int concurrent_automaton_steps;
       "GC", description_list [
         "minor_words", float gc_minor_words (*  float *);
         "promoted_words", float gc_promoted_words (*  float *);

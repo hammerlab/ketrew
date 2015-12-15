@@ -28,8 +28,10 @@ module Server_status = struct
     preemptive_bounds: int * int;
     preemptive_queue: int;
     libev: bool;
-    database: (string [@default ""]); (* default value for extreme
-                                         backwards compatibility *)
+    database: string;
+    host_timeout_upper_bound: float option;
+    maximum_successive_attempts: int;
+    concurrent_automaton_steps: int;
     gc_minor_words : float;
     gc_promoted_words : float;
     gc_major_words : float;
@@ -43,9 +45,15 @@ module Server_status = struct
   } [@@deriving yojson]
   let create
       ~database
+      ~host_timeout_upper_bound
+      ~maximum_successive_attempts
+      ~concurrent_automaton_steps
       ~time ~read_only ~tls ~preemptive_bounds ~preemptive_queue ~libev ~gc =
     {time; read_only; tls; preemptive_bounds; preemptive_queue; libev;
      database;
+     host_timeout_upper_bound;
+     maximum_successive_attempts;
+     concurrent_automaton_steps;
      gc_minor_words = gc.Gc.minor_words;
      gc_promoted_words = gc.Gc.promoted_words;
      gc_major_words = gc.Gc.major_words;

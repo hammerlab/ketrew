@@ -275,6 +275,7 @@ let database_parameters e = e.database_parameters
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
 let concurrent_automaton_steps e = e.concurrent_automaton_steps
+let host_timeout_upper_bound e = e.host_timeout_upper_bound
 let mode t = t.mode
 let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine
