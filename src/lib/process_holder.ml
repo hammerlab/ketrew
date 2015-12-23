@@ -24,8 +24,8 @@ open Unix_io
 open Logging.Global
 let log_module = "Module", Display_markup.text "Process_holder"
 
-let d fmt =
-  Printf.ksprintf (Printf.eprintf "[%s] %s\n%!" Time.(now () |> to_filename)) fmt
+(* let d fmt = *)
+(*   Printf.ksprintf (Printf.eprintf "[%s] %s\n%!" Time.(now () |> to_filename)) fmt *)
 
 module Process = struct
   type t = {
@@ -372,7 +372,7 @@ We need to comunicate with that process:
     let rec read_fifo_over_and_over () =
       read_fifo fifo_from_daemon
       >>= fun content ->
-      d "modifying fifo_questions: %s" content;
+      (* d "modifying fifo_questions: %s" content; *)
       Reactive.Source.modify fifo_questions (fun l ->
           (Time.now (), content) :: l);
       read_fifo_over_and_over () in
@@ -705,7 +705,7 @@ let answer_get_all_ssh_ids t ~client_id =
              return (`Ok (fmt "event:%s" x))); 
       ]
       >>= fun why_woken_up ->
-      d "because of %s%!" why_woken_up;
+      (* d "because of %s%!" why_woken_up; *)
       all_ssh_ids_and_names t
       >>= fun all ->
       ui_client.Ui_client.last_answered <- Time.now ();
