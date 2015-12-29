@@ -155,6 +155,7 @@ type t = {
   target_table: Target_table.t;
 
   processes_ui : Processes_ui.t;
+  should_show_processes_ui: bool Reactive.Source.t;
 
   error_log: Error_log.t;
 
@@ -171,12 +172,25 @@ let create ~protocol_client () =
   let tabs =
     Reactive.Source.create
       ~eq:(fun la lb -> try List.for_all2 ~f:Tab.eq la lb with _ -> false)
-      [ `Status; `Processes_ui; `Target_table ] in
+      [ `Status; `Target_table ] in
   let processes_ui = Processes_ui.create protocol_client in
+  let should_show_processes_ui = Reactive.Source.create false in
+  let (_ : unit React.E.t) =
+    Reactive.Source.signal should_show_processes_ui
+    |> React.S.changes
+    |> React.E.map (function
+      | true ->
+        Reactive.Source.modify tabs ~f:(fun l ->
+            if List.mem `Processes_ui ~set:l then l else `Processes_ui :: l)
+      | false -> 
+        Reactive.Source.modify tabs ~f:(fun l ->
+            List.filter l ~f:(fun x -> not (Tab.eq x `Processes_ui)))
+      )
+  in
   {
     protocol_client;
     target_cache = Target_cache.create ();
-    processes_ui;
+    processes_ui; should_show_processes_ui;
     status;
     tabs;
     current_tab;
@@ -360,6 +374,8 @@ let start_server_status_loop t =
       (* let _, previous_status = *)
       (*   Reactive.(Source.signal t.status |> Signal.value) in *)
       Reactive.Source.set t.status (Time.now (), `Ok status);
+      Reactive.Source.set t.should_show_processes_ui
+        status.Protocol.Server_status.enable_ssh_ui;
       sleep 30.
       >>= fun () ->
       update_server_status ()
