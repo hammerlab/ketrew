@@ -770,6 +770,7 @@ module Html = struct
       gc_compactions  (*  int *);
       gc_top_heap_words  (*  int *);
       gc_stack_size  (*  int *);
+      enable_ssh_ui (* bool *);
     } = status in
     let int64 i =
       let open Int64 in
@@ -818,6 +819,7 @@ module Html = struct
       | None -> text "None" | Some t -> time_span t);
       "maximum_successive_attempts", int maximum_successive_attempts;
       "concurrent_automaton_steps", int concurrent_automaton_steps;
+      "enable_ssh_ui", (if enable_ssh_ui then text "Yes" else text "No");
       "GC", description_list [
         "minor_words", float gc_minor_words (*  float *);
         "promoted_words", float gc_promoted_words (*  float *);

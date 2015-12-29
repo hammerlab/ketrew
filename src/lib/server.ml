@@ -362,6 +362,8 @@ let answer_get_server_status ~server_state =
       ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ())
       ~libev:(Lwt_sys.have `libev)
       ~gc:(Gc.quick_stat ())
+      ~enable_ssh_ui:
+        (Configuration.ssh_processes_ui server_state.server_configuration)
   in
   return (`Server_status status)
 

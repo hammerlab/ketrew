@@ -42,12 +42,14 @@ module Server_status = struct
     gc_compactions : int;
     gc_top_heap_words : int;
     gc_stack_size : int;
+    enable_ssh_ui: bool;
   } [@@deriving yojson]
   let create
       ~database
       ~host_timeout_upper_bound
       ~maximum_successive_attempts
       ~concurrent_automaton_steps
+      ~enable_ssh_ui
       ~time ~read_only ~tls ~preemptive_bounds ~preemptive_queue ~libev ~gc =
     {time; read_only; tls; preemptive_bounds; preemptive_queue; libev;
      database;
@@ -64,6 +66,7 @@ module Server_status = struct
      gc_compactions = gc.Gc.compactions;
      gc_top_heap_words = gc.Gc.top_heap_words;
      gc_stack_size = gc.Gc.stack_size;
+     enable_ssh_ui;
     }
 end
 
