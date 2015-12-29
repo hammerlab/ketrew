@@ -162,6 +162,7 @@ val server:
   ?block_step_time: float ->
   ?read_only_mode: bool ->
   ?ssh_connections:ssh_connection list ->
+  ?ssh_processes_ui:bool ->
   [ `Tcp of int | `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the
@@ -282,6 +283,7 @@ val server_configuration: t -> server option
 (** Get the potentiel server configuration. *)
 
 val ssh_connections: server -> ssh_connection list
+val ssh_processes_ui: server -> bool
     
 val authorized_tokens: server ->
   [ `Path of string | `Inline of (string * string)] list
