@@ -41,12 +41,14 @@ module Server_status : sig
     gc_compactions : int;
     gc_top_heap_words : int;
     gc_stack_size : int;
+    enable_ssh_ui: bool;
   }
   val create:
     database: string ->
     host_timeout_upper_bound: float option ->
     maximum_successive_attempts: int ->
     concurrent_automaton_steps: int ->
+    enable_ssh_ui: bool ->
     time:float -> read_only:bool ->
     tls:[ `Native | `OpenSSL | `None ] ->
     preemptive_bounds:int * int ->
