@@ -33,6 +33,7 @@ end
 
 type t = {
   client: Protocol_client.t;
+  self_id: Unique_id.t;
   ssh_connections: Ssh_connection.t list Reactive.Source.t;
   ssh_connections_status: deferred_status Reactive.Source.t;
   logs_cache : (string, string option Reactive.Source.t) Hashtbl.t;
@@ -40,7 +41,10 @@ type t = {
   ssh_commands: Ssh_command.t list Reactive.Source.t;
   ssh_command_outputs: Ssh_command_output.t list Reactive.Source.t;
 }
-let create client =
+(* This function creates/initializes a `Process_ui.t` tab, but the
+   exported `create` function is defined later, it calls `create_raw` and
+   `start_updating_ssh_connections`. *)
+let create_raw client =
   let ssh_connections = Reactive.Source.create [] in
   let ssh_commands = Reactive.Source.create [] in
   let ssh_command_outputs = Reactive.Source.create [] in
@@ -48,6 +52,7 @@ let create client =
   let logs_cache = Hashtbl.create 42 in
   let items_visibility = Hashtbl.create 42 in
   {client; ssh_connections; ssh_connections_status;
+   self_id = Unique_id.create ();
    logs_cache; items_visibility; ssh_commands; ssh_command_outputs}
 
 let items_visibility t ~id =
@@ -90,15 +95,16 @@ let logs_signal t ~id =
       )
   )
 
+let set_error t err =
+  Log.(s "setting ssh_connections to error " % s err @ verbose);
+  Reactive.Source.set t.ssh_connections_status
+    (`Error Display_markup.(
+         description "Error talking to the server" (text err)));
+  return ()
 
-let send_process_messsage t msg =
+let send_process_messsage : type any. _ -> _ -> (unit, any) Pvem_js.t = fun t msg ->
   Reactive.Source.set t.ssh_connections_status `In_progress;
-  let error err =
-    Log.(s "setting ssh_connections to error " % s err @ verbose);
-    Reactive.Source.set t.ssh_connections_status
-      (`Error Display_markup.(
-           description "Error talking to the server" (text err)));
-    return () in
+  let error err = set_error t err in
   let ok () = Reactive.Source.set t.ssh_connections_status `Ok; return () in
   begin
     Protocol_client.call t.client msg
@@ -122,9 +128,29 @@ let send_process_messsage t msg =
   end
 
 
-let launch_update_ssh_connections t =
+let start_updating_ssh_connections t =
   asynchronously (fun () ->
-      send_process_messsage t (`Process (`Get_all_ssh_ids))
+      let rec loop () =
+        begin
+          Protocol_client.call t.client (`Process (`Get_all_ssh_ids t.self_id))
+        end >>< begin function
+        | `Ok (`Process (`List_of_ssh_ids l)) ->
+          Reactive.Source.set t.ssh_connections l;
+          loop ()
+        | `Ok (`Process (`Error s)) -> set_error t (fmt "Error: %s" s)
+        | `Ok other -> set_error t "Protocol error: Wrong down messsage"
+        | `Error (`Protocol_client pc) ->
+          set_error t (fmt "Protocol_client: %s" (Protocol_client.Error.to_string pc))
+        | `Error (`Exn e) ->
+          set_error t (fmt "Exception: %s" (Printexc.to_string e))
+        end
+        >>= fun () ->
+        (* There was an error … *)
+        (Pvem_js.sleep 15. >>< fun _ -> return ())
+        >>= fun () ->
+        loop ()
+      in
+      loop ()
     )
 
 let start_new_ssh_connection t ~name ~uri =
@@ -161,6 +187,11 @@ let send_command t ~id ~content =
 
 let kill t ~id =
   asynchronously (fun () -> send_process_messsage t (`Process (`Kill id)))
+
+let create client =
+  let t = create_raw client in
+  start_updating_ssh_connections t;
+  t
 
 module Html = struct
 
@@ -428,6 +459,8 @@ module Html = struct
         Bootstrap.label_danger [pcdata (fmt "Dead: %s" s)]
       | `Configured ->
         Bootstrap.label_default [pcdata "Configured"]
+      | `Unknown why ->
+        Bootstrap.label_warning [pcdata (fmt "Unkown (%s)" why)]
     in
     let name () = strong [pcdata name] ~a:[a_title uri] in
     let first_line hs_text =
@@ -445,7 +478,7 @@ module Html = struct
                 start_configured_ssh_connection t ~id;
                 false);
         ]
-      | `Alive _ | `Dead _ -> line @ with_hs
+      | `Alive _ | `Dead _ | `Unknown _ -> line @ with_hs
       end
     in
     let details_div ~with_details mrkopt =
@@ -468,7 +501,7 @@ module Html = struct
     let visible_stuf ~with_details mrkopt =
       begin match status with
       | `Configured -> div []
-      | `Dead _ ->
+      | `Dead _ | `Unknown _ ->
         div [
           details_button ~with_details;
           display_commands t ~id;
@@ -514,11 +547,6 @@ module Html = struct
     div [
       h3 [pcdata "SSH Connections"];
       Bootstrap.button_group ~justified:false [
-        Bootstrap.button ~enabled:can_update [pcdata "Update list"]
-          ~on_click:(fun _ ->
-              (* set_in_progress ~current_value t; *)
-              launch_update_ssh_connections t;
-              false);
         Bootstrap.button ~enabled:can_update [pcdata "Add/start new"]
           ~on_click:(fun _ ->
               Reactive.Source.modify add_interface_visible not;

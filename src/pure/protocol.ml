@@ -80,7 +80,7 @@ module Process_sub_protocol = struct
         | `New of string * string (* name × connection-uri *)
         | `Configured of string
       ]
-    | `Get_all_ssh_ids
+    | `Get_all_ssh_ids of string (* client-id *)
     | `Get_logs of string * [ `Full ]
     | `Send_ssh_input of string * string
     | `Send_command of Command.t
@@ -92,6 +92,7 @@ module Process_sub_protocol = struct
       | `Alive of [ `Askpass_waiting_for_input of (float * string) list | `Idle ]
       | `Dead of string
       | `Configured
+      | `Unknown of string
     ] [@@deriving yojson]
     type t = {
       id: string;

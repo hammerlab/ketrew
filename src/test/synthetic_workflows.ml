@@ -66,7 +66,9 @@ let () =
     many_targets ~sexp ~host_str () |> Ketrew.Client.submit_workflow
   | other ->
     Log.(s "Usage: " %n
-         %s "  ./...  sexp HOST SEXP " % n
-         %s "Got: " % OCaml.list quote other
+         % indent (
+           s Sys.argv.(0) % s " sexp {view,submit} HOST SEXP " % n
+         )
+         % s "Got: " % OCaml.list quote other
          @ error);
     exit 1

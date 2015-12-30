@@ -24,6 +24,9 @@ open Unix_io
 open Logging.Global
 let log_module = "Module", Display_markup.text "Process_holder"
 
+(* let d fmt = *)
+(*   Printf.ksprintf (Printf.eprintf "[%s] %s\n%!" Time.(now () |> to_filename)) fmt *)
+
 module Process = struct
   type t = {
     id: string;
@@ -31,12 +34,18 @@ module Process = struct
     lwt_object: Lwt_process.process_full;
     stdout_buffer: Buffer.t;
     stderr_buffer: Buffer.t;
+    changes: string Lwt_react.E.t;
+    signal_change: string -> unit;
   }
   let create ~command lwt_object =
     let id = Unique_id.create () in
     let stdout_buffer = Buffer.create 42 in
     let stderr_buffer = Buffer.create 42 in
-    {id; command; lwt_object; stdout_buffer; stderr_buffer;}
+    let changes, signal_change = Lwt_react.E.create () in
+    {id; command; lwt_object; stdout_buffer; stderr_buffer;
+     changes; signal_change;}
+
+  let get_changes_event t = t.changes
 
   let markup t =
     let open Display_markup in
@@ -79,6 +88,7 @@ module Process = struct
       process.lwt_object#close
       >>= fun _ ->
       log_process_action process "Closing";
+      process.signal_change "process-closing";
       return (`Ok ())
     end
       (fun e ->
@@ -98,13 +108,19 @@ module Process = struct
               Lwt_io.read_char_opt process.lwt_object#stdout
               >>= function
               | None -> return `End
-              | Some c -> Buffer.add_char process.stdout_buffer c; return `Loop
+              | Some c ->
+                process.signal_change "process-stdout";
+                Buffer.add_char process.stdout_buffer c;
+                return `Loop
             end;
             begin
               Lwt_io.read_char_opt process.lwt_object#stderr
               >>= function
               | None -> return `End
-              | Some c -> Buffer.add_char process.stderr_buffer c; return `Loop
+              | Some c ->
+                process.signal_change "process-stderr";
+                Buffer.add_char process.stderr_buffer c;
+                return `Loop
             end;
             begin
               Lwt_unix.sleep 0.4
@@ -191,10 +207,11 @@ We need to comunicate with that process:
     in
     let log_file = "/tmp/ketrew-ssh-askpass.log" in
     (try Unix.unlink log_file with _ -> ());
-    begin match Unix.fork () with
+    Printf.eprintf "before fork  %s\n%!" Time.(now () |> to_filename);
+    begin match Lwt_unix.fork () with
     | 0 ->
       let session_id = Unix.setsid () in
-      begin match Unix.fork () with
+      begin match Lwt_unix.fork () with
       | 0 ->
         let log s =
           IO.with_out_channel (`Append_to_file log_file)
@@ -280,12 +297,20 @@ We need to comunicate with that process:
       (* (System.sleep 1.0 >>< fun _ -> return ()) >>= fun () -> *)
       | pid ->
         (* second fork *)
+        Printf.eprintf "fork #2 → %d %s\n%!" pid Time.(now () |> to_filename);
+        return ()
+      | exception e ->
+        Printf.eprintf "fork #1 → %s %s\n%!" Printexc.(to_string e) Time.(now () |> to_filename);
         return ()
       end
     | pid ->
+      Printf.eprintf "fork #1 → %d %s\n%!" pid Time.(now () |> to_filename);
       Log.(s "setsid_ssh main finishing, \
               subprocess is: " % i pid
            @ normal);
+      return ()
+    | exception e ->
+      Printf.eprintf "fork #1 → %s %s\n%!" Printexc.(to_string e) Time.(now () |> to_filename);
       return ()
     end
 
@@ -347,6 +372,7 @@ We need to comunicate with that process:
     let rec read_fifo_over_and_over () =
       read_fifo fifo_from_daemon
       >>= fun content ->
+      (* d "modifying fifo_questions: %s" content; *)
       Reactive.Source.modify fifo_questions (fun l ->
           (Time.now (), content) :: l);
       read_fifo_over_and_over () in
@@ -371,6 +397,16 @@ We need to comunicate with that process:
     ssh
 
   let name s = s.host_name
+
+  let get_changes_event t =
+    let fifo_questions_change_event =
+      Reactive.Source.signal t.fifo_questions |> Lwt_react.S.changes
+      |> Lwt_react.E.map (fun l -> fmt "ssh-fifo-questions:%d" (List.length l))
+    in
+    Lwt_react.E.select [
+      fifo_questions_change_event;
+      Process.get_changes_event t.process;
+    ]
 
   let get_daemon_logs t =
     IO.read_file t.json_log
@@ -494,21 +530,29 @@ We need to comunicate with that process:
           Lwt_unix.close fd)
 
   let get_status t =
+    (* d "stdout: %S, stderr: %S" *)
+    (*   (t.process |> Process.stdout) *)
+    (*   (t.process |> Process.stderr) *)
+    (* ; *)
     session_pid t
-    >>= fun pid ->
-    System.Shell.execute (fmt "ps -g %d" pid)
-    >>= fun (_,_, process_status) ->
-    can_write_to_fifo t
-    >>= fun can_write ->
-    begin match process_status with
-    | `Exited 0 when can_write ->
-      let questions =
-        Reactive.Source.value t.fifo_questions in
-      return (`Alive (`Askpass_waiting_for_input questions))
-    | `Exited 0 -> return (`Alive `Idle)
-    | `Signaled _
-    | `Stopped _
-    | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
+    >>< begin function
+    | `Ok pid ->
+      System.Shell.execute (fmt "ps -g %d" pid)
+      >>= fun (_,_, process_status) ->
+      can_write_to_fifo t
+      >>= fun can_write ->
+      begin match process_status with
+      | `Exited 0 when can_write ->
+        let questions =
+          Reactive.Source.value t.fifo_questions in
+        return (`Alive (`Askpass_waiting_for_input questions))
+      | `Exited 0 -> return (`Alive `Idle)
+      | `Signaled _
+      | `Stopped _
+      | `Exited _ -> return (`Dead (System.Shell.status_to_string process_status))
+      end
+    | `Error e ->
+      return (`Unknown (Error.to_string e))
     end
 
   let log t = markup t |> Display_markup.log
@@ -520,14 +564,51 @@ type active_process = [
   | `Ssh_connection of Ssh_connection.t
   | `Process of Process.t
 ]
+module Ui_client = struct
+  type t = {
+    created: Time.t;
+    mutable last_answered: Time.t;
+  }
+  let create () = {created = Time.now (); last_answered = Time.now ()}
+end
 type t = {
   preconfigured: (string * Configuration.ssh_connection) list;
   mutable active_processes: (string, active_process) Hashtbl.t;
+  ui_clients: (Unique_id.t, Ui_client.t) Hashtbl.t;
+
+  (*
+     The `!change_event` is the “output” event, the want to wait on.
+     `subscribe_event` adds (or “merges … with”) a new event to the
+     `change_event`
+     `signal_change` triggers the event.
+  *)
+  events: string Lwt_react.E.t list ref;
+  get_change_event: unit -> string Lwt_react.E.t;
+  subscribe_event: string Lwt_react.E.t -> unit;
+  signal_change: string -> unit;
+  signal_future_change: string -> unit;
 }
 
 let create ?(preconfigure=[]) () =
-  {preconfigured = List.map preconfigure ~f:(fun p -> Unique_id.create (), p);
-   active_processes = Hashtbl.create 42}
+  let initial_change_event, signal_change = Lwt_react.E.create () in
+  let events = ref [initial_change_event] in
+  let get_change_event () = Lwt_react.E.select !events in
+  let subscribe_event ev = events := ev :: !events in
+  let signal_future_change msg =
+    Lwt.async Lwt.(fun () ->
+        Lwt_unix.sleep 1.
+        >>= fun () ->
+        signal_change msg;
+        return ()
+      )
+  in
+  {
+    preconfigured = List.map preconfigure ~f:(fun p -> Unique_id.create (), p);
+    active_processes = Hashtbl.create 42;
+    ui_clients = Hashtbl.create 42;
+    events; get_change_event; signal_change; subscribe_event;
+    signal_future_change;
+  }
 
 let kill_all t =
   let as_list =
@@ -559,12 +640,15 @@ let start_process t ?bin argl =
   let p = Process.start ?bin argl in
   let id = Process.id p in
   Hashtbl.add t.active_processes id (`Process p);
+  t.signal_change "start_process";
   return id
 
 let start_ssh_connection t ?ketrew_bin ?command ~name connection =
   let s = Ssh_connection.create ?ketrew_bin ?command ~name connection in
   let id = Unique_id.create  () in
   Hashtbl.add t.active_processes id (`Ssh_connection s);
+  t.signal_change "start_ssh_connection";
+  t.subscribe_event (Ssh_connection.get_changes_event s);
   return s
 
 let get t ~id =
@@ -610,7 +694,32 @@ let all_ssh_ids_and_names t =
        @ verbose);
   return  ret
 
-let answer_message t ~host_io msg :
+let answer_get_all_ssh_ids t ~client_id =
+  begin match Hashtbl.find t.ui_clients client_id with
+  | ui_client ->
+    begin
+      Deferred_list.pick_and_cancel [
+        (System.sleep 20. >>< fun _ -> return "time");
+        Lwt.(Lwt_react.E.next (t.get_change_event ())
+             >>= fun x ->
+             return (`Ok (fmt "event:%s" x))); 
+      ]
+      >>= fun why_woken_up ->
+      (* d "because of %s%!" why_woken_up; *)
+      all_ssh_ids_and_names t
+      >>= fun all ->
+      ui_client.Ui_client.last_answered <- Time.now ();
+      return (`List_of_ssh_ids all)
+    end
+  | exception _ ->
+    let ui_client = Ui_client.create () in
+    Hashtbl.add t.ui_clients client_id ui_client;
+    all_ssh_ids_and_names t
+    >>= fun all ->
+    return (`List_of_ssh_ids all)
+  end
+
+let answer_message t ~host_io (msg : Protocol.Process_sub_protocol.up) :
   (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
   | `Start_ssh_connetion spec ->
@@ -635,10 +744,8 @@ let answer_message t ~host_io msg :
     Host_io.set_named_host host_io ~name ssh_connection
     >>= fun () ->
     return (`Ok)
-  | `Get_all_ssh_ids ->
-    all_ssh_ids_and_names t
-    >>= fun all ->
-    return (`List_of_ssh_ids all)
+  | `Get_all_ssh_ids client_id ->
+    answer_get_all_ssh_ids t ~client_id
   | `Get_logs (id, `Full) ->
     get_ssh_connection t ~id
     >>= fun ssh ->
@@ -652,6 +759,7 @@ let answer_message t ~host_io msg :
       Ssh_connection.write_to_fifo ssh content
     end
     >>= fun () ->
+    t.signal_future_change "send_ssh_input";
     return `Ok
   | `Send_command
       { Protocol.Process_sub_protocol.Command.connection; id; command } ->
@@ -661,6 +769,7 @@ let answer_message t ~host_io msg :
     >>= fun host ->
     Host_io.get_shell_command_output host_io ~host command
     >>= fun (stdout, stderr) ->
+    t.signal_future_change "send_command";
     return (`Command_output {
         Protocol.Process_sub_protocol.Command_output.id; stdout; stderr
       })
@@ -669,6 +778,7 @@ let answer_message t ~host_io msg :
     >>= fun ssh ->
     Ssh_connection.kill ssh
     >>= fun () ->
+    t.signal_future_change "kill";
     return `Ok
   end
   >>< function

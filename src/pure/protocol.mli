@@ -67,7 +67,7 @@ module Process_sub_protocol : sig
         | `New of string * string (* name × connection-uri *)
         | `Configured of string (* id *)
       ]
-    | `Get_all_ssh_ids
+    | `Get_all_ssh_ids of string (* client-id *)
     | `Get_logs of string * [ `Full ] (* id *)
     | `Send_ssh_input of string * string (* id × input-string *)
     | `Send_command of Command.t
@@ -78,6 +78,7 @@ module Process_sub_protocol : sig
       | `Alive of [ `Askpass_waiting_for_input of (float * string) list | `Idle ]
       | `Dead of string
       | `Configured
+      | `Unknown of string
     ]
     type t = {
       id: string;
