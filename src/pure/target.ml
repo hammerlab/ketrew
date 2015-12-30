@@ -1005,9 +1005,21 @@ module Automaton = struct
     | `Still_running_despite_recoverable_error (_, _, bookkeeping)
     | `Still_running (_, bookkeeping) as c ->
       `Check_process (bookkeeping, begin fun ?log -> function
-        | `Ok (`Still_running bookkeeping) ->
-          return_with_history t ~no_change:true
-            (`Still_running (to_history ?log c, bookkeeping))
+        | `Ok (`Still_running new_bookkeeping) ->
+          let new_state =
+            match c with
+            | `Started_running _
+            | `Still_running_despite_recoverable_error _ ->
+              (* Normal state transition *)
+              `Still_running (to_history ?log c, new_bookkeeping)
+            | `Still_running (history, old_bookkepping) ->
+              (* Special case to “flatten” the history: we forget
+                 previous similar states, this does not respect the
+                 “pseudo-happend-only” semantics but it's a valuable
+                 optimization. *)
+              `Still_running (history, new_bookkeeping)
+          in
+          return_with_history t ~no_change:true new_state
         | `Ok (`Successful bookkeeping) ->
           return_with_history t (`Ran_successfully (to_history ?log c, bookkeeping))
         | `Error (`Try_again, how, bookkeeping) ->
