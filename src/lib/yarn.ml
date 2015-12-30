@@ -152,7 +152,10 @@ let additional_queries run_param =
        Log.(s "Call the YARN API and format the result"));
     ]
     @ (Daemonize.additional_queries rp.daemonized_script
-       |> List.filter ~f:(fun (n, _) -> n <> "ketrew-markup/status"))
+       |> List.filter ~f:(fun (n, _) ->
+           n <> "ketrew-markup/status"
+           && n <> "log"
+         ))
 
 (*
 Dirty way of finding the application ID: we parse the output to find the logging
