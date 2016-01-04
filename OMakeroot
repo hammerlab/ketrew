@@ -40,8 +40,7 @@ if $(test $(getenv JSOO_DEBUG_MODE, "") = true)
     JSOO_FLAGS=--pretty --no-inline --debug-info
     export
 else
-    # Seems necessary
-    JSOO_FLAGS= --no-inline
+    JSOO_FLAGS=
     export
 
 OCAMLFLAGS = -bin-annot -thread -short-paths -g -strict-formats -strict-sequence -w +9 -safe-string
