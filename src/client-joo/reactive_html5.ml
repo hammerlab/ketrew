@@ -68,8 +68,8 @@ module H5 = struct
     let north_east_arrow_label () =
       label_default [pcdata "➚"]
 
-    let reload_icon () =
-      span ~a:[a_title "Reload"] [pcdata "↻"]
+    let reload_icon ?(tooltip = "Reload") () =
+      span ~a:[a_title tooltip] [pcdata "↻"]
 
     type tab_item =
       bool React.signal * Xml.mouse_event_handler *
