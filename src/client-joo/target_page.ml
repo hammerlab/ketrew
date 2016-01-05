@@ -277,26 +277,34 @@ module Html = struct
     let id = t.target_id in
     let on_display_right_now = t.build_process_on_display in
     let control ~content ~help ~self current =
-      Bootstrap.button
-        ~enabled:(current <> self)
-        ~on_click:(fun _ -> Reactive.Source.set on_display_right_now self; false)
-        [span ~a:[a_title help] content]
-    in
+      match current, current = self with
+      | `Raw_json, _
+      | `Nothing, _
+      | _, false ->
+        Bootstrap.button
+          ~enabled:true
+          ~on_click:(fun _ ->
+              Reactive.Source.set on_display_right_now self; false)
+          [span ~a:[a_title help] content]
+      | `Result_of query, true ->
+        Bootstrap.button
+          ~enabled:true
+          ~on_click:(fun _ ->
+              t.reload_query_result query;
+              false)
+          [span ~a:[a_title help] [
+              span content; pcdata " ";
+              Bootstrap.reload_icon ~tooltip:help ()
+            ]] in
     let raw_json_control current =
       control ~content:[pcdata "Initial Raw JSON"] ~self:`Raw_json current
         ~help:"Display the JSON defined by the backend pluging" in
-    let query_additional_controls current = [
-      Bootstrap.button
-        ~on_click:(fun _ ->
-            t.reload_available_queries ();
-            begin match current with
-            | `Nothing | `Raw_json -> ()
-            | `Result_of query -> t.reload_query_result ~query;
-            end;
-            false)
-        [Bootstrap.reload_icon ()];
-    ]
-    in
+    let reload_available_queries =
+      local_anchor
+        ~on_click:(fun _ -> t.reload_available_queries (); false)
+        [span [
+            Bootstrap.reload_icon
+              ~tooltip:"Reload list of avaialable queries" ()]] in
     let make_toolbar list_of_lists =
       div  ~a:[a_class ["btn-toolbar"]]
         (List.filter_map list_of_lists ~f:(function
@@ -316,7 +324,9 @@ module Html = struct
             | `No_operation -> div [h3 [pcdata "No-operation"]]
             | `Long_running (name, init) ->
               div [
-                h3 [pcdata (fmt "Using %s" name)];
+                h4 [pcdata "Queries For The Backend ";
+                    code [pcdata name]; pcdata " ";
+                    reload_available_queries; pcdata ": "];
                 Reactive_node.div Reactive.(
                     Signal.tuple_2
                       (Source.signal on_display_right_now)
@@ -341,15 +351,14 @@ module Html = struct
                                   match Markup_queries.discriminate qname with
                                   | Some subname ->
                                     control
-                                      ~content:[pcdata subname]
+                                      ~content:[strong [pcdata subname]]
                                       ~help
                                       ~self:(`Result_of qname) current
                                   | None ->
                                     control
-                                      ~content:[pcdata (fmt "%s:%s" name qname)]
+                                      ~content:[code [pcdata qname]]
                                       ~help
                                       ~self:(`Result_of qname) current);
-                              query_additional_controls current;
                             ]
                         )
                     |> Signal.singleton);
