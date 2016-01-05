@@ -112,7 +112,7 @@ module Html = struct
 
   let title t = link_title t (* with the default argument *)
 
-  
+
   let target_controls t =
     let open H5 in
     let restarting = Reactive.Source.create `None in
@@ -124,7 +124,7 @@ module Html = struct
         |> Signal.map ~f:(fun (rest, kill) ->
             [
               Bootstrap.button_group ~justified:false [
-                Bootstrap.button 
+                Bootstrap.button
                   ~enabled:(rest <> `In_progress)
                   ~on_click:(fun _ ->
                       Log.(s "Restart Target" @ verbose);
@@ -138,7 +138,7 @@ module Html = struct
                   | `None | `Result _ -> [pcdata "Restart"]
                   | `In_progress ->
                     [pcdata "Restarting "; Bootstrap.loader_gif ()]);
-                Bootstrap.button 
+                Bootstrap.button
                   ~enabled:(kill <> `In_progress)
                   ~on_click:(fun _ ->
                       Log.(s "Kill Target" @ verbose);
@@ -377,7 +377,7 @@ module Html = struct
                                 Bootstrap.success_box [
                                   strong [pcdata "Result of "; code [pcdata query]];
                                   pcdata (fmt " fetched on %s:" (Markup.date_to_string date));
-                                  div 
+                                  div
                                     begin match Markup_queries.discriminate query with
                                     | Some _ ->
                                       [Markup_queries.render r]
@@ -393,12 +393,11 @@ module Html = struct
                             )
                           |> Signal.list
                         )
-
-                      end
-                      |> Signal.singleton);
-                ]
-              end)
-          |> Reactive.Signal.singleton)
+                    end
+                    |> Signal.singleton);
+              ]
+            end)
+        |> Reactive.Signal.singleton)
 
   let render t =
     let showing_on_the_right = t.showing_on_the_right in
@@ -416,13 +415,13 @@ module Html = struct
           Reactive.Source.signal showing_on_the_right
           |> Reactive.Signal.map ~f:(fun showing ->
               Bootstrap.button_group ~justified:true [
-                Bootstrap.button 
+                Bootstrap.button
                   ~enabled:(showing <> `Flat_status)
                   ~on_click:(fun _ ->
                       Reactive.Source.set showing_on_the_right `Flat_status;
                       false)
                   [pcdata "Status history"];
-                Bootstrap.button 
+                Bootstrap.button
                   ~enabled:(showing <> `Build_process_details)
                   ~on_click:(fun _ ->
                       Reactive.Source.set showing_on_the_right `Build_process_details;
