@@ -195,7 +195,7 @@ let create client =
 
 module Html = struct
 
-  let title _ = H5.(span [pcdata "Processes"])
+  let title _ = H5.(span [pcdata "SSH Named Hosts"])
 
   let summarize_string ?(max_length = 20) s =
     let open H5 in
@@ -446,8 +446,8 @@ module Html = struct
       Bootstrap.button [strong [pcdata text]]
         ~on_click:(fun _ ->
             Reactive.Source.modify (items_visibility t ~id) ~f:(fun current ->
-                 update_logs t ~id;
-                 Item_visiblity.hide_show current);
+                update_logs t ~id;
+                Item_visiblity.hide_show current);
             false) in
     let status_badge () =
       match status with
@@ -496,7 +496,7 @@ module Html = struct
             Reactive.Source.modify (items_visibility t ~id) ~f:(fun current ->
                 (if not with_details then update_logs t ~id else ());
                 Item_visiblity.with_details (not with_details) current);
-          false)
+            false)
     in
     let visible_stuf ~with_details mrkopt =
       begin match status with
@@ -544,62 +544,68 @@ module Html = struct
   let controls_header t ~can_update =
     let open H5 in
     let add_interface_visible = Reactive.Source.create false in
-    div [
-      h3 [pcdata "SSH Connections"];
-      Bootstrap.button_group ~justified:false [
-        Bootstrap.button ~enabled:can_update [pcdata "Add/start new"]
+    let main_button interface_visible =
+      match interface_visible with
+      | true -> strong [pcdata "Create new SSH connection:"]
+      | false ->
+        local_anchor [strong [pcdata "Add/start new connection"]]
           ~on_click:(fun _ ->
               Reactive.Source.modify add_interface_visible not;
               false);
-      ];
-      Reactive_node.div Reactive.(
-          Source.map_signal add_interface_visible ~f:(function
-            | true ->
-              [
-                Bootstrap.(
-                  let ssh_uri = ref "ssh://" in
-                  let host_name = ref "" in
-                  Input_group.make [
-                    Input_group.addon [
-                      pcdata "Enter SSH URI (like ssh://user@example.com:42)";
-                    ];
-                    Input_group.text_input `Text
-                      ~value:!ssh_uri
-                      ~on_input:(fun str -> ssh_uri := str)
-                      ~on_keypress:(function
-                        | 13 ->
-                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
-                          Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
-                        | other ->
-                          Log.(s "on_keypress → " % i other  @ verbose));
-                    Input_group.addon [
-                      pcdata "Enter a name for this connection";
-                    ];
-                    Input_group.text_input `Text
-                      ~value:!host_name
-                      ~on_input:(fun str -> host_name := str)
-                      ~on_keypress:(function
-                        | 13 ->
-                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
-                          Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
-                        | other ->
-                          Log.(s "on_keypress → " % i other  @ verbose));
-                    Input_group.button_group [
-                      button [pcdata "Go!"] ~on_click:(fun _ ->
-                          start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
-                          false);
-                    ]
-                  ]
-                )
-              ]
-            | false ->  []
-            ) |> Signal.list);
-    ]
+    in
+    Reactive_node.div Reactive.(
+        Source.map_signal add_interface_visible ~f:(function
+          | true ->
+            [
+              main_button true;
+              Bootstrap.(
+                let ssh_uri = ref "ssh://" in
+                let host_name = ref "" in
+                Input_group.make [
+                  Input_group.addon [
+                    pcdata "Enter SSH URI (like ssh://user@example.com:42)";
+                  ];
+                  Input_group.text_input `Text
+                    ~value:!ssh_uri
+                    ~on_input:(fun str -> ssh_uri := str)
+                    ~on_keypress:(function
+                      | 13 ->
+                        start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                        Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
+                      | other ->
+                        Log.(s "on_keypress → " % i other  @ verbose));
+                  Input_group.addon [
+                    pcdata "Enter a name for this connection";
+                  ];
+                  Input_group.text_input `Text
+                    ~value:!host_name
+                    ~on_input:(fun str -> host_name := str)
+                    ~on_keypress:(function
+                      | 13 ->
+                        start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                        Log.(s "on_keypress → enter " % s !ssh_uri  @ verbose)
+                      | other ->
+                        Log.(s "on_keypress → " % i other  @ verbose));
+                  Input_group.button_group [
+                    button [pcdata "Go!"] ~on_click:(fun _ ->
+                        start_new_ssh_connection t ~name:!host_name ~uri:!ssh_uri;
+                        false);
+                    button [pcdata "Cancel"] ~on_click:(fun _ ->
+                        Reactive.Source.modify add_interface_visible not;
+                        false);
+                  ];
+                ]
+              )
+            ]
+          | false ->  [main_button false]
+          ) |> Signal.list)
 
   let rec display_list_of_connections ?(hide_loading = false) t =
     let open H5 in
     let list_of_connections l =
       ul (
+        li [controls_header t ~can_update:true]
+        ::
         List.map l ~f:(fun {Ssh_connection.id; name; uri; status} ->
             li [
               single_connection_reactive_div t ~uri ~name ~id ~status;
@@ -607,6 +613,7 @@ module Html = struct
       );
     in
     div [
+      h3 [pcdata "Manage Named SSH Connections"];
       Reactive_node.div Reactive.(
           Signal.tuple_2
             (Source.signal t.ssh_connections_status)
@@ -615,13 +622,11 @@ module Html = struct
               match current_value with
               | `Error m, prev ->
                 div [
-                  controls_header t ~can_update:true;
                   Bootstrap.error_box [Markup.to_html m];
                   list_of_connections prev;
                 ]
               | `In_progress, prev ->
                 div [
-                  controls_header t ~can_update:false;
                   Bootstrap.warning_box [
                     pcdata "Fetching stuff "; Bootstrap.loader_gif ();
                   ];
@@ -629,7 +634,6 @@ module Html = struct
                 ]
               | `Ok, l ->
                 div [
-                  controls_header t ~can_update:true;
                   list_of_connections l;
                 ]
             )
