@@ -181,7 +181,11 @@ let create ~protocol_client () =
     |> React.E.map (function
       | true ->
         Reactive.Source.modify tabs ~f:(fun l ->
-            if List.mem `Processes_ui ~set:l then l else `Processes_ui :: l)
+            if List.mem `Processes_ui ~set:l then l else
+              begin match l with (* Insert it “sorted” after the Status one *)
+              | `Status :: t -> `Status :: `Processes_ui :: t
+              | other -> `Processes_ui :: other
+              end)
       | false -> 
         Reactive.Source.modify tabs ~f:(fun l ->
             List.filter l ~f:(fun x -> not (Tab.eq x `Processes_ui)))
