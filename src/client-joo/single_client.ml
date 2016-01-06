@@ -993,7 +993,7 @@ module Html = struct
     let current_tab = client.current_tab in
     let tabs =
       Reactive.Source.signal client.tabs
-      |> Reactive.Signal.map ~f:(fun tabs ->
+      |> React.S.map ~eq:(fun _ _ -> false) (fun tabs ->
           List.map tabs ~f:begin function
           | `Target_table ->
             Bootstrap.tab_item
