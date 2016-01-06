@@ -61,7 +61,7 @@ section # Javascript client code
     OCAML_LOCAL_LIBS[] = src/pure/ketrew_pure
     NATIVE_ENABLED = false
     _build/client.js: $(file _build/src/client-joo/ketrew-client-joo.run)
-        js_of_ocaml $(JSOO_FLAGS) +weak.js +toplevel.js  $< -o $@
+        js_of_ocaml $(JSOO_FLAGS) +weak.js $< -o $@
     _build/style.css: $(file ./src/css/bootstrap_335_min.css)
         echo "Building _build/style.css"
         cp ./src/css/bootstrap_335_min.css _build/style.css
