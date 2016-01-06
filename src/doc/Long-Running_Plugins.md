@@ -1,6 +1,8 @@
 Long-Running Process Plugins
 ============================
 
+“Long-running plugins” are the name given to the implementations of Ketrew's
+backends, e.g. `Daemonize`, `Yarn`, or `PBS`.
 
 Implementation
 --------------
@@ -9,9 +11,9 @@ The long-running plugins *must*:
 
 - implement a module satisfying the `LONG_RUNNING` interface;
 - provide a way to create values like
-<code>`Long_running (name, serialized_state)</code>;
+  `` `Long_running (name, serialized_state)``;
 - register themselves with the function:
-`Ketrew.Plugin.register_long_running_plugin`.
+  `Ketrew.Plugin.register_long_running_plugin`.
 
 
 Examples
@@ -29,9 +31,38 @@ Moreover, the tests contain a “dynamically linked plugin” that uses the
 implementation of `Ketrew.Daemonize` and adds a (stupid) custom runtime-query:
 
 - Implementation of the plugin:
-[`src/test/dummy-plugin/dummy_plugin.ml`](../test/dummy-plugin/dummy_plugin.ml).
+  [`src/test/dummy-plugin/dummy_plugin.ml`](../test/dummy-plugin/dummy_plugin.ml).
 - Workflow script that uses the plugin:
-[`src/test/dummy_plugin_user.ml`](../test/dummy_plugin_user.ml).
+  [`src/test/dummy_plugin_user.ml`](../test/dummy_plugin_user.ml).
+
+Setup
+-----
+
+By default, Ketrew expects long-running plugins to be compiled to native
+dynamically loadable modules (`.cmxs` files).
+
+Modules are then loaded from the configuration file thanks to the `~plugins`
+optional argument of `Ketrew.Configuration.create`. Plugins can be direct
+(preferably absolute) paths to `.cmxs` files *or* names of OCamlfind packages:
+
+```ocaml
+let plugins = [
+  `OCamlfind "long_running_plugin_package";
+  `Compiled "$PATH/to/custom_long_running_plugin.cmxs";
+]
+let () =
+  output [
+    profile "server-with-plugins"
+      (create ~debug_level ~plugins
+        (* ... *)
+```
+
+Plugins will be loaded in the order given in the list and can have
+dependencies (that Ketrew will load).
+
+Note that if Ketrew is compiled to bytecode one has to use `.cmo` or `.cma` 
+files instead of `.cmxs`.
+
 
 Alternative To Dyn-link
 -----------------------
