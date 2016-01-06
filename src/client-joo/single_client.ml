@@ -854,13 +854,12 @@ module Html = struct
   let status t =
     let open H5 in
     Bootstrap.panel ~body:[
-      h3 [pcdata "Client"];
       Reactive_node.div Reactive.(
           Source.signal t.status
           |> Signal.map ~f:begin fun (date, status) ->
             [
               h4 [
-                pcdata (fmt "Status");
+                pcdata (fmt "Server Status");
               ];
               pcdata (fmt "Last updated: %s."
                         (Markup.date_to_string date));
@@ -1009,7 +1008,7 @@ module Html = struct
                   |> Signal.map ~f:(function `Status -> true | _ -> false)
                 )
               ~on_click:(fun _ -> Reactive.Source.set current_tab `Status; false)
-              [pcdata "Status"]
+              [pcdata "Internal Information"]
           | `Processes_ui ->
             Bootstrap.tab_item
               ~active:Reactive.(
