@@ -144,6 +144,8 @@ public.DotMerlin(topdir, packages) =
 public.DotOCamlinit(dirs, packages, to_load) =
     .ocamlinit:
         rm -f $@
+        echo "#use \"topfind\"" >> $@
+        echo "#thread" >> $@
         foreach(d => ..., $(dirs))
             echo "#directory \"_build/$(d)\"" >> $@
         foreach(m => ..., $(packages))
