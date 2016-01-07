@@ -31,7 +31,7 @@ travis_install_on_linux () {
     sudo apt-get install sqlite3=3.7.15.1-1~travis1
     sudo sqlite3 -version
 
-    sudo apt-get install libpq-dev postgresql
+    sudo apt-get install libpq-dev postgresql-9.4
 
     export PATH=$PATH:/usr/lib/postgresql/9.4/bin
     echo "PATH: $PATH"
