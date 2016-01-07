@@ -33,22 +33,26 @@ let directory path :  t  =
 
 let root : t = directory "/"
 
+let raise_invalid_arg path msg =
+  invalid_argument_exn ~where:"Path"
+    (fmt "%s %s" path msg)
+
 let absolute_file_exn s : t =
   if Filename.is_relative s
-  then invalid_argument_exn ~where:"Path" "absolute_file_exn"
+  then raise_invalid_arg s "is not an absolute file path"
   else file s
 let absolute_directory_exn s : t =
   if Filename.is_relative s
-  then invalid_argument_exn ~where:"Path" "absolute_directory_exn"
+  then raise_invalid_arg s "is not an absolute directory path"
   else directory s
 let relative_directory_exn s : t =
   if Filename.is_relative s
   then directory s
-  else invalid_argument_exn ~where:"Path" "relative_directory_exn"
+  else raise_invalid_arg s "is not a relative directory path"
 let relative_file_exn s : t =
   if Filename.is_relative s
   then file s
-  else invalid_argument_exn ~where:"Path" "relative_file_exn"
+  else raise_invalid_arg s "is not a relative file path"
 
 let concat = fun x y -> { kind = y.kind; path = Filename.concat x.path y.path}
 
@@ -63,4 +67,3 @@ let size_shell_command = function
 let exists_shell_condition = function
 | {kind = `File; path } ->  fmt "[ -f %s ]" (Filename.quote path)
 | {kind = `Directory; path } ->  fmt "[ -d %s ]" (Filename.quote path)
-
