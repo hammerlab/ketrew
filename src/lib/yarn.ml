@@ -138,7 +138,7 @@ let log rp = ["YARN", Display_markup.log (markup rp)]
 
 let additional_queries run_param =
   let always_there = [
-    "ketrew-markup/status", Log.(s "Get the status as Markup");
+    "ketrew-markup/status", Log.(s "Get the state contents of the job");
   ] in
   match run_param with
   | `Created _ -> always_there
@@ -150,12 +150,22 @@ let additional_queries run_param =
       ("api-app-raw", Log.(s "Call the YARN API and retrieve the JSON blob"));
       ("ketrew-markup/api-app",
        Log.(s "Call the YARN API and format the result"));
-    ]
-    @ (Daemonize.additional_queries rp.daemonized_script
-       |> List.filter ~f:(fun (n, _) ->
-           n <> "ketrew-markup/status"
-           && n <> "log"
-         ))
+    ] @ (
+      Daemonize.additional_queries rp.daemonized_script
+      |> List.filter_map ~f:(function
+        | "ketrew-markup/status", _ ->
+          None (* it's already included in `always_there` *)
+        | "log", _ -> Some ("log", Log.(s "Step-by-step log of the Program.t"))
+        | ("stdout", _ | "stderr", _) as std->
+          Some (fst std,
+                Log.(sf "`%s`" (fst std) %
+                     s " of the YARN client script, not your Program.t"))
+        | "check-process", _ ->
+          Some ("check-process",
+                Log.(s "Check the process-group of the YARN client with `ps`"))
+        | other -> Some other
+        )
+    )
 
 (*
 Dirty way of finding the application ID: we parse the output to find the logging
