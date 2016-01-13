@@ -25,11 +25,20 @@ type t ={
   path : string;
 } [@@deriving yojson]
 
+let canonicalize p =
+  String.split ~on:(`Character '/') p
+  |> begin function
+  | [] | [""] | [""; ""] -> [""; ""]
+  | "" :: more -> "" :: List.filter more ~f:((<>) "")
+  | other -> List.filter other ~f:((<>) "")
+  end
+  |> String.concat ~sep:"/"
+
 let file path :  t =
-  {kind = `File; path}
+  {kind = `File; path = canonicalize path}
 
 let directory path :  t  =
-  {kind = `Directory; path}
+  {kind = `Directory; path = canonicalize path}
 
 let root : t = directory "/"
 
