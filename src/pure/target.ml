@@ -1022,10 +1022,20 @@ module Automaton = struct
           return_with_history t ~no_change:true new_state
         | `Ok (`Successful bookkeeping) ->
           return_with_history t (`Ran_successfully (to_history ?log c, bookkeeping))
-        | `Error (`Try_again, how, bookkeeping) ->
-          return_with_history t ~no_change:true
-            (`Still_running_despite_recoverable_error
-               (how, to_history ?log c, bookkeeping))
+        | `Error (`Try_again, how, new_bookkeeping) ->
+          let new_state =
+            match c with
+            | `Still_running_despite_recoverable_error
+                (_, history, old_bookkepping) ->
+              (* Special case to “flatten” the history: see above. *)
+              `Still_running_despite_recoverable_error
+                (how, history, new_bookkeeping)
+            | `Started_running _
+            | `Still_running _ ->
+              `Still_running_despite_recoverable_error
+                (how, to_history ?log c, bookkeeping)
+          in
+          return_with_history t ~no_change:true new_state
         | `Error (`Fatal, log, bookkeeping) -> 
           return_with_history t
             (`Failed_running (to_history ~log c,
