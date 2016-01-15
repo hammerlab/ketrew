@@ -275,7 +275,8 @@ module Engine_instructions = struct
   let submit ~server_state ~targets =
     log_info Log.(s "Adding " % i (List.length targets) % s " targets");
     Engine.add_targets server_state.state targets
-    >>= go_green server_state
+    >>= fun () ->
+    go_green server_state ()
 
   let kill ~server_state ids =
     Deferred_list.while_sequential ids (fun id -> Engine.kill server_state.state ~id)
@@ -402,6 +403,12 @@ let answer_message ~server_state ?token msg =
           ~id ~index ~length
         in
         return msg)
+  | `Get_notifications query ->
+    with_capability `See_server_status (fun ~server_state ->
+        Logging.User_level_events.get_notifications_or_block ~query
+        >>= fun notifications ->
+        return (`Notifications notifications)
+      )    
   | `Process p_msg ->
     with_capability `Play_with_process_holder (fun ~server_state ->
         let host_io = Engine.host_io server_state.state in

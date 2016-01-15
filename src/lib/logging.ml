@@ -28,6 +28,14 @@ module Ring = struct
     in
     go 0 init (p t.index)
 
+  let take t max =
+    fold_right ~init:(0, []) t ~f:(fun (count, l) item ->
+        if count >= max
+        then (count, l)
+        else (count + 1, item :: l))
+    |> snd
+
+  
   let clear t =
     t.index <- 0;
     Array.iteri t.recent  ~f:(fun i _ -> t.recent.(i) <- None)
@@ -110,3 +118,82 @@ module Global = struct
 
 end (* Global *)
 
+module User_level_events = struct
+  type item = {
+    date: Time.t;
+    event: [
+      | `Workflow_received of string list * int
+    ]
+    } [@@deriving yojson]
+
+  let event_to_string =
+    function
+    | `Workflow_received ([one], count) ->
+      fmt "Workflow received: %s (%d node%s)"
+        one count
+        (match count with 1 -> "" | _ -> "s")
+    | `Workflow_received (more, count) ->
+      fmt "Multi-Workflow received: %s (%d node%s)"
+        (String.concat ~sep:", " more) count
+        (match count with 1 -> "" | _ -> "s")
+
+  type t = {
+    ring: item Ring.t;
+    signal_changes: unit -> unit;
+    changes: unit React.E.t;
+  }
+  let _global : t =
+    let changes, signal_changes = React.E.create () in
+    {
+      changes; signal_changes; 
+      ring = Ring.create ~size:1000 ();
+    }
+
+  let item ?date event =
+    let date =
+      match date with
+      | None -> Time.now ()
+      | Some d -> d in
+    {date; event}
+    
+  let workflow_received ~names ~count =
+    Ring.add _global.ring (item (`Workflow_received (names, count)));
+    _global.signal_changes ()
+
+  let get_notifications_or_block ~query =
+    begin match query with
+    | None ->
+      return (Ring.take _global.ring 10)
+    | Some since ->
+      wrap_deferred
+        ~on_exn:(fun e -> `Failure ("User_level_events" ^ Printexc.to_string e))
+        Lwt.(fun () ->
+            let rec try_or_wait () =
+              let result =
+                Ring.fold_right _global.ring ~init:[] ~f:(fun l item ->
+                    if item.date > since
+                    then item :: l
+                    else l)
+                |> List.rev in
+              match result with
+              | [] ->
+                Lwt.pick [
+                  (Lwt_react.E.next _global.changes >>= fun () -> return `Event);
+                  (Lwt_unix.sleep 30. >>= fun () -> return `Timeout);
+                ]
+                >>= begin function
+                | `Event -> try_or_wait ()
+                | `Timeout -> return []
+                end
+              | _ :: _  ->
+                return result
+            in
+            try_or_wait ())
+    end
+    >>= fun result ->
+    return (List.map result ~f:(fun {date; event} ->
+        date, event_to_string event))
+
+
+  
+end

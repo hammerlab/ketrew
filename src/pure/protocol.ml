@@ -136,6 +136,7 @@ module Down_message = struct
       | `Ok
       | `Missing_deferred
       | `Process of Process_sub_protocol.down
+      | `Notifications of (float * string) list
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)
@@ -192,6 +193,7 @@ module Up_message = struct
       | `Get_server_status
       | `Get_deferred of string * int * int (* id × index × length *)
       | `Process of Process_sub_protocol.up
+      | `Get_notifications of float option
     ] [@@deriving yojson]
   end
   include Json.Versioned.Of_v0(V0)

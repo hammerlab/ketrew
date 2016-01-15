@@ -139,7 +139,71 @@ module Async_task_log = struct
 
 end
 
+module Notifications = struct
+  type t = {
+    protocol_client: Protocol_client.t;
+    current: (float * string) list Reactive.Source.t;
+    mutable last_accessed: float option;
+  }
 
+  let start_updating t =
+    let set_error t msg =
+      Reactive.Source.modify t.current ~f:(fun current ->
+          (Time.now (), msg) :: current);
+      return () in
+    asynchronously (fun () ->
+        let rec loop () =
+          begin
+            Protocol_client.call t.protocol_client (`Get_notifications t.last_accessed)
+          end >>< begin function
+          | `Ok (`Notifications l) ->
+            Reactive.Source.modify t.current ~f:(fun current ->
+                List.take (l @ current) 10);
+            t.last_accessed <-
+              Some (
+                let init = Option.value ~default:(42.) t.last_accessed in
+                List.fold ~init l ~f:(fun prev (t, _) -> max prev t));
+            loop ()
+          | `Ok other ->  set_error t "Protocol error: Wrong down messsage"
+          | `Error (`Protocol_client pc) ->
+            set_error t (fmt "Protocol_client: %s" (Protocol_client.Error.to_string pc))
+          | `Error (`Exn e) ->
+            set_error t (fmt "Exception: %s" (Printexc.to_string e))
+          end
+          >>= fun () ->
+          (* There was an error … *)
+          (Pvem_js.sleep 15. >>< fun _ -> return ())
+          >>= fun () ->
+          loop ()
+        in
+        loop ()
+      )
+
+  let create ~protocol_client () =
+    let current =
+      Reactive.Source.create [
+        Time.now (), "UI Started !"
+      ] in
+    let t = {protocol_client; current; last_accessed = None} in
+    start_updating t;
+    t
+
+  let render t =
+    let open H5 in
+    Bootstrap.success_box [
+      Reactive_node.ul Reactive.(
+          Source.map_signal t.current ~f:(fun l ->
+              List.map l ~f:(fun (time, msg) ->
+                  li [
+                    code [pcdata (Markup.date_to_string time)];
+                    pcdata ": ";
+                    i [pcdata msg];
+                  ]))
+            |> Signal.list);
+    ];
+
+
+end
 
 type t = {
   protocol_client: Protocol_client.t;
@@ -162,6 +226,8 @@ type t = {
   async_task_log: Async_task_log.t;
 
   list_of_ids_log: Display_markup.t list Reactive.Source.t;
+
+  notifications: Notifications.t;
 }
 
 
@@ -186,11 +252,12 @@ let create ~protocol_client () =
               | `Status :: t -> `Status :: `Processes_ui :: t
               | other -> `Processes_ui :: other
               end)
-      | false -> 
+      | false ->
         Reactive.Source.modify tabs ~f:(fun l ->
             List.filter l ~f:(fun x -> not (Tab.eq x `Processes_ui)))
       )
   in
+  let notifications = Notifications.create ~protocol_client () in
   {
     protocol_client;
     target_cache = Target_cache.create ();
@@ -207,6 +274,7 @@ let create ~protocol_client () =
     error_log = Error_log.create ();
     async_task_log = Async_task_log.create ();
     list_of_ids_log = Reactive.Source.create [];
+    notifications;
   }
 
 let log t =
@@ -232,7 +300,7 @@ let interesting_target_ids t =
         let with_deps id =
           match
             Target_cache.get_target_summary_signal t.target_cache ~id
-            |> Signal.value 
+            |> Signal.value
           with
           | `None -> [id]
           | `Pointer (_, summary)
@@ -362,7 +430,7 @@ let preemptible_asynchronous_loop t ~name ~body =
   in
   asynchronous_loop t ~name loop ~wake_up:(name, condition);
   (object
-    method wake_up = 
+    method wake_up =
       woken_up := true;
       Lwt_condition.broadcast condition ()
     method log = loop_log
@@ -515,7 +583,7 @@ let start_getting_flat_statuses t =
         Protocol_client.call t.protocol_client
           ~timeout:(t.block_time_request
                     +. t.default_protocol_client_timeout)
-          (`Get_target_flat_states (status_query, now, 
+          (`Get_target_flat_states (status_query, now,
                                     [`Block_if_empty_at_most
                                        t.block_time_request]))
         >>= fun msg_down ->
@@ -535,9 +603,9 @@ let start_getting_flat_statuses t =
     in
     batch_fetching target_ids
   in
-  (* We use this reference because 
+  (* We use this reference because
      `interesting_target_ids t |> Reactive.Signal.value` was throwing
-     React exceptions. The reference gets the “current” value from 
+     React exceptions. The reference gets the “current” value from
      the `React.event` below. *)
   let ref_to_changed_id_list = ref [] in
   let body () =
@@ -1094,5 +1162,9 @@ module Html = struct
                         | `Target_page tp -> Target_page.Html.render tp)
                       |> Signal.singleton)
         );
+      div [
+        h3 [pcdata "Notifications"];
+        Notifications.render client.notifications;
+      ]
     ]
 end

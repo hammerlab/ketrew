@@ -478,6 +478,12 @@ let all_targets t =
 let get_target t id =
   Persistent_data.get_target t.data id
 let add_targets t l =
+  let names, count =
+    List.fold l ~init:([], 0) ~f:(fun (l, count) t ->
+        if Target.State.Is.activated_by_user (Target.state t)
+        then (Target.name t :: l, count + 1)
+        else (l, count + 1)) in
+  Logging.User_level_events.workflow_received ~names ~count;
   Persistent_data.Adding_targets.register_targets_to_add t.data l
 
   
