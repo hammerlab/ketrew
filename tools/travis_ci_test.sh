@@ -31,11 +31,12 @@ travis_install_on_linux () {
     sudo apt-get install sqlite3=3.7.15.1-1~travis1
     sudo sqlite3 -version
 
+    sudo killall postgres
     sudo apt-get install libpq-dev postgresql-9.4
 
     export PATH=$PATH:/usr/lib/postgresql/9.4/bin
     echo "PATH: $PATH"
-    
+
     export opam_init_options="--comp=$OCAML_VERSION"
     sudo apt-get install -qq  opam time git
 }
@@ -161,5 +162,3 @@ ocaml src/example_scripts/daemonize_workflow.ml 'ls -la' 'hello@example.com'
 
 echo "* loop until nothing moves"
 ketrew status --loop
-
-
