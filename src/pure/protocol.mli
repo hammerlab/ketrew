@@ -123,6 +123,7 @@ module Down_message : sig
     | `Ok
     | `Missing_deferred
     | `Process of Process_sub_protocol.down
+    | `Notifications of (float * string) list
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
@@ -175,6 +176,7 @@ module Up_message : sig
     | `Get_server_status
     | `Get_deferred of string * int * int (* id × index × length *)
     | `Process of Process_sub_protocol.up
+    | `Get_notifications of float option
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
 
