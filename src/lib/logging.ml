@@ -123,6 +123,7 @@ module User_level_events = struct
     date: Time.t;
     event: [
       | `Workflow_received of string list * int
+      | `Workflow_node_killed of string
     ]
     } [@@deriving yojson]
 
@@ -136,6 +137,8 @@ module User_level_events = struct
       fmt "Multi-Workflow received: %s (%d node%s)"
         (String.concat ~sep:", " more) count
         (match count with 1 -> "" | _ -> "s")
+    | `Workflow_node_killed id ->
+      fmt "Workflow-node `%s` set to be killed" id
 
   type t = {
     ring: item Ring.t;
@@ -155,10 +158,15 @@ module User_level_events = struct
       | None -> Time.now ()
       | Some d -> d in
     {date; event}
-    
-  let workflow_received ~names ~count =
-    Ring.add _global.ring (item (`Workflow_received (names, count)));
+
+  let add_item item_content =
+    Ring.add _global.ring (item item_content);
     _global.signal_changes ()
+
+  let workflow_received ~names ~count =
+    add_item (`Workflow_received (names, count))
+  let workflow_node_killed ~id =
+    add_item (`Workflow_node_killed id)
 
   let get_notifications_or_block ~query =
     begin match query with
