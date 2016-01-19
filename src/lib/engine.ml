@@ -132,7 +132,7 @@ module Run_automaton = struct
         | `Error (`Database_unavailable _ as e)
         | `Error (`Missing_data _ as e) ->
           (* Dependency not-found => should get out of the way *)
-          log_error e 
+          log_error e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
                  % OCaml.list quote ids);
@@ -455,8 +455,10 @@ let get_list_of_target_ids t query =
   return list_of_ids
 
 let kill t ~id =
-  Logging.User_level_events.workflow_node_killed ~id;
   Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data [id]
+  >>= fun () ->
+  Logging.User_level_events.workflow_node_killed ~id;
+  return ()
 
 let restart_target engine target_id =
   Persistent_data.get_target engine.data target_id
@@ -484,7 +486,7 @@ let add_targets t l =
         if Target.State.Is.activated_by_user (Target.state t)
         then (Target.name t :: l, count + 1)
         else (l, count + 1)) in
-  Logging.User_level_events.workflow_received ~names ~count;
   Persistent_data.Adding_targets.register_targets_to_add t.data l
-
-  
+  >>= fun () ->
+  Logging.User_level_events.workflow_received ~names ~count;
+  return ()
