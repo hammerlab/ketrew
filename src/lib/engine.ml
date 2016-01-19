@@ -474,6 +474,8 @@ let restart_target engine target_id =
     engine.data [this_new_target]
   >>= fun () ->
   let id = Target.id this_new_target in
+  Logging.User_level_events.workflow_node_restarted
+    ~old_id:target_id ~new_id:id ~name:(Target.name this_new_target);
   return id
 
 let all_targets t =
