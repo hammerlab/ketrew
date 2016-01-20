@@ -157,8 +157,12 @@ module Notifications = struct
             Protocol_client.call t.protocol_client (`Get_notifications t.last_accessed)
           end >>< begin function
           | `Ok (`Notifications l) ->
+            let sort_notifications =
+              List.sort ~cmp:(fun (t1, _) (t2, _) -> compare t2 t1) in
+            let new_sorted = sort_notifications l in
             Reactive.Source.modify t.current ~f:(fun current ->
-                List.take (l @ current) 10);
+                List.take (new_sorted @ current) 15 |> sort_notifications
+              );
             t.last_accessed <-
               Some (
                 let init = Option.value ~default:(42.) t.last_accessed in

@@ -35,7 +35,7 @@ module Ring = struct
         else (count + 1, item :: l))
     |> snd
 
-  
+
   let clear t =
     t.index <- 0;
     Array.iteri t.recent  ~f:(fun i _ -> t.recent.(i) <- None)
@@ -129,6 +129,8 @@ module User_level_events = struct
     date: Time.t;
     event: [
       | `Workflow_received of string list * int
+      | `Workflow_node_killed of string
+      | `Workflow_node_restarted of string * string * string
     ]
     } [@@deriving yojson]
 
@@ -142,6 +144,11 @@ module User_level_events = struct
       fmt "Multi-Workflow received: %s (%d node%s)"
         (String.concat ~sep:", " more) count
         (match count with 1 -> "" | _ -> "s")
+    | `Workflow_node_killed id ->
+      fmt "Workflow-node `%s` set to be killed" id
+    | `Workflow_node_restarted (old_id, new_id, name) ->
+      fmt "Workflow `%s` resubmitted as `%s` (%s)"
+        old_id new_id name
 
   type t = {
     ring: item Ring.t;
@@ -151,7 +158,7 @@ module User_level_events = struct
   let _global : t =
     let changes, signal_changes = React.E.create () in
     {
-      changes; signal_changes; 
+      changes; signal_changes;
       ring = Ring.create ~size:1000 ();
     }
 
@@ -161,10 +168,17 @@ module User_level_events = struct
       | None -> Time.now ()
       | Some d -> d in
     {date; event}
-    
-  let workflow_received ~names ~count =
-    Ring.add _global.ring (item (`Workflow_received (names, count)));
+
+  let add_item item_content =
+    Ring.add _global.ring (item item_content);
     _global.signal_changes ()
+
+  let workflow_received ~names ~count =
+    add_item (`Workflow_received (names, count))
+  let workflow_node_killed ~id =
+    add_item (`Workflow_node_killed id)
+  let workflow_node_restarted ~old_id ~new_id ~name =
+    add_item (`Workflow_node_restarted (old_id, new_id, name))
 
   let get_notifications_or_block ~query =
     begin match query with
@@ -201,5 +215,5 @@ module User_level_events = struct
         date, event_to_string event))
 
 
-  
+
 end
