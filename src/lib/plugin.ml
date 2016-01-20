@@ -55,23 +55,28 @@ let ketrew_deep_ancestors () =
     (Lazy.force Metadata.findlib_packages)
 
 let files_to_load_from_package package =
-  let predicates = ["native"; "plugin"; "mt"] in
-  let deps = Findlib.package_deep_ancestors predicates [package] in
-  List.concat_map deps ~f:(fun dep ->
-      if dep = "threads" || List.mem dep ~set:(ketrew_deep_ancestors ())
-      then []
-      else (
-        let base = Findlib.package_directory dep in
-        let archives =
-          try
-            Findlib.package_property predicates dep "archive"
-            |> String.split ~on:(`Character ' ')
-            |> List.filter ~f:((<>) "")
-            |> List.map ~f:(Findlib.resolve_path ~base)
-          with _ ->  []
-        in
-        archives
-      ))
+  begin try
+    let predicates = ["native"; "plugin"; "mt"] in
+    let deps = Findlib.package_deep_ancestors predicates [package] in
+    List.concat_map deps ~f:(fun dep ->
+        if dep = "threads" || List.mem dep ~set:(ketrew_deep_ancestors ())
+        then []
+        else (
+          let base = Findlib.package_directory dep in
+          let archives =
+            try
+              Findlib.package_property predicates dep "archive"
+              |> String.split ~on:(`Character ' ')
+              |> List.filter ~f:((<>) "")
+              |> List.map ~f:(Findlib.resolve_path ~base)
+            with _ ->  []
+          in
+          archives
+        ))
+  with e ->
+    Log.(s "Getting OCamlfind package ancestors failed: " % exn e @ error);
+    failwith "Configuration error: cannot load plugins"
+  end
 
 let load_plugins plugins_to_load =
   wrap_preemptively Findlib.init ~on_exn:(fun e -> `Dyn_plugin (`Findlib e))
@@ -89,7 +94,10 @@ let load_plugins plugins_to_load =
   return ()
 
 let load_plugins_no_lwt_exn plugins_to_load =
-  Findlib.init ();
+  begin try Findlib.init () with e ->
+    Log.(s "Findlib could not initialize, Ketrew won't be able to use \
+            OCamlfind plugins " % parens (exn e) % s"." @warning)
+  end;
   List.iter plugins_to_load ~f:(function
     | `Compiled path -> dynlink_no_lwt_exn path
     | `OCamlfind package ->
