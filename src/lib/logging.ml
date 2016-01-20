@@ -110,6 +110,12 @@ module Global = struct
         Constants.word_module, text M.module_name;
         Constants.word_info, text (Log.to_long_string lo);
       ] |> log
+    let log_markup mu =
+      let open Logger in
+      let open Typed_log.Item in
+      description_list (
+        (Constants.word_module, text M.module_name) :: mu
+      ) |> log
 
   end
 

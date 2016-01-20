@@ -380,8 +380,10 @@ let get_status t id =
   return (Target.state target)
 
 let get_list_of_target_ids t query =
+  let start_time = Time.now () in
   Persistent_data.all_targets t.data
   >>= fun targets ->
+  let all_targets_time = Time.now () in
   let list_of_ids =
     let open Protocol.Up_message in
     List.filter_map targets ~f:(fun target ->
@@ -452,6 +454,17 @@ let get_list_of_target_ids t query =
         if apply_filter query.filter then wins () else None
       )
   in
+  let list_of_ids_time = Time.now () in
+  log_markup Display_markup.([
+      "function", text "get_list_of_target_ids";
+      "timing", description_list [
+        "start", date start_time;
+        "all-targets", time_span (all_targets_time -. start_time);
+        "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
+        "total", time_span (list_of_ids_time -. start_time);
+      ];
+      "list_of_ids", textf "length: %d" (List.length list_of_ids);
+    ]);
   return list_of_ids
 
 let kill t ~id =
