@@ -503,17 +503,21 @@ type t = {
   cache: Target.Stored_target.t Cache_table.t
 }
 
+let log_markup t mu =
+  Logger.(
+    description_list (
+      ("Module", text "Persistent_data")
+      ::
+      ("Cache",
+       textf "%d targets"
+         (Cache_table.fold t.cache ~init:0
+            ~f:(fun ~previous ~id _ -> previous + 1)))
+      :: mu
+    ) |> log)
+
 let log_info t fmt =
   Printf.ksprintf (fun msg ->
-      Logger.(
-        description_list [
-          "Location", text "Persistent_data.t";
-          "Cache",
-          textf "%d targets"
-            (Cache_table.fold t.cache ~init:0
-               ~f:(fun ~previous ~id _ -> previous + 1));
-          "Info", text msg
-        ] |> log)
+      log_markup t ["Info", Logger.text msg]
     ) fmt
 
 let create ~database_parameters =
@@ -532,24 +536,25 @@ let create ~database_parameters =
   return t
 
 let unload t =
-  log_info t "unloadingd";
+  log_info t "unloading";
   With_database.unload t.db
   >>= fun () ->
   Cache_table.reset t.cache
 
+let get_stored_target t ~key =
+  Cache_table.get t.cache key
+  >>= function
+  | Some stored -> return stored
+  | None ->
+    With_database.get_stored_target t.db key
+    >>= fun stored ->
+    Cache_table.add_or_replace t.cache key stored
+    >>= fun () ->
+    return stored
+
 let get_target t id =
   let rec get_following_pointers ~key ~count =
-    begin
-      Cache_table.get t.cache key
-      >>= function
-      | Some stored -> return stored
-      | None ->
-        With_database.get_stored_target t.db id
-        >>= fun stored ->
-        Cache_table.add_or_replace t.cache key stored
-        >>= fun () ->
-        return stored
-    end
+    get_stored_target t ~key
     >>= fun stored ->
     begin match Target.Stored_target.get_target stored with
     | `Pointer _ when count >= 30 ->
@@ -563,25 +568,33 @@ let get_target t id =
 
 
 let all_targets t =
+  let start_date = Time.now () in
   With_database.iter_all_target_ids t.db
   >>= fun iterator ->
-  let rec iterate acc =
+  let iterator_date = Time.now () in
+  let rec iterate count acc =
     iterator ()
     >>= begin function
     | None ->
-      log_info t "all_targets → %d targets" (List.length acc);
+      log_markup t Display_markup.([
+          "function", text "all_targets";
+          "all_targets", textf "%d targets" (List.length acc);
+          "all_ids", textf "%d ids" count;
+          "start_date", date start_date;
+          "iterator", time_span (iterator_date -. start_date);
+          "return", time_span (Time.now () -. start_date);
+        ]);
       return acc
     | Some id ->
-      With_database.get_stored_target t.db id
+      get_stored_target t ~key:id
       >>= fun stored ->
-      Cache_table.add_or_replace t.cache id stored
-      >>= fun () ->
       begin match Target.Stored_target.get_target stored with
-      | `Pointer _ -> iterate acc
-      | `Target t -> iterate (t :: acc)
+      | `Pointer _ -> iterate (count + 1) acc
+      | `Target t -> iterate (count + 1) (t :: acc)
       end
-    end in
-  iterate []
+    end
+  in
+  iterate 0 []
 
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason
