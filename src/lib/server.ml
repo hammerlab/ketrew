@@ -486,12 +486,13 @@ let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
   begin match server_state.status with
   | `Off -> exit 0
   | `On ->
+    Logging.User_level_events.server_shut_down ();
     Process_holder.unload server_state.process_holder
     >>< fun ph_unload_result ->
     Engine.unload server_state.state
     >>< fun engine_unload_result ->
     let display_errors_and_exit e =
-      log_error e Log.(s "Could not unload engine");
+      log_error e Log.(s "Could not shut down the server properly");
       Log.(s "Errors while shutting down the server:" %n
            % a Error.to_string e @ error);
       exit 10 in
@@ -525,8 +526,11 @@ module Commands = struct
           `Other is_get_log
 
   let die server_state file_path =
-    log_info Log.(s "Server killed by “die” command "
-                    % parens (OCaml.string file_path));
+    log_markup Display_markup.[
+        "Submodule", text "Commands";
+        "Function", text "die";
+        "Info", textf "Server killed by “die” command (%s)" file_path;
+      ];
     shut_down server_state
     >>= fun `Never_returns ->
     return ()
@@ -582,38 +586,50 @@ module Commands = struct
 end (* Commands *)
 
 let read_loop ~server_state ~file_path pipe =
+  log_markup Display_markup.[
+      "Function", text "read_loop";
+      "Info", textf "Starting read_loop: %s" file_path;
+    ];
   let rec loop ~error_count =
     if error_count >= 5 then begin
       Log.(s "Encountered 5 errors, stop reading from pipe." @ verbose);
       return ()
     end else begin
       Log.(s "Listening on " % OCaml.string file_path @ verbose);
-      wrap_deferred (fun () -> Lwt_io.read_line pipe)
-        ~on_exn:(fun e ->
-          let error_count = error_count + 1 in
-          Log.(s "Exn while reading command pipe: " % exn e
-            % sp % parens (i error_count % s "-th error") @ error);
-          `Count error_count)
-      >>| Commands.parse
-      >>= function
-      | `Die ->
-        Commands.die server_state file_path
-      | `ReloadAuth ->
-        Commands.reload_authentication ~server_state
-      | `DumpAllConnections ->
-        Commands.dump_all_connections server_state
-      | `GetLog (format, path) ->
-        Commands.get_log format path
-      | `UnrecognizedFormat format ->
-        log_error (`Failure (fmt "wrong format: %S" format))
-          Log.(s "get_log:unrecognized format");
-        return ()
-      | `WrongGetLog msg ->
-        log_info Log.(s "Wrong get-log: " % quote msg);
-        return ()
-      | `Other other ->
-        log_info Log.(s "Cannot understand command: " % OCaml.string other);
-        return ()
+      begin
+        wrap_deferred (fun () -> Lwt_io.read_line pipe)
+          ~on_exn:(fun e ->
+              let error_count = error_count + 1 in
+              Log.(s "Exn while reading command pipe: " % exn e
+                   % sp % parens (i error_count % s "-th error") @ error);
+              `Count error_count)
+        >>= fun command_string ->
+        log_markup Display_markup.[
+            "Function", text "read_loop";
+            "Command", text command_string;
+            "Error-count", textf "%d" error_count;
+          ];
+        begin match Commands.parse command_string with
+        | `Die ->
+          Commands.die server_state file_path
+        | `ReloadAuth ->
+          Commands.reload_authentication ~server_state
+        | `DumpAllConnections ->
+          Commands.dump_all_connections server_state
+        | `GetLog (format, path) ->
+          Commands.get_log format path
+        | `UnrecognizedFormat format ->
+          log_error (`Failure (fmt "wrong format: %S" format))
+            Log.(s "get_log:unrecognized format");
+          return ()
+        | `WrongGetLog msg ->
+          log_info Log.(s "Wrong get-log: " % quote msg);
+          return ()
+        | `Other other ->
+          log_info Log.(s "Cannot understand command: " % OCaml.string other);
+          return ()
+        end
+      end
       >>< function
       | `Ok () -> loop ~error_count
       | `Error (`Count error_count) -> loop ~error_count
