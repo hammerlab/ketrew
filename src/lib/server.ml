@@ -486,12 +486,13 @@ let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
   begin match server_state.status with
   | `Off -> exit 0
   | `On ->
+    Logging.User_level_events.server_shut_down ();
     Process_holder.unload server_state.process_holder
     >>< fun ph_unload_result ->
     Engine.unload server_state.state
     >>< fun engine_unload_result ->
     let display_errors_and_exit e =
-      log_error e Log.(s "Could not unload engine");
+      log_error e Log.(s "Could not shut down the server properly");
       Log.(s "Errors while shutting down the server:" %n
            % a Error.to_string e @ error);
       exit 10 in

@@ -131,6 +131,7 @@ module User_level_events = struct
       | `Workflow_received of string list * int
       | `Workflow_node_killed of string
       | `Workflow_node_restarted of string * string * string
+      | `Server_shut_down
     ]
     } [@@deriving yojson]
 
@@ -149,6 +150,7 @@ module User_level_events = struct
     | `Workflow_node_restarted (old_id, new_id, name) ->
       fmt "Workflow `%s` resubmitted as `%s` (%s)"
         old_id new_id name
+    | `Server_shut_down -> fmt "Server (about to) shut down"
 
   type t = {
     ring: item Ring.t;
@@ -179,6 +181,7 @@ module User_level_events = struct
     add_item (`Workflow_node_killed id)
   let workflow_node_restarted ~old_id ~new_id ~name =
     add_item (`Workflow_node_restarted (old_id, new_id, name))
+  let server_shut_down () = add_item `Server_shut_down
 
   let get_notifications_or_block ~query =
     begin match query with
