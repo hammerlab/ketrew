@@ -25,12 +25,14 @@ open Ketrew_pure.Internal_pervasives
 open Unix_io
 
 val generate_configuration_directory :
-  use_database:[ `Default | `User_set of string ] ->
-  tokens:string list ->
-  tls:[ `Create_self_signed | `Don't | `Use of string * string ] ->
-  port:int ->
   debug_level:int ->
-  string ->
+  config_path:string ->
+  [ `Client_from_url of string
+  | `Full of
+      [ `Default_database | `User_set_database of string ] *
+      [ `TLS_create_self_signed | `TLS_disable | `TLS_use of string * string] *
+      [ `Port of int ] *
+      [ `Tokens of string list ] ] ->
   (unit,
    [> `Failure of string
    | `IO of [> `Write_file_exn of Unix_io.IO.path * exn ]
@@ -41,4 +43,4 @@ val generate_configuration_directory :
         [> `Make_directory of string ] *
         [> `Exn of exn | `Wrong_access_rights of int ] ])
     Deferred_result.t
-(** Generate a configurated directory at a given path (last argument). *)
+(** Generate a configurated directory given a specification. *)

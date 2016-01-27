@@ -47,7 +47,7 @@ let debug_level = %d
 (* Forge or return the user's database specification URI (Trakeva). *)
 let come_up_with_database_parameters ~config_path =
   begin function
-  | `Default ->
+  | `Default_database ->
     let default = "sqlite" in
     let set = Trakeva_of_uri.available_backends in
     begin match List.mem default ~set with
@@ -66,14 +66,14 @@ let come_up_with_database_parameters ~config_path =
            @ error);
       fail (`Failure "Cannot create configuration")
     end
-  | `User_set s -> return s
+  | `User_set_database s -> return s
   end
 
 (* Forge a string that is the OCaml value expect by `Configuration.server`. *)
 let ocaml_server_connection ~config_path ~port tls =
   begin match tls with
-  | `Use (cert, key) -> return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Create_self_signed ->
+  | `TLS_use (cert, key) -> return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
+  | `TLS_create_self_signed ->
     let cert = config_path // "certificate.pem" in
     let key = config_path // "privkey-nopass.pem" in
     System.Shell.do_or_fail
@@ -82,7 +82,7 @@ let ocaml_server_connection ~config_path ~port tls =
             -days 10 -nodes -subj \"/CN=test_ketrew\" 2> /dev/null" key cert)
     >>= fun () ->
     return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Don't -> return (fmt "`Tcp %d" port)
+  | `TLS_disable -> return (fmt "`Tcp %d" port)
   end
 
 let merlin_file ~config_path =
@@ -135,38 +135,73 @@ let () =
   ]
 |ocaml}
 
-let generate_configuration_directory
-    ~use_database ~tokens ~tls ~port ~debug_level config_path =
-  let tokens = if tokens = [] then [generate_token ()] else tokens in
+let ocaml_single_client_config url =
+  let uri = Uri.of_string url in
+  let scheme =
+    Uri.scheme uri |> Option.value_exn ~msg:"URL missing `scheme`" in
+  let host =
+    Uri.host uri |> Option.value_exn ~msg:"URL missing `host`" in
+  let port_opt = Uri.port uri in
+  let token =
+    Uri.get_query_param uri "token"
+    |> Option.value_exn ~msg:"URL missing `token` parameter"
+  in
+  fmt {ocaml|
+let () =
+   output [
+     profile "default" (
+       create ~debug_level (
+         client ~token:%S "%s://%s%s"
+       )
+     )
+  ]
+|ocaml}
+    token scheme host
+    (Option.value_map ~default:"" port_opt ~f:(fmt ":%d"))
+
+
+let generate_configuration_directory ~debug_level ~config_path how =
   System.ensure_directory_path config_path
-  >>= fun () ->
-  ocaml_server_connection ~config_path ~port tls
-  >>= fun server_listen ->
-  let auth_tokens_file = config_path // "authorized_tokens" in
-  System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
   >>= fun () ->
   merlin_file ~config_path
   >>= fun () ->
-  come_up_with_database_parameters ~config_path use_database
-  >>= fun database_parameters ->
-  let engine, server =
-    ocaml_engine_and_server_functions ~config_path ~database_parameters
-      ~tokens ~auth_tokens_file ~tls ~server_listen
-  in
-  let client =
-    fmt {ocaml|
+  begin match how with
+  | `Client_from_url url ->
+    let config =
+      ocaml_config_file_header ~debug_level
+      ^ ocaml_single_client_config url
+    in
+    return config
+  | `Full (use_database, tls, `Port port, `Tokens tokens) ->
+    let tokens = if tokens = [] then [generate_token ()] else tokens in
+    ocaml_server_connection ~config_path ~port tls
+    >>= fun server_listen ->
+    let auth_tokens_file = config_path // "authorized_tokens" in
+    System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
+    >>= fun () ->
+    come_up_with_database_parameters ~config_path use_database
+    >>= fun database_parameters ->
+    let engine, server =
+      ocaml_engine_and_server_functions ~config_path ~database_parameters
+        ~tokens ~auth_tokens_file ~tls ~server_listen
+    in
+    let client =
+      fmt {ocaml|
 let client =
   client ~token:%S "http%s://127.0.0.1:%d"
 |ocaml}
-      (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
-      (match tls with `Don't -> "" | _ -> "s")
-      port
-  in
-  let config =
-    ocaml_config_file_header ~debug_level
-    ^ engine
-    ^ server
-    ^ client
-    ^ ocaml_let_unit_output_profiles ()
-  in
+        (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
+        (match tls with `TLS_disable -> "" | _ -> "s")
+        port
+    in
+    let config =
+      ocaml_config_file_header ~debug_level
+      ^ engine
+      ^ server
+      ^ client
+      ^ ocaml_let_unit_output_profiles ()
+    in
+    return config
+  end
+  >>= fun config ->
   IO.write_file ~content:config (config_path // "configuration.ml")

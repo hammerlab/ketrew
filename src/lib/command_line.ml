@@ -587,16 +587,28 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Initialize the application (create a config-directory)")
       ~term:Term.(
-          pure (fun cert_key self_tls debug_level tokens port
+          pure (fun just_client
+                 cert_key self_tls debug_level tokens port
                  config_path use_database ->
-                 let tls =
-                   match cert_key with
-                   | Some (cert, key) -> `Use (cert, key)
-                   | None when self_tls -> `Create_self_signed
-                   | _ -> `Don't
+                 let how =
+                   match just_client with
+                   | None ->
+                     let tls =
+                       match cert_key with
+                       | Some (cert, key) -> `TLS_use (cert, key)
+                       | None when self_tls -> `TLS_create_self_signed
+                       | _ -> `TLS_disable
+                     in
+                     (`Full (use_database, tls, `Port port, `Tokens tokens))
+                   | Some url ->
+                     (`Client_from_url url)
                  in
                  User_initialization.generate_configuration_directory
-                   ~use_database ~tls ~port ~debug_level ~tokens config_path)
+                   how ~debug_level ~config_path)
+          $ Arg.(info ["just-client"] ~docv:"URL"
+                   ~doc:"Configure only a client given an URL (from the WebUI)"
+                 |> opt (some string) None
+                 |> value)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
@@ -621,8 +633,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                    ~doc:"Create the configuration in $(docv).")
           $ Arg.(
               pure (function
-                | None -> `Default
-                | Some s -> `User_set s)
+                | None -> `Default_database
+                | Some s -> `User_set_database s)
               $
               let doc =
                 fmt "Use the given URI for the database configuration \
