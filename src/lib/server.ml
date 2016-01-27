@@ -72,7 +72,7 @@ module Server_state = struct
       let now = Time.now () in
       let to_remove =
         Hashtbl.fold
-          (fun id {birthdate; _} prev  -> 
+          (fun id {birthdate; _} prev  ->
              if birthdate +. 60. *. 60. *. 2. > now
              then id :: prev
              else prev)
@@ -350,7 +350,7 @@ let answer_get_server_status ~server_state =
   let engine = Configuration.server_engine server_state.server_configuration in
   let database = C.database_parameters engine in
   let host_timeout_upper_bound = C.host_timeout_upper_bound engine in
-  let maximum_successive_attempts = C.maximum_successive_attempts engine in 
+  let maximum_successive_attempts = C.maximum_successive_attempts engine in
   let concurrent_automaton_steps = C.concurrent_automaton_steps engine in
   let status =
     Protocol.Server_status.create ~database ~tls
@@ -408,7 +408,7 @@ let answer_message ~server_state ?token msg =
         Logging.User_level_events.get_notifications_or_block ~query
         >>= fun notifications ->
         return (`Notifications notifications)
-      )    
+      )
   | `Process p_msg ->
     with_capability `Play_with_process_holder (fun ~server_state ->
         let host_io = Engine.host_io server_state.state in
@@ -767,10 +767,10 @@ let start_listening_on_connections ~server_state =
             Hashtbl.replace server_state.all_connections
               id (`Request Time.(now ()) :: some);
           | exception _ ->
-            Hashtbl.replace server_state.all_connections 
+            Hashtbl.replace server_state.all_connections
               id (`Request Time.(now ()) :: []);
           end;
-          handle_request ~server_state ~body request 
+          handle_request ~server_state ~body request
           >>= fun high_level_answer ->
           (debug_make_server_slow () >>= fun _ -> return ())
           >>= fun () ->
@@ -803,10 +803,10 @@ let start_listening_on_connections ~server_state =
             Hashtbl.replace server_state.all_connections
               id (`Open Time.(now ()) :: some);
           | exception _ ->
-            Hashtbl.replace server_state.all_connections 
+            Hashtbl.replace server_state.all_connections
               id (`Open Time.(now ()) :: []);
           end;
-          Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id) 
+          Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id)
                @ verbose);
         in
         Cohttp_lwt_unix.Server.(
@@ -832,7 +832,7 @@ let stop ~configuration =
     | `Error (`IO _ as e) -> fail e
     | `Error (`System _) -> fail (`Stop_server_error "System.timeout failed!")
   end
-  | other -> 
+  | other ->
     fail (`Stop_server_error (fmt "%S is not a named-pipe (%s)"
                                 file_path (System.file_info_to_string other)))
 
@@ -850,10 +850,10 @@ let status ~configuration =
         wrap_deferred
           ~on_exn:(fun e -> `Get_exn e) (fun () ->
               Cohttp_lwt_unix.Client.call `GET local_server_uri)
-      ) 
+      )
     >>< function
     | `Ok (response, body) ->
-      Log.(s "Response: " 
+      Log.(s "Response: "
            % sexp Cohttp.Response.sexp_of_t response @ verbose);
       begin match Cohttp.Response.status response with
       | `OK -> return `Running
@@ -894,7 +894,7 @@ let start ~just_before_listening ~configuration  =
     ~preconfigure:(Configuration.ssh_connections configuration) ()
   >>= fun process_holder ->
   Log.(s "Start-Server: Loading the Engine" @ verbose);
-  Engine.load (Configuration.server_engine configuration) 
+  Engine.load (Configuration.server_engine configuration)
   >>= fun engine ->
   Log.(s "Start-Server: Loading authentication config" @ verbose);
   Authentication.load (Configuration.authorized_tokens configuration)
