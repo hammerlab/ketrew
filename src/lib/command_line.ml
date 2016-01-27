@@ -65,7 +65,7 @@ let rec display_status ~client ~loop  =
   | None -> display () >>= fun _ -> return ()
   | Some seconds ->
     let keep_going = ref true in
-    let rec loop () = 
+    let rec loop () =
       display ()
       >>= fun nothing_left_to_do ->
       (System.sleep seconds >>< fun _ -> return ())
@@ -263,7 +263,7 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
             (match format with `Json -> "json" | _ -> "txt") in
         Log.(s "Sending " % quote command
              % s " through the command pipe: " % quote pipe @ verbose);
-        begin 
+        begin
           System.with_timeout 2. (fun () ->
               IO.with_out_channel (`Append_to_file pipe) ~buffer_size:16 ~f:(fun oc ->
                   IO.write oc command
@@ -474,14 +474,14 @@ let daemonize_start_server ~no_status srv =
   let status_fifo =
     if no_status then None
     else Some (Filename.get_temp_dir_name () // Unique_id.create ()) in
-  let command = 
+  let command =
     global_executable_path ^ " " ^
     (Sys.argv |> Array.to_list |> List.tl_exn
      |> List.map ~f:Filename.quote
      |> String.concat ~sep:" ")
     ^ (match status_fifo with
       | None  -> " --already-daemonized none"
-      | Some path -> " --already-daemonized " ^ Filename.quote path) 
+      | Some path -> " --already-daemonized " ^ Filename.quote path)
   in
   let of_lwt f =
     wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
@@ -490,7 +490,7 @@ let daemonize_start_server ~no_status srv =
       | None  -> Lwt.return ()
       | Some path -> Lwt_unix.mkfifo path 0o600)
   >>= fun () ->
-  let to_exec = 
+  let to_exec =
     [global_executable_path; "daemonize-anything";
      "--command"; command] in
   Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
@@ -511,7 +511,7 @@ let daemonize_start_server ~no_status srv =
           of_lwt (fun () -> Lwt_io.read_line pipe)
           >>= fun content ->
           Log.(s "Read " % quote fifopath % s " and got "
-               % quote content @ verbose); 
+               % quote content @ verbose);
           (System.sleep 1. >>< fun _ -> return ()))
       >>< function
       | `Ok () -> return ()
@@ -523,7 +523,7 @@ let daemonize_start_server ~no_status srv =
              % s " with timeout " % f 10.
              % s " failed." @ error);
         return ()
-    end  
+    end
     >>= fun () ->
     display_server_status
       ~configuration:srv ~while_starting:true
@@ -600,7 +600,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
-                 |> value) 
+                 |> value)
           $ Arg.(info ["self-signed-tls"]
                    ~doc:"Configure the server to listen on HTTPS by \
                          generating a self-signed certificate/private-key pair"
@@ -631,7 +631,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
               info ["use-database"] ~docv:"URI" ~doc
               |> opt (some string) None |> value
-            ) 
+            )
         ) in
   let start_gui =
     sub_command
@@ -654,7 +654,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["O"; "open-command"]
                    ~doc:"Command to use as browser.")
         ) in
-  let logs_cmd = 
+  let logs_cmd =
     sub_command
       ~info:(Term.info "logs" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"See the logs.")
@@ -775,7 +775,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           | Some (host, cmd) ->
             submit ~configuration ~add_tags
               ~wet_run (`Daemonize (host, cmd))
-          | None -> 
+          | None ->
             Log.(s "Nothing to do." @ normal);
             return ()
           end
@@ -1003,6 +1003,3 @@ let run_main ?argv ?override_configuration ?additional_commands () =
   match Lwt_main.run (main_lwt_thread >>< Return_code.transform_error) with
   | `Ok () -> exit 0
   | `Error n -> exit n
-
-
-
