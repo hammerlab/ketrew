@@ -27,6 +27,7 @@ depends: [
   "cohttp" {>= "0.17.0" } "lwt"
   "conduit"
   "js_of_ocaml" {>= "2.6" } "tyxml" "reactiveData"
-  ("sqlite3" | "postgresql")
   ]
-
+depopts: [
+  "sqlite3" "postgresql"
+]
