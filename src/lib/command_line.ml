@@ -247,127 +247,6 @@ let submit ?add_tags ~configuration ~wet_run what =
   end;
   return ()
 
-let generate_token () =
-  let () = Random.self_init () in
-  List.init 32 ~f:(fun _ -> (Random.bits ()) land 255)
-  |> List.map ~f:char_of_int
-  |> String.of_character_list
-  |> B64.encode ~alphabet:B64.uri_safe_alphabet 
-
-let initialize_configuration
-    ~use_database ~tokens ~tls ~port ~debug_level config_path =
-  let tokens = if tokens = [] then [generate_token ()] else tokens in
-  System.ensure_directory_path config_path
-  >>= fun () ->
-  begin match tls with
-  | `Use (cert, key) -> return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Create_self_signed ->
-    let cert = config_path // "certificate.pem" in
-    let key = config_path // "privkey-nopass.pem" in
-    System.Shell.do_or_fail
-      (fmt "openssl req -x509 -newkey rsa:2048 \
-            -keyout %s -out %s \
-            -days 10 -nodes -subj \"/CN=test_ketrew\" 2> /dev/null" key cert)
-    >>= fun () ->
-    return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Don't -> return (fmt "`Tcp %d" port)
-  end
-  >>= fun server_listen ->
-  let auth_tokens_file = config_path // "authorized_tokens" in
-  System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
-  >>= fun () ->
-  System.Shell.do_or_fail (fmt "echo 'PKG ketrew' > %s"
-                             ((config_path // ".merlin") |> Filename.quote))
-  >>= fun () ->
-  let ocaml_config_file_header =
-    fmt {ocaml|
-let () =
-  try Topdirs.dir_directory (Sys.getenv "OCAML_TOPLEVEL_PATH")
-  with Not_found -> ();;
-#use "topfind"
-#thread
-#require "ketrew"
-open Ketrew.Configuration
-let debug_level = %d
-|ocaml} debug_level in
-  begin match use_database with
-  | `Default ->
-    let default = "sqlite" in
-    let set = Trakeva_of_uri.available_backends in
-    begin match List.mem default ~set with
-    | true ->
-      return (config_path // "database")
-    | false ->
-      Log.(s "The " % quote default % s " backend was not available at \
-              Trakeva's compile time" %sp
-           % parens (s "available backends: "
-                     % OCaml.list quote set) % n
-           % s "Please use for example: \
-                -use-database \
-                postgresql://pg.example.com:4242/database" % n
-           % s "see also \
-                http://seb.mondet.org/software/ketrew/Database_Backends.html"
-           @ error);
-      fail (`Failure "Cannot create configuration")
-    end
-  | `User_set s -> return s
-  end
-  >>= fun db_params ->
-  let engine =
-    fmt {ocaml|
-let engine =
-  engine ~database_parameters:%S ()
-|ocaml}
-      db_params
-  in
-  let server =
-    fmt {ocaml|
-let server ~daemon =
-  server ~daemon ~engine
-    ~authorized_tokens:[
-       %s
-       authorized_tokens_path %S
-     ]
-    ~return_error_messages:true
-    ~log_path:%S
-    ~command_pipe:%S
-    (%s)
-|ocaml}
-      (List.map tokens ~f:(fun tok ->
-           fmt "authorized_token ~name:\"%s\" %S;" tok tok)
-       |> String.concat ~sep:"\n")
-      auth_tokens_file
-      (config_path // "server-log")
-      (config_path // "command.pipe")
-      server_listen
-  in
-  let client =
-    fmt {ocaml|
-let client =
-  client ~token:%S "http%s://127.0.0.1:%d"
-|ocaml}
-      (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
-      (match tls with `Don't -> "" | _ -> "s")
-      port
-  in
-  let config =
-    ocaml_config_file_header
-    ^ engine
-    ^ server
-    ^ client
-    ^ {ocaml|
-let () =
-  output [
-    profile "standalone"
-      (create ~debug_level (standalone () ~engine));
-    profile "server" (create ~debug_level (server ~daemon:false));
-    profile "daemon" (create ~debug_level (server ~daemon:true));
-    profile "default" (create ~debug_level client);
-    profile "client" (create ~debug_level client);
-  ]
-|ocaml}
-  in
-  IO.write_file ~content:config (config_path // "configuration.ml")
 
 let show_server_logs ~max_number ?(condition = `True) server_config =
   let ask_for_server_memory_logs format =
@@ -716,7 +595,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                    | None when self_tls -> `Create_self_signed
                    | _ -> `Don't
                  in
-                 initialize_configuration
+                 User_initialization.generate_configuration_directory
                    ~use_database ~tls ~port ~debug_level ~tokens config_path)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
