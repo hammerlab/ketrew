@@ -26,7 +26,8 @@ depends: [
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.3"}
   "cohttp" {>= "0.17.0" } "lwt"
   "conduit"
-  "js_of_ocaml" {>= "2.6" } "tyxml" "reactiveData"
-  ("sqlite3" | "postgresql")
+  "js_of_ocaml" {>= "2.6" } "tyxml" "reactiveData" {= "0.1"}
   ]
-
+depopts: [
+  "sqlite3" "postgresql"
+]

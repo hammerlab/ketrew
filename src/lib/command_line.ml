@@ -65,7 +65,7 @@ let rec display_status ~client ~loop  =
   | None -> display () >>= fun _ -> return ()
   | Some seconds ->
     let keep_going = ref true in
-    let rec loop () = 
+    let rec loop () =
       display ()
       >>= fun nothing_left_to_do ->
       (System.sleep seconds >>< fun _ -> return ())
@@ -247,127 +247,6 @@ let submit ?add_tags ~configuration ~wet_run what =
   end;
   return ()
 
-let generate_token () =
-  let () = Random.self_init () in
-  List.init 32 ~f:(fun _ -> (Random.bits ()) land 255)
-  |> List.map ~f:char_of_int
-  |> String.of_character_list
-  |> B64.encode ~alphabet:B64.uri_safe_alphabet 
-
-let initialize_configuration
-    ~use_database ~tokens ~tls ~port ~debug_level config_path =
-  let tokens = if tokens = [] then [generate_token ()] else tokens in
-  System.ensure_directory_path config_path
-  >>= fun () ->
-  begin match tls with
-  | `Use (cert, key) -> return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Create_self_signed ->
-    let cert = config_path // "certificate.pem" in
-    let key = config_path // "privkey-nopass.pem" in
-    System.Shell.do_or_fail
-      (fmt "openssl req -x509 -newkey rsa:2048 \
-            -keyout %s -out %s \
-            -days 10 -nodes -subj \"/CN=test_ketrew\" 2> /dev/null" key cert)
-    >>= fun () ->
-    return (fmt {o|`Tls (%S, %S, %d)|o} cert key port)
-  | `Don't -> return (fmt "`Tcp %d" port)
-  end
-  >>= fun server_listen ->
-  let auth_tokens_file = config_path // "authorized_tokens" in
-  System.Shell.do_or_fail (fmt "touch %s" (Filename.quote auth_tokens_file))
-  >>= fun () ->
-  System.Shell.do_or_fail (fmt "echo 'PKG ketrew' > %s"
-                             ((config_path // ".merlin") |> Filename.quote))
-  >>= fun () ->
-  let ocaml_config_file_header =
-    fmt {ocaml|
-let () =
-  try Topdirs.dir_directory (Sys.getenv "OCAML_TOPLEVEL_PATH")
-  with Not_found -> ();;
-#use "topfind"
-#thread
-#require "ketrew"
-open Ketrew.Configuration
-let debug_level = %d
-|ocaml} debug_level in
-  begin match use_database with
-  | `Default ->
-    let default = "sqlite" in
-    let set = Trakeva_of_uri.available_backends in
-    begin match List.mem default ~set with
-    | true ->
-      return (config_path // "database")
-    | false ->
-      Log.(s "The " % quote default % s " backend was not available at \
-              Trakeva's compile time" %sp
-           % parens (s "available backends: "
-                     % OCaml.list quote set) % n
-           % s "Please use for example: \
-                -use-database \
-                postgresql://pg.example.com:4242/database" % n
-           % s "see also \
-                http://seb.mondet.org/software/ketrew/Database_Backends.html"
-           @ error);
-      fail (`Failure "Cannot create configuration")
-    end
-  | `User_set s -> return s
-  end
-  >>= fun db_params ->
-  let engine =
-    fmt {ocaml|
-let engine =
-  engine ~database_parameters:%S ()
-|ocaml}
-      db_params
-  in
-  let server =
-    fmt {ocaml|
-let server ~daemon =
-  server ~daemon ~engine
-    ~authorized_tokens:[
-       %s
-       authorized_tokens_path %S
-     ]
-    ~return_error_messages:true
-    ~log_path:%S
-    ~command_pipe:%S
-    (%s)
-|ocaml}
-      (List.map tokens ~f:(fun tok ->
-           fmt "authorized_token ~name:\"%s\" %S;" tok tok)
-       |> String.concat ~sep:"\n")
-      auth_tokens_file
-      (config_path // "server-log")
-      (config_path // "command.pipe")
-      server_listen
-  in
-  let client =
-    fmt {ocaml|
-let client =
-  client ~token:%S "http%s://127.0.0.1:%d"
-|ocaml}
-      (match tokens with one :: _ -> one | [] -> "TODO:set-tokens")
-      (match tls with `Don't -> "" | _ -> "s")
-      port
-  in
-  let config =
-    ocaml_config_file_header
-    ^ engine
-    ^ server
-    ^ client
-    ^ {ocaml|
-let () =
-  output [
-    profile "standalone"
-      (create ~debug_level (standalone () ~engine));
-    profile "server" (create ~debug_level (server ~daemon:false));
-    profile "daemon" (create ~debug_level (server ~daemon:true));
-    profile "default" (create ~debug_level client);
-    profile "client" (create ~debug_level client);
-  ]
-|ocaml}
-  in
-  IO.write_file ~content:config (config_path // "configuration.ml")
 
 let show_server_logs ~max_number ?(condition = `True) server_config =
   let ask_for_server_memory_logs format =
@@ -384,7 +263,7 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
             (match format with `Json -> "json" | _ -> "txt") in
         Log.(s "Sending " % quote command
              % s " through the command pipe: " % quote pipe @ verbose);
-        begin 
+        begin
           System.with_timeout 2. (fun () ->
               IO.with_out_channel (`Append_to_file pipe) ~buffer_size:16 ~f:(fun oc ->
                   IO.write oc command
@@ -595,14 +474,14 @@ let daemonize_start_server ~no_status srv =
   let status_fifo =
     if no_status then None
     else Some (Filename.get_temp_dir_name () // Unique_id.create ()) in
-  let command = 
+  let command =
     global_executable_path ^ " " ^
     (Sys.argv |> Array.to_list |> List.tl_exn
      |> List.map ~f:Filename.quote
      |> String.concat ~sep:" ")
     ^ (match status_fifo with
       | None  -> " --already-daemonized none"
-      | Some path -> " --already-daemonized " ^ Filename.quote path) 
+      | Some path -> " --already-daemonized " ^ Filename.quote path)
   in
   let of_lwt f =
     wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
@@ -611,7 +490,7 @@ let daemonize_start_server ~no_status srv =
       | None  -> Lwt.return ()
       | Some path -> Lwt_unix.mkfifo path 0o600)
   >>= fun () ->
-  let to_exec = 
+  let to_exec =
     [global_executable_path; "daemonize-anything";
      "--command"; command] in
   Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
@@ -632,7 +511,7 @@ let daemonize_start_server ~no_status srv =
           of_lwt (fun () -> Lwt_io.read_line pipe)
           >>= fun content ->
           Log.(s "Read " % quote fifopath % s " and got "
-               % quote content @ verbose); 
+               % quote content @ verbose);
           (System.sleep 1. >>< fun _ -> return ()))
       >>< function
       | `Ok () -> return ()
@@ -644,7 +523,7 @@ let daemonize_start_server ~no_status srv =
              % s " with timeout " % f 10.
              % s " failed." @ error);
         return ()
-    end  
+    end
     >>= fun () ->
     display_server_status
       ~configuration:srv ~while_starting:true
@@ -708,20 +587,32 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~info:(Term.info "initialize" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"Initialize the application (create a config-directory)")
       ~term:Term.(
-          pure (fun cert_key self_tls debug_level tokens port
+          pure (fun just_client
+                 cert_key self_tls debug_level tokens port
                  config_path use_database ->
-                 let tls =
-                   match cert_key with
-                   | Some (cert, key) -> `Use (cert, key)
-                   | None when self_tls -> `Create_self_signed
-                   | _ -> `Don't
+                 let how =
+                   match just_client with
+                   | None ->
+                     let tls =
+                       match cert_key with
+                       | Some (cert, key) -> `TLS_use (cert, key)
+                       | None when self_tls -> `TLS_create_self_signed
+                       | _ -> `TLS_disable
+                     in
+                     (`Full (use_database, tls, `Port port, `Tokens tokens))
+                   | Some url ->
+                     (`Client_from_url url)
                  in
-                 initialize_configuration
-                   ~use_database ~tls ~port ~debug_level ~tokens config_path)
+                 User_initialization.generate_configuration_directory
+                   how ~debug_level ~config_path)
+          $ Arg.(info ["just-client"] ~docv:"URL"
+                   ~doc:"Configure only a client given an URL (from the WebUI)"
+                 |> opt (some string) None
+                 |> value)
           $ Arg.(info ["tls"] ~docv:"CERT,KEY"
                    ~doc:"Configure the server to listen on HTTPS"
                  |> opt (pair string string |> some) None
-                 |> value) 
+                 |> value)
           $ Arg.(info ["self-signed-tls"]
                    ~doc:"Configure the server to listen on HTTPS by \
                          generating a self-signed certificate/private-key pair"
@@ -742,8 +633,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                    ~doc:"Create the configuration in $(docv).")
           $ Arg.(
               pure (function
-                | None -> `Default
-                | Some s -> `User_set s)
+                | None -> `Default_database
+                | Some s -> `User_set_database s)
               $
               let doc =
                 fmt "Use the given URI for the database configuration \
@@ -752,7 +643,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
               info ["use-database"] ~docv:"URI" ~doc
               |> opt (some string) None |> value
-            ) 
+            )
         ) in
   let start_gui =
     sub_command
@@ -775,7 +666,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["O"; "open-command"]
                    ~doc:"Command to use as browser.")
         ) in
-  let logs_cmd = 
+  let logs_cmd =
     sub_command
       ~info:(Term.info "logs" ~version ~sdocs:"COMMON OPTIONS" ~man:[]
                ~doc:"See the logs.")
@@ -896,7 +787,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           | Some (host, cmd) ->
             submit ~configuration ~add_tags
               ~wet_run (`Daemonize (host, cmd))
-          | None -> 
+          | None ->
             Log.(s "Nothing to do." @ normal);
             return ()
           end
@@ -1124,6 +1015,3 @@ let run_main ?argv ?override_configuration ?additional_commands () =
   match Lwt_main.run (main_lwt_thread >>< Return_code.transform_error) with
   | `Ok () -> exit 0
   | `Error n -> exit n
-
-
-
