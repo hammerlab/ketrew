@@ -368,5 +368,6 @@ Badges
 ------
 
 [![master Branch Build Status](https://travis-ci.org/hammerlab/ketrew.svg?branch=master)](https://travis-ci.org/hammerlab/ketrew)
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.45295.svg)](http://dx.doi.org/10.5281/zenodo.45295)
 
 
