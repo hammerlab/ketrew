@@ -199,6 +199,7 @@ module Display_markup = struct
       | Text of string
       | Path of string
       | Command of string
+      | Code_block of string
       | Uri of string
       | Concat of (t option) * (t list)
       | Description of string * t
@@ -211,6 +212,7 @@ module Display_markup = struct
   let date d = Date d
   let path p = Path p
   let command p = Command p
+  let code_block b = Code_block b
   let description name v = Description (name, v)
   let itemize l = Itemize l
 
@@ -239,6 +241,7 @@ module Display_markup = struct
     | Date f -> Time.log f
     | Time_span span -> Log.(f span % nbsp % s "s.") 
     | Text s -> Log.verbatim s
+    | Code_block s -> Log.verbatim s
     | Uri c | Path c | Command c -> Log.quote c
     | Concat (None, l) -> Log.concat (List.map l ~f:log)
     | Concat (Some sep, l) -> Log.separate (log sep) (List.map l ~f:log)

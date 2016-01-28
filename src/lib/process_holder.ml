@@ -46,6 +46,10 @@ module Process = struct
      changes; signal_change;}
 
   let get_changes_event t = t.changes
+  let id t = t.id
+  let stdout t = Buffer.contents t.stdout_buffer
+  let stderr t = Buffer.contents t.stderr_buffer
+
 
   let markup t =
     let open Display_markup in
@@ -66,11 +70,9 @@ module Process = struct
       | Lwt_process.Exited (Unix.WSTOPPED d) -> textf "Stopped %d" d
       | exception _ -> text "Undefined"
       end;
+      "Standard-output", code_block (stdout t);
+      "Standard-error", code_block (stderr t);
     ]
-
-  let id t = t.id
-  let stdout t = Buffer.contents t.stdout_buffer
-  let stderr t = Buffer.contents t.stderr_buffer
 
   let log_process_action process action =
     Logger.(

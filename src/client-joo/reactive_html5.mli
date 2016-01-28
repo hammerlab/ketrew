@@ -165,7 +165,7 @@ module H5: sig
       ?collapse_descriptions:(string * string) list ->
       Ketrew_pure.Internal_pervasives.Display_markup.t ->
       [< Html5_types.div_content_fun
-           > `A `Code `Div `PCDATA `Strong `Ul ]
+           > `A `Code `Div `PCDATA `Pre `Strong `Ul ]
         elt
   end
 
