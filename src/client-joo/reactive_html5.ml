@@ -381,6 +381,7 @@ module H5 = struct
       | Text s -> pcdata s
       | Path p
       | Command p -> code [pcdata p]
+      | Code_block b -> pre [code [pcdata b]]
       | Uri u ->
         a ~a:[
           a_href u
