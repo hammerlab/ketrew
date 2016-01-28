@@ -9,8 +9,7 @@ module H5: sig
   open Tyxml_js
   include Html5_sigs.Make(Xml)(Svg).T
   module Reactive_node:
-    (* module type of Tyxml_js.R.Html5 *)
-    Html5_sigs.MakeWrapped(Xml_wrap)(Xml)(Svg).T
+    Html5_sigs.Make(Tyxml_js.R.Xml)(Tyxml_js.R.Svg).T
     with type +'a elt = 'a elt
      and type +'a attrib = 'a attrib
 
