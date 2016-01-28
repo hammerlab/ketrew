@@ -5,6 +5,7 @@ authors : [
   "Leonid Rozenberg <leonidr@gmail.com>"
   "Ahuja <aahuja11@gmail.com>"
   "Jeff Hammerbacher <jeff.hammerbacher@gmail.com>"
+  "Isaac Hodes <isaachodes@gmail.com>"
 ]
 homepage: "http://seb.mondet.org/software/ketrew"
 dev-repo: "https://github.com/hammerlab/ketrew"
