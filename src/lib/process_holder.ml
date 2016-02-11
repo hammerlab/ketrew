@@ -207,7 +207,7 @@ We need to comunicate with that process:
         Display_markup.to_yojson markup |> Yojson.Safe.pretty_to_string in
       IO.write_file log_json ~content
     in
-    let log_file = "/tmp/ketrew-ssh-askpass.log" in
+    let log_file = Filename.temp_file "ketrew-ssh-askpass" "log" in
     (try Unix.unlink log_file with _ -> ());
     Printf.eprintf "before fork  %s\n%!" Time.(now () |> to_filename);
     begin match Lwt_unix.fork () with
