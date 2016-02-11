@@ -977,112 +977,116 @@ module Automaton = struct
       | `At_least_one_failed id_list ->
         return_with_history t (`Dependencies_failed (to_history ?log c, id_list))
       | `Still_processing ->
-        return_with_history ~no_change:true t
-          (`Still_building (to_history ?log c))
+        begin match c with
+        | `Still_building _ -> return_with_history ~no_change:true t c
+        | other ->
+          return_with_history ~no_change:true t
+            (`Still_building (to_history ?log other))
+        end
       end
-    | `Did_not_ensure_condition _
-    | `Dependencies_failed _ as c -> activate_failures c
-    | `Starting _
-    | `Tried_to_start _ as c ->
-      begin match build_process t with
-      | `Long_running (plugin_name, created_run_paramters) ->
-        let bookeeping =
-          {plugin_name; run_parameters = created_run_paramters } in
-        `Start_running (bookeeping, begin fun ?log -> function
-          | `Ok bookkeeping ->
-            return_with_history t (`Started_running (to_history ?log c, bookkeeping))
-          | `Error (`Try_again, log, bookkeeping)  ->
-            return_with_history t ~no_change:true
-              (`Tried_to_start (to_history ~log c, bookkeeping))
-          | `Error (`Fatal, log, bookkeeping)  ->
-            return_with_history t (`Failed_to_start (to_history ~log c, bookkeeping))
+      | `Did_not_ensure_condition _
+      | `Dependencies_failed _ as c -> activate_failures c
+      | `Starting _
+      | `Tried_to_start _ as c ->
+        begin match build_process t with
+        | `Long_running (plugin_name, created_run_paramters) ->
+          let bookeeping =
+            {plugin_name; run_parameters = created_run_paramters } in
+          `Start_running (bookeeping, begin fun ?log -> function
+            | `Ok bookkeeping ->
+              return_with_history t (`Started_running (to_history ?log c, bookkeeping))
+            | `Error (`Try_again, log, bookkeeping)  ->
+              return_with_history t ~no_change:true
+                (`Tried_to_start (to_history ~log c, bookkeeping))
+            | `Error (`Fatal, log, bookkeeping)  ->
+              return_with_history t (`Failed_to_start (to_history ~log c, bookkeeping))
+            end)
+        | `No_operation ->
+          `Do_nothing (fun ?log () ->
+              return_with_history t (`Successfully_did_nothing (to_history ?log c)))
+        end
+      | `Started_running (_, bookkeeping)
+      | `Still_running_despite_recoverable_error (_, _, bookkeeping)
+      | `Still_running (_, bookkeeping) as c ->
+        `Check_process (bookkeeping, begin fun ?log -> function
+          | `Ok (`Still_running new_bookkeeping) ->
+            let new_state =
+              match c with
+              | `Started_running _
+              | `Still_running_despite_recoverable_error _ ->
+                (* Normal state transition *)
+                `Still_running (to_history ?log c, new_bookkeeping)
+              | `Still_running (history, old_bookkepping) ->
+                (* Special case to “flatten” the history: we forget
+                   previous similar states, this does not respect the
+                   “pseudo-happend-only” semantics but it's a valuable
+                   optimization. *)
+                `Still_running (history, new_bookkeeping)
+            in
+            return_with_history t ~no_change:true new_state
+          | `Ok (`Successful bookkeeping) ->
+            return_with_history t (`Ran_successfully (to_history ?log c, bookkeeping))
+          | `Error (`Try_again, how, new_bookkeeping) ->
+            let new_state =
+              match c with
+              | `Still_running_despite_recoverable_error
+                  (_, history, old_bookkepping) ->
+                (* Special case to “flatten” the history: see above. *)
+                `Still_running_despite_recoverable_error
+                  (how, history, new_bookkeeping)
+              | `Started_running _
+              | `Still_running _ ->
+                `Still_running_despite_recoverable_error
+                  (how, to_history ?log c, bookkeeping)
+            in
+            return_with_history t ~no_change:true new_state
+          | `Error (`Fatal, log, bookkeeping) -> 
+            return_with_history t
+              (`Failed_running (to_history ~log c,
+                                `Long_running_failure log, bookkeeping))
           end)
-      | `No_operation ->
-        `Do_nothing (fun ?log () ->
-            return_with_history t (`Successfully_did_nothing (to_history ?log c)))
+      | `Successfully_did_nothing _
+      | `Tried_to_reeval_condition _
+      | `Ran_successfully _ as c ->
+        begin match t.condition with
+        | Some cond ->
+          `Eval_condition (cond, begin fun ?log -> function
+            | `Ok true -> return_with_history t (`Verified_success (to_history ?log c))
+            | `Ok false ->
+              return_with_history t (`Did_not_ensure_condition (to_history ?log c))
+            | `Error (`Try_again, how) ->
+              return_with_history t ~no_change:true
+                (`Tried_to_reeval_condition (how, to_history ?log c))
+            | `Error (`Fatal, log)  ->
+              return_with_history t (`Did_not_ensure_condition (to_history ~log c))
+            end)
+        | None ->
+          `Do_nothing (fun ?log () ->
+              return_with_history t (`Verified_success (to_history ?log c)))
+        end      
+      | `Verified_success _ as c ->
+        activate_successes c
+      | `Failed_running _ as c ->
+        activate_failures c
+      | `Tried_to_kill _ as c ->
+        let killable_history =
+          let rec go =
+            function
+            | `Killing h -> h
+            | `Tried_to_kill {previous_state; _} ->
+              go previous_state in
+          (go c)
+        in
+        from_killing_state killable_history c
+      | `Killing history as c ->
+        from_killing_state history c
+      | `Killed _
+      | `Failed_to_start _
+      | `Failed_to_eval_condition _
+      | `Failed_to_kill _ as c ->
+        (* what should we actually do? *)
+        activate_failures c
       end
-    | `Started_running (_, bookkeeping)
-    | `Still_running_despite_recoverable_error (_, _, bookkeeping)
-    | `Still_running (_, bookkeeping) as c ->
-      `Check_process (bookkeeping, begin fun ?log -> function
-        | `Ok (`Still_running new_bookkeeping) ->
-          let new_state =
-            match c with
-            | `Started_running _
-            | `Still_running_despite_recoverable_error _ ->
-              (* Normal state transition *)
-              `Still_running (to_history ?log c, new_bookkeeping)
-            | `Still_running (history, old_bookkepping) ->
-              (* Special case to “flatten” the history: we forget
-                 previous similar states, this does not respect the
-                 “pseudo-happend-only” semantics but it's a valuable
-                 optimization. *)
-              `Still_running (history, new_bookkeeping)
-          in
-          return_with_history t ~no_change:true new_state
-        | `Ok (`Successful bookkeeping) ->
-          return_with_history t (`Ran_successfully (to_history ?log c, bookkeeping))
-        | `Error (`Try_again, how, new_bookkeeping) ->
-          let new_state =
-            match c with
-            | `Still_running_despite_recoverable_error
-                (_, history, old_bookkepping) ->
-              (* Special case to “flatten” the history: see above. *)
-              `Still_running_despite_recoverable_error
-                (how, history, new_bookkeeping)
-            | `Started_running _
-            | `Still_running _ ->
-              `Still_running_despite_recoverable_error
-                (how, to_history ?log c, bookkeeping)
-          in
-          return_with_history t ~no_change:true new_state
-        | `Error (`Fatal, log, bookkeeping) -> 
-          return_with_history t
-            (`Failed_running (to_history ~log c,
-                              `Long_running_failure log, bookkeeping))
-        end)
-    | `Successfully_did_nothing _
-    | `Tried_to_reeval_condition _
-    | `Ran_successfully _ as c ->
-      begin match t.condition with
-      | Some cond ->
-        `Eval_condition (cond, begin fun ?log -> function
-          | `Ok true -> return_with_history t (`Verified_success (to_history ?log c))
-          | `Ok false ->
-            return_with_history t (`Did_not_ensure_condition (to_history ?log c))
-          | `Error (`Try_again, how) ->
-            return_with_history t ~no_change:true
-              (`Tried_to_reeval_condition (how, to_history ?log c))
-          | `Error (`Fatal, log)  ->
-            return_with_history t (`Did_not_ensure_condition (to_history ~log c))
-          end)
-      | None ->
-        `Do_nothing (fun ?log () ->
-            return_with_history t (`Verified_success (to_history ?log c)))
-      end      
-    | `Verified_success _ as c ->
-      activate_successes c
-    | `Failed_running _ as c ->
-      activate_failures c
-    | `Tried_to_kill _ as c ->
-      let killable_history =
-        let rec go =
-          function
-          | `Killing h -> h
-          | `Tried_to_kill {previous_state; _} ->
-            go previous_state in
-        (go c)
-      in
-      from_killing_state killable_history c
-    | `Killing history as c ->
-      from_killing_state history c
-    | `Killed _
-    | `Failed_to_start _
-    | `Failed_to_eval_condition _
-    | `Failed_to_kill _ as c ->
-      (* what should we actually do? *)
-      activate_failures c
-    end
 
 end
 
