@@ -90,6 +90,7 @@ type t = {
   debug_level: int;
   plugins: (plugin list [@default []]);
   mode: mode;
+  tmp_dir: (string option [@default None]);
 } [@@deriving yojson]
 
 let log t =
@@ -104,7 +105,11 @@ let log t =
         | [] -> s "None"
         | more -> sublist (List.map more ~f:(function
           | `Compiled path -> item "Compiled"  (quote path)
-          | `OCamlfind pack -> item "OCamlfind package" (quote pack))))
+          | `OCamlfind pack -> item "OCamlfind package" (quote pack))));
+      item "Tmp-dir"
+        (match t.tmp_dir with
+        | None -> sf "Not-specified (using %s)" Filename.(get_temp_dir_name ())
+        | Some p -> sf "Set: %s" p);
     ] in
   let ui t =
     sublist [
@@ -196,8 +201,8 @@ let default_configuration_directory_path =
 let default_database_path =
   default_configuration_directory_path // "database"
 
-let create ?(debug_level=0) ?(plugins=[]) mode =
-  {debug_level; plugins; mode;}
+let create ?(debug_level=0) ?(plugins=[]) ?tmp_dir mode =
+  {debug_level; plugins; mode; tmp_dir}
 
 
 let explorer
@@ -444,6 +449,7 @@ let set_using_cbreak from_config =
 
 let apply_globals t =
   global_debug_level := t.debug_level;
+  let (_: unit option) = Option.map t.tmp_dir ~f:Filename.set_temp_dir_name in
   let color, host_timeout, cbreak =
     match t.mode with
     | `Client {client_ui; connection; token} ->
@@ -461,7 +467,8 @@ let apply_globals t =
        % indent (n
          % s "debug_level: " % i !global_debug_level % n
          % s "with_color: " % OCaml.bool !global_with_color % n
-         % s "timeout upper bound: " % OCaml.(option float host_timeout)
+         % s "timeout upper bound: " % OCaml.(option float host_timeout) % n
+         % s "tmp_dir: " % OCaml.(option quote t.tmp_dir)
        ) @ very_verbose);
   begin match host_timeout with
   | Some ht -> Host_io.default_timeout_upper_bound := ht
