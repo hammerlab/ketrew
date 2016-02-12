@@ -335,7 +335,7 @@ From here:
 
 - To write workflows for Ketrew,
 see [`src/test/Workflow_Examples.ml`](src/test/Workflow_Examples.ml) for
-examples and the [documentation of the EDSL API](src/lib/ketrew_edsl.mli).
+examples and the [documentation of the EDSL API](src/lib/eDSL.mli).
 - To configure Ketrew use the configuration file
 [documentation](src/doc/The_Configuration_File.md).
 - If you don't want a server running and listening on HTTP(S), Ketrew can run a
