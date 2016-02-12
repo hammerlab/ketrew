@@ -876,6 +876,20 @@ let start ~just_before_listening ~configuration  =
   Lwt_preemptive.init 10 52 (fun str ->
       Log.(s " Lwt_preemptive error: " % s str @ error);
     );
+  Lwt.async_exception_hook := begin fun e ->
+    Log.(s " Lwt async error: " % exn e @ error);
+    let backtrace = Printexc.get_backtrace () in
+    Printf.eprintf "Lwt-async-exn: %s\nBacktrace:\n%s\n%!"
+      (Printexc.to_string e) backtrace;
+    Logger.(
+      log
+        Display_markup.(
+          description_list [
+            "Location", text "Lwt.async_exception_hook";
+            "Exception", text (Printexc.to_string e);
+            "Backtrace", code_block backtrace;
+          ]));
+  end;
   begin
     status ~configuration
     >>= function
