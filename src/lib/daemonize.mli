@@ -69,3 +69,5 @@ val create:
 
 
 val markup : run_parameters -> Ketrew_pure.Internal_pervasives.Display_markup.t
+
+val get_playground: run_parameters -> Ketrew_pure.Path.t option

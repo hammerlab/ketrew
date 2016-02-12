@@ -326,7 +326,12 @@ let query run_param ~host_io item =
       get_application_id rp.daemonized_script ~host_io
       >>= fun app_id ->
       let tmp_file = 
-        Filename.concat (Filename.get_temp_dir_name ()) (Unique_id.create ()) in
+        let tmp_dir = 
+          match rp.daemonized_script |> Daemonize.get_playground with
+          | Some p -> Path.to_string p
+          | None -> "/tmp" (* this case should never happen; the daemon is
+                              running hence answers `Some _` *) in
+        Filename.concat tmp_dir ("yarn-logs-" ^ Unique_id.create ()) in
       shell_command_output_or_log ~host_io ~host
         (fmt "yarn logs -applicationId %s > %s" app_id tmp_file)
       >>= fun (_ : string) ->

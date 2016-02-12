@@ -353,3 +353,7 @@ let kill run_parameters ~host_io =
     end
   end
   >>< classify_and_transform_errors
+
+let get_playground = function
+| `Created _ -> None
+| `Running rp -> Some rp.playground
