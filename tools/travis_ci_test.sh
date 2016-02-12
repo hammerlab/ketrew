@@ -82,11 +82,7 @@ eval `opam config env`
 git config --global user.email "you@example.com"
 git config --global user.name "Your Name"
 
-opam remote add smondet git://github.com/smondet/dev-opam-repo
-
 opam update
-
-opam pin add trakeva https://github.com/smondet/trakeva.git
 
 opam install sqlite3 postgresql
 
