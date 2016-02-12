@@ -22,7 +22,8 @@ remove: [
 ]
 depends: [
   "omake" "ocamlfind" "ocamlify"
-  "trakeva" "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
+  "trakeva" {>= "0.1.0" }
+  "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.3"}
   "cohttp" {>= "0.17.0" } "lwt"
