@@ -416,8 +416,13 @@ module File = struct
 
 
   let load_exn path =
-    match (String.split ~on:(`Character '.') path |> List.last) with
-    | Some "json" | None ->
+    let split = String.split ~on:(`Character '.') path in
+    let extension =
+      match split with
+      | [] | [_] -> None
+      | more -> List.last more in
+    match extension with
+    | Some "json" ->
       read_file_no_lwt path |> parse_string_exn
     | Some "ml" ->
       read_command_output_no_lwt_exn
@@ -428,9 +433,14 @@ module File = struct
       |> parse_string_exn
     | Some "url" ->
       failwith "Getting config from URL: not implemented"
-    | Some other ->
-      Log.(s "Config file should a discriminatory extension, not "
-           % quote other % s " pretending it is `.json`" @ warning);
+    | None | Some _ ->
+      Log.(s "The Config-file should have a discriminatory extension \
+              (.ml, .sh, or .json); the file " % quote path
+           % s " has "
+           % Option.value_map ~default:(s "no extension") extension 
+             ~f:(fun ext -> s "extension " % quote ext) 
+           % s ", Ketrew will continue assuming the format is JSON."
+           @ warning);
       read_file_no_lwt path |> parse_string_exn
 
 end
@@ -476,21 +486,60 @@ let apply_globals t =
   end
 
 let load_exn ?(and_apply=true) ?profile how =
-  let conf =
-    match how with
-    | `Override c -> c
-    | `From_path path ->
-      File.(load_exn path |> pick_profile_exn ?name:profile)
-    | `In_directory root ->
-      File.(get_path ~root () |> load_exn |> pick_profile_exn ?name:profile)
-    | `Guess ->
-      File.(get_path () |> load_exn |> pick_profile_exn ?name:profile)
-  in
-  if and_apply then (
-    apply_globals conf;
-    Plugin.load_plugins_no_lwt_exn conf.plugins
-  );
-  conf
+  let potential_error_log = ref [] in
+  let add_log l = potential_error_log := l :: !potential_error_log in
+  add_log Log.(s "Configuration profile: "
+               % s (Option.value profile ~default:"default"));
+  begin try
+    let conf =
+      let open File in
+      match how with
+      | `Override c -> c
+      | `From_path path ->
+        add_log
+          Log.(s "Configuration path provided manually: " % quote path);
+        (load_exn path |> pick_profile_exn ?name:profile)
+      | `In_directory root ->
+        let path = get_path ~root () in
+        add_log
+          Log.(s "Configuration path guessed from directory " % quote root
+               % parens (s "provided manually ") % s ": " % quote path);
+        (load_exn path |> pick_profile_exn ?name:profile)
+      | `Guess ->
+        let path = get_path () in
+        add_log
+          Log.(s "Configuration path guessed from environment/defaults: "
+               % quote path);
+        (load_exn path |> pick_profile_exn ?name:profile)
+    in
+    if and_apply then (
+      apply_globals conf;
+      add_log Log.(s "Plugins to load: " % i (List.length conf.plugins));
+      Plugin.load_plugins_no_lwt_exn conf.plugins
+    );
+    conf
+  with e ->
+    Log.(
+      let environment_variables =
+        let all_environment_variables = [
+          "KETREW_ROOT";
+          "KETREW_CONFIGURATION";
+          "KETREW_CONFIG";
+          "KETREW_PROFILE";
+        ] in
+        List.map all_environment_variables ~f:(fun name ->
+            s name % s ": "
+            % (try quote (Sys.getenv name) with _ -> s "Not defined")) in
+      s "Loading of the configuration failed: " % n
+         % s "Exception: " % exn e % n
+         % s "Details: " % n % indent (separate n !potential_error_log) % n
+         % s "Environment: " % n
+         % indent (separate n environment_variables) % n
+         % s "See also: http://seb.mondet.org/software/ketrew/\
+              The_Configuration_File.html" % n
+         @ error);
+    raise e
+  end
 
 
 type profile = File.profile
