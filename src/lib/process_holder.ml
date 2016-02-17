@@ -182,7 +182,9 @@ We need to comunicate with that process:
 
 *)
   let setsid_ssh
-      ~session_id_file ~control_path ~log_to ~pipe_in ~pipe_out ~command uri =
+      ~session_id_file ~control_path ~log_to ~pipe_in ~pipe_out ~command
+      ~temp_dir
+      uri =
     let ssh_connection, port_option =
       let uri = Uri.of_string uri in
       fmt "%s%s"
@@ -190,6 +192,7 @@ We need to comunicate with that process:
         (Uri.host uri |> Option.value ~default:"127.0.0.1"),
       Uri.port uri |> Option.value_map ~default:"" ~f:(fmt " -p %d") in
     global_with_color := false;
+    Filename.set_temp_dir_name temp_dir;
     Log.(s "setsid_ssh to " % quote ssh_connection
          % sf " port-option %S" port_option  @ normal);
     let temp_script = Filename.temp_file "ketrew-ssh-askpass" ".sh" in
@@ -376,6 +379,7 @@ We need to comunicate with that process:
         "--fifo-out"; fifo_from_daemon;
         "--control-path"; control_path;
         "--write-session-id"; session_id_file;
+        "--temp-dir"; Filename.get_temp_dir_name ();
         "--to"; connection;
         "-c"; command;
       ] in

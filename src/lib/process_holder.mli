@@ -38,6 +38,7 @@ module Ssh_connection : sig
     pipe_in: string ->
     pipe_out: string ->
     command: string ->
+    temp_dir: string ->
     string ->
     (unit,
      [> `IO of
