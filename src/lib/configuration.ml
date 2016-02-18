@@ -459,7 +459,12 @@ let set_using_cbreak from_config =
 
 let apply_globals t =
   global_debug_level := t.debug_level;
-  let (_: unit option) = Option.map t.tmp_dir ~f:Filename.set_temp_dir_name in
+  begin match t.tmp_dir with
+  | None -> ()
+  | Some path ->
+    Sys.command (fmt "mkdir -p %s" (Filename.quote path)) |> ignore;
+    Filename.set_temp_dir_name path;
+  end;
   let color, host_timeout, cbreak =
     match t.mode with
     | `Client {client_ui; connection; token} ->

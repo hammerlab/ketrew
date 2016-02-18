@@ -171,7 +171,7 @@ Overly complex work around OpenSSH's TTY craziness.
 In order to get the prompt for a password, on top of the `DISPLAY` and
 `SSH_ASKPASS` environment variables we need to ensure we're detached from
 any terminal. `setsid` provides that, but on OSX `setsid` is not provided
-as a command line tools, so we use OCaml's
+as a command line tool, so we use OCaml's
 [`Unix.setsid`](http://caml.inria.fr/pub/docs/manual-ocaml/libref/Unix.html#VALsetsid).
 Which then requires a `fork` not to mess up with the current process.
 
@@ -182,7 +182,9 @@ We need to comunicate with that process:
 
 *)
   let setsid_ssh
-      ?session_id_file ?control_path ?log_to ?pipe_in ?pipe_out ?command uri =
+      ~session_id_file ~control_path ~log_to ~pipe_in ~pipe_out ~command
+      ~temp_dir
+      uri =
     let ssh_connection, port_option =
       let uri = Uri.of_string uri in
       fmt "%s%s"
@@ -190,22 +192,15 @@ We need to comunicate with that process:
         (Uri.host uri |> Option.value ~default:"127.0.0.1"),
       Uri.port uri |> Option.value_map ~default:"" ~f:(fmt " -p %d") in
     global_with_color := false;
+    Filename.set_temp_dir_name temp_dir;
     Log.(s "setsid_ssh to " % quote ssh_connection
          % sf " port-option %S" port_option  @ normal);
     let temp_script = Filename.temp_file "ketrew-ssh-askpass" ".sh" in
     Unix.chmod temp_script 0o700;
-    let fifo_in =
-      match pipe_in with None  ->  make_pipe () | Some s -> s in
-    let fifo_out =
-      match pipe_out with None  ->  make_pipe () | Some s -> s in
-    let log_json =
-      match log_to with
-      | None  -> Filename.temp_file "ketrew-ssh-log" ".json"
-      | Some f -> f in
     let meta_log markup =
       let content =
         Display_markup.to_yojson markup |> Yojson.Safe.pretty_to_string in
-      IO.write_file log_json ~content
+      IO.write_file log_to ~content
     in
     let log_file = Filename.temp_file "ketrew-ssh-askpass" "log" in
     (try Unix.unlink log_file with _ -> ());
@@ -220,10 +215,7 @@ We need to comunicate with that process:
             ~f:(fun out -> IO.write out s) in
         log (fmt "Sesssion ID: %d\n" session_id)
         >>= fun () ->
-        begin match session_id_file with
-        | None  -> return ()
-        | Some s -> IO.write_file s ~content:(fmt "%d\n" session_id)
-        end
+        IO.write_file session_id_file ~content:(fmt "%d\n" session_id)
         >>= fun () ->
         let session_log ?process status =
           Display_markup.(
@@ -231,8 +223,8 @@ We need to comunicate with that process:
               "Status", text status;
               "Session-ID", textf "%d" session_id;
               "Log-File", path log_file;
-              "FIFO-in", path fifo_in;
-              "FIFO-out", path fifo_out;
+              "FIFO-in", path pipe_in;
+              "FIFO-out", path pipe_out;
               "ASK-PASS", path temp_script;
               "Process",
               Option.value_map ~f:Process.markup process ~default:(text "N/A");
@@ -244,7 +236,7 @@ We need to comunicate with that process:
                echo \"============\n## $* Called on `date`\" >> %s\n\
                echo \"$*\" >> %s\n\
                cat %s\n"
-            log_file fifo_out fifo_in
+            log_file pipe_out pipe_in
         in
         IO.write_file temp_script ~content
         >>= fun () ->
@@ -259,10 +251,9 @@ We need to comunicate with that process:
                 ssh %s -o StrictHostKeyChecking=no \
                 -o ChallengeResponseAuthentication=no %s %s %s"
                temp_script port_option
-               (Option.value_map ~default:"" control_path
-                  ~f:(fmt "-o ControlMaster=auto -o 'ControlPath=%s'"))
+               (fmt "-o ControlMaster=auto -o 'ControlPath=%s'" control_path)
                ssh_connection
-               (Option.value_map ~default:"" command ~f:Filename.quote)
+               (command |> Filename.quote)
             ]
         in
         meta_log (session_log ~process "Process started")
@@ -388,6 +379,7 @@ We need to comunicate with that process:
         "--fifo-out"; fifo_from_daemon;
         "--control-path"; control_path;
         "--write-session-id"; session_id_file;
+        "--temp-dir"; Filename.get_temp_dir_name ();
         "--to"; connection;
         "-c"; command;
       ] in

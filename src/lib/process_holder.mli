@@ -32,18 +32,19 @@ open Unix_io
 module Ssh_connection : sig
 
   val setsid_ssh:
-    ?session_id_file:Unix_io.IO.path ->
-    ?control_path:string ->
-    ?log_to:Unix_io.IO.path ->
-    ?pipe_in:string ->
-    ?pipe_out:string ->
-    ?command:string ->
+    session_id_file: Unix_io.IO.path ->
+    control_path: string ->
+    log_to: string ->
+    pipe_in: string ->
+    pipe_out: string ->
+    command: string ->
+    temp_dir: string ->
     string ->
     (unit,
      [> `IO of
           [> `Exn of exn
           | `File_exists of string
-          | `Write_file_exn of Unix_io.IO.path * exn
+          | `Write_file_exn of string * exn
           | `Wrong_path of string ] ])
       Deferred_result.t
   (** Daemonize an SSH connection with a control-path as a
