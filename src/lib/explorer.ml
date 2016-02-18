@@ -98,7 +98,7 @@ let reload_list_of_ids explorer =
         let limit_in_seconds = 60. *. 60. *. 24. *. days in
         `Created_after (now_in_seconds -. limit_in_seconds)
     in
-    {Protocol.Up_message. time_constraint; filter = `True}
+    {Protocol.Up_message. time_constraint; filter = `Status `Activated_by_user}
   in
   Client.get_list_of_target_ids explorer.ketrew_client query 
   >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)
