@@ -166,10 +166,24 @@ module Http_client = struct
       ~f:(function `Query_result s -> Some s | _ -> None)
 
   let get_list_of_target_ids t query =
-    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Get_target_ids query))
-    >>= filter_down_message ~loc:`Targets ~f:(function
-      | `List_of_target_ids l -> Some l
-      | _ -> None)
+    let rec call_up_msg msg =
+      call_json t ~path:"/api" ~meta_meth:(`Post_message msg)
+      >>= filter_down_message
+        ~loc:`Targets
+        ~f:(function
+          | `List_of_target_ids tl -> Some (`Done tl)
+          | `Deferred_list_of_target_ids (id, total) -> (* id × total-length *)
+            Log.(s "Deferred_list_of_target_ids: " % s id % sf "(total: %d)" total
+                 @ verbose);
+            (Some (`Get_less (id, total)))
+          | _ -> None)
+      >>= begin function
+      | `Done l -> return l
+      | `Get_less (id, total) ->
+        call_up_msg (`Get_deferred (id, 0, 200))
+      end
+    in
+    call_up_msg (`Get_target_ids query)
 
 
 end
