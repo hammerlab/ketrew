@@ -50,7 +50,6 @@ end
 
 type exploration_state = {
   build_process_details: bool;
-  target_filter: (Target.t -> bool) * Log.t;
   condition_details: bool;
   metadata_details: bool;
   currently_seeing: [
@@ -63,9 +62,11 @@ let create_state () = {
   build_process_details = false;
   condition_details = false;
   metadata_details = false;
-  target_filter = (fun _ -> true), Log.(s "No-filter, see them all");
   currently_seeing = `Target_menu (`From 0);
 }
+
+let default_filter =
+  (`Status `Activated_by_user, Log.(s "Activated by a user (workflow roots)"))
 
 type t = {
   ketrew_client: Client.t;
@@ -73,6 +74,7 @@ type t = {
   target_cache: Target_cache.t;
   mutable state_stack: exploration_state list;
   mutable request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
+  mutable target_ids_filter: Protocol.Up_message.filter * Log.t;
   mutable targets_per_page: int;
   mutable targets_to_prefetch: int;
 }
@@ -84,6 +86,7 @@ let create ~client () =
   target_cache = Target_cache.create ();
   state_stack = [];
   request_targets_ids = Configuration.request_targets_ids conf;
+  target_ids_filter = default_filter;
   targets_per_page = Configuration.targets_per_page conf;
   targets_to_prefetch = Configuration.targets_to_prefetch conf;
 }
@@ -98,7 +101,8 @@ let reload_list_of_ids explorer =
         let limit_in_seconds = 60. *. 60. *. 24. *. days in
         `Created_after (now_in_seconds -. limit_in_seconds)
     in
-    {Protocol.Up_message. time_constraint; filter = `Status `Activated_by_user}
+    {Protocol.Up_message. time_constraint; 
+     filter = fst explorer.target_ids_filter}
   in
   Client.get_list_of_target_ids explorer.ketrew_client query 
   >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)
@@ -163,49 +167,21 @@ let common_menu_items =
       menu_item ~char:'S' ~log:Log.(s "Settings") `Settings;
     ])
 
-let filter ~log ~char f =
+let filter ~log ~char (f: Protocol.Up_message.filter) =
   (char, log, `Set (f, log))
 
-let simple_filter ~log ~char simple =
-  filter ~log ~char (fun t -> Target.state t |> Target.State.simplify = simple)
-
-let finished t =
-  let simple = Target.state t |> Target.State.simplify in
-  match simple with
-  | `Failed
-  | `Successful -> true
-  | `In_progress
-  | `Activable -> false
-
-let failed_but_not_because_of_dependencies t =
-  let state = Target.state t in
-  Target.State.simplify state = `Failed
-  && not (Target.State.Is.finished_because_dependencies_died state)
-
-let really_running t =
-  let state = Target.state t in
-  let open Target.State in
-  Is.started_running state || Is.still_running state
-  || Is.ran_successfully state
-
-let waiting_on_dependencies t =
-  let state = Target.state t in
-  let open Target.State in
-  Is.building state || Is.still_building state
-
 let filters = [
-  filter        (fun _ -> true) ~char:'n' ~log:Log.(s "No-filter, see them all");
-  simple_filter `Activable      ~char:'p' ~log:Log.(s "Passive/Activable");
-  simple_filter `In_progress    ~char:'r' ~log:Log.(s "Running/In-progress");
-  filter really_running         ~char:'R' ~log:Log.(s "Really running, not waiting");
-  filter waiting_on_dependencies ~char:'d' ~log:Log.(s "Waiting on dependencies");
-  simple_filter `Successful     ~char:'s' ~log:Log.(s "Successful");
-  simple_filter `Failed         ~char:'f' ~log:Log.(s "Failed");
-  filter finished ~char:'n' ~log:Log.(s "Finished (success or failure)");
-  filter failed_but_not_because_of_dependencies
+  filter (fst default_filter) ~char:'a' ~log:(snd default_filter);
+  filter (`Status (`Simple `Activable)) ~char:'p' ~log:Log.(s "Passive/Activable");
+  filter (`Status (`Simple `In_progress)) ~char:'r' ~log:Log.(s "Running/In-progress");
+  filter (`Status `Really_running) ~char:'R' ~log:Log.(s "Really running, not waiting");
+  filter (`Status (`Simple `Successful)) ~char:'s' ~log:Log.(s "Successful");
+  filter (`Status (`Simple `Failed)) ~char:'f' ~log:Log.(s "Failed");
+  filter (`And [`Status (`Simple `Failed);
+                `Not (`Status `Dead_because_of_dependencies)])
     ~char:'D' ~log:Log.(s "Failed but not because of its depedencies");
+  filter `True ~char:'n' ~log:Log.(s "No-filter, see them all");
 ]
-
 let initial_ask_tags_content =
   "# Enter regular expressions on `tags` of the targets\n\
    # Lines beginning with '#' are thrown aways\n\
@@ -232,19 +208,13 @@ let get_filter () =
           match String.get ~index:0 stripped with
           | Some '#' -> None
           | None -> None
-          | Some other ->
-            (try Some (stripped,
-                        Re_posix.compile_pat stripped)
-            with _ -> None))
+          | Some other -> Some stripped)
     in
-    return (
-      (fun trgt ->
-          List.for_all tag_regs ~f:(fun (_, reg) ->
-              List.exists Target.(tags trgt) ~f:(fun tag ->
-                  Re.execp reg tag))),
-      Log.(s "Tags matching "
-            % OCaml.list (fun (s, _) -> quote s) tag_regs))
+    let filter = `And (List.map tag_regs ~f:(fun s -> `Has_tag (`Matches s))) in
+    return (filter,
+            Log.(s "Tags matching " % OCaml.list (fun (s) -> quote s) tag_regs))
   | `Set f  -> return f
+
 
 let rec settings_menu explorer =
   Interaction.(
@@ -347,11 +317,7 @@ let pick_a_target explorer (es : exploration_state) ~how =
         let prefetching = `Take_from (explorer.targets_to_prefetch, more) in
         get_target explorer ~id:one ~prefetching
         >>= fun target ->
-        begin match (fst es.target_filter) target with
-        | true ->
-          find_targets more (target :: acc) (found_count + 1) (passed_count + 1)
-        | false -> find_targets more acc found_count (passed_count + 1)
-        end
+        find_targets more (target :: acc) (found_count + 1) (passed_count + 1)
     in
     let init = List.drop explorer.target_ids from in
     Log.(s "pick_a_target from " % i from % s " among " % i (List.length init)
@@ -363,12 +329,12 @@ let pick_a_target explorer (es : exploration_state) ~how =
     menu ~sentence:Log.(s "Pick a target") ~max_per_page
       ~always_there:(
         common_menu_items
-        @ [
-          menu_item ~char:'f'
-            ~log:Log.(s "Change filter "
-                      % parens (s "current: " % snd es.target_filter))
-            `Filter;
-        ]
+        @ [menu_item ~char:'f'
+             ~log:Log.(
+                 s "Set query/filter "
+                 % parens (s "Current: " % snd explorer.target_ids_filter)
+               )
+             `Filter]
         @ (match next_menu_option with
           | None -> [] | Some next ->
             [menu_item ~char:'n' ~log:Log.(s "Next targets") next])
@@ -566,7 +532,10 @@ let rec exploration_loop explorer state =
           exploration_loop explorer history
         | `Filter ->
           get_filter () >>= fun f ->
-          exploration_loop explorer ({current with target_filter = f } :: history)
+          explorer.target_ids_filter <- f;
+          reload_list_of_ids explorer
+          >>= fun () ->
+          exploration_loop explorer history
         | `Go t ->
           exploration_loop explorer ({current with currently_seeing = `Target t } :: history)
         | `Pick how ->
