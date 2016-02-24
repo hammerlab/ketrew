@@ -22,7 +22,7 @@ open Ketrew_pure
 open Internal_pervasives
 open Unix_io
 
-let log_status = 
+let log_status =
   let open Log in
   function
   | `Alive `Idle -> s "Alive"
@@ -113,6 +113,28 @@ let send_ssh_input ~configuration id input =
   >>= fun () ->
   Log.(s "Input was sent to " % quote id % n %
        s "Please check the status in a few seconds" @ normal);
+  return ()
+
+let send_command ~configuration id cmd =
+  let command =
+    let open Protocol.Process_sub_protocol.Command in
+    { connection = id; id = Unique_id.create (); command = cmd} in
+  perform_call ~configuration (`Send_command command) (function
+    | `Command_output o -> Some o
+    | oterh -> None)
+  >>= fun output ->
+  let out = Filename.temp_file "ketrew-send-command-" ".out" in
+  let err = Filename.temp_file "ketrew-send-command-" ".err" in
+  IO.write_file out
+    output.Protocol.Process_sub_protocol.Command_output.stdout
+  >>= fun () ->
+  IO.write_file err
+    output.Protocol.Process_sub_protocol.Command_output.stderr
+  >>= fun () ->
+  Log.(s "Command " % quote cmd % n %
+       s "Standard output:" % n % s out % n %
+       s "Standard error:" % n % s err
+       @ normal);
   return ()
 
 let sub_commands ~version ~prefix ~configuration_arg () =
@@ -206,5 +228,26 @@ let sub_commands ~version ~prefix ~configuration_arg () =
             |> required
           )
       ) in
-  [list_ssh_connections_cmd; display_details_cmd;
-   start_new_cmd; start_configured_cmd; send_input_cmd]
+  let send_command_cmd =
+    sub_command "send-command" ~doc:"Send shell command to host"
+      Term.(
+        pure begin fun configuration id cmd ->
+          send_command ~configuration id cmd
+        end
+        $ configuration_arg
+        $ Arg.(
+            info [] ~docv:"ID" ~doc:"ID of the pre-configured connection"
+            |> pos 0 (some string) None
+            |> required
+          )
+        $ Arg.(
+            info [] ~docv:"CMD" ~doc:"Shell command to send"
+            |> pos 1 (some string) None
+            |> required
+          )
+      ) in
+  [
+    list_ssh_connections_cmd; display_details_cmd;
+    start_new_cmd; start_configured_cmd; send_input_cmd;
+    send_command_cmd;
+  ]
