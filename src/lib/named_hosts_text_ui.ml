@@ -55,7 +55,7 @@ let list_ssh_connections ~configuration () =
   perform_call ~configuration (`Get_all_ssh_ids unique) (function
     | `List_of_ssh_ids l ->
       Some l
-    | oterh -> None)
+    | _ -> None)
   >>= fun list_of_connections ->
   let open Protocol.Process_sub_protocol.Ssh_connection in
   Log.(s "SSH Connections: " % n
@@ -74,7 +74,7 @@ let display_details ~configuration id =
   perform_call ~configuration (`Get_logs (id, `Full)) (function
     | `Logs (id, markup) ->
       Some markup
-    | oterh -> None)
+    | _ -> None)
   >>= fun serialized_markup ->
   let markup =
     Display_markup.of_json_exn (Yojson.Safe.from_string serialized_markup) in
@@ -86,7 +86,7 @@ let display_details ~configuration id =
 let start_ssh_connection ~configuration how =
   perform_call ~configuration (`Start_ssh_connection how) (function
     | `Ok -> Some ()
-    | oterh -> None)
+    | _ -> None)
   >>= fun () ->
   Log.(s "Started connection " %
        begin match how with
@@ -109,7 +109,7 @@ let send_ssh_input ~configuration id input =
   in
   perform_call ~configuration (`Send_ssh_input (id, pass)) (function
     | `Ok -> Some ()
-    | oterh -> None)
+    | _ -> None)
   >>= fun () ->
   Log.(s "Input was sent to " % quote id % n %
        s "Please check the status in a few seconds" @ normal);
@@ -121,7 +121,7 @@ let send_command ~configuration id cmd =
     { connection = id; id = Unique_id.create (); command = cmd} in
   perform_call ~configuration (`Send_command command) (function
     | `Command_output o -> Some o
-    | oterh -> None)
+    | _ -> None)
   >>= fun output ->
   let out = Filename.temp_file "ketrew-send-command-" ".out" in
   let err = Filename.temp_file "ketrew-send-command-" ".err" in
@@ -140,7 +140,7 @@ let send_command ~configuration id cmd =
 let kill ~configuration id =
   perform_call ~configuration (`Kill id) (function
     | `Ok -> Some ()
-    | oterh -> None)
+    | _ -> None)
   >>= fun () ->
   Log.(s "Killing message was sent to " % quote id % n %
        s "Please check the status in a few seconds" @ normal);
