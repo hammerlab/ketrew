@@ -83,6 +83,21 @@ let display_details ~configuration id =
        @ normal);
   return ()
 
+let start_ssh_connection ~configuration how =
+  perform_call ~configuration (`Start_ssh_connetion how) (function
+    | `Ok -> Some ()
+    | oterh -> None)
+  >>= fun () ->
+  Log.(s "Started connection " %
+       begin match how with
+       | `New (name, sshuri) ->
+         s "named " % quote name % s " to " % s sshuri
+       | `Configured id ->
+         s " from configured " % s id
+       end % n %
+       s "Please, check its status in a few seconds …"
+       @ normal);
+  return ()
 
 let sub_commands ~version ~prefix ~configuration_arg () =
   let open Cmdliner in
@@ -112,4 +127,22 @@ let sub_commands ~version ~prefix ~configuration_arg () =
             |> pos_all string [] |> value
           )
       ) in
-  [list_ssh_connections_cmd; display_details_cmd]
+  let start_new_cmd =
+    sub_command "start-new" ~doc:"Start new SSH connection"
+      Term.(
+        pure begin fun configuration name uri ->
+          start_ssh_connection ~configuration (`New (name, uri))
+        end
+        $ configuration_arg
+        $ Arg.(
+            info ["N"; "name"] ~docv:"Name" ~doc:"Name of the future named-host"
+            |> opt (some string) None
+            |> required
+          )
+        $ Arg.(
+            info [] ~docv:"URI" ~doc:"SSH URI to use for the connection"
+            |> pos 0 (some string) None
+            |> required
+          )
+      ) in
+  [list_ssh_connections_cmd; display_details_cmd; start_new_cmd]
