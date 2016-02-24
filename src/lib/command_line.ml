@@ -1005,7 +1005,10 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       sync_cmd;
       internal_ssh_command;
       daemonize_anything_cmd;
-    ] in
+    ]
+    @ Named_hosts_text_ui.sub_commands
+      ~version ~prefix:"hosts" ~configuration_arg ()
+  in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f
   | `Error _ -> exit Return_code.cmdliner_error
