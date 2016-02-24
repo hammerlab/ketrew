@@ -156,12 +156,12 @@ let start_updating_ssh_connections t =
 let start_new_ssh_connection t ~name ~uri =
   asynchronously (fun () ->
       send_process_messsage t
-        (`Process (`Start_ssh_connetion (`New (name, uri))))
+        (`Process (`Start_ssh_connection (`New (name, uri))))
     )
 let start_configured_ssh_connection t ~id =
   asynchronously (fun () ->
       send_process_messsage t
-        (`Process (`Start_ssh_connetion (`Configured (id))))
+        (`Process (`Start_ssh_connection (`Configured (id))))
     )
 
 let update_logs t ~id =

@@ -716,7 +716,7 @@ let answer_get_all_ssh_ids t ~client_id =
 let answer_message t ~host_io (msg : Protocol.Process_sub_protocol.up) :
   (Protocol.Process_sub_protocol.down, 'a) Deferred_result.t =
   begin match msg with
-  | `Start_ssh_connetion spec ->
+  | `Start_ssh_connection spec ->
     begin match spec with
     | `New (name, connection) ->
       start_ssh_connection t ~ketrew_bin:global_executable_path ~name connection

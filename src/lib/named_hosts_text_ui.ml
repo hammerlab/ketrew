@@ -84,7 +84,7 @@ let display_details ~configuration id =
   return ()
 
 let start_ssh_connection ~configuration how =
-  perform_call ~configuration (`Start_ssh_connetion how) (function
+  perform_call ~configuration (`Start_ssh_connection how) (function
     | `Ok -> Some ()
     | oterh -> None)
   >>= fun () ->
