@@ -230,8 +230,10 @@ let as_client ~configuration ~f =
                       (Printexc.to_string e)))
   end
   >>< begin function
-  | `Ok () ->
+  | `Ok o ->
     release client
+    >>= fun () ->
+    return o
   | `Error e ->
     release client >>< fun _ ->
     fail e

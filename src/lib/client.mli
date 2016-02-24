@@ -55,7 +55,7 @@ type t
 val as_client:
   configuration:Configuration.t ->
   f:(client:t ->
-     (unit,
+     ('result,
       [> `Database of Trakeva.Error.t
       | `Database_unavailable of string
       | `Dyn_plugin of
@@ -67,7 +67,7 @@ val as_client:
            [> `Found of string ] * [> `Exn of exn ] ]
       as 'a)
        Deferred_result.t) ->
-  (unit, 'a) Deferred_result.t
+  ('result, 'a) Deferred_result.t
 (** Run the function [f] with a fresh-client created with the [configuration].
 
     If the configuration can be for an HTTP client, for a standalone
