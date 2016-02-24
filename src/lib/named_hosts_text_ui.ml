@@ -137,6 +137,15 @@ let send_command ~configuration id cmd =
        @ normal);
   return ()
 
+let kill ~configuration id =
+  perform_call ~configuration (`Kill id) (function
+    | `Ok -> Some ()
+    | oterh -> None)
+  >>= fun () ->
+  Log.(s "Killing message was sent to " % quote id % n %
+       s "Please check the status in a few seconds" @ normal);
+  return ()
+
 let sub_commands ~version ~prefix ~configuration_arg () =
   let open Cmdliner in
   let sub_command cmd ~doc term =
@@ -246,8 +255,21 @@ let sub_commands ~version ~prefix ~configuration_arg () =
             |> required
           )
       ) in
+  let kill_cmd =
+    sub_command "kill" ~doc:"Kill a given connection"
+      Term.(
+        pure begin fun configuration id ->
+          kill ~configuration id
+        end
+        $ configuration_arg
+        $ Arg.(
+            info [] ~docv:"ID" ~doc:"ID of the pre-configured connection"
+            |> pos 0 (some string) None
+            |> required
+          )
+      ) in
   [
     list_ssh_connections_cmd; display_details_cmd;
     start_new_cmd; start_configured_cmd; send_input_cmd;
-    send_command_cmd;
+    send_command_cmd; kill_cmd;
   ]
