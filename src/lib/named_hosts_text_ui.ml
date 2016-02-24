@@ -34,31 +34,54 @@ let log_status =
   | `Configured -> s "Configured/ready to start"
   | `Unknown err -> s "Unknown status: " % quote err
 
-let list_ssh_connections ~configuration () =
-  let unique = Unique_id.create () in
+let perform_call ~configuration msg f =
   Client.as_client ~configuration ~f:begin fun ~client ->
-    Client.call_process_holder client (`Get_all_ssh_ids unique)
+    Client.call_process_holder client msg
     >>= fun down ->
     begin match down with
+    | `Error err ->
+      fail (`Failure (fmt "Server answered with an ERROR: %s" err))
+    | other ->
+      begin match f down with
+      | Some s -> return s
+      | None ->
+      fail (`Failure (fmt "Unexpected process-holder down-message"))
+      end
+    end
+  end
+
+let list_ssh_connections ~configuration () =
+  let unique = Unique_id.create () in
+  perform_call ~configuration (`Get_all_ssh_ids unique) (function
     | `List_of_ssh_ids l ->
-      let open Protocol.Process_sub_protocol.Ssh_connection in
-      Log.(s "SSH Connections: " % n
-           % separate n List.(map l ~f:(fun {id; name; uri; status} ->
+      Some l
+    | oterh -> None)
+  >>= fun list_of_connections ->
+  let open Protocol.Process_sub_protocol.Ssh_connection in
+  Log.(s "SSH Connections: " % n
+       % separate n (
+         List.map list_of_connections
+           ~f:(fun {id; name; uri; status} ->
                s "* " % s name % n %
                indent (
                  s "ID: " % brakets (s id) % n %
                  s "URI: " % quote uri % n %
                  s "Status: " % log_status status)))
-           @ normal);
-      return ()
-    | `Error err ->
-      Log.(s "Server answer ERROR: " % s err @ error);
-      return ()
-    | other ->
-      Log.(s "Wrong down message" @ error);
-      return ()
-    end
-  end
+       @ normal);
+  return ()
+
+let display_details ~configuration id =
+  perform_call ~configuration (`Get_logs (id, `Full)) (function
+    | `Logs (id, markup) ->
+      Some markup
+    | oterh -> None)
+  >>= fun serialized_markup ->
+  let markup =
+    Display_markup.of_json_exn (Yojson.Safe.from_string serialized_markup) in
+  Log.(s "Logs of " % s id % s ":" % n %
+       Display_markup.log markup
+       @ normal);
+  return ()
 
 
 let sub_commands ~version ~prefix ~configuration_arg () =
@@ -74,4 +97,19 @@ let sub_commands ~version ~prefix ~configuration_arg () =
         end
         $ configuration_arg
       ) in
-  [list_ssh_connections_cmd]
+  let display_details_cmd =
+    sub_command "details" ~doc:"Display details for given SSH processes"
+      Term.(
+        pure begin fun configuration ids ->
+          Deferred_list.while_sequential ids ~f:(fun id ->
+              display_details ~configuration id)
+          >>= fun (_ : unit list) ->
+          return ()
+        end
+        $ configuration_arg
+        $ Arg.(
+            info [] ~docv:"Ids" ~doc:"IDs of the hosts"
+            |> pos_all string [] |> value
+          )
+      ) in
+  [list_ssh_connections_cmd; display_details_cmd]
