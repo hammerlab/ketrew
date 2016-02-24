@@ -29,6 +29,7 @@ module Error = struct
         [ `Call of [ `GET | `POST ] * Uri.t
         | `Targets
         | `Target_query of Unique_id.t * string
+        | `Process_holder
         ] *
         [ `Exn of exn
         | `Json_parsing of string * [ `Exn of exn ]
@@ -185,6 +186,12 @@ module Http_client = struct
     in
     call_up_msg (`Get_target_ids query)
 
+  let call_process_holder t message =
+    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Process message))
+    >>= fun down ->
+    filter_down_message down ~loc:`Process_holder
+      ~f:(function `Process p -> Some p | other -> None)
+
 
 end
 
@@ -311,6 +318,14 @@ let configuration = function
   Configuration.create (`Standalone s.Standalone.configuration)
 | `Http_client h ->
   Configuration.create (`Client h.Http_client.configuration)
+
+let call_process_holder t message =
+  match t with
+  | `Standalone _ ->
+    fail (`Failure "Cannot use process-holder in standalone mode")
+  | `Http_client c ->
+    Http_client.call_process_holder c message
+
 
 (*
   Submit a workflow:

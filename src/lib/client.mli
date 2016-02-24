@@ -23,7 +23,8 @@
    HTTP client talking to a server/engine.
 *)
 
-open Ketrew_pure.Internal_pervasives
+open Ketrew_pure
+open Internal_pervasives
 open Unix_io
 
 
@@ -35,6 +36,7 @@ module Error : sig
         [ `Call of [ `GET | `POST ] * Uri.t
         | `Targets
         | `Target_query of Unique_id.t * string
+        | `Process_holder
         ] *
         [ `Exn of exn
         | `Json_parsing of string * [ `Exn of exn ]
@@ -151,6 +153,10 @@ val restart: t ->
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Restart a set of targets. *)
+
+val call_process_holder: t -> Protocol.Process_sub_protocol.up ->
+  (Protocol.Process_sub_protocol.down,
+   [> `Client of Error.t | `Failure of string ]) Deferred_result.t
 
 val submit_workflow:
   ?override_configuration:Configuration.t ->

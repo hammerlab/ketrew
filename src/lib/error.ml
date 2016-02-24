@@ -30,6 +30,7 @@ let log_client_error error_value =
     | `Call (meth, the_uri) ->
       s (Cohttp.Code.(string_of_method (meth :> meth))) % sp % uri the_uri
     | `Targets -> s "Getting targets"
+    | `Process_holder -> s "Contacting the (SSH) process-holder"
     | `Kill_targets ids -> s "Killing targets" % sp % OCaml.list quote ids
     | `Restart_targets ids ->
       s "Restarting targets" % sp % OCaml.list quote ids
