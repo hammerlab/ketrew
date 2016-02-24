@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*    Copyright 2014, 2015:                                               *)
+(*    Copyright 2014, 2015, 2016:                                         *)
 (*          Sebastien Mondet <seb@mondet.org>,                            *)
 (*          Leonid Rozenberg <leonidr@gmail.com>,                         *)
 (*          Arun Ahuja <aahuja11@gmail.com>,                              *)
@@ -149,7 +149,7 @@ let kill ~configuration id =
 let sub_commands ~version ~prefix ~configuration_arg () =
   let open Cmdliner in
   let sub_command cmd ~doc term =
-    term, Term.info (prefix ^ "-" ^ cmd) ~version ~doc in
+    term, Term.info (prefix ^ "-" ^ cmd) ~version ~doc:(doc ^ ".") in
   let list_ssh_connections_cmd =
     sub_command "list"
       ~doc:"List the current named SSH hosts"
