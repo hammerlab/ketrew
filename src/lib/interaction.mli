@@ -92,3 +92,5 @@ val run_with_quit_key :
 (** Start and run an action until it finishes or unitl the key
     ["q"] is pressed. *)
 
+val read_password_exn : unit -> string
+(** Read a line form [stdin] without echoing to the terminal. *)
