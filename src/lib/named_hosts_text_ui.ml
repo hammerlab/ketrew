@@ -99,6 +99,22 @@ let start_ssh_connection ~configuration how =
        @ normal);
   return ()
 
+let send_ssh_input ~configuration id input =
+  let pass =
+    match input with
+    | `String s -> s
+    | `Read_stdin ->
+      Printf.printf "Enter input/password (won't echo):\n%!";
+      Interaction.read_password_exn ()
+  in
+  perform_call ~configuration (`Send_ssh_input (id, pass)) (function
+    | `Ok -> Some ()
+    | oterh -> None)
+  >>= fun () ->
+  Log.(s "Input was sent to " % quote id % n %
+       s "Please check the status in a few seconds" @ normal);
+  return ()
+
 let sub_commands ~version ~prefix ~configuration_arg () =
   let open Cmdliner in
   let sub_command cmd ~doc term =
@@ -158,5 +174,37 @@ let sub_commands ~version ~prefix ~configuration_arg () =
             |> required
           )
       ) in
+  let send_input_cmd =
+    sub_command "send-input" ~doc:"Send input to ASKPASS"
+      Term.(
+        pure begin fun configuration raw stdin id ->
+          let how =
+            match raw, stdin with
+            | Some r, false -> `String r
+            | None, true -> `Read_stdin
+            | None, false ->
+              failwith "input option missing, use --raw or --stdin"
+            | Some _, true ->
+              failwith "wrong input options cannot use both --raw and --stdin"
+          in
+          send_ssh_input ~configuration id how
+        end
+        $ configuration_arg
+        $ Arg.(
+            info ["raw"] ~docv:"STRING" ~doc:"Send $(docv) as a raw string"
+            |> opt (some string) None
+            |> value
+          )
+        $ Arg.(
+            info ["stdin"] ~doc:"Get the input form `stdin`"
+            |> flag
+            |> value
+          )
+        $ Arg.(
+            info [] ~docv:"ID" ~doc:"ID of the pre-configured connection"
+            |> pos 0 (some string) None
+            |> required
+          )
+      ) in
   [list_ssh_connections_cmd; display_details_cmd;
-   start_new_cmd; start_configured_cmd]
+   start_new_cmd; start_configured_cmd; send_input_cmd]
