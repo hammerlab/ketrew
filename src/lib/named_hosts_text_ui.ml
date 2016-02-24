@@ -145,4 +145,18 @@ let sub_commands ~version ~prefix ~configuration_arg () =
             |> required
           )
       ) in
-  [list_ssh_connections_cmd; display_details_cmd; start_new_cmd]
+  let start_configured_cmd =
+    sub_command "start-configured" ~doc:"Start a pre-configured SSH connection"
+      Term.(
+        pure begin fun configuration id ->
+          start_ssh_connection ~configuration (`Configured id)
+        end
+        $ configuration_arg
+        $ Arg.(
+            info [] ~docv:"ID" ~doc:"ID of the pre-configured connection"
+            |> pos 0 (some string) None
+            |> required
+          )
+      ) in
+  [list_ssh_connections_cmd; display_details_cmd;
+   start_new_cmd; start_configured_cmd]
