@@ -93,6 +93,20 @@ let quit_key_information () =
   | true -> "Press the 'q' key to stop."
   | false -> "Use the 'q' and then <return> to stop."
 
+(* cf. http://pleac.sourceforge.net/pleac_ocaml/userinterfaces.html *)
+let read_password_exn () =
+  let term_init = Unix.tcgetattr Unix.stdin in
+  let term_no_echo = { term_init with Unix.c_echo = false } in
+  Unix.tcsetattr Unix.stdin Unix.TCSANOW term_no_echo;
+  try
+    let password = read_line () in
+    print_newline ();
+    Unix.tcsetattr Unix.stdin Unix.TCSAFLUSH term_init;
+    password
+  with e ->
+    Unix.tcsetattr Unix.stdin Unix.TCSAFLUSH term_init;
+    raise e
+
 let open_in_dollar_editor file =
   let editor =
     try Sys.getenv "EDITOR"
