@@ -432,8 +432,11 @@ let redirect_log_output_exn_no_lwt path =
       |> out_channel_of_descr)
   in
   global_with_color := false;
-  Log.(s "Daemonizing: Logging to " % quote file_name @ verbose);
   let pid = Unix.getpid () in
+  Log.(s "Now debug logs will go to " % quote file_name
+       %sp % parens (s "as PID: " %i pid)
+       %sp % parens (s "debug-level: " %i !global_debug_level)
+       @ normal);
   global_log_print_string := begin fun s ->
     Printf.fprintf out "####### %s (PID: %d)\n%s%!"
       Time.(now () |> to_filename) pid s
