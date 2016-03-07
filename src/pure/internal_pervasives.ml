@@ -159,6 +159,8 @@ module Time = struct
 
   let now () : t = Unix.gettimeofday ()
 
+  let days n = float n *. 60. *. 60. *. 24.
+
   let to_filename f =
     let open Unix in
     let tm = gmtime f in
