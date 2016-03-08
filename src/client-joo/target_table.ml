@@ -300,8 +300,7 @@ module Filter = struct
     | Some t ->
       (* Those 5 seconds actually generate traffic, but for know, who cares … *)
       { query with
-        Protocol.Up_message.time_constraint =
-          `Status_changed_since (t -. 1.)}
+        Protocol.Up_message.time_constraint = `Status_changed_since t}
     | None -> query
 
   let to_lisp { ast } =

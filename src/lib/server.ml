@@ -63,8 +63,8 @@ module Server_state = struct
 
     let make_message t ~id ~index ~length : Protocol.Down_message.t =
       match Hashtbl.find t.table id with
-      | { content = List_of_ids l; _ } ->
-        `List_of_target_ids (List.take (List.drop l index) length)
+      | { content = List_of_ids l; birthdate; _ } ->
+        `List_of_target_ids (List.take (List.drop l index) length, birthdate)
       | exception _ ->
         `Missing_deferred
 
@@ -179,8 +179,8 @@ let block_if_empty_at_most ~server_state
     get_values () >>= send
   | Some (`Block_if_empty_at_most req_block_time) ->
     let start_time = Time.now () in
-    let sleep_time =
-      Configuration.block_step_time server_state.server_configuration in
+    (* let sleep_time = *)
+    (*   Configuration.block_step_time server_state.server_configuration in *)
     let block_time =
       let max_block_time =
         Configuration.max_blocking_time server_state.server_configuration in
@@ -204,11 +204,24 @@ let block_if_empty_at_most ~server_state
         get_values () >>= send
       | false ->
         get_values ()
-        >>= fun values ->
-        if should_send values then
+        >>= fun ( values) ->
+        if should_send values then (
+          Printf.eprintf "Sending values\n%!";
           send values
-        else
-          System.sleep sleep_time >>< fun _ -> loop ()
+        ) else (
+          Deferred_list.pick_and_cancel [
+            begin Engine.next_change ~limit:7. server_state.state
+              >>= fun change ->
+              Printf.eprintf "Changes: %s\n%!"
+                (String.concat ~sep:"," @@ List.map ~f:Persistent_data.Change.show change);
+              loop ()
+            end;
+            begin System.sleep 10. >>< fun _ ->
+              Printf.eprintf "Sleep to maximum\n%!";
+              loop ()
+            end;
+          ]
+        )
     in
     loop ()
   end
@@ -322,12 +335,16 @@ module Engine_instructions = struct
   let get_ids ~server_state (query, options) =
     block_if_empty_at_most ~server_state options
       ~get_values:(fun () ->
-          Engine.get_list_of_target_ids server_state.state query)
-      ~should_send:(function [] -> false | _ -> true)
-      ~send:begin fun v ->
+          let date = Time.now () in
+          Engine.get_list_of_target_ids server_state.state query
+          >>= fun l ->
+          return (l, date)
+        )
+      ~should_send:(function ([], _) -> false | _ -> true)
+      ~send:begin fun (v, birthdate) ->
         match List.length v with
         | small when small < 1001 ->
-          return (`List_of_target_ids v)
+          return (`List_of_target_ids (v, birthdate))
         | big ->
           let answer_id =
             Deferred_queries.add_list_of_ids server_state.deferred_queries v in
@@ -370,7 +387,7 @@ let answer_get_server_status ~server_state =
 
 let answer_message ~server_state ?token msg =
   let read_only_mode =
-      Configuration.read_only_mode server_state.server_configuration in
+    Configuration.read_only_mode server_state.server_configuration in
   let with_capability cap f =
     ensure_can server_state.authentication ?token cap ~read_only_mode
     >>= fun () -> f ~server_state
@@ -400,7 +417,7 @@ let answer_message ~server_state ?token msg =
     with_capability `See_targets (fun ~server_state ->
         let msg =
           Deferred_queries.make_message server_state.deferred_queries
-          ~id ~index ~length
+            ~id ~index ~length
         in
         return msg)
   | `Get_notifications query ->

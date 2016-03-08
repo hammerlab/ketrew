@@ -172,7 +172,7 @@ module Http_client = struct
       >>= filter_down_message
         ~loc:`Targets
         ~f:(function
-          | `List_of_target_ids tl -> Some (`Done tl)
+          | `List_of_target_ids (tl, (_ : Time.t)) -> Some (`Done tl)
           | `Deferred_list_of_target_ids (id, total) -> (* id × total-length *)
             Log.(s "Deferred_list_of_target_ids: " % s id % sf "(total: %d)" total
                  @ verbose);
