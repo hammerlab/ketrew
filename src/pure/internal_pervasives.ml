@@ -173,6 +173,18 @@ module Time = struct
       (tm.tm_sec)
       ((f -. (floor f)) *. 1000. |> int_of_float)
 
+  let to_string_hum f =
+    let open Unix in
+    let tm = localtime f in
+    fmt "%04d-%02d-%02d-%02dh%02dm%02ds%03dms"
+      (tm.tm_year + 1900)
+      (tm.tm_mon + 1)
+      (tm.tm_mday)
+      (tm.tm_hour)
+      (tm.tm_min)
+      (tm.tm_sec)
+      ((f -. (floor f)) *. 1000. |> int_of_float)
+
   let log f = Log.s (to_filename f)
 
   let show f = to_filename f
