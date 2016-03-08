@@ -383,7 +383,7 @@ let get_status t id =
 
 let get_list_of_target_ids t query =
   let start_time = Time.now () in
-  Persistent_data.all_targets t.data
+  Persistent_data.all_visible_targets t.data
   >>= fun targets ->
   let all_targets_time = Time.now () in
   let list_of_ids =
@@ -493,8 +493,8 @@ let restart_target engine target_id =
     ~old_id:target_id ~new_id:id ~name:(Target.name this_new_target);
   return id
 
-let all_targets t =
-  Persistent_data.all_targets t.data
+let all_visible_targets t =
+  Persistent_data.all_visible_targets t.data
 let get_target t id =
   Persistent_data.get_target t.data id
 let add_targets t l =

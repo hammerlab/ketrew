@@ -563,7 +563,7 @@ let get_target t id =
   get_following_pointers ~key:id ~count:0
 
 
-let all_targets t =
+let all_visible_targets t =
   let start_date = Time.now () in
   (*
   With_database.iter_all_target_ids t.db

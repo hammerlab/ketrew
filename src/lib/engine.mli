@@ -81,7 +81,7 @@ val get_target: t -> Unique_id.t ->
     Deferred_result.t
 (** Get a target from its id. *)
 
-val all_targets :
+val all_visible_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [> `Database of Trakeva.Error.t

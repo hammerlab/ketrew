@@ -221,7 +221,7 @@ module Engine_instructions = struct
 
   let from_ids ~server_state = function
     | [] ->
-      Engine.all_targets server_state.state
+      Engine.all_visible_targets server_state.state
       >>| List.map ~f:(fun trt -> (Target.id trt, trt))
     | more ->
       Deferred_list.while_sequential more ~f:(fun id ->

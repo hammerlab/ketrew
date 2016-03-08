@@ -47,7 +47,7 @@ val get_target:
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
-val all_targets :
+val all_visible_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [>  `Database of Trakeva.Error.t

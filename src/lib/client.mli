@@ -82,7 +82,7 @@ val get_local_engine: t -> Engine.t option
 (** Get the handle to the engine (returns [None] if the client is
     an HTTP one). *)
 
-val all_targets: t -> 
+val all_visible_targets: t -> 
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
    | `Database of Trakeva.Error.t
