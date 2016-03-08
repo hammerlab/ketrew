@@ -69,7 +69,6 @@ type server = {
   server_engine: engine;
   server_ui: ui;
   max_blocking_time: (float [@default 300.]);
-  block_step_time: (float [@default 3.]);
   read_only_mode: (bool [@default false]);
   ssh_connections: (ssh_connection list [@default []]);
   ssh_processes_ui: (bool [@default default_ssh_processes_ui]);
@@ -183,7 +182,6 @@ let log t =
           item "Log-path" (OCaml.option quote srv.log_path);
           item "Return-error-messages" (OCaml.bool srv.return_error_messages);
           item "Max-blocking-time" (OCaml.float srv.max_blocking_time);
-          item "Block-step-time" (OCaml.float srv.block_step_time);
           item "Listen"
             begin match srv.listen_to with
             | `Tls (cert, key, port) ->
@@ -262,7 +260,6 @@ let server
     ?(authorized_tokens=[]) ?(return_error_messages=false)
     ?command_pipe ?(daemon=false) ?log_path
     ?(max_blocking_time = 300.)
-    ?(block_step_time = 3.)
     ?(read_only_mode = false)
     ?(ssh_connections = [])
     ?(ssh_processes_ui = default_ssh_processes_ui)
@@ -271,7 +268,7 @@ let server
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path;
-            max_blocking_time; block_step_time; read_only_mode;
+            max_blocking_time; read_only_mode;
             ssh_connections; ssh_processes_ui})
 
 
@@ -299,7 +296,6 @@ let server_engine s = s.server_engine
 let connection c = c.connection
 let token c = c.token
 let max_blocking_time s = s.max_blocking_time
-let block_step_time s = s.block_step_time
 let read_only_mode s = s.read_only_mode
 
 let standalone_of_server s =

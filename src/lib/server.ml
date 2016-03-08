@@ -181,8 +181,6 @@ let block_if_empty_at_most
     get_values () >>= send
   | Some (`Block_if_empty_at_most req_block_time) ->
     let start_time = Time.now () in
-    (* let sleep_time = *)
-    (*   Configuration.block_step_time server_state.server_configuration in *)
     let block_time =
       let max_block_time =
         Configuration.max_blocking_time server_state.server_configuration in

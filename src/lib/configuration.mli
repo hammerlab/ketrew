@@ -162,7 +162,6 @@ val server:
   ?daemon: bool ->
   ?log_path: string ->
   ?max_blocking_time: float ->
-  ?block_step_time: float ->
   ?read_only_mode: bool ->
   ?ssh_connections:ssh_connection list ->
   ?ssh_processes_ui:bool ->
@@ -191,9 +190,6 @@ val server:
     - [max_blocking_time]: 
       upper bound on the request for blocking in the protocol (seconds,
       default [300.]).
-    - [block_step_time]: 
-      granularity of the checking for blocking conditions (this will
-      hopefully disapear soon) (seconds, default [3.]).
     - [read_only_mode]:
       run the server in read-only mode (default [false]).
     - [ssh_connections]: preconfigure named SSH connections (default [[]]).
@@ -327,7 +323,6 @@ val targets_per_page: t -> int
 val targets_to_prefetch: t -> int
 
 val max_blocking_time: server -> float
-val block_step_time:   server -> float
 val read_only_mode:    server -> bool
 
 val use_cbreak: unit -> bool
