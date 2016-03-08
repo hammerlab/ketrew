@@ -134,7 +134,7 @@ module State : sig
     | `In_progress
     | `Successful
     | `Failed
-  ] [@@deriving yojson]
+  ] [@@deriving yojson,show]
   val simplify: t -> simple
 
   val name: t -> string

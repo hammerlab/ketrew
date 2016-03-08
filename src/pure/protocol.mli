@@ -157,7 +157,7 @@ module Up_message : sig
   type target_query = {
     time_constraint : time_constraint;
     filter : filter;
-  }
+  } [@@deriving show]
   type query_option = [
     | `Block_if_empty_at_most of float
   ]

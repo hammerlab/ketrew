@@ -167,7 +167,9 @@ module Request = struct
 
 end (* Request *)
 
-let block_if_empty_at_most ~server_state
+let block_if_empty_at_most
+    ~server_state
+    ~debug_info
     ~get_values
     ~should_send
     ~send
@@ -206,22 +208,24 @@ let block_if_empty_at_most ~server_state
         get_values ()
         >>= fun ( values) ->
         if should_send values then (
-          Printf.eprintf "Sending values\n%!";
+          Printf.eprintf "Sending values\n (%s)\n%!" debug_info;
           send values
         ) else (
           Deferred_list.pick_and_cancel [
             begin Engine.next_change ~limit:7. server_state.state
               >>= fun change ->
-              Printf.eprintf "Changes: %s\n%!"
-                (String.concat ~sep:"," @@ List.map ~f:Persistent_data.Change.show change);
+              Printf.eprintf "Changes: %s (%s)\n%!"
+                (String.concat ~sep:"," @@ List.map ~f:Persistent_data.Change.show change)
+                debug_info;
               loop ()
             end;
-            begin System.sleep 10.
+            begin System.sleep 120. (* This should only be an emergency break *)
               >>< function
               | `Ok () ->
-                Printf.eprintf "Sleep to maximum\n%!"; loop ()
+                Printf.eprintf "Sleep to maximum: %s\n%!" debug_info; loop ()
               | `Error (`System (_, `Exn exn)) ->
-                Printf.eprintf "Didn't sleep to maximum : %s\n%!" (Printexc.to_string exn);
+                Printf.eprintf "Didn't sleep to maximum : %s (debug_info: %s)\n%!"
+                  (Printexc.to_string exn) debug_info;
                 loop ()
             end;
           ]
@@ -306,6 +310,7 @@ module Engine_instructions = struct
   let get_flat_states ~server_state
       (time_constrain, target_ids, options) =
     block_if_empty_at_most ~server_state options
+      ~debug_info:(fmt "get_flat_states:%d-ids" (List.length target_ids))
       ~get_values:(fun () ->
           from_ids ~server_state target_ids
           >>= fun targets ->
@@ -338,6 +343,7 @@ module Engine_instructions = struct
 
   let get_ids ~server_state (query, options) =
     block_if_empty_at_most ~server_state options
+      ~debug_info:(fmt "get_ids:%s" (Protocol.Up_message.show_target_query query))
       ~get_values:(fun () ->
           let date = Time.now () in
           Engine.get_list_of_target_ids server_state.state query

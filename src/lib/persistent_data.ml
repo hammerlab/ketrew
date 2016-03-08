@@ -134,9 +134,10 @@ module With_database = struct
     | Some time when
         (* fnished, but not old enough to go to archive *)
         time +. archival_threshold > now ->
-      Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
-        (Target.id target) from (Time.to_string_hum time) archival_threshold
-        (now |>Time.to_string_hum);
+      if debug_archival then
+        Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
+          (Target.id target) from (Time.to_string_hum time) archival_threshold
+          (now |>Time.to_string_hum);
       begin if from <> finished_targets_collection
         then (
           log_info Log.(Target.log target % s " moves to the finsihed collection");
@@ -149,7 +150,8 @@ module With_database = struct
     | Some time
       when time +. archival_threshold < Time.now ()
         && from = finished_targets_collection ->
-      Printf.eprintf "debug archival target %s is OLD\n%!" (Target.id target);
+      if debug_archival then
+        Printf.eprintf "debug archival target %s is OLD\n%!" (Target.id target);
       (* old enough to be archived and not yet archived *)
       move_target t ~target ~src:from ~dest:archived_targets_collection
     | Some _ ->
@@ -272,7 +274,8 @@ module With_database = struct
 
   (* Alive should mean In-progess or activable *)
   let alive_targets t =
-    get_collections_of_targets t ~from:[passive_targets_collection; active_targets_collection]
+    get_collections_of_targets t
+      ~from:[passive_targets_collection; active_targets_collection]
     >>= fun targets ->
     let filtered =
       List.filter_map targets ~f:(fun target ->
@@ -518,28 +521,39 @@ module Event_source = struct
     let stream =
       let last_return = ref None in
       let stream = Lwt_react.E.to_stream base_event in
+      let rate_limit = 4.0 in
+      let max_wait = 2.0 in
       Lwt_stream.from Lwt.(fun () ->
           let rec loop count acc =
-            Lwt_stream.next stream
-            >>= fun evalue ->
-            (* Printf.eprintf "evalue! %s\n%!" *)
-            (*   (Option.value_map !last_return ~default:"None" *)
-            (*      ~f:(Time.to_string_hum)); *)
+            (* Count is used only for debug printing *)
+            Lwt.pick [
+              begin
+                Lwt_stream.next stream
+                >>= fun evalue ->
+                return (evalue :: acc)
+              end;
+              begin
+                Lwt_unix.sleep max_wait >>= fun _ -> return acc
+              end;
+            ]
+            >>= fun new_values ->
             begin match !last_return with
             | None ->
               last_return := Some (Time.now ());
-              loop (count + 1) (evalue :: acc)
+              loop (count + 1) new_values
             | Some t ->
               let now = Time.now () in
-              begin match now -. t < 3.0 with
+              begin match now -. t < rate_limit with
               | true ->
-                loop (count + 1) (evalue :: acc)
+                loop (count + 1) new_values
+              | false when new_values = [] ->
+                loop (count + 1) new_values
               | false ->
                 last_return := Some now;
                 Printf.eprintf "return evalue! %s count: %d\n%!"
                   (Option.value_map !last_return ~default:"None"
                      ~f:(Time.to_string_hum)) count;
-                return (Some (evalue :: acc |> List.dedup))
+                return (Some (new_values |> List.dedup))
               end
             end
           in
@@ -548,7 +562,7 @@ module Event_source = struct
     in
     {stream; trigger}
   let trigger {trigger; _} e =
-    Printf.eprintf "trigger! %s\n%!" (Time.now () |> Time.to_string_hum);
+    (* Printf.eprintf "trigger! %s\n%!" (Time.now () |> Time.to_string_hum); *)
     trigger e
   let stream {stream; _} = stream
 end

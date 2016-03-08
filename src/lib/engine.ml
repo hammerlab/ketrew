@@ -412,8 +412,8 @@ let get_list_of_target_ids t query =
           let (`Time t, _, _) = Target.(state target |> State.summary) in
           begin match time <= t with
           | true ->
-            Printf.eprintf "Status_changed_since: %s Vs %s\n%!"
-              (Time.to_string_hum time) (Time.to_string_hum t);
+            (* Printf.eprintf "Status_changed_since: %s Vs %s\n%!" *)
+            (*   (Time.to_string_hum time) (Time.to_string_hum t); *)
             wins ()
           | false -> None
           end
