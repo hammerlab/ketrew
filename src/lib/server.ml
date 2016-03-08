@@ -216,9 +216,13 @@ let block_if_empty_at_most ~server_state
                 (String.concat ~sep:"," @@ List.map ~f:Persistent_data.Change.show change);
               loop ()
             end;
-            begin System.sleep 10. >>< fun _ ->
-              Printf.eprintf "Sleep to maximum\n%!";
-              loop ()
+            begin System.sleep 10.
+              >>< function
+              | `Ok () ->
+                Printf.eprintf "Sleep to maximum\n%!"; loop ()
+              | `Error (`System (_, `Exn exn)) ->
+                Printf.eprintf "Didn't sleep to maximum : %s\n%!" (Printexc.to_string exn);
+                loop ()
             end;
           ]
         )

@@ -117,18 +117,43 @@ module With_database = struct
 
   (* This will be called after an update and after afetching to
      make sure it gets done even with crashes weirdly sync-ed DBs *)
+  let debug_archival =
+    try Sys.getenv "DEBUG_ARCHIVAL" = "true"
+    with _ -> false
   let clean_up_finished t ~from target =
     let archival_threshold =
-      match t.archival_age_threshold with
-      | `Days d -> Time.day *. d in
+      match debug_archival, t.archival_age_threshold with
+      | true, _ -> 
+        Printf.eprintf "debug archival 120. seconds!\n  \
+                        target: %s\n%!" (Target.id target);
+        60. *. 2.
+      | false, `Days d -> Time.day *. d in
+    let now = Time.now () in
     begin match Target.(state target |> State.finished_time) with
     | None -> return ()
-    | Some time when time < Time.now () -. archival_threshold ->
-      log_info Log.(Target.log target % s " moves to the finsihed collection");
-      move_target t ~target ~src:from ~dest:finished_targets_collection
-      (* move_target_to_finished_collection t ~target *)
-    | Some time ->
+    | Some time when
+        (* fnished, but not old enough to go to archive *)
+        time +. archival_threshold > now ->
+      Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
+        (Target.id target) from (Time.to_string_hum time) archival_threshold
+        (now |>Time.to_string_hum);
+      begin if from <> finished_targets_collection
+        then (
+          log_info Log.(Target.log target % s " moves to the finsihed collection");
+          move_target t ~target ~src:from ~dest:finished_targets_collection
+        ) else (
+          (* already in "finished" *)
+          return ()
+        )
+      end
+    | Some time
+      when time +. archival_threshold < Time.now ()
+        && from = finished_targets_collection ->
+      Printf.eprintf "debug archival target %s is OLD\n%!" (Target.id target);
+      (* old enough to be archived and not yet archived *)
       move_target t ~target ~src:from ~dest:archived_targets_collection
+    | Some _ ->
+      return ()
     end
 
   let update_target t trgt =
@@ -165,10 +190,12 @@ module With_database = struct
                  so when we come accross it, we clean up *)
               begin match Target.Stored_target.get_target st with
               | `Target target ->
-                clean_up_finished t target ~from:active_targets_collection
+                clean_up_finished t target ~from:collection
                 >>= fun () ->
                 return (Some st)
-              | `Pointer _ -> (* pointers are already archived *) return (Some st)
+              | `Pointer _ ->
+                (* pointers are already archived *)
+                return (Some st)
               end
             | None ->
               return None
@@ -483,12 +510,12 @@ end
 
 module Event_source = struct
   type 'a t = {
-    event: 'a list Lwt_stream.t;
+    stream: 'a list Lwt_stream.t;
     trigger: 'a -> unit;
   }
   let create () =
     let base_event, trigger = React.E.create () in
-    let event =
+    let stream =
       let last_return = ref None in
       let stream = Lwt_react.E.to_stream base_event in
       Lwt_stream.from Lwt.(fun () ->
@@ -519,11 +546,11 @@ module Event_source = struct
           loop 0 []
         )
     in
-    {event; trigger}
+    {stream; trigger}
   let trigger {trigger; _} e =
     Printf.eprintf "trigger! %s\n%!" (Time.now () |> Time.to_string_hum);
     trigger e
-  let event {event; _} = event
+  let stream {stream; _} = stream
 end
 
 module Change = struct
@@ -571,26 +598,22 @@ let create ~database_parameters ~archival_age_threshold =
       return (id :: prev)
     )
   >>= fun active_ids ->
-  (*
   With_database.get_all_finished_ids db
   >>= fun more_ids ->
-     *)
-  let more_ids = [] in
   let t = {
     db; cache;
     all_ids = String_mutable_set.of_list (List.rev_append active_ids more_ids);
     changes = Event_source.create ();
   } in
   log_info t "create %S" database_parameters;
-  Printf.eprintf "Persistent_data.create: returns %s\n%!" Time.(now () |> to_filename);
+  Printf.eprintf "Persistent_data.create: returns %s. \
+                  active_ids: %d, more_ids: %d\n%!"
+    Time.(now () |> to_filename) (List.length active_ids) (List.length more_ids);
   return t
 
 let next_change ?(limit=2.0) t =
   Lwt.(
-    Lwt_stream.next 
-      (* (Lwt_react.E.limit *)
-      (*    (fun () -> Lwt_unix.sleep limit) *)
-         (Event_source.event t.changes)
+    Lwt_stream.next (Event_source.stream t.changes)
     >>= fun change ->
     return (`Ok change)
   )
@@ -645,8 +668,8 @@ let all_visible_targets t =
       end)
   >>= fun all_targets ->
   log_markup t Display_markup.([
-      "function", text "all_targets";
-      "all_targets", textf "%d targets" (List.length all_targets);
+      "function", text "all_visible_targets";
+      "all_visible_targets", textf "%d targets" (List.length all_targets);
       "all_ids", textf "%d ids" (String_mutable_set.length t.all_ids);
       "start_date", date start_date;
       (* "iterator", time_span (iterator_date -. start_date); *)
