@@ -115,8 +115,9 @@ module With_database = struct
       ~msg:(fmt "add_or_update_targets [%s]"
               (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
-  (* This will be called after an update and after afetching to
-     make sure it gets done even with crashes weirdly sync-ed DBs *)
+  (* This will be called after an update and after fetching to
+     make sure it gets done even when there are crashes or weirdly sync-ed DBs
+  *)
   let debug_archival =
     try Sys.getenv "DEBUG_ARCHIVAL" = "true"
     with _ -> false
@@ -521,8 +522,8 @@ module Event_source = struct
     let stream =
       let last_return = ref None in
       let stream = Lwt_react.E.to_stream base_event in
-      let rate_limit = 4.0 in
-      let max_wait = 2.0 in
+      let rate_limit = 2.0 in
+      let max_wait = 1.0 in
       Lwt_stream.from Lwt.(fun () ->
           let rec loop count acc =
             (* Count is used only for debug printing *)
@@ -550,9 +551,6 @@ module Event_source = struct
                 loop (count + 1) new_values
               | false ->
                 last_return := Some now;
-                Printf.eprintf "return evalue! %s count: %d\n%!"
-                  (Option.value_map !last_return ~default:"None"
-                     ~f:(Time.to_string_hum)) count;
                 return (Some (new_values |> List.dedup))
               end
             end
@@ -562,7 +560,6 @@ module Event_source = struct
     in
     {stream; trigger}
   let trigger {trigger; _} e =
-    (* Printf.eprintf "trigger! %s\n%!" (Time.now () |> Time.to_string_hum); *)
     trigger e
   let stream {stream; _} = stream
 end
@@ -597,7 +594,7 @@ let log_info t fmt =
     ) fmt
 
 let create ~database_parameters ~archival_age_threshold =
-  Printf.eprintf "Persistent_data.create: starts %s\n%!" Time.(now () |> to_filename);
+  let starts = Time.now () in
   With_database.create ~database_parameters ~archival_age_threshold
   >>= fun db ->
   (* Heuristic: we cache the alive targets and all the finished IDs *)
@@ -619,13 +616,21 @@ let create ~database_parameters ~archival_age_threshold =
     all_ids = String_mutable_set.of_list (List.rev_append active_ids more_ids);
     changes = Event_source.create ();
   } in
-  log_info t "create %S" database_parameters;
-  Printf.eprintf "Persistent_data.create: returns %s. \
-                  active_ids: %d, more_ids: %d\n%!"
-    Time.(now () |> to_filename) (List.length active_ids) (List.length more_ids);
+  log_markup t Display_markup.[
+      "function", text "create";
+      "database_parameters", path database_parameters;
+      "archival_age_threshold", 
+      begin match archival_age_threshold with
+      | `Days d -> time_span (Time.day *. d)
+      end;
+      "starts", date starts;
+      "returns", date (Time.now ());
+      "active_ids", textf "%d" (List.length active_ids);
+      "more_ids", textf "%d" (List.length more_ids);
+    ];
   return t
 
-let next_change ?(limit=2.0) t =
+let next_changes t =
   Lwt.(
     Lwt_stream.next (Event_source.stream t.changes)
     >>= fun change ->

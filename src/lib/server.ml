@@ -193,45 +193,55 @@ let block_if_empty_at_most
         max_block_time
       ) else
         req_block_time in
-    let rec loop () =
+    let rec loop ~why_in_loop () =
+      let do_send ~why values =
+        log_markup Display_markup.[
+            "Function", text "block_if_empty_at_most";
+            "Info", text "Sending";
+            "start_time", date start_time;
+            "block_time", time_span block_time;
+            "req_block_time", time_span req_block_time;
+            "now", date (Time.now ());
+            "debug-info", text debug_info;
+            "why-in-loop", text why_in_loop;
+            "why-send", text why;
+          ];
+        send values in
       let now =  Time.now () in
       match start_time +. block_time < now with
       | true ->
-        log_info
-          Log.(s "block_if_empty_at_most + blocking → returns " % n
-               % s "start_time: " % Time.log start_time % n
-               % s "block_time: " % f block_time % n
-               % s "req_block_time: " % f req_block_time % n
-               % s "now: " % Time.log now);
-        get_values () >>= send
+        get_values () >>= do_send ~why:"block-time maxed-out"
       | false ->
         get_values ()
         >>= fun ( values) ->
         if should_send values then (
-          Printf.eprintf "Sending values\n (%s)\n%!" debug_info;
-          send values
+          do_send values ~why:"should_send → true"
         ) else (
           Deferred_list.pick_and_cancel [
-            begin Engine.next_change ~limit:7. server_state.state
-              >>= fun change ->
-              Printf.eprintf "Changes: %s (%s)\n%!"
-                (String.concat ~sep:"," @@ List.map ~f:Persistent_data.Change.show change)
-                debug_info;
-              loop ()
+            begin Engine.next_changes server_state.state
+              >>= fun changes ->
+              let why_in_loop = fmt "Got %d changes" (List.length changes) in
+              loop ~why_in_loop ()
             end;
             begin System.sleep 120. (* This should only be an emergency break *)
               >>< function
               | `Ok () ->
-                Printf.eprintf "Sleep to maximum: %s\n%!" debug_info; loop ()
+                loop ~why_in_loop:"Slept to maximum" ()
               | `Error (`System (_, `Exn exn)) ->
-                Printf.eprintf "Didn't sleep to maximum : %s (debug_info: %s)\n%!"
-                  (Printexc.to_string exn) debug_info;
-                loop ()
+                begin match exn with
+                | Lwt.Canceled -> failwith "thread canceled"
+                | other ->
+                  Log.(s "System.sleep in block_if_empty_at_most \
+                          waken-up by exn: " % exn other % n %
+                       s "debug_info: " % s debug_info % n %
+                       s "why_in_loop: " % s why_in_loop @ warning);
+                  failwith "thread canceled"
+                end
             end;
           ]
         )
     in
-    loop ()
+    loop ~why_in_loop:"first time" ()
   end
 
 (** {2 Services: Answering Requests} *)

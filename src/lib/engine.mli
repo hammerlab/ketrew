@@ -107,7 +107,9 @@ val get_list_of_target_ids: t ->
 - [`Not_finished_before _] for the targets that were not finished at a given date.
 *)
 
-val next_change: ?limit:float -> t -> (Persistent_data.Change.t list, 'a) Deferred_result.t
+val next_changes: t -> (Persistent_data.Change.t list, 'a) Deferred_result.t
+(** Block until the next batch of changes happening at the persistence-level,
+    this stream is itself rate-limited. *)
 
 module Run_automaton : sig
   val step :

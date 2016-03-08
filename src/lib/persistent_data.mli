@@ -98,7 +98,7 @@ module Change : sig
   type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
     [@@deriving show]
 end
-val next_change: ?limit:float -> t -> (Change.t list, 'a) Deferred_result.t
+val next_changes: t -> (Change.t list, 'a) Deferred_result.t
 
 module Killing_targets: sig
 
