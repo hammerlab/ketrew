@@ -35,7 +35,9 @@ include Make_module_error_and_info(struct
   end)
 
 let create configuration =
-  Persistent_data.create (Configuration.database_parameters configuration)
+  Persistent_data.create
+    (Configuration.database_parameters configuration)
+    (Configuration.archival_age_threshold configuration)
   >>= fun data ->
   return {data; configuration; host_io = Host_io.create ()}
 

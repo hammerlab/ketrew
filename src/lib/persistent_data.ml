@@ -36,10 +36,11 @@ module With_database = struct
   type t = {
     mutable database_handle: Database.t option;
     database_parameters: string;
+    archival_age_threshold: [ `Days of float ];
   }
-  let create ~database_parameters =
+  let create ~database_parameters ~archival_age_threshold =
     return {
-      database_handle = None; database_parameters;
+      database_handle = None; database_parameters; archival_age_threshold;
     }
 
   let database t =
@@ -117,7 +118,9 @@ module With_database = struct
   (* This will be called after an update and after afetching to
      make sure it gets done even with crashes weirdly sync-ed DBs *)
   let clean_up_finished t ~from target =
-    let archival_threshold = Time.days 8 in
+    let archival_threshold =
+      match t.archival_age_threshold with
+      | `Days d -> Time.day *. d in
     begin match Target.(state target |> State.finished_time) with
     | None -> return ()
     | Some time when time < Time.now () -. archival_threshold ->
@@ -501,9 +504,9 @@ let log_info t fmt =
       log_markup t ["Info", Logger.text msg]
     ) fmt
 
-let create ~database_parameters =
+let create ~database_parameters ~archival_age_threshold =
   Printf.eprintf "Persistent_data.create: starts %s\n%!" Time.(now () |> to_filename);
-  With_database.create ~database_parameters
+  With_database.create ~database_parameters ~archival_age_threshold
   >>= fun db ->
   (* Heuristic: we cache the alive targets and all the finished IDs *)
   With_database.alive_stored_targets db
@@ -693,7 +696,9 @@ module Synchronize = struct
           return ()
       end)
     | _ ->
-      With_database.create ~database_parameters:spec
+      With_database.create
+        ~database_parameters:spec
+        ~archival_age_threshold:(`Days infinity)
       >>= fun src_db ->
       return (object
         method get_collection collection =
@@ -720,7 +725,9 @@ module Synchronize = struct
           return ()
       end)
     | _ ->
-      With_database.create ~database_parameters:spec
+      With_database.create
+        ~database_parameters:spec
+        ~archival_age_threshold:(`Days infinity)
       >>= fun dst_db ->
       return (object
         method store ~collection ~stored_target =

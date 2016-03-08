@@ -26,6 +26,7 @@ type t
 
 val create :
   database_parameters:string ->
+  archival_age_threshold:[ `Days of float ] ->
   (t,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
