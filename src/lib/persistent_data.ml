@@ -481,10 +481,61 @@ module String_mutable_set = struct
 
 end
 
+module Event_source = struct
+  type 'a t = {
+    event: 'a list Lwt_stream.t;
+    trigger: 'a -> unit;
+  }
+  let create () =
+    let base_event, trigger = React.E.create () in
+    let event =
+      let last_return = ref None in
+      let stream = Lwt_react.E.to_stream base_event in
+      Lwt_stream.from Lwt.(fun () ->
+          let rec loop count acc =
+            Lwt_stream.next stream
+            >>= fun evalue ->
+            (* Printf.eprintf "evalue! %s\n%!" *)
+            (*   (Option.value_map !last_return ~default:"None" *)
+            (*      ~f:(Time.to_string_hum)); *)
+            begin match !last_return with
+            | None ->
+              last_return := Some (Time.now ());
+              loop (count + 1) (evalue :: acc)
+            | Some t ->
+              let now = Time.now () in
+              begin match now -. t < 3.0 with
+              | true ->
+                loop (count + 1) (evalue :: acc)
+              | false ->
+                last_return := Some now;
+                Printf.eprintf "return evalue! %s count: %d\n%!"
+                  (Option.value_map !last_return ~default:"None"
+                     ~f:(Time.to_string_hum)) count;
+                return (Some (evalue :: acc |> List.dedup))
+              end
+            end
+          in
+          loop 0 []
+        )
+    in
+    {event; trigger}
+  let trigger {trigger; _} e =
+    Printf.eprintf "trigger! %s\n%!" (Time.now () |> Time.to_string_hum);
+    trigger e
+  let event {event; _} = event
+end
+
+module Change = struct
+  type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
+    [@@deriving show]
+end
+
 type t = {
   db: With_database.t;
   cache: Target.Stored_target.t Cache_table.t;
   all_ids: String_mutable_set.t;
+  changes : Change.t Event_source.t;
 }
 
 let log_markup t mu =
@@ -520,15 +571,29 @@ let create ~database_parameters ~archival_age_threshold =
       return (id :: prev)
     )
   >>= fun active_ids ->
+  (*
   With_database.get_all_finished_ids db
   >>= fun more_ids ->
+     *)
+  let more_ids = [] in
   let t = {
     db; cache;
     all_ids = String_mutable_set.of_list (List.rev_append active_ids more_ids);
+    changes = Event_source.create ();
   } in
   log_info t "create %S" database_parameters;
   Printf.eprintf "Persistent_data.create: returns %s\n%!" Time.(now () |> to_filename);
   return t
+
+let next_change ?(limit=2.0) t =
+  Lwt.(
+    Lwt_stream.next 
+      (* (Lwt_react.E.limit *)
+      (*    (fun () -> Lwt_unix.sleep limit) *)
+         (Event_source.event t.changes)
+    >>= fun change ->
+    return (`Ok change)
+  )
 
 let unload t =
   log_info t "unloading";
@@ -594,6 +659,9 @@ let activate_target t ~target ~reason =
   >>= fun new_one ->
   let stored = Target.Stored_target.of_target new_one in
   Cache_table.add_or_replace t.cache (Target.Stored_target.id stored) stored
+  >>= fun () ->
+  Event_source.trigger t.changes (`Nodes_changed [Target.id target]);
+  return ()
 
 let fold_active_targets t ~init ~f =
   Cache_table.fold t.cache ~init:(return init) ~f:(fun ~previous ~id st ->
@@ -614,6 +682,7 @@ let update_target t trgt =
     (Target.id trgt) (Target.Stored_target.of_target trgt)
   >>= fun () ->
   String_mutable_set.add t.all_ids (Target.id trgt);
+  Event_source.trigger t.changes (`Nodes_changed [Target.id trgt]);
   return ()
 
 module Killing_targets = struct
@@ -630,7 +699,12 @@ module Killing_targets = struct
           (Target.id trgt) (Target.Stored_target.of_target trgt)
       )
     >>= fun () ->
-    return (res <> [])
+    begin match res with
+    | [] -> return false
+    | more ->
+      Event_source.trigger t.changes (`Nodes_changed (List.map ~f:Target.id more));
+      return true
+    end
 
 end
 
@@ -648,7 +722,13 @@ module Adding_targets = struct
         Cache_table.add_or_replace t.cache id st
       )
     >>= fun () ->
-    return (res <> [])
+    begin match res with
+    | [] -> return false
+    | more ->
+      Event_source.trigger t.changes
+        (`New_nodes (List.map ~f:Target.Stored_target.id more));
+      return true
+    end
 
 end
 
