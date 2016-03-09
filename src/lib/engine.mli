@@ -81,7 +81,7 @@ val get_target: t -> Unique_id.t ->
     Deferred_result.t
 (** Get a target from its id. *)
 
-val all_targets :
+val all_visible_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [> `Database of Trakeva.Error.t
@@ -106,6 +106,10 @@ val get_list_of_target_ids: t ->
 - [`All] for all the targets visible to the engine.
 - [`Not_finished_before _] for the targets that were not finished at a given date.
 *)
+
+val next_changes: t -> (Persistent_data.Change.t list, 'a) Deferred_result.t
+(** Block until the next batch of changes happening at the persistence-level,
+    this stream is itself rate-limited. *)
 
 module Run_automaton : sig
   val step :

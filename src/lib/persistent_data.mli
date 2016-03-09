@@ -26,6 +26,7 @@ type t
 
 val create :
   database_parameters:string ->
+  archival_age_threshold:[ `Days of float ] ->
   (t,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
@@ -46,7 +47,7 @@ val get_target:
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
-val all_targets :
+val all_visible_targets :
   t ->
   (Ketrew_pure.Target.t list,
    [>  `Database of Trakeva.Error.t
@@ -92,6 +93,12 @@ val update_target :
         [> `Act of Trakeva.Action.t | `Load of string ] * string
    | `Database_unavailable of string ])
     Deferred_result.t
+
+module Change : sig
+  type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
+    [@@deriving show]
+end
+val next_changes: t -> (Change.t list, 'a) Deferred_result.t
 
 module Killing_targets: sig
 

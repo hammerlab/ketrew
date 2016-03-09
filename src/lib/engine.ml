@@ -35,7 +35,9 @@ include Make_module_error_and_info(struct
   end)
 
 let create configuration =
-  Persistent_data.create (Configuration.database_parameters configuration)
+  Persistent_data.create
+    (Configuration.database_parameters configuration)
+    (Configuration.archival_age_threshold configuration)
   >>= fun data ->
   return {data; configuration; host_io = Host_io.create ()}
 
@@ -67,6 +69,7 @@ let with_engine ~configuration f =
 
 let configuration t = t.configuration
 
+let next_changes t = Persistent_data.next_changes t.data
 
 module Run_automaton = struct
 
@@ -381,7 +384,7 @@ let get_status t id =
 
 let get_list_of_target_ids t query =
   let start_time = Time.now () in
-  Persistent_data.all_targets t.data
+  Persistent_data.all_visible_targets t.data
   >>= fun targets ->
   let all_targets_time = Time.now () in
   let list_of_ids =
@@ -491,8 +494,8 @@ let restart_target engine target_id =
     ~old_id:target_id ~new_id:id ~name:(Target.name this_new_target);
   return id
 
-let all_targets t =
-  Persistent_data.all_targets t.data
+let all_visible_targets t =
+  Persistent_data.all_visible_targets t.data
 let get_target t id =
   Persistent_data.get_target t.data id
 let add_targets t l =

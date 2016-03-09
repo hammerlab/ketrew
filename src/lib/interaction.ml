@@ -215,7 +215,7 @@ let sort_target_list =
   List.sort ~cmp:(fun ta tb -> compare (Ketrew_pure.Target.id tb) (Ketrew_pure.Target.id ta))
 
 let build_sublist_of_targets ~client ~list_name ~all_log ~go_verb ~filter =
-  Client.all_targets client
+  Client.all_visible_targets client
   >>| List.filter ~f:(fun target -> filter target)
   >>| sort_target_list
   >>= fun all_targets ->

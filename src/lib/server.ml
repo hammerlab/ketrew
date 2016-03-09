@@ -63,8 +63,8 @@ module Server_state = struct
 
     let make_message t ~id ~index ~length : Protocol.Down_message.t =
       match Hashtbl.find t.table id with
-      | { content = List_of_ids l; _ } ->
-        `List_of_target_ids (List.take (List.drop l index) length)
+      | { content = List_of_ids l; birthdate; _ } ->
+        `List_of_target_ids (List.take (List.drop l index) length, birthdate)
       | exception _ ->
         `Missing_deferred
 
@@ -167,7 +167,9 @@ module Request = struct
 
 end (* Request *)
 
-let block_if_empty_at_most ~server_state
+let block_if_empty_at_most
+    ~server_state
+    ~debug_info
     ~get_values
     ~should_send
     ~send
@@ -179,8 +181,6 @@ let block_if_empty_at_most ~server_state
     get_values () >>= send
   | Some (`Block_if_empty_at_most req_block_time) ->
     let start_time = Time.now () in
-    let sleep_time =
-      Configuration.block_step_time server_state.server_configuration in
     let block_time =
       let max_block_time =
         Configuration.max_blocking_time server_state.server_configuration in
@@ -191,26 +191,55 @@ let block_if_empty_at_most ~server_state
         max_block_time
       ) else
         req_block_time in
-    let rec loop () =
+    let rec loop ~why_in_loop () =
+      let do_send ~why values =
+        log_markup Display_markup.[
+            "Function", text "block_if_empty_at_most";
+            "Info", text "Sending";
+            "start_time", date start_time;
+            "block_time", time_span block_time;
+            "req_block_time", time_span req_block_time;
+            "now", date (Time.now ());
+            "debug-info", text debug_info;
+            "why-in-loop", text why_in_loop;
+            "why-send", text why;
+          ];
+        send values in
       let now =  Time.now () in
       match start_time +. block_time < now with
       | true ->
-        log_info
-          Log.(s "block_if_empty_at_most + blocking → returns " % n
-               % s "start_time: " % Time.log start_time % n
-               % s "block_time: " % f block_time % n
-               % s "req_block_time: " % f req_block_time % n
-               % s "now: " % Time.log now);
-        get_values () >>= send
+        get_values () >>= do_send ~why:"block-time maxed-out"
       | false ->
         get_values ()
-        >>= fun values ->
-        if should_send values then
-          send values
-        else
-          System.sleep sleep_time >>< fun _ -> loop ()
+        >>= fun ( values) ->
+        if should_send values then (
+          do_send values ~why:"should_send → true"
+        ) else (
+          Deferred_list.pick_and_cancel [
+            begin Engine.next_changes server_state.state
+              >>= fun changes ->
+              let why_in_loop = fmt "Got %d changes" (List.length changes) in
+              loop ~why_in_loop ()
+            end;
+            begin System.sleep 120. (* This should only be an emergency break *)
+              >>< function
+              | `Ok () ->
+                loop ~why_in_loop:"Slept to maximum" ()
+              | `Error (`System (_, `Exn exn)) ->
+                begin match exn with
+                | Lwt.Canceled -> failwith "thread canceled"
+                | other ->
+                  Log.(s "System.sleep in block_if_empty_at_most \
+                          waken-up by exn: " % exn other % n %
+                       s "debug_info: " % s debug_info % n %
+                       s "why_in_loop: " % s why_in_loop @ warning);
+                  failwith "thread canceled"
+                end
+            end;
+          ]
+        )
     in
-    loop ()
+    loop ~why_in_loop:"first time" ()
   end
 
 (** {2 Services: Answering Requests} *)
@@ -221,7 +250,7 @@ module Engine_instructions = struct
 
   let from_ids ~server_state = function
     | [] ->
-      Engine.all_targets server_state.state
+      Engine.all_visible_targets server_state.state
       >>| List.map ~f:(fun trt -> (Target.id trt, trt))
     | more ->
       Deferred_list.while_sequential more ~f:(fun id ->
@@ -289,6 +318,7 @@ module Engine_instructions = struct
   let get_flat_states ~server_state
       (time_constrain, target_ids, options) =
     block_if_empty_at_most ~server_state options
+      ~debug_info:(fmt "get_flat_states:%d-ids" (List.length target_ids))
       ~get_values:(fun () ->
           from_ids ~server_state target_ids
           >>= fun targets ->
@@ -321,13 +351,18 @@ module Engine_instructions = struct
 
   let get_ids ~server_state (query, options) =
     block_if_empty_at_most ~server_state options
+      ~debug_info:(fmt "get_ids:%s" (Protocol.Up_message.show_target_query query))
       ~get_values:(fun () ->
-          Engine.get_list_of_target_ids server_state.state query)
-      ~should_send:(function [] -> false | _ -> true)
-      ~send:begin fun v ->
+          let date = Time.now () in
+          Engine.get_list_of_target_ids server_state.state query
+          >>= fun l ->
+          return (l, date)
+        )
+      ~should_send:(function ([], _) -> false | _ -> true)
+      ~send:begin fun (v, birthdate) ->
         match List.length v with
         | small when small < 1001 ->
-          return (`List_of_target_ids v)
+          return (`List_of_target_ids (v, birthdate))
         | big ->
           let answer_id =
             Deferred_queries.add_list_of_ids server_state.deferred_queries v in
@@ -370,7 +405,7 @@ let answer_get_server_status ~server_state =
 
 let answer_message ~server_state ?token msg =
   let read_only_mode =
-      Configuration.read_only_mode server_state.server_configuration in
+    Configuration.read_only_mode server_state.server_configuration in
   let with_capability cap f =
     ensure_can server_state.authentication ?token cap ~read_only_mode
     >>= fun () -> f ~server_state
@@ -400,7 +435,7 @@ let answer_message ~server_state ?token msg =
     with_capability `See_targets (fun ~server_state ->
         let msg =
           Deferred_queries.make_message server_state.deferred_queries
-          ~id ~index ~length
+            ~id ~index ~length
         in
         return msg)
   | `Get_notifications query ->

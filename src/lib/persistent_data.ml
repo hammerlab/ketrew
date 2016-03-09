@@ -36,10 +36,11 @@ module With_database = struct
   type t = {
     mutable database_handle: Database.t option;
     database_parameters: string;
+    archival_age_threshold: [ `Days of float ];
   }
-  let create ~database_parameters =
+  let create ~database_parameters ~archival_age_threshold =
     return {
-      database_handle = None; database_parameters;
+      database_handle = None; database_parameters; archival_age_threshold;
     }
 
   let database t =
@@ -63,39 +64,19 @@ module With_database = struct
   let passive_targets_collection = "passive-targets"
   let active_targets_collection = "active-targets"
   let finished_targets_collection = "finished-targets"
+  let archived_targets_collection = "archived-targets"
 
   let all_collections = [
     passive_targets_collection;
     active_targets_collection;
     finished_targets_collection;
+    archived_targets_collection;
   ]
 
   let set_target_db_action target =
     let key = Target.id target in
     Database_action.(set ~collection:active_targets_collection ~key
                        Target.Stored_target.(of_target target |> serialize))
-
-  let iter_all_target_ids t =
-    database t
-    >>= fun db ->
-    let iterators =
-      List.map all_collections ~f:(fun collection ->
-          Database.iterator db ~collection) in
-    let iterators_to_go = ref iterators in
-    return (fun () ->
-        let rec get_next () =
-          begin match !iterators_to_go with
-          | [] -> return None
-          | current :: next ->
-            current ()
-            >>= begin function
-            | None -> iterators_to_go := next; get_next ()
-            | Some s -> return (Some s)
-            end
-          end
-        in
-        get_next ()
-      )
 
   let run_database_action ?(msg="NO INFO") t action =
     database t
@@ -121,11 +102,6 @@ module With_database = struct
             Target.Stored_target.(of_target target |> serialize)
         ])
 
-  let move_target_to_finished_collection t ~target =
-    move_target t ~target
-      ~src:active_targets_collection
-      ~dest:finished_targets_collection
-
   let activate_target t ~target ~reason =
     let newone = Target.(activate_exn target ~reason) in
     move_target t ~target:newone ~src:passive_targets_collection
@@ -139,20 +115,54 @@ module With_database = struct
       ~msg:(fmt "add_or_update_targets [%s]"
               (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
-  (* This will be called after an update and after afetching to
-     make sure it gets done even with crashes weirdly sync-ed DBs *)
-  let clean_if_finsihed t target =
-    begin match Target.(state target |> State.Is.finished) with
-    | true ->
-      log_info Log.(Target.log target % s " moves to the finsihed collection");
-      move_target_to_finished_collection t ~target
-    | false -> return ()
+  (* This will be called after an update and after fetching to
+     make sure it gets done even when there are crashes or weirdly sync-ed DBs
+  *)
+  let debug_archival =
+    try Sys.getenv "DEBUG_ARCHIVAL" = "true"
+    with _ -> false
+  let clean_up_finished t ~from target =
+    let archival_threshold =
+      match debug_archival, t.archival_age_threshold with
+      | true, _ -> 
+        Printf.eprintf "debug archival 120. seconds!\n  \
+                        target: %s\n%!" (Target.id target);
+        60. *. 2.
+      | false, `Days d -> Time.day *. d in
+    let now = Time.now () in
+    begin match Target.(state target |> State.finished_time) with
+    | None -> return ()
+    | Some time when
+        (* fnished, but not old enough to go to archive *)
+        time +. archival_threshold > now ->
+      if debug_archival then
+        Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
+          (Target.id target) from (Time.to_string_hum time) archival_threshold
+          (now |>Time.to_string_hum);
+      begin if from <> finished_targets_collection
+        then (
+          log_info Log.(Target.log target % s " moves to the finsihed collection");
+          move_target t ~target ~src:from ~dest:finished_targets_collection
+        ) else (
+          (* already in "finished" *)
+          return ()
+        )
+      end
+    | Some time
+      when time +. archival_threshold < Time.now ()
+        && from = finished_targets_collection ->
+      if debug_archival then
+        Printf.eprintf "debug archival target %s is OLD\n%!" (Target.id target);
+      (* old enough to be archived and not yet archived *)
+      move_target t ~target ~src:from ~dest:archived_targets_collection
+    | Some _ ->
+      return ()
     end
 
   let update_target t trgt =
     add_or_update_targets t [trgt]
     >>= fun () ->
-    clean_if_finsihed t trgt
+    clean_up_finished t ~from:active_targets_collection trgt
 
   let raw_add_or_update_stored_target t ~collection ~stored_target =
     let key = Target.Stored_target.id stored_target in
@@ -165,39 +175,39 @@ module With_database = struct
   let get_stored_target t key =
     begin
       database t >>= fun db ->
-      Database.get db ~collection:active_targets_collection ~key
-      >>= begin function
-      | Some serialized_stored ->
-        of_result (Target.Stored_target.deserialize serialized_stored)
-        >>= fun st ->
-        (* It may happen that finished targets are in the active collection,
-           - the application may have been stopped between the
-             Finished save and the move to the finsihed collection
-           - the user may have played with `ketrew sync` and backup
-             directories
-           so when we come accross it, we clean up *)
-        begin match Target.Stored_target.get_target st with
-        | `Target target ->
-          clean_if_finsihed t target
-          >>= fun () ->
-          return st
-        | `Pointer _ -> return st
-        end
-      | None ->
-        Database.get db ~collection:finished_targets_collection ~key
-        >>= begin function
-        | Some serialized_stored ->
-          of_result (Target.Stored_target.deserialize serialized_stored)
-        | None ->
-          Database.get db ~collection:passive_targets_collection ~key
+      List.fold all_collections ~init:(return None) ~f:(fun prev_m collection ->
+          prev_m
           >>= begin function
-          | Some serialized_stored ->
-            of_result (Target.Stored_target.deserialize serialized_stored)
+          | Some s -> return (Some s)
           | None ->
-            fail (`Missing_data (fmt "get_stored_target %S" key))
+            Database.get db ~collection ~key
+            >>= begin function
+            | Some serialized_stored ->
+              of_result (Target.Stored_target.deserialize serialized_stored)
+              >>= fun st ->
+              (* It may happen that finished targets are in the active collection,
+                 - the application may have been stopped between the
+                   Finished save and the move to the finsihed collection
+                 - the user may have played with `ketrew sync` and backup
+                   directories
+                 so when we come accross it, we clean up *)
+              begin match Target.Stored_target.get_target st with
+              | `Target target ->
+                clean_up_finished t target ~from:collection
+                >>= fun () ->
+                return (Some st)
+              | `Pointer _ ->
+                (* pointers are already archived *)
+                return (Some st)
+              end
+            | None ->
+              return None
+            end
           end
-        end
-      end
+        )
+      >>= function
+      | Some st -> return st
+      | None -> fail (`Missing_data (fmt "get_stored_target %S" key))
     end
 
   let get_target t id =
@@ -265,7 +275,8 @@ module With_database = struct
 
   (* Alive should mean In-progess or activable *)
   let alive_targets t =
-    get_collections_of_targets t ~from:[passive_targets_collection; active_targets_collection]
+    get_collections_of_targets t
+      ~from:[passive_targets_collection; active_targets_collection]
     >>= fun targets ->
     let filtered =
       List.filter_map targets ~f:(fun target ->
@@ -283,26 +294,16 @@ module With_database = struct
       ] |> log);
     return filtered
 
-  let all_targets t =
-    get_collections_of_targets t ~from:[
-      passive_targets_collection;
-      active_targets_collection;
-      finished_targets_collection;
-    ]
-
-  let all_stored_targets t =
-    get_collections_of_stored_targets t ~from:[
-      passive_targets_collection;
-      active_targets_collection;
-      finished_targets_collection;
-    ]
-
   let alive_stored_targets t =
     get_collections_of_stored_targets t ~from:[
       passive_targets_collection;
       active_targets_collection;
     ]
-    
+  let get_all_finished_ids t =
+    database t
+    >>= fun db ->
+    Database.get_all db ~collection:finished_targets_collection
+
 
   module Killing_targets = struct
     let targets_to_kill_collection = "targets-to-kill"
@@ -457,7 +458,7 @@ module With_database = struct
               let key = Target.Stored_target.id st in
               let collection =
                 match Target.Stored_target.get_target st with
-                | `Pointer _ -> finished_targets_collection
+                | `Pointer _ -> archived_targets_collection
                 | `Target t when Target.state t |> Target.State.Is.passive ->
                   passive_targets_collection
                 | `Target t -> active_targets_collection
@@ -498,9 +499,81 @@ module Cache_table = struct
 
 end
 
+module String_mutable_set = struct
+  module String_set = Set.Make(String)
+
+  type t = String_set.t ref
+  let of_list l = ref (String_set.of_list l)
+  let add t s =
+    t := String_set.add s !t
+  let fold t ~init ~f =
+    String_set.fold (fun elt prev -> f prev elt) !t init
+  let length t = String_set.cardinal !t
+
+end
+
+module Event_source = struct
+  type 'a t = {
+    stream: 'a list Lwt_stream.t;
+    trigger: 'a -> unit;
+  }
+  let create () =
+    let base_event, trigger = React.E.create () in
+    let stream =
+      let last_return = ref None in
+      let stream = Lwt_react.E.to_stream base_event in
+      let rate_limit = 2.0 in
+      let max_wait = 1.0 in
+      Lwt_stream.from Lwt.(fun () ->
+          let rec loop count acc =
+            (* Count is used only for debug printing *)
+            Lwt.pick [
+              begin
+                Lwt_stream.next stream
+                >>= fun evalue ->
+                return (evalue :: acc)
+              end;
+              begin
+                Lwt_unix.sleep max_wait >>= fun _ -> return acc
+              end;
+            ]
+            >>= fun new_values ->
+            begin match !last_return with
+            | None ->
+              last_return := Some (Time.now ());
+              loop (count + 1) new_values
+            | Some t ->
+              let now = Time.now () in
+              begin match now -. t < rate_limit with
+              | true ->
+                loop (count + 1) new_values
+              | false when new_values = [] ->
+                loop (count + 1) new_values
+              | false ->
+                last_return := Some now;
+                return (Some (new_values |> List.dedup))
+              end
+            end
+          in
+          loop 0 []
+        )
+    in
+    {stream; trigger}
+  let trigger {trigger; _} e =
+    trigger e
+  let stream {stream; _} = stream
+end
+
+module Change = struct
+  type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
+    [@@deriving show]
+end
+
 type t = {
   db: With_database.t;
-  cache: Target.Stored_target.t Cache_table.t
+  cache: Target.Stored_target.t Cache_table.t;
+  all_ids: String_mutable_set.t;
+  changes : Change.t Event_source.t;
 }
 
 let log_markup t mu =
@@ -520,20 +593,49 @@ let log_info t fmt =
       log_markup t ["Info", Logger.text msg]
     ) fmt
 
-let create ~database_parameters =
-  With_database.create ~database_parameters
+let create ~database_parameters ~archival_age_threshold =
+  let starts = Time.now () in
+  With_database.create ~database_parameters ~archival_age_threshold
   >>= fun db ->
+  (* Heuristic: we cache the alive targets and all the finished IDs *)
   With_database.alive_stored_targets db
   >>= fun all ->
   let cache = Cache_table.create () in
-  List.fold ~init:(return ()) all  ~f:(fun prev_m st ->
-      prev_m >>= fun () ->
+  List.fold ~init:(return []) all  ~f:(fun prev_m st ->
+      prev_m >>= fun prev ->
       let id = Target.Stored_target.id st in
-      Cache_table.add_or_replace cache id st)
-  >>= fun () ->
-  let t = {db; cache} in
-  log_info t "create %S" database_parameters;
+      Cache_table.add_or_replace cache id st
+      >>= fun () ->
+      return (id :: prev)
+    )
+  >>= fun active_ids ->
+  With_database.get_all_finished_ids db
+  >>= fun more_ids ->
+  let t = {
+    db; cache;
+    all_ids = String_mutable_set.of_list (List.rev_append active_ids more_ids);
+    changes = Event_source.create ();
+  } in
+  log_markup t Display_markup.[
+      "function", text "create";
+      "database_parameters", path database_parameters;
+      "archival_age_threshold", 
+      begin match archival_age_threshold with
+      | `Days d -> time_span (Time.day *. d)
+      end;
+      "starts", date starts;
+      "returns", date (Time.now ());
+      "active_ids", textf "%d" (List.length active_ids);
+      "more_ids", textf "%d" (List.length more_ids);
+    ];
   return t
+
+let next_changes t =
+  Lwt.(
+    Lwt_stream.next (Event_source.stream t.changes)
+    >>= fun change ->
+    return (`Ok change)
+  )
 
 let unload t =
   log_info t "unloading";
@@ -560,6 +662,7 @@ let get_target t id =
     | `Pointer _ when count >= 30 ->
       fail (`Missing_data (fmt "there must be a loop or something (from %s)" id))
     | `Pointer key ->
+      String_mutable_set.add t.all_ids key;
       get_following_pointers ~count:(count + 1) ~key
     | `Target t -> return t
     end
@@ -567,40 +670,40 @@ let get_target t id =
   get_following_pointers ~key:id ~count:0
 
 
-let all_targets t =
+let all_visible_targets t =
   let start_date = Time.now () in
+  (*
   With_database.iter_all_target_ids t.db
   >>= fun iterator ->
-  let iterator_date = Time.now () in
-  let rec iterate count acc =
-    iterator ()
-    >>= begin function
-    | None ->
-      log_markup t Display_markup.([
-          "function", text "all_targets";
-          "all_targets", textf "%d targets" (List.length acc);
-          "all_ids", textf "%d ids" count;
-          "start_date", date start_date;
-          "iterator", time_span (iterator_date -. start_date);
-          "return", time_span (Time.now () -. start_date);
-        ]);
-      return acc
-    | Some id ->
+     *)
+  (* let iterator_date = Time.now () in *)
+  String_mutable_set.fold t.all_ids ~init:(return []) ~f:(fun prev_m id ->
+      prev_m >>= fun prev_list ->
       get_stored_target t ~key:id
       >>= fun stored ->
       begin match Target.Stored_target.get_target stored with
-      | `Pointer _ -> iterate (count + 1) acc
-      | `Target t -> iterate (count + 1) (t :: acc)
-      end
-    end
-  in
-  iterate 0 []
+      | `Pointer _ -> return prev_list
+      | `Target t -> return (t :: prev_list)
+      end)
+  >>= fun all_targets ->
+  log_markup t Display_markup.([
+      "function", text "all_visible_targets";
+      "all_visible_targets", textf "%d targets" (List.length all_targets);
+      "all_ids", textf "%d ids" (String_mutable_set.length t.all_ids);
+      "start_date", date start_date;
+      (* "iterator", time_span (iterator_date -. start_date); *)
+      "total-time", time_span (Time.now () -. start_date);
+    ]);
+  return all_targets
 
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason
   >>= fun new_one ->
   let stored = Target.Stored_target.of_target new_one in
   Cache_table.add_or_replace t.cache (Target.Stored_target.id stored) stored
+  >>= fun () ->
+  Event_source.trigger t.changes (`Nodes_changed [Target.id target]);
+  return ()
 
 let fold_active_targets t ~init ~f =
   Cache_table.fold t.cache ~init:(return init) ~f:(fun ~previous ~id st ->
@@ -619,6 +722,10 @@ let update_target t trgt =
   >>= fun () ->
   Cache_table.add_or_replace t.cache
     (Target.id trgt) (Target.Stored_target.of_target trgt)
+  >>= fun () ->
+  String_mutable_set.add t.all_ids (Target.id trgt);
+  Event_source.trigger t.changes (`Nodes_changed [Target.id trgt]);
+  return ()
 
 module Killing_targets = struct
 
@@ -634,7 +741,12 @@ module Killing_targets = struct
           (Target.id trgt) (Target.Stored_target.of_target trgt)
       )
     >>= fun () ->
-    return (res <> [])
+    begin match res with
+    | [] -> return false
+    | more ->
+      Event_source.trigger t.changes (`Nodes_changed (List.map ~f:Target.id more));
+      return true
+    end
 
 end
 
@@ -647,10 +759,18 @@ module Adding_targets = struct
     >>= fun res ->
     List.fold ~init:(return ()) res ~f:(fun unit_m st ->
         unit_m >>= fun () ->
-        Cache_table.add_or_replace t.cache (Target.Stored_target.id st) st
+        let id = Target.Stored_target.id st in
+        String_mutable_set.add t.all_ids id;
+        Cache_table.add_or_replace t.cache id st
       )
     >>= fun () ->
-    return (res <> [])
+    begin match res with
+    | [] -> return false
+    | more ->
+      Event_source.trigger t.changes
+        (`New_nodes (List.map ~f:Target.Stored_target.id more));
+      return true
+    end
 
 end
 
@@ -698,7 +818,9 @@ module Synchronize = struct
           return ()
       end)
     | _ ->
-      With_database.create ~database_parameters:spec
+      With_database.create
+        ~database_parameters:spec
+        ~archival_age_threshold:(`Days infinity)
       >>= fun src_db ->
       return (object
         method get_collection collection =
@@ -725,7 +847,9 @@ module Synchronize = struct
           return ()
       end)
     | _ ->
-      With_database.create ~database_parameters:spec
+      With_database.create
+        ~database_parameters:spec
+        ~archival_age_threshold:(`Days infinity)
       >>= fun dst_db ->
       return (object
         method store ~collection ~stored_target =

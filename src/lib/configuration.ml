@@ -26,13 +26,16 @@ open Unix_io
 type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson]
 
+let default_archival_age_threashold = `Days 10.
 
 type engine = {
   database_parameters: string;
   turn_unix_ssh_failure_into_target_failure: (bool [@default false]);
   host_timeout_upper_bound: (float option [@default None]);
   maximum_successive_attempts: (int [@default 10]);
-  concurrent_automaton_steps: (int [@default 4])
+  concurrent_automaton_steps: (int [@default 4]);
+  archival_age_threshold: 
+    ([ `Days of float ] [@default default_archival_age_threashold]);
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -66,7 +69,6 @@ type server = {
   server_engine: engine;
   server_ui: ui;
   max_blocking_time: (float [@default 300.]);
-  block_step_time: (float [@default 3.]);
   read_only_mode: (bool [@default false]);
   ssh_connections: (ssh_connection list [@default []]);
   ssh_processes_ui: (bool [@default default_ssh_processes_ui]);
@@ -132,7 +134,7 @@ let log t =
     ] in
   let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
                host_timeout_upper_bound; maximum_successive_attempts;
-               concurrent_automaton_steps} =
+               concurrent_automaton_steps; archival_age_threshold} =
     sublist [
       item "Database" (quote database_parameters);
       item "Unix-failure"
@@ -143,6 +145,8 @@ let log t =
         (option f host_timeout_upper_bound);
       item "Maximum-successive-attempts" (i maximum_successive_attempts);
       item "Concurrent-automaton-steps" (i concurrent_automaton_steps);
+      item "Archival-age-threshold"
+        (match archival_age_threshold with `Days d -> sf "%f days" d);
     ] in
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
@@ -178,7 +182,6 @@ let log t =
           item "Log-path" (OCaml.option quote srv.log_path);
           item "Return-error-messages" (OCaml.bool srv.return_error_messages);
           item "Max-blocking-time" (OCaml.float srv.max_blocking_time);
-          item "Block-step-time" (OCaml.float srv.block_step_time);
           item "Listen"
             begin match srv.listen_to with
             | `Tls (cert, key, port) ->
@@ -226,12 +229,14 @@ let engine
     ?host_timeout_upper_bound
     ?(maximum_successive_attempts=10)
     ?(concurrent_automaton_steps = 4)
+    ?(archival_age_threshold = default_archival_age_threashold)
     () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
   host_timeout_upper_bound;
   maximum_successive_attempts;
   concurrent_automaton_steps;
+  archival_age_threshold;
 }
 let default_engine = engine ()
 
@@ -255,7 +260,6 @@ let server
     ?(authorized_tokens=[]) ?(return_error_messages=false)
     ?command_pipe ?(daemon=false) ?log_path
     ?(max_blocking_time = 300.)
-    ?(block_step_time = 3.)
     ?(read_only_mode = false)
     ?(ssh_connections = [])
     ?(ssh_processes_ui = default_ssh_processes_ui)
@@ -264,7 +268,7 @@ let server
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; daemon; log_path;
-            max_blocking_time; block_step_time; read_only_mode;
+            max_blocking_time; read_only_mode;
             ssh_connections; ssh_processes_ui})
 
 
@@ -281,6 +285,7 @@ let command_pipe s = s.command_pipe
 let daemon       s = s.daemon
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
+let archival_age_threshold e = e.archival_age_threshold
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
 let concurrent_automaton_steps e = e.concurrent_automaton_steps
@@ -291,7 +296,6 @@ let server_engine s = s.server_engine
 let connection c = c.connection
 let token c = c.token
 let max_blocking_time s = s.max_blocking_time
-let block_step_time s = s.block_step_time
 let read_only_mode s = s.read_only_mode
 
 let standalone_of_server s =

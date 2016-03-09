@@ -172,7 +172,7 @@ module Http_client = struct
       >>= filter_down_message
         ~loc:`Targets
         ~f:(function
-          | `List_of_target_ids tl -> Some (`Done tl)
+          | `List_of_target_ids (tl, (_ : Time.t)) -> Some (`Done tl)
           | `Deferred_list_of_target_ids (id, total) -> (* id × total-length *)
             Log.(s "Deferred_list_of_target_ids: " % s id % sf "(total: %d)" total
                  @ verbose);
@@ -247,10 +247,10 @@ let add_targets t tlist =
   | `Http_client c ->
     Http_client.add_targets c tlist
 
-let all_targets = function
+let all_visible_targets = function
 | `Standalone s ->
   let open Standalone in
-  Engine.all_targets s.engine
+  Engine.all_visible_targets s.engine
 | `Http_client c ->
   Http_client.get_current_targets c
 

@@ -127,7 +127,7 @@ module Down_message = struct
       | `List_of_targets of Target.t list
       | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
       | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
-      | `List_of_target_ids of string list
+      | `List_of_target_ids of string list * float (* IDs × server-time *)
       | `Deferred_list_of_target_ids of string * int (* id × total-length *)
       | `List_of_query_descriptions of (string * string) list
       | `Query_result of string
@@ -151,9 +151,9 @@ module Up_message = struct
       | `Not_finished_before of float
       | `Created_after of float
       | `Status_changed_since of float
-    ] [@@deriving yojson]
+    ] [@@deriving yojson,show]
     type string_predicate = [`Equals of string | `Matches of string]
-        [@@deriving yojson]
+        [@@deriving yojson,show]
     type filter = [
       | `True
       | `False
@@ -170,14 +170,14 @@ module Up_message = struct
       | `Has_tag of string_predicate
       | `Name of string_predicate
       | `Id of string_predicate
-    ] [@@deriving yojson]
+    ] [@@deriving yojson,show]
     type target_query = {
       time_constraint : time_constraint;
       filter : filter;
-    } [@@deriving yojson]
+    } [@@deriving yojson,show]
     type query_option = [
       | `Block_if_empty_at_most of float
-    ] [@@deriving yojson]
+    ] [@@deriving yojson,show]
     type t = [
       | `Get_targets of string list (* List of Ids, empty means “all” *)
       | `Get_target_summaries of string list (* List of Ids, empty means “all” *)
