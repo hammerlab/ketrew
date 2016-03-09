@@ -86,12 +86,37 @@ module Global = struct
 
   let _log = Log_store.create ()
 
+  let live_debug_display_condition : Typed_log.Item.Condition.t =
+    let modules = 
+      try
+        Sys.getenv "debug_log_modules"
+        |> String.split ~on:(`Character ',')
+        |> List.map ~f:(fun m -> `Field_equals ("module", m))
+      with _ -> []
+    in
+    let functions = 
+      try
+        Sys.getenv "debug_log_functions"
+        |> String.split ~on:(`Character ',')
+        |> List.map ~f:(fun f -> `Field_equals ("function", f))
+      with _ -> []
+    in
+    `Ignore_case (`Or (modules @ functions))
+
   module Logger = struct
     include Typed_log.Item.Construct
     include Display_markup
     let add l =
       Log_store.add _log l
-    let log l = add (now l)
+    let log l =
+      let item = (now l) in
+      if (Typed_log.Item.Condition.eval item live_debug_display_condition)
+      then (
+        Printf.eprintf "%s\n%s\n%!"
+          (String.make 72 '=')
+          (Typed_log.Item.show item);
+      );
+      add item
 
   end
   module Make_module_error_and_info(M: sig val module_name : string end) = struct
