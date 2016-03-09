@@ -317,14 +317,21 @@ module Engine_instructions = struct
 
   let get_flat_states ~server_state
       (time_constrain, target_ids, options) =
-    block_if_empty_at_most ~server_state options
-      ~debug_info:(fmt "get_flat_states:%d-ids" (List.length target_ids))
+    let debug_info =
+      fmt "get_flat_states:%d-ids-%s" (List.length target_ids)
+        begin match time_constrain with
+        | `All -> "ALL"
+        | `Since t -> fmt "since-%s" (Time.to_string_hum t)
+        end
+    in
+    block_if_empty_at_most ~server_state options ~debug_info
       ~get_values:(fun () ->
+          let now = Time.now () in
           from_ids ~server_state target_ids
           >>= fun targets ->
           log_info
             Log.(s "get_flat_states computing states for "
-                % OCaml.list s target_ids);
+                 % OCaml.list s target_ids);
           let states =
             List.filter_map targets ~f:(fun (id, trgt) ->
                 let flat_state = Target.State.Flat.of_state (Target.state trgt) in
@@ -335,16 +342,15 @@ module Engine_instructions = struct
                   |> Option.map ~f:(fun st -> (id, st))
               )
           in
-          return states)
+          return (states, now))
       ~should_send:(fun states ->
           let total_items =
-            (List.fold states ~init:0 ~f:(fun prev (_, flat) ->
-                prev + (List.length flat.Target.State.Flat.history)))
-          in
+            List.fold (fst states) ~init:0 ~f:(fun prev (_, flat) ->
+                prev + (List.length flat.Target.State.Flat.history)) in
           log_info
             Log.(s "get_flat_states" % n
-                % s "States: " % i (List.length states) % n
-                % s "Total items: " % i  total_items);
+                 % s "States: " % i (List.length (fst states)) % n
+                 % s "Total items: " % i  total_items);
           total_items <> 0)
       ~send:(fun states ->
           return (`List_of_target_flat_states states))

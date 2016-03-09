@@ -113,7 +113,8 @@ module Down_message : sig
     | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
     (* We provide the IDs back because the target could be a
          pointer, Summary.id can be different. *)
-    | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
+    | `List_of_target_flat_states of
+        (string (* ID *) * Target.State.Flat.t) list * float (* server-time *)
     | `List_of_target_ids of string list * float (* IDs × server-time *)
     | `Deferred_list_of_target_ids of string * int (* id × total-length *)
     | `List_of_query_descriptions of (string * string) list

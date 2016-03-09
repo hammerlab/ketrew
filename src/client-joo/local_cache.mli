@@ -49,7 +49,8 @@ module Target_cache: sig
     t -> id:Ketrew_pure.Target.id -> target_knowledge -> unit
 
   val update_flat_state :
-    t -> id:Ketrew_pure.Target.id -> Ketrew_pure.Target.State.Flat.t -> unit
+    t -> server_time: Time.t ->
+    id:Ketrew_pure.Target.id -> Ketrew_pure.Target.State.Flat.t -> unit
 
   val update_target_query_descriptions :
     t -> id:Ketrew_pure.Target.id -> query_description -> unit

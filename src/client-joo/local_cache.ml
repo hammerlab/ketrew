@@ -107,12 +107,12 @@ module Target_cache  = struct
     (* Hashtbl.replace targets id signal; *)
     ()
 
-  let update_flat_state t ~id more_state =
+  let update_flat_state t ~server_time ~id more_state =
     let source = _get_target_flat_status t ~id in
     let current = Reactive.(Source.signal source |> Signal.value) in
-    Reactive.Source.set source
-      {retrieved = Some (Time.now ());
-       value = Target.State.Flat.merge current.value more_state};
+    let value = Target.State.Flat.merge current.value more_state in
+    let retrieved = Some server_time in
+    Reactive.Source.set source {retrieved; value};
     ()
 
   let update_target_query_descriptions t ~id v =

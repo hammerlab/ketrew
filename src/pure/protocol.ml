@@ -126,7 +126,8 @@ module Down_message = struct
     type t = [
       | `List_of_targets of Target.t list
       | `List_of_target_summaries of (string (* ID *) * Target.Summary.t) list
-      | `List_of_target_flat_states of (string (* ID *) * Target.State.Flat.t) list
+      | `List_of_target_flat_states of
+          (string (* ID *) * Target.State.Flat.t) list * float (* server-time *)
       | `List_of_target_ids of string list * float (* IDs × server-time *)
       | `Deferred_list_of_target_ids of string * int (* id × total-length *)
       | `List_of_query_descriptions of (string * string) list

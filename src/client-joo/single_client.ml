@@ -577,7 +577,7 @@ let start_getting_flat_statuses t =
               | Some pr, None -> None
               | Some pr, Some nw -> Some (min pr nw))
           |> function
-          | Some t -> `Since (t -. 1.)
+          | Some t -> `Since t
           | None -> `All in
         Protocol_client.call t.protocol_client
           ~timeout:(t.block_time_request
@@ -587,11 +587,12 @@ let start_getting_flat_statuses t =
                                        t.block_time_request]))
         >>= fun msg_down ->
         begin match msg_down with
-        | `List_of_target_flat_states l ->
+        | `List_of_target_flat_states (l, server_time) ->
           (* Log.(s "fill_cache_loop got " % i (List.length l) % s " flat-states" *)
           (*      @ verbose); *)
           List.iter l ~f:begin fun (id, value) ->
             Target_cache.update_flat_state t.target_cache ~id value
+              ~server_time
           end;
           sleep sleep_time
           >>= fun () ->
