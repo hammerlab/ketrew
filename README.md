@@ -31,7 +31,7 @@ If you have [opam](http://opam.ocaml.org/) up and running, just install Ketrew
 while choose a database backend (you may pick both and choose later in the
 config-file):
 
-    opam install  (sqlite | postgresql) [ssl | tls]  ketrew
+    opam install  (sqlite3 | postgresql) [ssl | tls]  ketrew
 
 - you need to choose a database backend `sqlite` or `postgresql`
   (you may install both and choose later in the config-file),
