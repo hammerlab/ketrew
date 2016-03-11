@@ -721,9 +721,10 @@ type state = [
     | #killable_state -> true
     | _ -> false
 
-    let finished_because_dependencies_died =
+    let dependency_dead =
       function
       | `Finished {previous_state = (`Dependencies_failed _); _ } -> true
+      | `Dependencies_failed _ -> true
       | other -> false
 
     let activated_by_user s =
