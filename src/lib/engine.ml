@@ -442,7 +442,7 @@ let get_list_of_target_ids t query =
               || Is.ran_successfully state
             | `Killable -> Is.killable state
             | `Dead_because_of_dependencies ->
-              Is.finished_because_dependencies_died state
+              Is.dependency_dead state
             | `Activated_by_user ->
               Is.activated_by_user state
             end
