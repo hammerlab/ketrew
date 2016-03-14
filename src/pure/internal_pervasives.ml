@@ -72,6 +72,21 @@ let global_with_color = ref true
 
 let global_log_print_string = ref (Printf.printf "%s%!")
 
+
+module Uri = struct
+  include Uri
+  let to_yojson u =
+    `String (Uri.to_string u)
+  let of_yojson =
+    function
+    | `String u ->
+      begin
+        try `Ok (Uri.of_string u)
+        with e -> `Error "Wrong URI string in Yojson input"
+      end
+    | other -> `Error "Wrong JSON for Uri.t"
+end
+
 (** Application of the functor [Docout.Make_logger] to write to [stderr]
     without buffering. *)
 module Log =  struct
