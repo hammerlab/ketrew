@@ -25,6 +25,10 @@ open Unix_io
 
 open Long_running_utilities
 
+open Logging.Global
+include Make_module_error_and_info(struct
+    let module_name = "Yarn"
+  end)
 
 module Run_parameters = struct
   type distributed_shell_parameters = {
@@ -442,32 +446,59 @@ let start rp ~host_io =
   end
 
 let update run_parameters ~host_io =
+  let markup_to_log = ref Display_markup.[
+      "function", text "update";
+    ] in
+  let add_to_final_log l = markup_to_log := !markup_to_log @ l in
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
+    add_to_final_log Display_markup.[
+        "update-daemonize", date Time.(now ());
+      ];
     Daemonize.update ~host_io run.daemonized_script
     >>= fun daemon_updated ->
     let make_new_rp rp ~daemonized:old_one =
       return (`Running {rp with daemonized_script = old_one}) in
     (* Calling this here will update the cached values; which will make queries
        faster. *)
+    add_to_final_log Display_markup.[
+        "fill-cache", date Time.(now ());
+      ];
     begin
       get_application_id_and_rm_url ~host_io run
-      >>< fun _ -> return ()
+      >>< function
+      | `Ok _ -> return ()
+      | `Error err ->
+        add_to_final_log Display_markup.[
+            "fill-cache-error", text (Log.to_long_string err);
+          ];
+        return ()
     end
     >>= fun () ->
     begin match daemon_updated with
     | `Failed (rp, s) ->
       make_new_rp run ~daemonized:rp >>= fun new_rp ->
+      add_to_final_log Display_markup.[
+          "job-failed", textf "Daemon failed: %S" s;
+        ];
       return (`Failed (new_rp, s))
     | `Succeeded rp ->
       (* Since we use `~no_log_is_ok:true` it is pretty easy for a
          daemonized process to succeed while the yarn application
          failed, hence we need to get the status from yarn. *)
       begin
+        (* We first try the HTTP API, it's faster but we cannot rely too much
+           on it because the Ketrew engine may be running on a host that cannot
+           access YARN over HTTP (while SSH is fine). *)
         make_new_rp run ~daemonized:rp >>= fun new_rp ->
         begin status_from_yarn_api ~host_io run
-          >>= function
+          >>= fun (st_opt, final_opt) ->
+          add_to_final_log Display_markup.[
+              "http-api-call-state", option st_opt text;
+              "http-api-call-final-status", option final_opt text;
+            ];
+          begin match st_opt, final_opt with
           | Some "RUNNING", _
           | Some "ACCEPTED", _ ->
             return (`Still_running new_rp)
@@ -478,9 +509,15 @@ let update run_parameters ~host_io =
           | Some "FINISHED", Some "KILLED" -> 
             return (`Failed (new_rp, "Yarn-status: KILLED"))
           | _, _ -> fail Log.(s "status_from_yarn_api failed")
+          end
         end >>< function
         | `Ok o -> return o
         | `Error api_err_log ->
+          add_to_final_log Display_markup.[
+              "http-api-call-error", text (Log.to_long_string api_err_log);
+            ];
+          (* The HTTP API failed, we try again with the `yarn` command-line
+             application *)
           begin
             let host = run.created.host in
             begin
@@ -492,6 +529,9 @@ let update run_parameters ~host_io =
                                       (Log.to_long_string log)))
             end
             >>= fun app_id ->
+            add_to_final_log Display_markup.[
+                "app-id", text app_id;
+              ];
             begin
               Host_io.get_shell_command_output host_io ~host
                 (fmt "yarn application -status %s" app_id)
@@ -508,6 +548,9 @@ let update run_parameters ~host_io =
                            (Error.to_string other)))
             end
             >>= fun application_status_string ->
+            add_to_final_log Display_markup.[
+                "app-status-string", code_block application_status_string;
+              ];
             make_new_rp run ~daemonized:rp >>= fun new_rp ->
             begin match parse_status application_status_string with
             | `Succeeded -> return (`Succeeded new_rp)
@@ -517,9 +560,29 @@ let update run_parameters ~host_io =
           end
       end
     | `Still_running rp ->
+      add_to_final_log Display_markup.[
+          "daemonize", text "Still_running";
+        ];
       make_new_rp run ~daemonized:rp >>= fun new_rp ->
       return (`Still_running new_rp)
     end
+  end
+  >>< begin fun res ->
+      let open Display_markup in 
+    let log =
+      match res with
+      | `Ok (`Still_running _) -> text "Still_running"
+      | `Ok (`Succeeded _) -> text "Succeeded"
+      | `Ok (`Failed (_, s)) -> textf "Failed: %s" s
+      | `Error (`Recoverable l) -> textf "Non-fatal Error: %s" l
+      | `Error (`Fatal l) -> textf "Fatal Error: %s" l
+    in
+    add_to_final_log [
+      "return", log;
+      "return-date", date (Time.now ());
+    ];
+    log_markup !markup_to_log;
+    Lwt.return res
   end
 
 let kill run_parameters ~host_io =
