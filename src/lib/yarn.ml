@@ -445,10 +445,30 @@ let update run_parameters ~host_io =
       begin
         begin
           let host = run.created.host in
-          get_application_id_and_rm_url ~host_io run
-          >>= fun (`Id app_id, `Url _) ->
-          shell_command_output_or_log ~host_io ~host
-            (fmt "yarn application -status %s" app_id)
+          begin
+            get_application_id_and_rm_url ~host_io run
+            >>< function
+            | `Ok (`Id app_id, `Url _) -> return app_id
+            | `Error log ->
+              fail (`Fatal (fmt "Cannot get application-id: %s"
+                              (Log.to_long_string log)))
+          end
+          >>= fun app_id ->
+          begin
+            Host_io.get_shell_command_output host_io ~host
+              (fmt "yarn application -status %s" app_id)
+            >>< function
+            | `Ok (stdout, stderr) -> return stdout
+            | `Error (`Host (`Non_zero (s, i))) ->
+              fail (`Fatal (fmt "The command `yarn application -status %s` \
+                                 returned %d: %s" app_id i s))
+            | `Error other ->
+              fail (`Recoverable
+                      (fmt "The command `yarn application -status %s` \
+                            on Host %s failed (non-fatal): %s"
+                         app_id (Host.to_string_hum host)
+                         (Error.to_string other)))
+          end
           >>= fun application_status_string ->
           make_new_rp run ~daemonized:rp >>= fun new_rp ->
           begin match parse_status application_status_string with
@@ -456,9 +476,7 @@ let update run_parameters ~host_io =
           | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
           | `Unknown -> return (`Still_running new_rp)
           end
-        end >>< function
-        | `Ok o -> return o
-        | `Error log -> fail (`Fatal (Log.to_long_string log))
+        end
       end
     | `Still_running rp ->
       make_new_rp run ~daemonized:rp >>= fun new_rp ->
