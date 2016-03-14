@@ -326,6 +326,28 @@ let yarn_api_get_app_markup ~host_io rp =
   in
   return (json_to_markup json |> Display_markup.serialize)
 
+let status_from_yarn_api ~host_io rp =
+  yarn_api_get_app_raw ~host_io rp
+  >>= fun json_string ->
+  parse_yarn_api_app_json json_string
+  >>= fun json ->
+  let state = ref None in
+  let final_state = ref None in
+  let rec find_status (kv : string * Yojson.Basic.json) =
+    match kv with
+    | (_, `Assoc l) -> 
+      List.iter ~f:find_status l
+    | ("state", `String state_string) ->
+      state := Some state_string;
+      ()
+    | ("finalStatus", `String state_string) ->
+      final_state := Some state_string;
+      ()
+    | other -> ()
+  in
+  find_status ("unused", json);
+  return (!state, !final_state)
+
 let query run_param ~host_io item =
   match run_param with
   | `Created _ ->
@@ -443,40 +465,56 @@ let update run_parameters ~host_io =
          daemonized process to succeed while the yarn application
          failed, hence we need to get the status from yarn. *)
       begin
-        begin
-          let host = run.created.host in
+        make_new_rp run ~daemonized:rp >>= fun new_rp ->
+        begin status_from_yarn_api ~host_io run
+          >>= function
+          | Some "RUNNING", _
+          | Some "ACCEPTED", _ ->
+            return (`Still_running new_rp)
+          | Some "FINISHED", Some "SUCCEEDED" -> 
+            return (`Succeeded new_rp)
+          | Some "FINISHED", Some "FAILED" ->
+            return (`Failed (new_rp, "Yarn-status: FAILED"))
+          | Some "FINISHED", Some "KILLED" -> 
+            return (`Failed (new_rp, "Yarn-status: KILLED"))
+          | _, _ -> fail Log.(s "status_from_yarn_api failed")
+        end >>< function
+        | `Ok o -> return o
+        | `Error api_err_log ->
           begin
-            get_application_id_and_rm_url ~host_io run
-            >>< function
-            | `Ok (`Id app_id, `Url _) -> return app_id
-            | `Error log ->
-              fail (`Fatal (fmt "Cannot get application-id: %s"
-                              (Log.to_long_string log)))
+            let host = run.created.host in
+            begin
+              get_application_id_and_rm_url ~host_io run
+              >>< function
+              | `Ok (`Id app_id, `Url _) -> return app_id
+              | `Error log ->
+                fail (`Recoverable (fmt "Cannot get application-id: %s"
+                                      (Log.to_long_string log)))
+            end
+            >>= fun app_id ->
+            begin
+              Host_io.get_shell_command_output host_io ~host
+                (fmt "yarn application -status %s" app_id)
+              >>< function
+              | `Ok (stdout, stderr) -> return stdout
+              | `Error (`Host (`Non_zero (s, i))) ->
+                fail (`Fatal (fmt "The command `yarn application -status %s` \
+                                   returned %d: %s" app_id i s))
+              | `Error other ->
+                fail (`Recoverable
+                        (fmt "The command `yarn application -status %s` \
+                              on Host %s failed (non-fatal): %s"
+                           app_id (Host.to_string_hum host)
+                           (Error.to_string other)))
+            end
+            >>= fun application_status_string ->
+            make_new_rp run ~daemonized:rp >>= fun new_rp ->
+            begin match parse_status application_status_string with
+            | `Succeeded -> return (`Succeeded new_rp)
+            | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
+            | `Unknown -> return (`Still_running new_rp)
+            end
           end
-          >>= fun app_id ->
-          begin
-            Host_io.get_shell_command_output host_io ~host
-              (fmt "yarn application -status %s" app_id)
-            >>< function
-            | `Ok (stdout, stderr) -> return stdout
-            | `Error (`Host (`Non_zero (s, i))) ->
-              fail (`Fatal (fmt "The command `yarn application -status %s` \
-                                 returned %d: %s" app_id i s))
-            | `Error other ->
-              fail (`Recoverable
-                      (fmt "The command `yarn application -status %s` \
-                            on Host %s failed (non-fatal): %s"
-                         app_id (Host.to_string_hum host)
-                         (Error.to_string other)))
-          end
-          >>= fun application_status_string ->
-          make_new_rp run ~daemonized:rp >>= fun new_rp ->
-          begin match parse_status application_status_string with
-          | `Succeeded -> return (`Succeeded new_rp)
-          | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
-          | `Unknown -> return (`Still_running new_rp)
-          end
-        end
       end
     | `Still_running rp ->
       make_new_rp run ~daemonized:rp >>= fun new_rp ->
