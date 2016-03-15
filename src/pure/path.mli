@@ -64,3 +64,5 @@ val exists_shell_condition: t -> string
 val size_shell_command: t -> string
 (** Create a ["/bin/sh"] command that outputs ["0"] for directories and
     their size for files. *)
+
+val markup : t -> Internal_pervasives.Display_markup.t
