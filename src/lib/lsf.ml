@@ -24,6 +24,10 @@ open Unix_io
 
 open Long_running_utilities
 
+open Logging.Global
+include Make_module_error_and_info(struct
+    let module_name = "Lsf"
+  end)
 
 module Run_parameters = struct
   type created = {
@@ -37,6 +41,8 @@ module Run_parameters = struct
         | `Min of int
         | `Min_max of (int * int)
       ] option;
+    request_memory: ([ `GB of int | `MB of int ] option [@default None]);
+    raw_options: (string list [@default []]);
   } [@@deriving yojson]
   type running = {
     lsf_id: int;
@@ -58,16 +64,19 @@ let name = "LSF"
 let create
     ?(host=Host.tmp_on_localhost)
     ?queue ?name ?wall_limit ?processors ?project
+    ?request_memory ?(raw_options = [])
     program =
   `Long_running ("LSF",
                  `Created {host; program; queue; name;
-                           wall_limit; project; processors}
+                           wall_limit; project; processors;
+                           request_memory; raw_options}
                  |> serialize)
 
 let markup =
   let open Display_markup in
   let created {host; program; queue; name;
-               wall_limit; project; processors} = [
+               wall_limit; project; processors;
+               request_memory; raw_options} = [
     "Host", Host.markup host;
     "Program", Program.markup program;
     "Queue", option ~f:text queue;
@@ -80,7 +89,14 @@ let markup =
     | Some (`Min min) -> textf "≥ %d" min
     | Some (`Min_max (min, max)) ->
       textf "∈ [%d, %d]" min max
-    end
+    end;
+    "request-memory", 
+    begin match request_memory with
+    | None -> text "Default"
+    | Some (`GB i) -> textf "%d GB" i
+    | Some (`MB i) -> textf "%d GB" i
+    end;
+    "raw-options", itemize (List.map raw_options ~f:command);
   ] in
   function
   | `Created c ->
@@ -173,11 +189,20 @@ let start rp ~host_io =
   | `Running _ ->
     fail_fatal "Wrong state: already running"
   | `Created created ->
+    let markup_to_log = ref Display_markup.[
+        "function", text "start";
+        "start-date", date Time.(now ());
+      ] in
+    let add_to_final_log l = markup_to_log := !markup_to_log @ l in
     begin
       fresh_playground_or_fail ~host_io created.host
       >>= fun playground ->
       let script = Monitored_script.create ~playground created.program in
       let monitored_script_path = script_path ~playground in
+      add_to_final_log Display_markup.[
+          "playground",  Path.markup playground;
+          "monitored_script_path", Path.markup monitored_script_path;
+        ];
       Host_io.ensure_directory host_io ~host:created.host ~path:playground
       >>= fun () ->
       let content = Monitored_script.to_string script in
@@ -199,15 +224,28 @@ let start rp ~host_io =
           (option created.processors (function
              | `Min m -> fmt "-n %d -R 'span[hosts=1]'" m
              | `Min_max (mi, ma) -> fmt "-n %d,%d -R 'span[hosts=1]'" mi ma));
+          option created.request_memory (fun m ->
+              fmt "-R rusage[mem=%d]"
+                (match m with `MB i -> i | `GB g -> 1024 * g));
+          String.concat ~sep:" " created.raw_options;
           fmt "< %s"
             (Path.to_string_quoted monitored_script_path)
         ]
       in
+      add_to_final_log Display_markup.[
+          "out", Path.markup out;
+          "err", Path.markup err;
+          "command", command cmd;
+        ];
       Log.(s "Cmd: " % s cmd %n  @ verbose);
       Host_io.get_shell_command_output host_io ~host:created.host cmd
       >>= fun (stdout, stderr) ->
       Log.(s "Cmd: " % s cmd %n % s "Out: " % s stdout %n
            % s "Err: " % s stderr @ verbose);
+      add_to_final_log Display_markup.[
+          "bsub-out", path stdout;
+          "bsub-err", path stderr;
+        ];
       begin match parse_bsub_output stdout with
       | Some lsf_id ->
         return (`Running {lsf_id; playground; script; created})
@@ -215,7 +253,13 @@ let start rp ~host_io =
         fail_fatal (fmt "bsub did not give a JOB ID: %S %S" stdout stderr)
       end
     end
-    >>< classify_and_transform_errors
+    >>< begin fun res ->
+      add_to_final_log Display_markup.[
+        "return-date", date (Time.now ());
+      ];
+      log_markup !markup_to_log;
+      classify_and_transform_errors res
+    end
 
 let get_lsf_job_status ~host_io host lsf_id =
   let cmd = fmt "bjobs -l %d" lsf_id in
