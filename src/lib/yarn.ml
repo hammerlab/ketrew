@@ -25,6 +25,10 @@ open Unix_io
 
 open Long_running_utilities
 
+open Logging.Global
+include Make_module_error_and_info(struct
+    let module_name = "Yarn"
+  end)
 
 module Run_parameters = struct
   type distributed_shell_parameters = {
@@ -47,6 +51,8 @@ module Run_parameters = struct
   type running = {
     created: created;
     daemonized_script: Daemonize.run_parameters;
+    mutable application_id: (string option [@default None]);
+    mutable rm_url: (Uri.t option [@default None]);
   } [@@deriving yojson]
   type t = [
     | `Created of created
@@ -131,6 +137,12 @@ let rec markup : t -> Display_markup.t =
   | `Running rp ->
     description_list [
       "Created-as", markup (`Created rp.created);
+      "Application-ID", 
+      Option.value_map ~default:(text "Unknown") rp.application_id
+        ~f:(textf "%S");
+      "RM-URL", 
+      Option.value_map ~default:(text "Unknown") rp.rm_url
+        ~f:(fun u -> uri (Uri.to_string u));
       "Daemonized-as", Daemonize.markup rp.daemonized_script;
     ]
 
@@ -208,24 +220,36 @@ let find_resource_manager_url stdout_stderr =
   end
 
 
-let get_application_id ~host_io daemonize_run_param =
-  Daemonize.query daemonize_run_param ~host_io "stdout"
-  >>= fun stdout ->
-  Daemonize.query daemonize_run_param ~host_io "stderr"
-  >>= fun stderr ->
-  find_application_id (stdout ^ stderr)
+let get_application_id ~host_io run_parameters =
+  match run_parameters.application_id with
+  | Some id -> return id
+  | None ->
+    Daemonize.query run_parameters.daemonized_script ~host_io "stdout"
+    >>= fun stdout ->
+    Daemonize.query run_parameters.daemonized_script ~host_io "stderr"
+    >>= fun stderr ->
+    find_application_id (stdout ^ stderr)
+    >>= fun app_id ->
+    run_parameters.application_id <- Some app_id;
+    return app_id
 
-let get_application_id_and_rm_url ~host_io daemonize_run_param =
-  Daemonize.query daemonize_run_param ~host_io "stdout"
-  >>= fun stdout ->
-  Daemonize.query daemonize_run_param ~host_io "stderr"
-  >>= fun stderr ->
-  let both = stdout ^ stderr in
-  find_application_id  both
+
+let get_application_id_and_rm_url ~host_io run_parameters =
+  get_application_id ~host_io run_parameters
   >>= fun appid ->
-  find_resource_manager_url both
-  >>= fun url ->
-  return (appid, url)
+  begin match run_parameters.rm_url with
+  | Some u -> return (`Id appid, `Url u)
+  | None ->
+    Daemonize.query run_parameters.daemonized_script ~host_io "stdout"
+    >>= fun stdout ->
+    Daemonize.query run_parameters.daemonized_script ~host_io "stderr"
+    >>= fun stderr ->
+    let both = stdout ^ stderr in
+    find_resource_manager_url both
+    >>= fun url ->
+    run_parameters.rm_url <- Some url;
+    return (`Id appid, `Url url)
+  end
 
 let parse_status str =
   let lines = String.split ~on:(`Character '\n') str in
@@ -243,8 +267,8 @@ let parse_status str =
   | Some _ | None -> `Unknown
 
 let yarn_api_get_app_raw ~host_io rp =
-  get_application_id_and_rm_url rp.daemonized_script ~host_io
-  >>= fun (appid, rm_url) ->
+  get_application_id_and_rm_url rp ~host_io
+  >>= fun (`Id appid, `Url rm_url) ->
   Log.(s "Got app id: " % quote appid
        % s " and url: " % uri rm_url @ verbose);
   let to_call = Uri.with_path rm_url ("/ws/v1/cluster/apps/" ^ appid) in
@@ -306,6 +330,28 @@ let yarn_api_get_app_markup ~host_io rp =
   in
   return (json_to_markup json |> Display_markup.serialize)
 
+let status_from_yarn_api ~host_io rp =
+  yarn_api_get_app_raw ~host_io rp
+  >>= fun json_string ->
+  parse_yarn_api_app_json json_string
+  >>= fun json ->
+  let state = ref None in
+  let final_state = ref None in
+  let rec find_status (kv : string * Yojson.Basic.json) =
+    match kv with
+    | (_, `Assoc l) -> 
+      List.iter ~f:find_status l
+    | ("state", `String state_string) ->
+      state := Some state_string;
+      ()
+    | ("finalStatus", `String state_string) ->
+      final_state := Some state_string;
+      ()
+    | other -> ()
+  in
+  find_status ("unused", json);
+  return (!state, !final_state)
+
 let query run_param ~host_io item =
   match run_param with
   | `Created _ ->
@@ -318,12 +364,12 @@ let query run_param ~host_io item =
     let host = rp.created.host in
     begin match item with
     | "status"  ->
-      get_application_id rp.daemonized_script ~host_io
+      get_application_id rp ~host_io
       >>= fun app_id ->
       shell_command_output_or_log ~host_io ~host
         (fmt "yarn application -status %s" app_id)
     | "logs" ->
-      get_application_id rp.daemonized_script ~host_io
+      get_application_id rp ~host_io
       >>= fun app_id ->
       let tmp_file = 
         let tmp_dir = 
@@ -394,48 +440,149 @@ let start rp ~host_io =
         ?call_script ~no_log_is_ok:true in
     Daemonize.(start ~host_io (deserialize_exn daemonize_run_param))
     >>= fun daemonized_script ->
-    return (`Running {created; daemonized_script})
+    return (`Running {created; daemonized_script; 
+                      application_id = None; rm_url = None})
   | `Running _ -> fail (`Fatal "Already running")
   end
 
 let update run_parameters ~host_io =
+  let markup_to_log = ref Display_markup.[
+      "function", text "update";
+    ] in
+  let add_to_final_log l = markup_to_log := !markup_to_log @ l in
   begin match run_parameters with
   | `Created _ -> fail_fatal "not running"
   | `Running run ->
+    add_to_final_log Display_markup.[
+        "update-daemonize", date Time.(now ());
+      ];
     Daemonize.update ~host_io run.daemonized_script
     >>= fun daemon_updated ->
-    let make_new_rp old_one =
-      return (`Running {run with daemonized_script = old_one}) in
+    let make_new_rp rp ~daemonized:old_one =
+      return (`Running {rp with daemonized_script = old_one}) in
+    (* Calling this here will update the cached values; which will make queries
+       faster. *)
+    add_to_final_log Display_markup.[
+        "fill-cache", date Time.(now ());
+      ];
+    begin
+      get_application_id_and_rm_url ~host_io run
+      >>< function
+      | `Ok _ -> return ()
+      | `Error err ->
+        add_to_final_log Display_markup.[
+            "fill-cache-error", text (Log.to_long_string err);
+          ];
+        return ()
+    end
+    >>= fun () ->
     begin match daemon_updated with
     | `Failed (rp, s) ->
-      make_new_rp rp >>= fun new_rp ->
+      make_new_rp run ~daemonized:rp >>= fun new_rp ->
+      add_to_final_log Display_markup.[
+          "job-failed", textf "Daemon failed: %S" s;
+        ];
       return (`Failed (new_rp, s))
     | `Succeeded rp ->
-      make_new_rp rp >>= fun new_rp ->
       (* Since we use `~no_log_is_ok:true` it is pretty easy for a
          daemonized process to succeed while the yarn application
          failed, hence we need to get the status from yarn. *)
       begin
-        begin
-          let host = run.created.host in
-          get_application_id ~host_io run.daemonized_script
-          >>= fun app_id ->
-          shell_command_output_or_log ~host_io ~host
-            (fmt "yarn application -status %s" app_id)
-          >>= fun application_status_string ->
-          begin match parse_status application_status_string with
-          | `Succeeded -> return (`Succeeded new_rp)
-          | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
-          | `Unknown -> return (`Still_running new_rp)
+        (* We first try the HTTP API, it's faster but we cannot rely too much
+           on it because the Ketrew engine may be running on a host that cannot
+           access YARN over HTTP (while SSH is fine). *)
+        make_new_rp run ~daemonized:rp >>= fun new_rp ->
+        begin status_from_yarn_api ~host_io run
+          >>= fun (st_opt, final_opt) ->
+          add_to_final_log Display_markup.[
+              "http-api-call-state", option st_opt text;
+              "http-api-call-final-status", option final_opt text;
+            ];
+          begin match st_opt, final_opt with
+          | Some "RUNNING", _
+          | Some "ACCEPTED", _ ->
+            return (`Still_running new_rp)
+          | Some "FINISHED", Some "SUCCEEDED" -> 
+            return (`Succeeded new_rp)
+          | Some "FINISHED", Some "FAILED" ->
+            return (`Failed (new_rp, "Yarn-status: FAILED"))
+          | Some "FINISHED", Some "KILLED" -> 
+            return (`Failed (new_rp, "Yarn-status: KILLED"))
+          | _, _ -> fail Log.(s "status_from_yarn_api failed")
           end
         end >>< function
         | `Ok o -> return o
-        | `Error log -> fail (`Fatal (Log.to_long_string log))
+        | `Error api_err_log ->
+          add_to_final_log Display_markup.[
+              "http-api-call-error", text (Log.to_long_string api_err_log);
+            ];
+          (* The HTTP API failed, we try again with the `yarn` command-line
+             application *)
+          begin
+            let host = run.created.host in
+            begin
+              get_application_id_and_rm_url ~host_io run
+              >>< function
+              | `Ok (`Id app_id, `Url _) -> return app_id
+              | `Error log ->
+                fail (`Recoverable (fmt "Cannot get application-id: %s"
+                                      (Log.to_long_string log)))
+            end
+            >>= fun app_id ->
+            add_to_final_log Display_markup.[
+                "app-id", text app_id;
+              ];
+            begin
+              Host_io.get_shell_command_output host_io ~host
+                (fmt "yarn application -status %s" app_id)
+              >>< function
+              | `Ok (stdout, stderr) -> return stdout
+              | `Error (`Host (`Non_zero (s, i))) ->
+                fail (`Fatal (fmt "The command `yarn application -status %s` \
+                                   returned %d: %s" app_id i s))
+              | `Error other ->
+                fail (`Recoverable
+                        (fmt "The command `yarn application -status %s` \
+                              on Host %s failed (non-fatal): %s"
+                           app_id (Host.to_string_hum host)
+                           (Error.to_string other)))
+            end
+            >>= fun application_status_string ->
+            add_to_final_log Display_markup.[
+                "app-status-string", code_block application_status_string;
+              ];
+            make_new_rp run ~daemonized:rp >>= fun new_rp ->
+            begin match parse_status application_status_string with
+            | `Succeeded -> return (`Succeeded new_rp)
+            | `Failed -> return (`Failed (new_rp, "Yarn-status: FAILED"))
+            | `Unknown -> return (`Still_running new_rp)
+            end
+          end
       end
     | `Still_running rp ->
-      make_new_rp rp >>= fun new_rp ->
+      add_to_final_log Display_markup.[
+          "daemonize", text "Still_running";
+        ];
+      make_new_rp run ~daemonized:rp >>= fun new_rp ->
       return (`Still_running new_rp)
     end
+  end
+  >>< begin fun res ->
+      let open Display_markup in 
+    let log =
+      match res with
+      | `Ok (`Still_running _) -> text "Still_running"
+      | `Ok (`Succeeded _) -> text "Succeeded"
+      | `Ok (`Failed (_, s)) -> textf "Failed: %s" s
+      | `Error (`Recoverable l) -> textf "Non-fatal Error: %s" l
+      | `Error (`Fatal l) -> textf "Fatal Error: %s" l
+    in
+    add_to_final_log [
+      "return", log;
+      "return-date", date (Time.now ());
+    ];
+    log_markup !markup_to_log;
+    Lwt.return res
   end
 
 let kill run_parameters ~host_io =
@@ -446,7 +593,7 @@ let kill run_parameters ~host_io =
     begin
       (* We try to kill with yarn but we just log any potential error
          without failing. *)
-      get_application_id ~host_io run.daemonized_script
+      get_application_id ~host_io run
       >>< function
       | `Ok app_id ->
         shell_command_output_or_log ~host_io ~host
