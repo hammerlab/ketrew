@@ -178,6 +178,8 @@ val lsf :
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
   ?project:string ->
+  ?request_memory: [ `GB of int | `MB of int ] ->
+  ?raw_options: string list ->
   Program.t -> Build_process.t
 (** Create an “LSF” build process. *)
 

@@ -76,3 +76,6 @@ let size_shell_command = function
 let exists_shell_condition = function
 | {kind = `File; path } ->  fmt "[ -f %s ]" (Filename.quote path)
 | {kind = `Directory; path } ->  fmt "[ -d %s ]" (Filename.quote path)
+
+let markup p =
+  Display_markup.path (to_string p)

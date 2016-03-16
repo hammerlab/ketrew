@@ -48,6 +48,8 @@ val create :
   ?wall_limit:string ->
   ?processors:[ `Min of int | `Min_max of int * int ] ->
   ?project:string ->
+  ?request_memory: [ `GB of int | `MB of int ] ->
+  ?raw_options: string list ->
   Ketrew_pure.Program.t ->
   [> `Long_running of string  * string ]
   (** Create a “long-running” {!Ketrew_pure.Target.build_process} to run a 
