@@ -201,14 +201,27 @@ let find_application_id stdout_stderr =
               % quote "stdout ^ stderr" % s ":" % n % indent (s stdout_stderr))
   end
 
-let re_find_rm_url =
+let re_find_rm_url_distshell_style =
   Re_posix.compile_pat
     ~opts:[`ICase; `Newline] "appTrackingUrl=([-a-zA-Z0-9:/_\\.]+)"
+let re_find_rm_url_spark_style =
+  (* cf. 
+     https://github.com/apache/spark/blob/15de51c238a7340fa81cb0b80d029a05d97bfc5c/yarn/src/main/scala/org/apache/spark/deploy/yarn/Client.scala#L956
+  *)
+  Re_posix.compile_pat
+    ~opts:[`ICase; `Newline] "tracking +URL: +([@-a-zA-Z0-9:/_\\.]+)"
 
 let find_resource_manager_url stdout_stderr =
   begin try
-    let subs = Re.exec re_find_rm_url  stdout_stderr |> Re.get_all in
-    let url = Uri.of_string subs.(1) in
+    let url_string =
+      try
+        let subs = Re.exec re_find_rm_url_distshell_style  stdout_stderr |> Re.get_all in
+        subs.(1)
+      with _ -> 
+        let subs = Re.exec re_find_rm_url_spark_style  stdout_stderr |> Re.get_all in
+        subs.(1)
+    in
+    let url = Uri.of_string url_string in
     let scheme = Uri.scheme url in
     let host = Uri.host url in
     let port = Uri.port url in
