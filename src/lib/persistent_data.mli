@@ -63,10 +63,15 @@ val activate_target :
   reason:[ `Dependency of Target.id | `User ] ->
   (unit,
    [> `Database of
-        [> `Act of Trakeva.Action.t | `Load of string ] * string
-   | `Database_unavailable of string ])
+        [> `Act of Trakeva.Action.t
+        | `Get of Trakeva.Key_in_collection.t
+        | `Get_all of string
+        | `Load of string ] *
+        string
+   | `Database_unavailable of string
+   | `Missing_data of string
+   | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
-
 
 val fold_active_targets :
   t ->
