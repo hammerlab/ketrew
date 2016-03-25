@@ -441,6 +441,15 @@ module With_database = struct
             | [] ->
               (Target.Stored_target.of_target target :: to_store_targets)
             | at_least_one :: _ ->
+              (
+                if Target.State.Is.activated_by_user (Target.state target)
+                then
+                  Logging.User_level_events.root_workflow_equivalent_to
+                    ~name:(Target.name target)
+                    ~id:(Target.id target)
+                    (List.map equivalences ~f:(fun st ->
+                         (Target.name st, Target.id st)))
+              );
               (Target.Stored_target.make_pointer
                  ~from:target ~pointing_to:at_least_one :: to_store_targets)
           end

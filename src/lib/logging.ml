@@ -157,6 +157,7 @@ module User_level_events = struct
       | `Workflow_node_killed of string
       | `Workflow_node_restarted of string * string * string
       | `Server_shut_down
+      | `Root_workflow_equivalent_to of string * string * (string * string) list
     ]
     } [@@deriving yojson]
 
@@ -176,6 +177,11 @@ module User_level_events = struct
       fmt "Workflow `%s` resubmitted as `%s` (%s)"
         old_id new_id name
     | `Server_shut_down -> fmt "Server (about to) shut down"
+    | `Root_workflow_equivalent_to (name, id, name_ids) ->
+      fmt "Root workflow-node: %s (%s) is equivalent to %s"
+        name id
+        (List.map name_ids ~f:(fun (name, id) -> fmt "%s (%s)" name id)
+         |> String.concat ~sep:", ")
 
   type t = {
     ring: item Ring.t;
@@ -207,6 +213,9 @@ module User_level_events = struct
   let workflow_node_restarted ~old_id ~new_id ~name =
     add_item (`Workflow_node_restarted (old_id, new_id, name))
   let server_shut_down () = add_item `Server_shut_down
+
+  let root_workflow_equivalent_to ~name ~id equivalences =
+    add_item (`Root_workflow_equivalent_to (name, id, equivalences))
 
   let get_notifications_or_block ~query =
     begin match query with
