@@ -311,30 +311,53 @@ module With_database = struct
       ] |> log);
     return filtered
 
+  let activation_mutex = Lwt_mutex.create ()
   let activate_target t ~target ~reason =
-    active_targets t
-    >>= fun current_living_targets ->
-    begin match
-      List.find current_living_targets (Target.is_equivalent target)
-    with
-    | Some pointing_to ->
-      (* We found one, need to make a pointer *)
-      Printf.eprintf "%s (%s) <=> %s (%s)\n%!"
+    Lwt_mutex.with_lock activation_mutex begin fun () ->
+      Printf.eprintf "%s (%s) enters mutex\n%!"
         (Target.name target)
-        (Target.id target)
-        (Target.name pointing_to)
-        (Target.id pointing_to);
-      make_pointer_of_passive_target t ~target ~pointing_to
-    | None ->
-      Printf.eprintf "%s (%s) is FRESH (alive: %d)\n%!"
+        (Target.id target);
+      get_target t (Target.id target)
+      >>= fun fresh_target ->
+      begin match Target.state fresh_target |> Target.State.simplify with
+      | `Activable ->
+        active_targets t
+        >>= fun current_living_targets ->
+        begin match
+          List.find current_living_targets (Target.is_equivalent target)
+        with
+        | Some pointing_to ->
+          (* We found one, need to make a pointer *)
+          Printf.eprintf "%s (%s) <=> %s (%s)\n%!"
+            (Target.name target)
+            (Target.id target)
+            (Target.name pointing_to)
+            (Target.id pointing_to);
+          make_pointer_of_passive_target t ~target ~pointing_to
+        | None ->
+          Printf.eprintf "%s (%s) is FRESH (alive: %d)\n%!"
+            (Target.name target)
+            (Target.id target)
+            (List.length current_living_targets);
+          let newone = Target.(activate_exn target ~reason) in
+          move_target t ~target:newone ~src:passive_targets_collection
+            ~dest:active_targets_collection
+          >>= fun () ->
+          return (Target.Stored_target.of_target newone)
+        end
+      | `In_progress
+      | `Successful
+      | `Failed ->
+        Printf.eprintf "%s (%s) is not activable anymore\n%!"
+          (Target.name target)
+          (Target.id target);
+        return (Target.Stored_target.of_target fresh_target)
+      end
+      >>= fun res ->
+      Printf.eprintf "%s (%s) leaves mutex\n%!"
         (Target.name target)
-        (Target.id target)
-        (List.length current_living_targets);
-      let newone = Target.(activate_exn target ~reason) in
-      move_target t ~target:newone ~src:passive_targets_collection
-        ~dest:active_targets_collection
-      >>= fun () ->
-      return (Target.Stored_target.of_target newone)
+        (Target.id target);
+      return res
     end
 
 

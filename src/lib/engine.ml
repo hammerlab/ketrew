@@ -117,7 +117,7 @@ module Run_automaton = struct
     end
 
   let _check_and_activate_dependencies t ~dependency_of ~ids =
-    Deferred_list.for_sequential ids ~f:(fun dep ->
+    Deferred_list.for_concurrent ids ~f:(fun dep ->
         Persistent_data.get_target t.data dep >>< function
         | `Ok dependency ->
           begin match Target.state dependency |> Target.State.simplify with
@@ -125,6 +125,9 @@ module Run_automaton = struct
             Persistent_data.activate_target t.data ~target:dependency
               ~reason:(`Dependency dependency_of)
             >>= fun () ->
+            (** Even in a case where the target is not activable anymore inside
+                the activate_target mutex, the function “ensures” the next
+                simple-state is [`In_progress]. *)
             return (dep, `In_progress)
           | `In_progress
           | `Successful
