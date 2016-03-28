@@ -37,10 +37,13 @@ module With_database = struct
     mutable database_handle: Database.t option;
     database_parameters: string;
     archival_age_threshold: [ `Days of float ];
+    activation_mutex : Lwt_mutex.t;
   }
   let create ~database_parameters ~archival_age_threshold =
+    let activation_mutex = Lwt_mutex.create () in
     return {
       database_handle = None; database_parameters; archival_age_threshold;
+      activation_mutex;
     }
 
   let database t =
@@ -311,9 +314,8 @@ module With_database = struct
       ] |> log);
     return filtered
 
-  let activation_mutex = Lwt_mutex.create ()
   let activate_target t ~target ~reason =
-    Lwt_mutex.with_lock activation_mutex begin fun () ->
+    Lwt_mutex.with_lock t.activation_mutex begin fun () ->
       Printf.eprintf "%s (%s) enters mutex\n%!"
         (Target.name target)
         (Target.id target);
