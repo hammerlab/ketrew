@@ -341,15 +341,19 @@ let flatten_to_pure_targets ?add_tags t =
   t#activate;
   let todo = ref [t] in
   let to_return = ref [] in
-  let add_todos l =
+  let add_todos ~more_tags l =
     List.iter l (* not_already_done *) ~f:(fun x ->
         match
           List.exists !todo ~f:(fun y -> x#id = y#id)
           || List.exists !to_return ~f:(fun y -> T.id y = x#id)
         with
         | true -> ()
-        | false -> todo := x :: !todo) in
-  let add_to_return t =
+        | false ->
+          x#add_recursive_tags more_tags;
+          todo := x :: !todo
+      ) in
+  let add_to_return ~more_tags t =
+    t#add_tags more_tags;
     begin match add_tags with
     | None -> ()
     | Some tags -> t#add_tags tags
@@ -358,10 +362,11 @@ let flatten_to_pure_targets ?add_tags t =
   let rec go_through_deps () =
     match !todo with
     | t :: more ->
-      add_to_return t; (* In !todo, so was not in !to_return. *)
-      add_todos t#depends_on;
-      add_todos t#on_failure_activate;
-      add_todos t#on_success_activate;
+      let more_tags = t#get_recursive_tags in
+      add_to_return ~more_tags t; (* In !todo, so was not in !to_return. *)
+      add_todos ~more_tags t#depends_on;
+      add_todos ~more_tags t#on_failure_activate;
+      add_todos ~more_tags t#on_success_activate;
       todo := List.filter !todo ~f:(fun x -> x#id <> t#id);
       go_through_deps ();
     | [] -> () in
