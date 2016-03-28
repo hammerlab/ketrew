@@ -427,3 +427,6 @@ let add_tags ?(recursive = false) node tags =
     node#render#add_recursive_tags tags;
   );
   ()
+
+let node_id w = w#render#id
+let node_name w = w#render#name

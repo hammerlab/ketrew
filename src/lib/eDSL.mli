@@ -424,6 +424,11 @@ val add_tags :
 (** Add tags imperatively to a node, if [recursive] is [true],  follow the
     [edges] recursively to add tags. *)
 
+val node_id : 'a workflow_node -> string
+(** Get the unique ID of the workdlow node. *)
+
+val node_name : 'a workflow_node -> string
+(** Get the name of the workdlow node. *)
 
 (** {3 Legacy Deprecated API: Artifacts and Targets}
 
