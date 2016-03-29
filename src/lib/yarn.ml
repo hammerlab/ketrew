@@ -405,7 +405,7 @@ let query run_param ~host_io item =
     end
 
 (* This is exported for configurability, cf. interface file. *)
-let max_name_length = ref 200
+let max_name_length = ref 60
 
 let sanitize_name name =
   String.sub name  ~index:0 ~length:!max_name_length

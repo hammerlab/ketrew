@@ -60,6 +60,7 @@ val max_name_length : int ref
 (* The distributed-shell applications create files (and read them); we have
    seen it go wrong on some special characters or when reaching the maximal
    filename length (of the filesystem, often 255 bytes).
+
    As part of their sanitization, application-names are truncated to this value
-   (default [200]).
+   (default [60]).
 *)
