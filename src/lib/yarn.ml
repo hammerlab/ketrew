@@ -404,6 +404,16 @@ let query run_param ~host_io item =
     | other -> Daemonize.query rp.daemonized_script ~host_io other
     end
 
+(* This is exported for configurability, cf. interface file. *)
+let max_name_length = ref 60
+
+let sanitize_name name =
+  String.sub name  ~index:0 ~length:!max_name_length
+  |> Option.value ~default:name
+  |> String.map ~f:(function
+    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' as c -> c
+    | other -> '_')
+
 let hadoop_distshell_call
     ~distshell_jar ~hadoop_bin ~container_memory ~container_vcores
     ~timeout ~application_name
@@ -413,7 +423,7 @@ let hadoop_distshell_call
    "-jar"; distshell_jar;
    "-num_containers"; "1";
    "-shell_script"; script;
-   "-appname"; application_name;
+   "-appname"; sanitize_name application_name;
    "-container_memory"; container_memory;
    "-container_vcores"; Int.to_string container_vcores;
    "-timeout"; timeout]
