@@ -265,6 +265,8 @@ module Internal_representation : sig
     < name : string;
       activate : unit;
       add_tags : string list -> unit;
+      add_recursive_tags : string list -> unit;
+      get_recursive_tags : string list;
       id : Ketrew_pure.Internal_pervasives.Unique_id.t;
       depends_on : t list;
       on_failure_activate : t list;
@@ -394,12 +396,6 @@ val list_of_files:
 (** Create a [list_of_files] product ([#is_done] checks the existence
     of all these files). *)
 
-val workflow_to_string:
-  ?ansi_colors:bool ->
-  ?indentation:int ->
-  'any workflow_node -> string
-(** Build a display-friendly string summarizing the workflow. *)
-
 type unknown_product = < is_done : Condition.t option >
 (** The type of the products that have been “hidden” or “forgotten,”
     see {!forget_product}. *)
@@ -411,6 +407,28 @@ val forget_product:
     useful to make some programs that generate workflows type check
     (putting nodes into lists, or in different branches of a [match
     .. with]). *)
+
+(** {4 Utilities For Workflow Nodes} *)
+
+val workflow_to_string:
+  ?ansi_colors:bool ->
+  ?indentation:int ->
+  'any workflow_node -> string
+(** Build a display-friendly string summarizing the workflow. *)
+
+val add_tags :
+  ?recursive:bool ->
+  'a workflow_node ->
+  string list ->
+  unit
+(** Add tags imperatively to a node, if [recursive] is [true],  follow the
+    [edges] recursively to add tags. *)
+
+val node_id : 'a workflow_node -> string
+(** Get the unique ID of the workdlow node. *)
+
+val node_name : 'a workflow_node -> string
+(** Get the name of the workdlow node. *)
 
 (** {3 Legacy Deprecated API: Artifacts and Targets}
 
@@ -474,6 +492,8 @@ class type user_target =
     method on_failure_activate: user_target list
     method on_success_activate: user_target list
     method add_tags: string list -> unit
+    method add_recursive_tags : string list -> unit
+    method get_recursive_tags : string list
     (**/**)
   end
 

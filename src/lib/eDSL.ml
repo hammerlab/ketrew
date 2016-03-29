@@ -102,6 +102,8 @@ class type user_target =
     method metadata: [`String of string ] option
     method product: user_artifact
     method add_tags: string list -> unit
+    method add_recursive_tags : string list -> unit
+    method get_recursive_tags : string list
   end
 
 
@@ -150,6 +152,9 @@ let user_target_internal
     method product =
       Option.value_exn product 
         ~msg:(fmt "Target %s has no known product" self#name)
+    method add_recursive_tags _ =
+      failwith "user_target_internal does not support recursive tags"
+    method get_recursive_tags = []
 
   end
 
@@ -223,6 +228,8 @@ module Internal_representation = struct
     < name : string;
       activate : unit;
       add_tags : string list -> unit;
+      add_recursive_tags : string list -> unit;
+      get_recursive_tags : string list;
       id : Ketrew_pure.Internal_pervasives.Unique_id.t;
       depends_on : t list;
       on_failure_activate : t list;
@@ -246,6 +253,7 @@ let target_to_submit
   object (self)
     val mutable active = active
     val mutable additional_tags = []
+    val mutable recursive_tags = []
     method name = 
       match name with
       | None -> id
@@ -257,6 +265,9 @@ let target_to_submit
     method activate = active <- true
     method add_tags tags =
       additional_tags <- additional_tags @ tags |> List.dedup
+    method get_recursive_tags = recursive_tags
+    method add_recursive_tags tags =
+      recursive_tags <- recursive_tags @ tags |> List.dedup
     method render =
       Target.create ?metadata
         ~id:self#id
@@ -408,3 +419,14 @@ let to_display_string ?ansi_colors ?indentation (ut : user_target) =
 
 let workflow_to_string ?ansi_colors ?indentation w =
   to_display_string_internal ?ansi_colors ?indentation (w#render :> Internal_representation.t)
+
+let add_tags ?(recursive = false) node tags =
+  node#render#add_tags tags;
+  if recursive
+  then (
+    node#render#add_recursive_tags tags;
+  );
+  ()
+
+let node_id w = w#render#id
+let node_name w = w#render#name
