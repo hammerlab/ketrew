@@ -53,3 +53,13 @@ val create :
   [> `Long_running of string * string ]
 (** Create a “long-running” {!Ketrew_pure.Target.build_process} (run parameters
     are already serialized), see {!Edsl.yarn_application}. *)
+
+(** {3 Advanced Global Configuration} *)
+
+val max_name_length : int ref
+(* The distributed-shell applications create files (and read them); we have
+   seen it go wrong on some special characters or when reaching the maximal
+   filename length (of the filesystem, often 255 bytes).
+   As part of their sanitization, application-names are truncated to this value
+   (default [200]).
+*)
