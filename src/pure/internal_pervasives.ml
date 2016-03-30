@@ -265,6 +265,8 @@ module Display_markup = struct
   let option o ~f =
     Option.value_map ~f ~default:(Text "None") o
 
+  let date_now () = date (Time.now ())
+
   let rec log =
     function
     | Date f -> Time.log f
