@@ -37,10 +37,13 @@ module With_database = struct
     mutable database_handle: Database.t option;
     database_parameters: string;
     archival_age_threshold: [ `Days of float ];
+    activation_mutex : Lwt_mutex.t;
   }
   let create ~database_parameters ~archival_age_threshold =
+    let activation_mutex = Lwt_mutex.create () in
     return {
       database_handle = None; database_parameters; archival_age_threshold;
+      activation_mutex;
     }
 
   let database t =
@@ -91,6 +94,22 @@ module With_database = struct
         fail (`Database_unavailable (fmt "running DB action: %s" msg))
     end
 
+  let make_pointer_of_passive_target t ~target ~pointing_to =
+    let key = Target.id target in
+    let src = passive_targets_collection in
+    let dest = archived_targets_collection in
+    let pointer =
+      Target.Stored_target.make_pointer ~from:target ~pointing_to in
+    run_database_action ~msg:(fmt "pointerify-%s-from-%s-to-%s" key src dest) t
+      Database_action.(
+        seq [
+          unset ~collection:src key;
+          set ~collection:dest ~key Target.Stored_target.(serialize pointer)
+        ])
+    >>= fun () ->
+    return pointer
+
+
   let move_target t ~target ~src ~dest =
     (* Caller will assume `target` is the new value; it may have changed *)
     let key = Target.id target in
@@ -101,19 +120,6 @@ module With_database = struct
           set ~collection:dest ~key
             Target.Stored_target.(of_target target |> serialize)
         ])
-
-  let activate_target t ~target ~reason =
-    let newone = Target.(activate_exn target ~reason) in
-    move_target t ~target:newone ~src:passive_targets_collection
-      ~dest:active_targets_collection
-    >>= fun () ->
-    return newone
-
-  let add_or_update_targets t target_list =
-    run_database_action t
-      Database_action.(seq (List.map target_list ~f:set_target_db_action))
-      ~msg:(fmt "add_or_update_targets [%s]"
-              (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
   (* This will be called after an update and after fetching to
      make sure it gets done even when there are crashes or weirdly sync-ed DBs
@@ -158,6 +164,12 @@ module With_database = struct
     | Some _ ->
       return ()
     end
+
+  let add_or_update_targets t target_list =
+    run_database_action t
+      Database_action.(seq (List.map target_list ~f:set_target_db_action))
+      ~msg:(fmt "add_or_update_targets [%s]"
+              (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
 
   let update_target t trgt =
     add_or_update_targets t [trgt]
@@ -273,27 +285,6 @@ module With_database = struct
         >>| List.filter_opt)
     >>| List.concat
 
-  (* Alive should mean In-progess or activable *)
-  let alive_targets t =
-    get_collections_of_targets t
-      ~from:[passive_targets_collection; active_targets_collection]
-    >>= fun targets ->
-    let filtered =
-      List.filter_map targets ~f:(fun target ->
-          match Target.State.simplify (Target.state target) with
-          | `Failed
-          | `Successful -> None
-          | `In_progress
-          | `Activable -> Some target)
-    in
-    Logger.(
-      description_list [
-        "function", text "With_database.alive_targets";
-        "result", textf "%d targets, %d after filter"
-          (List.length targets) (List.length filtered);
-      ] |> log);
-    return filtered
-
   let alive_stored_targets t =
     get_collections_of_stored_targets t ~from:[
       passive_targets_collection;
@@ -303,6 +294,83 @@ module With_database = struct
     database t
     >>= fun db ->
     Database.get_all db ~collection:finished_targets_collection
+
+  let active_targets t =
+    get_collections_of_targets t ~from:[active_targets_collection]
+    >>= fun targets ->
+    let filtered =
+      List.filter_map targets ~f:(fun target ->
+          match Target.State.simplify (Target.state target) with
+          | `Failed
+          | `Successful
+          | `Activable -> None
+          | `In_progress -> Some target)
+    in
+    Logger.(
+      description_list [
+        "function", text "With_database.active_targets";
+        "result", textf "%d targets, %d after filter"
+          (List.length targets) (List.length filtered);
+      ] |> log);
+    return filtered
+
+  let activate_target t ~target ~reason =
+    let starts = Time.now () in
+    Lwt_mutex.with_lock t.activation_mutex begin fun () ->
+      let enters_mutex = Time.now () in
+      let log = ref [] in
+      begin
+        get_target t (Target.id target)
+        >>= fun fresh_target ->
+        begin match Target.state fresh_target |> Target.State.simplify with
+        | `Activable ->
+          log := Display_markup.("is-activatble", date_now ()) :: !log;
+          active_targets t
+          >>= fun current_living_targets ->
+          log := Display_markup.("get-living-targets", date_now ()) :: !log;
+          log := Display_markup.(
+              "living-targets",
+              textf "%d" (List.length current_living_targets)
+            ) :: !log;
+          begin match
+            List.find current_living_targets (Target.is_equivalent target)
+          with
+          | Some pointing_to ->
+            (* We found one, need to make a pointer *)
+            log := Display_markup.("equivalent-to",
+                                   textf "%s (%s)"
+                                     (Target.name pointing_to)
+                                     (Target.id pointing_to)) :: !log;
+            make_pointer_of_passive_target t ~target ~pointing_to
+          | None ->
+            log := Display_markup.("certified-fresh", date_now ()) :: !log;
+            let newone = Target.(activate_exn target ~reason) in
+            move_target t ~target:newone ~src:passive_targets_collection
+              ~dest:active_targets_collection
+            >>= fun () ->
+            return (Target.Stored_target.of_target newone)
+          end
+        | `In_progress
+        | `Successful
+        | `Failed ->
+          log := Display_markup.("is-not-activatble", date_now ()) :: !log;
+          return (Target.Stored_target.of_target fresh_target)
+        end
+      end
+      |> Lwt.map (fun x ->
+          let scenario = !log in
+          Logger.log Display_markup.(description_list [
+              "module", text "With_database";
+              "function", text "activate_target";
+              "database_parameters", path t.database_parameters;
+              "target", textf "%s (%s)" (Target.name target) (Target.id target);
+              "starts", date starts;
+              "enters_mutex", time_span (enters_mutex -. starts);
+              "returns", time_span (Time.now () -. enters_mutex);
+              "scenario", description_list scenario;
+            ]);
+          x)
+    end
 
 
   module Killing_targets = struct
@@ -417,7 +485,7 @@ module With_database = struct
       begin match tlist with
       | [] -> return []
       | _ :: _ ->
-        alive_targets t
+        active_targets t
         >>= fun current_living_targets ->
         (* current targets are alive, so activable or in_progress *)
         let stuff_to_actually_add =
@@ -708,8 +776,8 @@ let all_visible_targets t =
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason
   >>= fun new_one ->
-  let stored = Target.Stored_target.of_target new_one in
-  Cache_table.add_or_replace t.cache (Target.Stored_target.id stored) stored
+  (* let stored = Target.Stored_target.of_target new_one in *)
+  Cache_table.add_or_replace t.cache (Target.Stored_target.id new_one) new_one
   >>= fun () ->
   Event_source.trigger t.changes (`Nodes_changed [Target.id target]);
   return ()
