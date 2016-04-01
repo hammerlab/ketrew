@@ -121,20 +121,20 @@ module With_database = struct
             Target.Stored_target.(of_target target |> serialize)
         ])
 
-  (* This will be called after an update and after fetching to
-     make sure it gets done even when there are crashes or weirdly sync-ed DBs
-  *)
   let debug_archival =
     try Sys.getenv "DEBUG_ARCHIVAL" = "true"
     with _ -> false
+
+  let get_archival_threshold t  =
+    match debug_archival, t.archival_age_threshold with
+    | true, _ -> 60. *. 2.
+    | false, `Days d -> Time.day *. d
+
+  (* This will be called after an update and after fetching to
+     make sure it gets done even when there are crashes or weirdly sync-ed DBs
+  *)
   let clean_up_finished t ~from target =
-    let archival_threshold =
-      match debug_archival, t.archival_age_threshold with
-      | true, _ -> 
-        Printf.eprintf "debug archival 120. seconds!\n  \
-                        target: %s\n%!" (Target.id target);
-        60. *. 2.
-      | false, `Days d -> Time.day *. d in
+    let archival_threshold = get_archival_threshold t in
     let now = Time.now () in
     begin match Target.(state target |> State.finished_time) with
     | None -> return ()
@@ -574,6 +574,8 @@ module Cache_table = struct
 
   let reset t = Hashtbl.reset t; return ()
 
+  let remove t id = Hashtbl.remove t id
+
 end
 
 module String_mutable_set = struct
@@ -586,6 +588,15 @@ module String_mutable_set = struct
   let fold t ~init ~f =
     String_set.fold (fun elt prev -> f prev elt) !t init
   let length t = String_set.cardinal !t
+
+  let remove_list t l =
+    t := String_set.diff !t (String_set.of_list l)
+
+  (*
+    let x = of_list ["a"; "b"; "c"; "d"; "e"]
+    let () = remove_list x ["b"; "d"]
+    let l = String_set.elements !x
+  *)
 
 end
 
@@ -746,27 +757,136 @@ let get_target t id =
   in
   get_following_pointers ~key:id ~count:0
 
+(**
+
+   [should_garbage_collect] returns {[
+     [
+       | `No
+       | `Yes of (target_id * justification) list
+     ]
+   ]}
+   where [justification] is {[
+     [
+       | `Points_to of target_id  (* poits to another target that should be
+                                     collected *)
+       | `Time of Time.t (* Has the given finished-time *)
+     ]
+   ]}
+*)
+let rec should_garbage_collect ?(acc = []) t stored_target =
+  let check_target trgt =
+    let threshold = With_database.get_archival_threshold t.db in
+    let now = Time.now () in
+    begin match Target.(state trgt |> State.finished_time) with
+    | None -> return `No
+    | Some time when time +. threshold > now ->
+      (* fnished, but not old enough to be garbage collected *)
+      return `No
+    | Some time -> return (`Yes ((Target.id trgt, `Time time) :: acc))
+    end
+  in
+  begin match Target.Stored_target.get_target stored_target with
+  | `Pointer id ->
+    get_stored_target t id
+    >>= fun points_to ->
+    let item = id, `Points_to (Target.Stored_target.id points_to) in
+    should_garbage_collect ~acc:(item  :: acc) t points_to
+  | `Target t ->
+    check_target t
+  end
+
+(** Go through the [to_gc] list and remove those from the list-of-i cache, the
+    from the cache-table, and use {!With_database.get_stored_target} to make
+    sure {!With_database.clean_up_finished} is also called.
+
+    In the function {!all_visible_targets}, we call
+    {!perform_garbage_collection} inside a {!Lwt.async} call, so that garbage
+    collection does not bloc the UIs that depend on it.
+*)
+let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
+  let start_date = Time.now () in
+  let to_remove =
+    List.fold to_gc ~init:[] ~f:(fun prev (id, why) -> id :: prev) in
+  String_mutable_set.remove_list t.all_ids to_remove;
+  List.fold to_gc
+    ~init:(return (`P 0, `Min infinity, `Max 0., `Errors []))
+    ~f:begin fun prev_m (id, why) ->
+      prev_m
+      >>= fun (`P p, `Min mi, `Max ma, `Errors errors) ->
+      Cache_table.remove t.cache id;
+      begin
+        (* This will trigger archival/clean-up in the database too: *)
+        With_database.get_stored_target t.db id
+        >>< function
+        | `Ok _ -> 
+          begin match why with
+          | `Points_to _ ->
+            return (`P (p + 1), `Min mi, `Max ma, `Errors errors)
+          | `Time t ->
+            return (`P p, `Min (min t mi), `Max (max t ma), `Errors errors)
+          end
+        | `Error e ->
+          return (`P p, `Min mi, `Max ma, `Errors (e :: errors))
+      end
+    end
+  >>= fun (`P pointers, `Min min_time, `Max max_time, `Errors errors) ->
+  log_markup t Display_markup.([
+      "function", text "perform_garbage_collection";
+      "to-garabage-collect", (
+        let lgth = List.length to_gc in
+        description_list [
+          "stored-targets", textf "%d" lgth;
+          "pointers", textf "%d" pointers;
+          "finished-min", textf "%f" min_time;
+          "finished-max", textf "%f" max_time;
+          "threshold", time_span (With_database.get_archival_threshold t.db);
+          "errors", textf "%d" (List.length errors);
+          "details", (
+            match lgth with
+            | 0 -> text "None"
+            | lgth when lgth > 20 -> text "HIDDEN"
+            | less ->
+              description_list (List.map to_gc ~f:(fun (id, why) ->
+                  id, (match why with
+                    | `Points_to id -> textf "-> %s" id
+                    | `Time t -> concat [textf "finsihed on "; date t]
+                    )))
+          );
+        ]
+      );
+      "start_date", date start_date;
+      "total-time", time_span (Time.now () -. start_date);
+    ]);
+  return ()
 
 let all_visible_targets t =
   let start_date = Time.now () in
-  (*
-  With_database.iter_all_target_ids t.db
-  >>= fun iterator ->
-     *)
-  (* let iterator_date = Time.now () in *)
-  String_mutable_set.fold t.all_ids ~init:(return []) ~f:(fun prev_m id ->
-      prev_m >>= fun prev_list ->
+  String_mutable_set.fold t.all_ids ~init:(return (`All [], `Gc []))
+    ~f:begin fun prev_m id ->
+      prev_m >>= fun (`All prev_list, `Gc prev_gc) ->
       get_stored_target t ~key:id
       >>= fun stored ->
+      should_garbage_collect t stored
+      >>= fun gc_result ->
+      let gc =
+        match gc_result with
+        | `No -> `Gc prev_gc
+        | `Yes l -> `Gc (prev_gc @ l)
+      in
       begin match Target.Stored_target.get_target stored with
-      | `Pointer _ -> return prev_list
-      | `Target t -> return (t :: prev_list)
-      end)
-  >>= fun all_targets ->
+      | `Pointer _ -> return (`All prev_list, gc)
+      | `Target t -> return (`All (t :: prev_list), gc)
+      end
+    end
+  >>= fun (`All all_targets, `Gc to_gc) ->
+  Lwt.async (fun () ->
+      perform_garbage_collection t to_gc
+    );
   log_markup t Display_markup.([
       "function", text "all_visible_targets";
       "all_visible_targets", textf "%d targets" (List.length all_targets);
       "all_ids", textf "%d ids" (String_mutable_set.length t.all_ids);
+      "to-garabage-collect", textf "%d" (List.length to_gc);
       "start_date", date start_date;
       (* "iterator", time_span (iterator_date -. start_date); *)
       "total-time", time_span (Time.now () -. start_date);
