@@ -93,10 +93,6 @@ module Server_state = struct
     server_configuration: Configuration.server;
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
-    all_connections:
-      (string,
-       [`Open of Time.t | `Request of Time.t | `Closed of Time.t] list)
-        Hashtbl.t;
     deferred_queries: Deferred_queries.t;
     process_holder: Process_holder.t;
     mutable status : [ `On | `Off ]; (* For now the status just tracks
@@ -116,13 +112,12 @@ M*)
   let create ~state ~process_holder ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     all_connections = Hashtbl.create 42; process_holder;
+     process_holder;
      deferred_queries = Deferred_queries.create (); status = `On}
 
   let markup t =
     let open Display_markup in
     description_list [
-      "Connections", textf "%d" (Hashtbl.length t.all_connections);
       "Deferred_queries", Deferred_queries.markup t.deferred_queries;
     ]
 
@@ -612,7 +607,6 @@ module Commands = struct
   let parse = function
     | "die"                   -> `Die
     | "reload-auth"           -> `ReloadAuth
-    | "dump-all-connections"  -> `DumpAllConnections
     | is_get_log ->
         if (String.sub is_get_log 0 8) = Some "get-log:" then
           match String.split is_get_log ~on:(`Character ':') with
@@ -643,33 +637,6 @@ module Commands = struct
       | `Error e ->
         log_error e Log.(s "Could not reload Authentication: "
           % Authentication.log server_state.authentication);
-        return ()
-
-  let dump_all_connections server_state =
-    let uniq = Unique_id.create () in
-    IO.with_out_channel (`Overwrite_file ("all-connections-" ^ uniq))
-      ~f:(fun o ->
-          Hashtbl.fold (fun id status prev ->
-              prev >>= fun () ->
-              IO.write o (fmt "%s:\n" id)
-              >>= fun () ->
-              List.fold (List.rev status) ~init:(return ())
-                ~f:(fun prev status ->
-                    prev >>= fun () ->
-                    let ti = Time.to_filename in
-                    IO.write o
-                      (fmt "    %s\n"
-                        begin match status with
-                        | `Open t -> fmt "Open %s" (ti t)
-                        | `Request t -> fmt "Request %s" (ti t)
-                        | `Closed t -> fmt "Closed %s" (ti t)
-                        end)))
-            server_state.all_connections
-            (return ()))
-      >>< function
-      | `Ok () -> return ()
-      | `Error e ->
-        log_error e Log.(s "dump-all-connections");
         return ()
 
   let get_log format path =
@@ -713,8 +680,6 @@ let read_loop ~server_state ~file_path pipe =
           Commands.die server_state file_path
         | `ReloadAuth ->
           Commands.reload_authentication ~server_state
-        | `DumpAllConnections ->
-          Commands.dump_all_connections server_state
         | `GetLog (format, path) ->
           Commands.get_log format path
         | `UnrecognizedFormat format ->
@@ -861,14 +826,6 @@ let start_listening_on_connections ~server_state =
         in
         let request_callback (_, conn_id) request body =
           let id = Cohttp.Connection.to_string conn_id in
-          begin match Hashtbl.find server_state.all_connections id with
-          | some ->
-            Hashtbl.replace server_state.all_connections
-              id (`Request Time.(now ()) :: some);
-          | exception _ ->
-            Hashtbl.replace server_state.all_connections
-              id (`Request Time.(now ()) :: []);
-          end;
           let req = Request.create ~body ~cohttp_id:id request in
           handle_request ~server_state req
           >>= fun high_level_answer ->
@@ -913,15 +870,6 @@ let start_listening_on_connections ~server_state =
           return cohttp_answer
         in
         let conn_closed (_, conn_id) =
-          let id = Cohttp.Connection.to_string conn_id in
-          begin match Hashtbl.find server_state.all_connections id with
-          | some ->
-            Hashtbl.replace server_state.all_connections
-              id (`Open Time.(now ()) :: some);
-          | exception _ ->
-            Hashtbl.replace server_state.all_connections
-              id (`Open Time.(now ()) :: []);
-          end;
           Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id)
                @ verbose);
         in
