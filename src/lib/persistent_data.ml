@@ -903,12 +903,27 @@ let target_strict_state trgt =
   | false, false -> `Active
   end
 
+(** [find_all_orphans] goes through the cache and returns all the targets that
+    are passive but not reachable, i.e. that can't be activated, ever.
+
+    The implementation follows 3 steps:
+
+    - Go through [t.all_ids] and collect all the active and passive targets;
+    - Follow all edges from the active ones, to find the reachable passives;
+    - Substract the above from all the passives.
+
+    The definition of active is here quite conservative, cf.
+    {!target_strict_state}.
+
+    The function logs at the end; one can trace it with 
+    ["debug_log_functions=find_all_orphans"].
+
+*)
 let find_all_orphans t =
   let log_items = ref Display_markup.[
       "function", text "find_all_orphans";
       "start", date_now ();
     ] in
-  (* let start_date = Time.now () in *)
   String_mutable_set.fold t.all_ids
     ~init:(return (`Passives [], `Actives []))
     ~f:begin fun prev_m id ->
@@ -933,6 +948,8 @@ let find_all_orphans t =
       );
       "passives", textf "%d targets" (List.length passives);
     ];
+  (* To find all the reachable-passives, we use [to_check] as a stack of
+     targets to explore; and [acc] as the accumulation of results: *)
   let to_check = ref actives in
   let rec reachable_passives acc () =
     match !to_check with
@@ -946,7 +963,8 @@ let find_all_orphans t =
       in
       List.fold all_edges ~init:(return []) ~f:(fun prev_m id ->
           prev_m >>= fun prev ->
-          get_target t id
+          get_target t id (* we actively want to follow pointers to find them
+                             all *)
           >>= fun trgt ->
           begin match target_strict_state trgt with
           | `Finished -> return prev
