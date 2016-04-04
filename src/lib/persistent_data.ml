@@ -949,12 +949,22 @@ let find_all_orphans t =
       "passives", textf "%d targets" (List.length passives);
     ];
   (* To find all the reachable-passives, we use [to_check] as a stack of
-     targets to explore; and [acc] as the accumulation of results: *)
+     targets to explore; and [acc] as the accumulation of results.
+  
+     The list [checked] is used to control against infinite loops (depending on
+     the amount of equivalent targets, this may also be speeding up the
+     search).
+  *)
   let to_check = ref actives in
+  let checked = ref [] in
   let rec reachable_passives acc () =
     match !to_check with
     | [] -> return acc
+    | one :: more when List.exists !checked ~f:Target.(fun c -> id c = id one) ->
+      to_check := more;
+      reachable_passives acc ()
     | one :: more ->
+      checked := one :: !checked;
       to_check := more;
       let all_edges =
         Target.depends_on one
