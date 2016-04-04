@@ -893,6 +893,99 @@ let all_visible_targets t =
     ]);
   return all_targets
 
+let target_strict_state trgt =
+  let is_finished = Target.(state trgt |> State.Is.finished) in
+  let is_passive = Target.(state trgt |> State.Is.passive) in
+  begin match is_finished, is_passive with
+  | true, true -> assert false
+  | true, false -> `Finished
+  | false, true -> `Passive
+  | false, false -> `Active
+  end
+
+let find_all_orphans t =
+  let log_items = ref Display_markup.[
+      "function", text "find_all_orphans";
+      "start", date_now ();
+    ] in
+  (* let start_date = Time.now () in *)
+  String_mutable_set.fold t.all_ids
+    ~init:(return (`Passives [], `Actives []))
+    ~f:begin fun prev_m id ->
+      prev_m >>= fun ((`Passives pl, `Actives al) as prev) ->
+      get_stored_target t ~key:id
+      >>= fun stored ->
+      begin match Target.Stored_target.get_target stored with
+      | `Pointer id ->
+        return prev
+      | `Target trgt ->
+        begin match target_strict_state trgt with
+        | `Finished -> return prev
+        | `Passive -> return (`Passives (trgt :: pl), `Actives al)
+        | `Active -> return (`Passives pl, `Actives (trgt :: al))
+        end
+      end
+    end
+  >>= fun (`Passives passives, `Actives actives)->
+  log_items := !log_items @ Display_markup.[
+      "actives", itemize (
+        List.map actives ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st))
+      );
+      "passives", textf "%d targets" (List.length passives);
+    ];
+  let to_check = ref actives in
+  let rec reachable_passives acc () =
+    match !to_check with
+    | [] -> return acc
+    | one :: more ->
+      to_check := more;
+      let all_edges =
+        Target.depends_on one
+        @ Target.on_failure_activate one
+        @ Target.on_success_activate one
+      in
+      List.fold all_edges ~init:(return []) ~f:(fun prev_m id ->
+          prev_m >>= fun prev ->
+          get_target t id
+          >>= fun trgt ->
+          begin match target_strict_state trgt with
+          | `Finished -> return prev
+          | `Passive ->
+            to_check := trgt :: !to_check;
+            return (trgt :: prev)
+          | `Active ->
+            to_check := trgt :: !to_check;
+            return prev
+          end
+        )
+      >>= fun passives ->
+      reachable_passives (acc @ passives) ()
+  in
+  reachable_passives [] ()
+  >>| List.dedup ~compare:(fun a b -> compare (Target.id a) (Target.id b))
+  >>= fun reachable ->
+  log_items := !log_items @ Display_markup.[
+      "reachable", itemize (
+        List.map reachable
+          ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st))
+      );
+    ];
+  let unreachable_passives =
+    List.filter passives ~f:(fun p ->
+        List.for_all reachable ~f:(fun rp -> Target.id rp <> Target.id p))
+  in
+  log_items := !log_items @ Display_markup.[
+      "unreachable", itemize (
+        List.map unreachable_passives
+          ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st));
+      );
+      "end", date_now ();
+    ];
+  Logger.log Display_markup.(description_list !log_items);
+  return unreachable_passives
+
+
+
 let activate_target t ~target ~reason =
   With_database.activate_target t.db ~target ~reason
   >>= fun new_one ->

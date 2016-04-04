@@ -290,12 +290,19 @@ module Run_automaton = struct
   (*
     - Call Target.Automaton.step, do the action requested, call the
       target function, save-it
+    - find orphans, kill them all
     - Process Murders to-do list (set as `Killing, remove from list)
-    - Process Archival to-do list (?)
     - Process to-add list
   *)
     let concurrency_number =
       Configuration.concurrent_automaton_steps t.configuration in
+    let step_log = ref Display_markup.[
+        Typed_log.Item.Constants.word_module, text "Engine";
+        "function", text "step";
+        "start-time", date_now ();
+        "concurrency_number", textf "%d" concurrency_number;
+      ] in
+    let transitions_log = ref [] in
     let step_target target :
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
@@ -311,11 +318,13 @@ module Run_automaton = struct
         | `Ok (new_target, progress) ->
           Persistent_data.update_target t.data new_target
           >>= fun () ->
-          log_info
-            Log.(s "Transition for target: "
-                 % Target.log target
-                 % s "Done: " % n
-                 % Target.(State.log ~depth:2 (state new_target)));
+          transitions_log := !transitions_log @ Display_markup.[
+              concat [
+                text_of_loggable Target.log target;
+                text " -> ";
+                textf "%s" (Target.State.name @@ Target.state new_target);
+              ]
+            ];
           return [progress]
         | `Error `Empty_should_not_exist ->
           return []
@@ -334,39 +343,77 @@ module Run_automaton = struct
       ~f:begin fun (`Happenings previous_happenings, `Targets targets, `Count count) ~target ->
         if List.length targets < concurrency_number - 1 then
           return (`Happenings previous_happenings, `Targets (target :: targets), `Count (count + 1))
-        else
+        else (
+          step_log := !step_log @ Display_markup.[
+              fmt "concurrent-step-%d" count, textf "%d targets" (List.length targets + 1);
+            ];
           concurrent_step (target :: targets)
           >>= fun happens ->
           return (`Happenings (happens @ previous_happenings), `Targets [], `Count (count + 1))
+        )
       end
     >>= fun (`Happenings hap, `Targets remmaining, `Count before_remaining) ->
     concurrent_step remmaining
     >>= fun more_hap ->
+    step_log := !step_log @ [
+        "after-automaton-steps", Display_markup.date_now ()
+      ];
     let has_progressed = List.exists ~f:((=) `Changed_state) (more_hap @ hap) in
+    Persistent_data.find_all_orphans t.data
+    >>= fun orphans ->
+    step_log := !step_log @ [
+        "after-find_all_orphans", Display_markup.date_now ()
+      ];
+    Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data
+      (List.map orphans ~f:(fun tr -> Target.id tr))
+    >>= fun () ->
     Persistent_data.Killing_targets.proceed_to_mass_killing t.data
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data
     >>= fun adding_did_something ->
+    step_log := 
+      begin
+        let open Display_markup in
+        let bool b = textf "%b" b in
+        !step_log @ [
+          "transitions", (
+            match List.length !transitions_log with
+            | 0 -> text "None"
+            | a_few when a_few < 10 ->
+              itemize !transitions_log
+            | a_lot -> textf "%d" a_lot
+          );
+          "has_progressed", bool has_progressed;
+          "adding_did_something", bool adding_did_something;
+          "killing_did_something", bool killing_did_something;
+          "orphans-killed", (
+            match orphans with
+            | [] -> text "None"
+            | _ ->
+              description_list
+                (List.map orphans
+                   ~f:(fun tr -> Target.id tr, text (Target.name tr)))
+          );
+          "end-time", date_now ();
+        ]
+      end;
     Logger.(
-      let bool b = textf "%b" b in
-      description_list [
-        Typed_log.Item.Constants.word_module, text "Engine";
-        Typed_log.Item.Constants.word_info, textf "End of step";
-        "has_progressed", bool has_progressed;
-        "adding_did_something", bool adding_did_something;
-        "killing_did_something", bool killing_did_something;
-        "concurrent_automaton_steps", textf "%d" concurrency_number;
-        "Targets-visited",
-        textf "%d + %d" before_remaining (List.length remmaining);
-      ] |> log
+      description_list !step_log |> log
     );
     return (has_progressed || adding_did_something || killing_did_something)
+
+  let sleep_time =
+    try
+      if Sys.getenv "KETREW_DEBUG_SLOW_ENGINE" = "true"
+      then 3.0
+      else 0.1
+    with _ -> 0.1
 
   let fix_point state =
     let rec fix_point ~count =
       step state
       >>= fun progressed ->
-      (System.sleep 0.1 >>< fun _ -> return ())
+      (System.sleep sleep_time >>< fun _ -> return ())
       >>= fun () ->
       let count = count + 1 in
       begin match progressed with
