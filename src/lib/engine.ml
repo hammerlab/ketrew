@@ -344,9 +344,6 @@ module Run_automaton = struct
         if List.length targets < concurrency_number - 1 then
           return (`Happenings previous_happenings, `Targets (target :: targets), `Count (count + 1))
         else (
-          step_log := !step_log @ Display_markup.[
-              fmt "concurrent-step-%d" count, textf "%d targets" (List.length targets + 1);
-            ];
           concurrent_step (target :: targets)
           >>= fun happens ->
           return (`Happenings (happens @ previous_happenings), `Targets [], `Count (count + 1))
@@ -387,12 +384,14 @@ module Run_automaton = struct
           "adding_did_something", bool adding_did_something;
           "killing_did_something", bool killing_did_something;
           "orphans-killed", (
-            match orphans with
-            | [] -> text "None"
-            | _ ->
+            let ornb = List.length orphans in
+            match ornb with
+            | 0 -> text "None"
+            | some when some < 20 -> 
               description_list
                 (List.map orphans
                    ~f:(fun tr -> Target.id tr, text (Target.name tr)))
+            | a_lot -> textf "%d" a_lot
           );
           "end-time", date_now ();
         ]
