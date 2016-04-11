@@ -164,7 +164,7 @@ val add_targets: t ->
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Submit a list of targets to the server/engine. This is the low-level API
-    deadling with {!Ketrew_pure.Target.t} values; for use in the EDSL please
+    dealing with {!Ketrew_pure.Target.t} values; for use in the EDSL please
     see {!submit_workflow} below. *)
 
 val call_process_holder: t -> Protocol.Process_sub_protocol.up ->

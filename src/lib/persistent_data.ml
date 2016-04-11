@@ -139,7 +139,7 @@ module With_database = struct
     begin match Target.(state target |> State.finished_time) with
     | None -> return ()
     | Some time when
-        (* fnished, but not old enough to go to archive *)
+        (* finished, but not old enough to go to archive *)
         time +. archival_threshold > now ->
       if debug_archival then
         Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
@@ -795,13 +795,16 @@ let rec should_garbage_collect ?(acc = []) t stored_target =
     check_target t
   end
 
-(** Go through the [to_gc] list and remove those from the list-of-i cache, the
-    from the cache-table, and use {!With_database.get_stored_target} to make
-    sure {!With_database.clean_up_finished} is also called.
+(** Go through the [to_gc] list and:
+    
+    - remove them from the list-of-ids cache,
+    - remove the corresponding stored-target from the cache-table,
+    - and use {!With_database.get_stored_target} to make sure
+    {!With_database.clean_up_finished} is also called.
 
     In the function {!all_visible_targets}, we call
     {!perform_garbage_collection} inside a {!Lwt.async} call, so that garbage
-    collection does not bloc the UIs that depend on it.
+    collection does not block the UIs that depend on it.
 *)
 let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
   let start_date = Time.now () in
@@ -832,7 +835,7 @@ let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
   >>= fun (`P pointers, `Min min_time, `Max max_time, `Errors errors) ->
   log_markup t Display_markup.([
       "function", text "perform_garbage_collection";
-      "to-garabage-collect", (
+      "to-garbage-collect", (
         let lgth = List.length to_gc in
         description_list [
           "stored-targets", textf "%d" lgth;
@@ -854,7 +857,7 @@ let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
           );
         ]
       );
-      "start_date", date start_date;
+      "start-date", date start_date;
       "total-time", time_span (Time.now () -. start_date);
     ]);
   return ()
@@ -887,7 +890,7 @@ let all_visible_targets t =
       "all_visible_targets", textf "%d targets" (List.length all_targets);
       "all_ids", textf "%d ids" (String_mutable_set.length t.all_ids);
       "to-garabage-collect", textf "%d" (List.length to_gc);
-      "start_date", date start_date;
+      "start-date", date start_date;
       (* "iterator", time_span (iterator_date -. start_date); *)
       "total-time", time_span (Time.now () -. start_date);
     ]);
