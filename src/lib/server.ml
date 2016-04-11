@@ -93,10 +93,6 @@ module Server_state = struct
     server_configuration: Configuration.server;
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
-    all_connections:
-      (string,
-       [`Open of Time.t | `Request of Time.t | `Closed of Time.t] list)
-        Hashtbl.t;
     deferred_queries: Deferred_queries.t;
     process_holder: Process_holder.t;
     mutable status : [ `On | `Off ]; (* For now the status just tracks
@@ -116,13 +112,12 @@ M*)
   let create ~state ~process_holder ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     all_connections = Hashtbl.create 42; process_holder;
+     process_holder;
      deferred_queries = Deferred_queries.create (); status = `On}
 
   let markup t =
     let open Display_markup in
     description_list [
-      "Connections", textf "%d" (Hashtbl.length t.all_connections);
       "Deferred_queries", Deferred_queries.markup t.deferred_queries;
     ]
 
@@ -146,21 +141,61 @@ type 'error service =
 (** Extract information from HTTP requests. *)
 module Request = struct
 
-  let parameter req =
+  type t = {
+    id: string;
+    cohttp_id: string;
+    body: Cohttp_lwt_body.t;
+    req: Cohttp.Request.t;
+    mutable log: (string * Display_markup.t) list;
+  }
+  let create ~body ~cohttp_id req =
+    let id = Unique_id.create () in
+    {
+      id; cohttp_id;
+      body; req; log = Display_markup.[
+          "module", text "Server";
+          "function", text "create-request";
+          "creation", date_now ();
+          "id", text id;
+          "cohttp_id", text cohttp_id;
+          "request", of_pp Cohttp.Request.pp_hum req;
+        ];
+    }
+
+  let add_log req l = req.log <- req.log @ l
+
+  let finalize req =
+    Logger.log Display_markup.(
+        description_list (
+          req.log
+          @ [
+            "finalize", date_now ();
+          ]
+        )
+      )
+
+  let parameter {req; _} =
     Uri.get_query_param (Cohttp.Request.uri req)
 
-  let path req =
+  let path {req; _} =
     Uri.path (Cohttp.Request.uri req)
 
-  let to_sexp =
-    Cohttp.Request.sexp_of_t
+  let log {id; req; _} =
+    Log.(braces (
+        s "Id"% s id % sp %s "Content: " % sexp Cohttp.Request.sexp_of_t req
+      ))
 
   (** Check that it is a [`POST], get the {i non-empty} body; or fail. *)
-  let get_post_body request ~body =
-    begin match Cohttp.Request.meth request with
+  let get_post_body ({req; body; _} as request) =
+    begin match Cohttp.Request.meth req with
     | `POST ->
       wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
         (fun () -> Cohttp_lwt_body.to_string body)
+      >>= fun str ->
+      add_log request Display_markup.[
+          "body", big_string str;
+        ];
+      return str
     | other ->
       wrong_request "wrong method, wanted post" (Cohttp.Code.string_of_method other)
     end
@@ -464,11 +499,17 @@ let message_of_body body =
   wrap_preemptively ~on_exn:(fun e -> `Failure (Printexc.to_string e))
     (fun () -> Protocol.Up_message.deserialize_exn body)
 
-let api_service ~server_state ~body req =
+let api_service ~server_state req =
   let token = Request.parameter req "token" in
-  Request.get_post_body req ~body
-  >>= message_of_body
-  >>= answer_message ~server_state ?token
+  Request.add_log req Display_markup.[
+      "service", text "api";
+      "token", option ~f:text token;
+    ];
+  Request.get_post_body req
+  >>= fun body ->
+  message_of_body body
+  >>= fun up_message ->
+  answer_message ~server_state ?token up_message
   >>= fun msg ->
   return (`Message (`Json, msg))
 
@@ -477,6 +518,12 @@ let apijsonp_service ~server_state req =
   let token = Request.parameter req "token" in
   let body = Request.parameter req "message" in
   let callback = Request.parameter req "callback" in
+  Request.add_log req Display_markup.[
+      "service", text "api-jsonp";
+      "token", option ~f:text token;
+      "message", option ~f:big_string body;
+      "callback", option ~f:text callback;
+    ];
   begin match body with
   | None -> wrong_request "missing jsonp-message" ""
   | Some b -> begin match callback with
@@ -496,27 +543,33 @@ let apijsonp_service ~server_state req =
         % i (String.length page) %s " bytes"
         %sp % parens (s "Callback: " % quote callback)
         @ verbose);
+  Request.add_log req Display_markup.[
+      "return", big_string page;
+    ];
   return (`Page page)
 
 let html_page () = Client_html.gui_page
 
-let gui_service ~server_state ~body req =
+let gui_service ~server_state req =
   let token = Request.parameter req "token" in
   ensure_can server_state.authentication ?token `Browse_gui
     ~read_only_mode:(Configuration.read_only_mode
                        server_state.server_configuration)
   >>= fun () ->
+  Request.add_log req Display_markup.[
+      "service", text "GUI-html-page";
+    ];
   return (`Page (html_page ()))
 
 (** {2 Dispatcher} *)
 
-let handle_request ~server_state ~body req : (answer, _) Deferred_result.t =
-  log_info Log.(s "Request-in: " % sexp Request.to_sexp req);
+let handle_request ~server_state req : (answer, _) Deferred_result.t =
+  log_info Log.(s "Request-in: " % Request.log req);
   match Request.path req with
   | "/hello"    -> return `Unit
-  | "/api"      -> api_service ~server_state ~body req
+  | "/api"      -> api_service ~server_state req
   | "/apijsonp" -> apijsonp_service ~server_state req
-  | "/gui"      -> gui_service ~server_state ~body req
+  | "/gui"      -> gui_service ~server_state req
   | other       -> wrong_request "Wrong path" other
 
 (** {2 Start/Stop The Server} *)
@@ -554,7 +607,6 @@ module Commands = struct
   let parse = function
     | "die"                   -> `Die
     | "reload-auth"           -> `ReloadAuth
-    | "dump-all-connections"  -> `DumpAllConnections
     | is_get_log ->
         if (String.sub is_get_log 0 8) = Some "get-log:" then
           match String.split is_get_log ~on:(`Character ':') with
@@ -585,33 +637,6 @@ module Commands = struct
       | `Error e ->
         log_error e Log.(s "Could not reload Authentication: "
           % Authentication.log server_state.authentication);
-        return ()
-
-  let dump_all_connections server_state =
-    let uniq = Unique_id.create () in
-    IO.with_out_channel (`Overwrite_file ("all-connections-" ^ uniq))
-      ~f:(fun o ->
-          Hashtbl.fold (fun id status prev ->
-              prev >>= fun () ->
-              IO.write o (fmt "%s:\n" id)
-              >>= fun () ->
-              List.fold (List.rev status) ~init:(return ())
-                ~f:(fun prev status ->
-                    prev >>= fun () ->
-                    let ti = Time.to_filename in
-                    IO.write o
-                      (fmt "    %s\n"
-                        begin match status with
-                        | `Open t -> fmt "Open %s" (ti t)
-                        | `Request t -> fmt "Request %s" (ti t)
-                        | `Closed t -> fmt "Closed %s" (ti t)
-                        end)))
-            server_state.all_connections
-            (return ()))
-      >>< function
-      | `Ok () -> return ()
-      | `Error e ->
-        log_error e Log.(s "dump-all-connections");
         return ()
 
   let get_log format path =
@@ -655,8 +680,6 @@ let read_loop ~server_state ~file_path pipe =
           Commands.die server_state file_path
         | `ReloadAuth ->
           Commands.reload_authentication ~server_state
-        | `DumpAllConnections ->
-          Commands.dump_all_connections server_state
         | `GetLog (format, path) ->
           Commands.get_log format path
         | `UnrecognizedFormat format ->
@@ -803,31 +826,36 @@ let start_listening_on_connections ~server_state =
         in
         let request_callback (_, conn_id) request body =
           let id = Cohttp.Connection.to_string conn_id in
-          begin match Hashtbl.find server_state.all_connections id with
-          | some ->
-            Hashtbl.replace server_state.all_connections
-              id (`Request Time.(now ()) :: some);
-          | exception _ ->
-            Hashtbl.replace server_state.all_connections
-              id (`Request Time.(now ()) :: []);
-          end;
-          handle_request ~server_state ~body request
+          let req = Request.create ~body ~cohttp_id:id request in
+          handle_request ~server_state req
           >>= fun high_level_answer ->
           (debug_make_server_slow () >>= fun _ -> return ())
           >>= fun () ->
           begin match high_level_answer with
           | `Ok `Unit ->
+            Request.add_log req Display_markup.[
+                "respond-unit", text ""
+              ];
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body:"" ()
           | `Ok (`Message (`Json, msg)) ->
             let body = Protocol.Down_message.serialize msg in
+            Request.add_log req Display_markup.[
+                "respond-message", big_string body;
+              ];
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
           | `Ok (`Page body) ->
+            Request.add_log req Display_markup.[
+                "respond-page", big_string body;
+              ];
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
           | `Error e ->
             log_error e
               Log.(s "Error while handling the request: conn_id: "
                    % s id % s ", request: "
-                   % sexp Request.to_sexp request);
+                   % Request.log req);
+            Request.add_log req Display_markup.[
+                "error", text (Error.to_string e);
+              ];
             let body =
               if return_error_messages
               then "Error: " ^ (Error.to_string e)
@@ -835,18 +863,13 @@ let start_listening_on_connections ~server_state =
             Cohttp_lwt_unix.Server.respond_string ~status:`Not_found ~body ()
           end
           >>= fun ((response, body) as cohttp_answer) ->
+          Request.add_log req Display_markup.[
+              "response", of_pp Cohttp.Response.pp_hum response;
+            ];
+          Request.finalize req;
           return cohttp_answer
         in
         let conn_closed (_, conn_id) =
-          let id = Cohttp.Connection.to_string conn_id in
-          begin match Hashtbl.find server_state.all_connections id with
-          | some ->
-            Hashtbl.replace server_state.all_connections
-              id (`Open Time.(now ()) :: some);
-          | exception _ ->
-            Hashtbl.replace server_state.all_connections
-              id (`Open Time.(now ()) :: []);
-          end;
           Log.(sf "conn %S closed" (Cohttp.Connection.to_string conn_id)
                @ verbose);
         in
@@ -911,6 +934,32 @@ let status ~configuration =
       fail (`Server_status_error (Printexc.to_string other_exn))
   end
 
+(** This function starts running a query on the engine asynchronously so the
+    cache starts getting filled before the user does the first query from a UI.
+*)
+let async_start_filling_cache server_state =
+  Lwt.async (fun () ->
+      let start = Time.now () in
+      Engine.get_list_of_target_ids server_state.state
+        Protocol.Up_message.{time_constraint = `All; filter = `True}
+      >>< begin function
+      | `Ok l -> return Display_markup.("Ok", textf "%d IDs" (List.length l))
+      | `Error e -> return Display_markup.("Error", text (Error.to_string e))
+      end
+      >>= fun item ->
+      Logger.log Display_markup.(description_list (
+          [
+            "module", text "Server";
+            "function", text "async_start_filling_cache";
+            "start", date start;
+            "end", date_now ();
+          ]
+          @ [item]
+        )
+        );
+      return ()
+    );
+  ()
 
 let start ~just_before_listening ~configuration  =
   Log.(s "Set preemptive bounds: 10, 52" @ verbose);
@@ -969,6 +1018,7 @@ let start ~just_before_listening ~configuration  =
         exit 0) in
   log_info Log.(s "Start-Server: Starting the Engine loop");
   start_engine_loop ~server_state;
+  async_start_filling_cache server_state;
   log_info Log.(s "Start-Server: Starting listening on command-pipe");
   start_listening_on_command_pipe ~server_state
   >>= fun () ->

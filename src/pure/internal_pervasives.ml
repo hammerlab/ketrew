@@ -267,6 +267,16 @@ module Display_markup = struct
 
   let date_now () = date (Time.now ())
 
+  let of_pp pp a =
+    ignore (Format.flush_str_formatter ());
+    (pp Format.str_formatter a);
+    Format.flush_str_formatter () |> code_block
+
+  let big_string ?(max_display = 50) s =
+    match String.sub s ~index:0 ~length:max_display with
+    | None -> textf "%S" s
+    | Some substr -> textf "%S... %d Bytes" substr (String.length s)
+
   let rec log =
     function
     | Date f -> Time.log f

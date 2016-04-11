@@ -99,6 +99,17 @@ val update_target :
    | `Database_unavailable of string ])
     Deferred_result.t
 
+val find_all_orphans: 
+  t ->
+  (Ketrew_pure.Target.t list,
+   [> `Database of Trakeva.Error.t
+   | `Database_unavailable of string
+   | `Missing_data of string
+   | `Target of [> `Deserilization of string ] ])
+    Deferred_result.t
+(** [find_all_orphans] goes through the cache and returns all the targets that
+    are passive but not reachable, i.e. that can't be activated, ever. *)
+
 module Change : sig
   type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
     [@@deriving show]
