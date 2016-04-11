@@ -780,7 +780,7 @@ let rec should_garbage_collect ?(acc = []) t stored_target =
     begin match Target.(state trgt |> State.finished_time) with
     | None -> return `No
     | Some time when time +. threshold > now ->
-      (* fnished, but not old enough to be garbage collected *)
+      (* finished, but not old enough to be garbage collected *)
       return `No
     | Some time -> return (`Yes ((Target.id trgt, `Time time) :: acc))
     end
