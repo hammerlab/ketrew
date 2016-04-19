@@ -112,24 +112,34 @@ val next_changes: t -> (Persistent_data.Change.t list, 'a) Deferred_result.t
     this stream is itself rate-limited. *)
 
 module Run_automaton : sig
+
+  type step_allowed_errors = [
+    | `Database of  Trakeva.Error.t
+    | `Database_unavailable of Ketrew_pure.Target.id
+    | `Missing_data of Ketrew_pure.Target.id
+    | `Target of [ `Deserilization of string ]
+    | `List of step_allowed_errors list
+  ]
+  (** This type represents the errors that are allowed to escape the {!step}
+      function.
+  
+      Those errors are so fatal that the engine should not really continue:
+      the database is not responding, or some data is missing or has a wrong
+      format.
+
+      The type system makes sure that all other errors are dealt with by the
+      state machine.
+  *)
+
   val step :
     t ->
-    (bool,
-     [> `Database of  Trakeva.Error.t
-     | `Database_unavailable of Ketrew_pure.Target.id
-     | `Missing_data of Ketrew_pure.Target.id
-     | `Target of [> `Deserilization of string ] ])
-      Deferred_result.t
+    (bool, step_allowed_errors ) Deferred_result.t
   (** Run one step of the engine; [step] returns [true] if something happened. *)
 
   val fix_point: t ->
-    ([ `Steps of int],
-     [> `Database of Trakeva.Error.t
-     | `Database_unavailable of Ketrew_pure.Target.id
-     | `Missing_data of Ketrew_pure.Target.id
-     | `Target of [> `Deserilization of string ] ])
-      Deferred_result.t
-      (** Run {!step} many times until nothing happens or nothing “new” happens. *)
+    ([ `Steps of int], step_allowed_errors) Deferred_result.t
+    (** Run {!step} many times until nothing happens or nothing “new” happens. *)
+
 end
 
 val get_status : t -> Ketrew_pure.Target.id ->

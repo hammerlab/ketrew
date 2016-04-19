@@ -727,6 +727,8 @@ let start_engine_loop ~server_state =
   let time_step = 1. in
   let time_factor = 2. in
   let max_sleep = 120. in
+  let error_time_factor = 4. in
+  let error_max_sleep = 600. in
   let rec loop previous_sleep =
     begin
       Engine.Run_automaton.fix_point server_state.state
@@ -752,7 +754,9 @@ let start_engine_loop ~server_state =
               "Error", Error.to_string e |> text;
               "Sleep", time_span time_step;
             ]) in
-        return (markup, time_step)
+        let sleep = min (previous_sleep *. error_time_factor) error_max_sleep in
+        Logging.User_level_events.engine_fatal_error (Error.to_string e) sleep;
+        return (markup, sleep)
     end
     >>= fun (fix_point_markup, seconds) ->
     begin match Configuration.log_path server_state.server_configuration with

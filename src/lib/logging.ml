@@ -158,6 +158,7 @@ module User_level_events = struct
       | `Workflow_node_restarted of string * string * string
       | `Server_shut_down
       | `Root_workflow_equivalent_to of string * string * (string * string) list
+      | `Engine_fatal_error of string * [ `Retry_in of float ]
     ]
     } [@@deriving yojson]
 
@@ -182,6 +183,18 @@ module User_level_events = struct
         name id
         (List.map name_ids ~f:(fun (name, id) -> fmt "%s (%s)" name id)
          |> String.concat ~sep:", ")
+    | `Engine_fatal_error (err, `Retry_in secs) ->
+      fmt "Engine ran into a fatal error: %s (retrying in %s)"
+        err
+        begin match secs with
+        | s when s < 60. -> fmt "%.0f seconds" s
+        | more ->
+          let min, sec = 
+            let s = int_of_float more in
+            s / 60, s mod 60
+          in
+          fmt "%d minutes and %d seconds" min sec
+        end
 
   type t = {
     ring: item Ring.t;
@@ -216,6 +229,9 @@ module User_level_events = struct
 
   let root_workflow_equivalent_to ~name ~id equivalences =
     add_item (`Root_workflow_equivalent_to (name, id, equivalences))
+
+  let engine_fatal_error err sleep =
+    add_item (`Engine_fatal_error (err, `Retry_in sleep))
 
   let get_notifications_or_block ~query =
     begin match query with

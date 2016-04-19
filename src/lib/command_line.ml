@@ -86,13 +86,21 @@ let run_state ~client ~max_sleep ~how =
   | None ->
     fail (`Failure "This client is not Standalone, it can not run stuff.")
   | Some state ->
+    let wrap_engine_error f x =
+      f x >>< function
+      | `Ok o -> return o
+      | `Error e ->
+        Log.(s "Error while running the engine: " % s (Error.to_string e)
+             @ error);
+        fail (`Failure "Standalone engine broken")
+    in
     begin match how with
     | ["step"] ->
-      Engine.Run_automaton.step state
+      wrap_engine_error Engine.Run_automaton.step state
       >>= fun (_ : bool) ->
       return ()
     | ["fix"] ->
-      Engine.Run_automaton.fix_point state
+      wrap_engine_error Engine.Run_automaton.fix_point state
       >>= fun (`Steps step_count) ->
       Log.(i step_count % s " steps ran" @ normal);
       return ()
@@ -106,7 +114,7 @@ let run_state ~client ~max_sleep ~how =
            keep_going := false;
            Light.green traffic_light ) in
       let rec loop previous_sleep =
-        Engine.Run_automaton.fix_point state
+        wrap_engine_error Engine.Run_automaton.fix_point state
         >>= fun (`Steps step_count) ->
         Log.(s "Getting new status" @ verbose);
         get_status ~client
