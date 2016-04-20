@@ -557,6 +557,20 @@ module With_database = struct
         return stuff_to_actually_add
       end
 
+    let force_add_passive_target t trgt =
+      let st = Target.Stored_target.of_target trgt in
+      let action =
+        let open Database_action in
+        let key = Target.id trgt in
+        set ~collection:passive_targets_collection
+          ~key (Target.Stored_target.serialize st)
+      in
+      run_database_action t action
+        ~msg:(fmt "force_add_target: %s (%s)"
+                (Target.id trgt) (Target.name trgt))
+      >>= fun () ->
+      return st
+
 
   end
 
@@ -1080,6 +1094,13 @@ module Killing_targets = struct
 end
 
 module Adding_targets = struct
+
+  let force_add_passive_target t ts =
+    With_database.Adding_targets.force_add_passive_target t.db ts
+    >>= fun st ->
+    let id = Target.Stored_target.id st in
+    String_mutable_set.add t.all_ids id;
+    Cache_table.add_or_replace t.cache id st
 
   let register_targets_to_add t ts =
     With_database.Adding_targets.register_targets_to_add t.db ts

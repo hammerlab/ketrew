@@ -171,6 +171,14 @@ module Adding_targets: sig
      | `Fetching_node of Error.fetching_node
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
+
+  (** Bypass the normal flow of target addition and put a target in the DB. *)
+  val force_add_passive_target: t ->
+    Ketrew_pure.Target.Stored_target.target ->
+    (unit,
+     [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+     | `Database_unavailable of string ]) Deferred_result.t
+
 end
 
 module Synchronize: sig
