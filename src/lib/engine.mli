@@ -138,8 +138,17 @@ module Run_automaton : sig
 
   val fix_point: t ->
     ([ `Steps of int], step_allowed_errors) Deferred_result.t
-    (** Run {!step} many times until nothing happens or nothing “new” happens. *)
+  (** Run {!step} many times until nothing happens or nothing “new” happens. *)
 
+
+  val try_to_fix_step_error: t ->
+    info:string ->
+    step_allowed_errors ->
+    (unit,
+     [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+     | `Database_unavailable of string
+     | `Not_fixable of step_allowed_errors ])
+      Deferred_result.t
 end
 
 val get_status : t -> Ketrew_pure.Target.id ->

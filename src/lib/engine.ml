@@ -288,6 +288,33 @@ module Run_automaton = struct
     | `Target of [ `Deserilization of string ]
     | `List of step_allowed_errors list
   ]
+
+  let rec try_to_fix_step_error t ~info (e: step_allowed_errors) =
+    match e with
+    | `Database _
+    | `Database_unavailable _
+    | `Target _ -> fail (`Not_fixable e)
+    | `List l ->
+      Deferred_list.while_sequential l ~f:(fun e ->
+          try_to_fix_step_error t ~info e)
+      >>= fun _ ->
+      return ()
+    | `Fetching_node (how, `Id id) ->
+      let name =
+        fmt "Placeholder-node created to fix the Engine; always fails. \
+             Error: %s, Info: %s" (Error.to_string e) info in
+      let new_node =
+        Ketrew_pure.Target.create ()
+          ~id ~name
+          ~condition:`Never
+          ~equivalence:`None
+      in
+      Printf.eprintf "Adding  %s (%s) for E: %s\n%!"
+        id name (Error.to_string e);
+      Persistent_data.Adding_targets.force_add_passive_target t.data new_node
+
+
+
   let step t: (bool, step_allowed_errors) Deferred_result.t =
   (*
     - Call Target.Automaton.step, do the action requested, call the
