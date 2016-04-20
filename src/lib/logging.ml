@@ -159,6 +159,9 @@ module User_level_events = struct
       | `Server_shut_down
       | `Root_workflow_equivalent_to of string * string * (string * string) list
       | `Engine_fatal_error of string * [ `Retry_in of float ]
+      | `Tried_to_fix_engine_error of
+          [ `Info of string ] * [ `Error of string ]
+          * [ `Ok | `Not_fixable | `Error_again of string ]
     ]
     } [@@deriving yojson]
 
@@ -195,6 +198,12 @@ module User_level_events = struct
           in
           fmt "%d minutes and %d seconds" min sec
         end
+      | `Tried_to_fix_engine_error (`Info info, `Error err, result) ->
+        fmt "Tried to fix the engine: error %s %s → %s" err info
+          (match result with
+          | `Ok -> "Success!"
+          | `Not_fixable -> "Error is not considered fixable"
+          | `Error_again err -> fmt "New error: %s" err)
 
   type t = {
     ring: item Ring.t;
@@ -232,6 +241,9 @@ module User_level_events = struct
 
   let engine_fatal_error err sleep =
     add_item (`Engine_fatal_error (err, `Retry_in sleep))
+
+  let tried_to_fix_engine_error ~info err result =
+    add_item (`Tried_to_fix_engine_error (`Info info, `Error err, result))
 
   let get_notifications_or_block ~query =
     begin match query with
