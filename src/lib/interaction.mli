@@ -68,15 +68,15 @@ val build_sublist_of_targets :
   all_log:SmartPrint.t ->
   go_verb:SmartPrint.t ->
   filter:(Ketrew_pure.Target.t -> bool) ->
-    ([> `Cancel | `Go of string list ],
-     [> `Client of Client.Error.t
-      | `Database of Trakeva.Error.t
-      | `Database_unavailable of string
-      | `Failure of string
-      | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-      | `Missing_data of string
-      | `System of [> `File_info of string ] * [> `Exn of exn ]
-      | `Target of [> `Deserilization of string ] ]) t
+  ([> `Cancel | `Go of string list ],
+   [> `Client of Client.Error.t
+   | `Database of Trakeva.Error.t
+   | `Database_unavailable of string
+   | `Failure of string
+   | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
+   | `Fetching_node of Persistent_data.Error.fetching_node
+   | `System of [> `File_info of string ] * [> `Exn of exn ]
+   | `Target of [> `Deserilization of string ] ]) t
 (** Figure out the targets to be displayed. *)
 
 val make_target_menu : targets:Ketrew_pure.Target.t list ->

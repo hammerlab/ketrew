@@ -136,8 +136,7 @@ module Run_automaton = struct
           end
         | `Error (`Database _ as e)
         | `Error (`Database_unavailable _ as e)
-        | `Error (`Missing_data _ as e) ->
-          (* Dependency not-found => should get out of the way *)
+        | `Error (`Fetching_node _ as e) ->
           log_error e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
@@ -283,9 +282,9 @@ module Run_automaton = struct
     end
 
   type step_allowed_errors = [
-    | `Database of  Trakeva.Error.t
-    | `Database_unavailable of Ketrew_pure.Target.id
-    | `Missing_data of Ketrew_pure.Target.id
+    | `Database of Trakeva.Error.t
+    | `Database_unavailable of string
+    | `Fetching_node of Persistent_data.Error.fetching_node
     | `Target of [ `Deserilization of string ]
     | `List of step_allowed_errors list
   ]

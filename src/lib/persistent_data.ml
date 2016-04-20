@@ -31,6 +31,14 @@ module Database = Trakeva_of_uri
 module Database_action = Trakeva.Action
 module Database_error = Trakeva.Error
 
+module Error = struct
+  type fetching_node = [
+    | `Get_stored_target
+    | `Pointer_loop_max_depth of int
+    | `Target_to_add 
+  ] * [ `Id of string ]
+end
+
 module With_database = struct
 
   type t = {
@@ -219,7 +227,7 @@ module With_database = struct
         )
       >>= function
       | Some st -> return st
-      | None -> fail (`Missing_data (fmt "get_stored_target %S" key))
+      | None -> fail (`Fetching_node (`Get_stored_target, `Id key))
     end
 
   let get_target t id =
@@ -228,7 +236,7 @@ module With_database = struct
       >>= fun stored ->
       begin match Target.Stored_target.get_target stored with
       | `Pointer _ when count >= 30 ->
-        fail (`Missing_data (fmt "there must be a loop or something (from %s)" id))
+        fail (`Fetching_node (`Pointer_loop_max_depth 30, `Id id))
       | `Pointer key ->
         get_following_pointers ~count:(count + 1) ~key
       | `Target t -> return t
@@ -469,7 +477,7 @@ module With_database = struct
           | Some blob ->
             of_result (Target.Stored_target.deserialize blob)
           | None ->
-            fail (`Missing_data (fmt "target to add: %s" key))
+            fail (`Fetching_node (`Target_to_add, `Id key))
           end
           >>= fun st ->
           begin match Target.Stored_target.get_target st with
@@ -748,7 +756,7 @@ let get_target t id =
     >>= fun stored ->
     begin match Target.Stored_target.get_target stored with
     | `Pointer _ when count >= 30 ->
-      fail (`Missing_data (fmt "there must be a loop or something (from %s)" id))
+      fail (`Fetching_node (`Pointer_loop_max_depth 30, `Id  id))
     | `Pointer key ->
       String_mutable_set.add t.all_ids key;
       get_following_pointers ~count:(count + 1) ~key

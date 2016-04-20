@@ -31,7 +31,7 @@ val with_engine:
   (engine:t ->
    (unit, [> `Database of Trakeva.Error.t
           | `Failure of string
-          | `Missing_data of string
+          | `Fetching_node of Persistent_data.Error.fetching_node
           | `Database_unavailable of Ketrew_pure.Target.id
           | `Target of [> `Deserilization of string ]
           | `Dyn_plugin of
@@ -46,7 +46,7 @@ val load:
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
    | `Failure of string
-   | `Missing_data of string
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ]
    | `Dyn_plugin of
         [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
@@ -67,7 +67,7 @@ val add_targets :
   (unit,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_pure.Target.id
-   | `Missing_data of Ketrew_pure.Target.id
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ]
    ]) Deferred_result.t
 (** Add a list of targets to the engine. *)
@@ -76,7 +76,7 @@ val get_target: t -> Unique_id.t ->
   (Ketrew_pure.Target.t,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** Get a target from its id. *)
@@ -88,7 +88,7 @@ val all_visible_targets :
    | `Database_unavailable of string
     | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `Missing_data of Ketrew_pure.Target.id
+    | `Fetching_node of Persistent_data.Error.fetching_node
     | `System of [> `File_info of string ] * [> `Exn of exn ]
     | `Target of [> `Deserilization of string ] ])
   Deferred_result.t
@@ -99,7 +99,7 @@ val get_list_of_target_ids: t ->
   (Ketrew_pure.Target.id list,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Get only the Ids of the targets for a given “query”:
 
@@ -114,9 +114,9 @@ val next_changes: t -> (Persistent_data.Change.t list, 'a) Deferred_result.t
 module Run_automaton : sig
 
   type step_allowed_errors = [
-    | `Database of  Trakeva.Error.t
-    | `Database_unavailable of Ketrew_pure.Target.id
-    | `Missing_data of Ketrew_pure.Target.id
+    | `Database of Trakeva.Error.t
+    | `Database_unavailable of string
+    | `Fetching_node of Persistent_data.Error.fetching_node
     | `Target of [ `Deserilization of string ]
     | `List of step_allowed_errors list
   ]
@@ -148,7 +148,7 @@ val get_status : t -> Ketrew_pure.Target.id ->
    | `Database_unavailable of string
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-   | `Missing_data of string
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `System of [> `File_info of string ] * [> `Exn of exn ]
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -166,7 +166,7 @@ val restart_target: t -> Ketrew_pure.Target.id ->
   (Ketrew_pure.Target.id,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of Ketrew_pure.Target.id
-   | `Missing_data of Ketrew_pure.Target.id
+   | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ]) Deferred_result.t
 (** Make new activated targets out of a given target and its “transitive
     reverse dependencies” *)
