@@ -24,13 +24,21 @@ open Unix_io
 
 type t
 
+module Error : sig
+  type fetching_node = [
+    | `Get_stored_target
+    | `Pointer_loop_max_depth of int
+    | `Target_to_add 
+  ] * [ `Id of string ]
+end
+
 val create :
   database_parameters:string ->
   archival_age_threshold:[ `Days of float ] ->
   (t,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
@@ -43,7 +51,7 @@ val get_target:
   (Ketrew_pure.Target.t,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
@@ -52,7 +60,7 @@ val all_visible_targets :
   (Ketrew_pure.Target.t list,
    [>  `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
@@ -69,7 +77,7 @@ val activate_target :
         | `Load of string ] *
         string
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 
@@ -84,7 +92,7 @@ val fold_active_targets :
            | `Iter of string
            | `Load of string ] *
            string
-      | `Missing_data of string
+      | `Fetching_node of Error.fetching_node
       | `Target of [> `Deserilization of string ] ]
       as 'combined_errors)
        Deferred_result.t) ->
@@ -104,7 +112,7 @@ val find_all_orphans:
   (Ketrew_pure.Target.t list,
    [> `Database of Trakeva.Error.t
    | `Database_unavailable of string
-   | `Missing_data of string
+   | `Fetching_node of Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
 (** [find_all_orphans] goes through the cache and returns all the targets that
@@ -128,7 +136,7 @@ module Killing_targets: sig
           | `Load of string ] *
           string
      | `Database_unavailable of string
-     | `Missing_data of string
+     | `Fetching_node of Error.fetching_node
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
   val add_target_ids_to_kill_list :
@@ -160,9 +168,17 @@ module Adding_targets: sig
           | `Load of string ] *
           string
      | `Database_unavailable of string
-     | `Missing_data of string
+     | `Fetching_node of Error.fetching_node
      | `Target of [> `Deserilization of string ] ])
       Deferred_result.t
+
+  (** Bypass the normal flow of target addition and put a target in the DB. *)
+  val force_add_passive_target: t ->
+    Ketrew_pure.Target.Stored_target.target ->
+    (unit,
+     [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+     | `Database_unavailable of string ]) Deferred_result.t
+
 end
 
 module Synchronize: sig
@@ -175,7 +191,7 @@ module Synchronize: sig
      | `IO of
           [> `Read_file_exn of string * exn
           | `Write_file_exn of string * exn ]
-     | `Missing_data of string
+     | `Fetching_node of Error.fetching_node
      | `Not_a_directory of string
      | `System of
           [> `File_info of string

@@ -87,7 +87,12 @@ let rec to_string = function
 | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s
 | `Database_unavailable s -> fmt "DB %s" s
 | `Not_implemented s -> fmt "Not-impl %S" s
-| `Missing_data p -> fmt "missing data at id: %s" p
+| `Fetching_node (how, `Id id) ->
+  fmt "missing data at id: %s (%s)" id
+    (match how with
+    | `Get_stored_target -> "get_stored_target function"
+    | `Target_to_add  -> "getting target-to-add"
+    | `Pointer_loop_max_depth d -> fmt "pointer-max-depth reached: %d" d)
 | `Failed_to_kill msg -> fmt "Failed to kill target: %S" msg
 | `Long_running_failed_to_start (id, msg) ->
   fmt "Long running %s failed to start: %s" id msg

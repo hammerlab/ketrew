@@ -33,7 +33,7 @@ val sub_commands:
     | `Dyn_plugin of [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
     | `Failure of string
     | `IO of [> `Write_file_exn of string * exn ]
-    | `Missing_data of string
+    | `Fetching_node of Persistent_data.Error.fetching_node
     | `Target of [> `Deserilization of string ]
     | `Wrong_configuration of [> `Found of string ] * [> `Exn of exn ] ])
      Deferred_result.t Cmdliner.Term.t * Cmdliner.Term.info)

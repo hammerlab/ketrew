@@ -40,7 +40,7 @@ val start :
      | `Failure of string
      | `IO of
           [> `Read_file_exn of string * exn ]
-     | `Missing_data of string
+     | `Fetching_node of Persistent_data.Error.fetching_node
      | `Server_status_error of string
      | `Start_server_error of string
      | `System of

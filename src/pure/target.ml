@@ -513,7 +513,7 @@ that the potential condition has been ensured.
         "already-done" :: continue history
       | `Dependencies_failed (history, deps) ->
         let nb_deps = (List.length deps) in
-        fmt "%d depependenc%s failed" nb_deps (plural_of_int ~y:true nb_deps)
+        fmt "%d dependenc%s failed" nb_deps (plural_of_int ~y:true nb_deps)
         :: continue history
       | `Failed_running (history, reason, book) ->
         fmt "Reason: %S" (match reason with | `Long_running_failure s -> s)

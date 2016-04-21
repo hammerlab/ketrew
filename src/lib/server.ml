@@ -727,8 +727,50 @@ let start_engine_loop ~server_state =
   let time_step = 1. in
   let time_factor = 2. in
   let max_sleep = 120. in
+  let error_time_factor = 4. in
+  let error_max_sleep = 600. in
+  let errors_before_fixing = 5 in
+  let errors = Hashtbl.create 4 in
+  let add_error e =
+    let now = Time.now () in
+    match Hashtbl.find errors e with
+    | (nb, dates) -> Hashtbl.replace errors e (nb + 1, now :: dates)
+    | exception _ -> Hashtbl.add errors e (1, [now])
+  in
   let rec loop previous_sleep =
     begin
+      let to_fix =
+        Hashtbl.fold (fun err (nb, dates) prev ->
+            Printf.eprintf "E: %s -> %d\n%!"
+              (Error.to_string err) nb;
+            if nb >= errors_before_fixing
+            then (err, nb, dates) :: prev else prev) errors []
+      in
+      Deferred_list.for_concurrent to_fix  ~f:(fun (err, nb, dates) ->
+          let info =
+            fmt "happened %d times between %s and %s"
+              nb
+              (List.fold dates ~f:min ~init:infinity |> Time.to_string_hum)
+              (List.fold dates ~f:max ~init:0. |> Time.to_string_hum)
+          in
+          Engine.Run_automaton.try_to_fix_step_error server_state.state
+            ~info err
+          >>< function
+          | `Ok () ->
+            Hashtbl.remove errors err;
+            Logging.User_level_events.tried_to_fix_engine_error
+              ~info (Error.to_string err) `Ok;
+            return ()
+          | `Error (`Not_fixable ne) ->
+            Logging.User_level_events.tried_to_fix_engine_error
+              ~info (Error.to_string err) `Not_fixable;
+            return ()
+          | `Error ((`Database _ | `Database_unavailable _) as ne) ->
+            Logging.User_level_events.tried_to_fix_engine_error
+              ~info (Error.to_string err) (`Error_again (Error.to_string ne));
+            return ()
+        )
+      >>= fun ((_ : unit list), (_ : unit list)) ->
       Engine.Run_automaton.fix_point server_state.state
       >>< function
       | `Ok (`Steps step_count) ->
@@ -752,7 +794,10 @@ let start_engine_loop ~server_state =
               "Error", Error.to_string e |> text;
               "Sleep", time_span time_step;
             ]) in
-        return (markup, time_step)
+        add_error e;
+        let sleep = min (previous_sleep *. error_time_factor) error_max_sleep in
+        Logging.User_level_events.engine_fatal_error (Error.to_string e) sleep;
+        return (markup, sleep)
     end
     >>= fun (fix_point_markup, seconds) ->
     begin match Configuration.log_path server_state.server_configuration with

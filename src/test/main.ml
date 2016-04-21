@@ -75,14 +75,22 @@ let test_0 () =
     >>= fun db_file ->
     let configuration = 
       Ketrew.Configuration.engine ~database_parameters:db_file () in
+    let wrap_engine_error f x =
+      f x >>< function
+      | `Ok o -> return o
+      | `Error e ->
+        Log.(s "Error while running the engine: " % s (Ketrew.Error.to_string e)
+             @ error);
+        fail (`Failure "Standalone engine broken")
+    in
     Ketrew.Engine.with_engine ~configuration (fun ~engine ->
-        Ketrew.Engine.Run_automaton.step engine
+        wrap_engine_error Ketrew.Engine.Run_automaton.step engine
         >>= fun v ->
         Test.checkf (not v) "1st step, nothing to do";
         let test_steps ~checks msg =
           List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
             prev >>= fun () ->
-            Ketrew.Engine.Run_automaton.step engine
+            wrap_engine_error Ketrew.Engine.Run_automaton.step engine
             >>= fun v ->
             let rec do_checks = 
               function

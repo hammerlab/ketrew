@@ -136,37 +136,32 @@ module Run_automaton = struct
           end
         | `Error (`Database _ as e)
         | `Error (`Database_unavailable _ as e)
-        | `Error (`Missing_data _ as e) ->
-          (* Dependency not-found => should get out of the way *)
+        | `Error (`Fetching_node _ as e) ->
           log_error e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
                  % OCaml.list quote ids);
-          return (dep, `Failed)
+          fail e
         | `Error (`Target _ as e) -> fail e)
-    >>= begin
-      let is a b =
-        match b with
-        | (_, s) when s = a -> true
-        | _ -> false in
-      let all_successful = List.for_all ~f:(is `Successful) in
-      let one_failed = List.exists ~f:(is `Failed) in
-      function
-      | (oks, []) when all_successful oks -> return `All_succeeded
-      | (oks, []) when one_failed oks ->
-        let failed_ones = List.filter oks ~f:(is `Failed) |> List.map ~f:fst in
-        log_info
-          Log.(s "Targets " % OCaml.list s failed_ones
-               % s " considered failed");
-        return (`At_least_one_failed failed_ones)
-      | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
-        return `Still_processing
-      | (_, errors) ->
-        log_info
-          Log.(s "Some errors while activating dependencies: " %n
-               % separate n
-                 (List.map ~f:(fun x -> s (Error.to_string x)) errors));
-        return (`At_least_one_failed [])
+    >>= fun (oks, errors) ->
+    let is a b =
+      match b with
+      | (_, s) when s = a -> true
+      | _ -> false in
+    let all_successful = List.for_all ~f:(is `Successful) in
+    let one_failed = List.exists ~f:(is `Failed) in
+    begin match (oks, errors) with
+    | (oks, []) when all_successful oks -> return `All_succeeded
+    | (oks, []) when one_failed oks ->
+      let failed_ones = List.filter oks ~f:(is `Failed) |> List.map ~f:fst in
+      log_info
+        Log.(s "Targets " % OCaml.list s failed_ones
+             % s " considered failed");
+      return (`At_least_one_failed failed_ones)
+    | (oks, []) (* equivalent to: when List.exists oks ~f:((=) `In_progress) *) ->
+      return `Still_processing
+    | (_, [one_error]) -> fail one_error
+    | (_, errors) -> fail (`List errors)
     end
 
 
@@ -278,7 +273,7 @@ module Run_automaton = struct
     | `Activate (ids, make_new_target) ->
       _check_and_activate_dependencies t
         ~dependency_of:(Target.id target) ~ids
-      >>< fun (_ : (_, [`Empty]) Result.t) ->
+      >>= fun _ ->
       return (make_new_target ())
     | `Check_process (bookkeeping, make_new_target) ->
       _check_process t ~target ~bookkeeping
@@ -286,7 +281,41 @@ module Run_automaton = struct
       return (make_new_target result)
     end
 
-  let step t: (bool, _) Deferred_result.t =
+  type step_allowed_errors = [
+    | `Database of Trakeva.Error.t
+    | `Database_unavailable of string
+    | `Fetching_node of Persistent_data.Error.fetching_node
+    | `Target of [ `Deserilization of string ]
+    | `List of step_allowed_errors list
+  ]
+
+  let rec try_to_fix_step_error t ~info (e: step_allowed_errors) =
+    match e with
+    | `Database _
+    | `Database_unavailable _
+    | `Target _ -> fail (`Not_fixable e)
+    | `List l ->
+      Deferred_list.while_sequential l ~f:(fun e ->
+          try_to_fix_step_error t ~info e)
+      >>= fun _ ->
+      return ()
+    | `Fetching_node (how, `Id id) ->
+      let name =
+        fmt "Placeholder-node created to fix the Engine; always fails. \
+             Error: %s, Info: %s" (Error.to_string e) info in
+      let new_node =
+        Ketrew_pure.Target.create ()
+          ~id ~name
+          ~condition:`Never
+          ~equivalence:`None
+      in
+      Printf.eprintf "Adding  %s (%s) for E: %s\n%!"
+        id name (Error.to_string e);
+      Persistent_data.Adding_targets.force_add_passive_target t.data new_node
+
+
+
+  let step t: (bool, step_allowed_errors) Deferred_result.t =
   (*
     - Call Target.Automaton.step, do the action requested, call the
       target function, save-it
@@ -314,29 +343,27 @@ module Run_automaton = struct
         return []
       | other ->
         _process_automaton_transition t target
-        >>< function
-        | `Ok (new_target, progress) ->
-          Persistent_data.update_target t.data new_target
-          >>= fun () ->
-          transitions_log := !transitions_log @ Display_markup.[
-              concat [
-                text_of_loggable Target.log target;
-                text " -> ";
-                textf "%s" (Target.State.name @@ Target.state new_target);
-              ]
-            ];
-          return [progress]
-        | `Error `Empty_should_not_exist ->
-          return []
+        >>= fun  (new_target, progress) ->
+        Persistent_data.update_target t.data new_target
+        >>= fun () ->
+        transitions_log := !transitions_log @ Display_markup.[
+            concat [
+              text_of_loggable Target.log target;
+              text " -> ";
+              textf "%s" (Target.State.name @@ Target.state new_target);
+            ]
+          ];
+        return [progress]
       end in
     let concurrent_step targets =
       Deferred_list.for_concurrent targets ~f:(fun target ->
           step_target target)
       >>= fun (happens, errors) ->
-      List.iteri errors ~f:(fun i e ->
-          log_error e (Log.sf "%dth failure of concurrent step (%d targets)"
-                         i concurrency_number));
-      return (List.concat happens)
+      begin match errors with
+      | [] -> return (List.concat happens)
+      | [one] -> fail one
+      | more -> fail (`List more)
+      end
     in
     Persistent_data.fold_active_targets t.data
       ~init:(`Happenings [], `Targets [], `Count 0)
