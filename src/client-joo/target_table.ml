@@ -72,7 +72,10 @@ module Filter = struct
         | `Killable
         | `Dead_because_of_dependencies
         | `Activated_by_user
-        | `Killed_by_garbage_collection
+        | `Killed_from_passive
+        | `Failed_from_running
+        | `Failed_from_starting
+        | `Failed_from_condition
       ]
     | `Has_tags of Protocol.Up_message.string_predicate list
     | `Name of  Protocol.Up_message.string_predicate
@@ -134,8 +137,11 @@ module Filter = struct
         | List [Atom "is-dependency-dead"] ->
           `Status `Dead_because_of_dependencies
         | List [Atom "is-activated-by-user"] -> `Status `Activated_by_user
-        | List [Atom "killed-by-garbage-collection"] ->
-          `Status `Killed_by_garbage_collection
+        | List [Atom "killed-from-passive"] ->
+          `Status `Killed_from_passive
+        | List [Atom "failed-from-running"] -> `Status `Failed_from_running
+        | List [Atom "failed-from-starting"] -> `Status `Failed_from_starting
+        | List [Atom "failed-from-condition"] -> `Status `Failed_from_condition
         | List [Atom "created-in-the-past"; time] ->
           `Created_in_the_past (time_span time)
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
@@ -213,7 +219,7 @@ module Filter = struct
           `Created_in_the_past (`Weeks 4.2);
           `Status (`Simple `Failed);
           `Not (`Status `Dead_because_of_dependencies);
-          `Not (`Status `Killed_by_garbage_collection);
+          `Not (`Status `Killed_from_passive);
         ] },
     "Get all the targets created in the past 4.2 weeks that \
      died but not because of some their dependencies dying.";
@@ -236,7 +242,12 @@ module Filter = struct
     `And [
       `Status (`Simple `Failed);
       `Not (`Status `Dead_because_of_dependencies);
-      `Not (`Status `Killed_by_garbage_collection);
+      `Not (`Status `Killed_from_passive);
+    ];
+    `Or [
+      `Status `Failed_from_running;
+      `Status `Failed_from_starting;
+      `Status `Failed_from_condition;
     ];
   ] |> List.map ~f:(fun ast -> {ast})
 
@@ -351,7 +362,10 @@ module Filter = struct
         | `Killable -> "(is-killable)"
         | `Dead_because_of_dependencies -> "(is-dependency-dead)"
         | `Activated_by_user -> "(is-activated-by-user)"
-        | `Killed_by_garbage_collection -> "(killed-by-garbage-collection)"
+        | `Killed_from_passive -> "(killed-from-passive)"
+        | `Failed_from_running -> "(failed-from-running)"
+        | `Failed_from_starting -> "(failed-from-starting)"
+        | `Failed_from_condition -> "(failed-from-condition)"
         end
     in
     ast_to_lisp ast

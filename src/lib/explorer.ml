@@ -180,7 +180,7 @@ let filters = [
   filter (`And [
       `Status (`Simple `Failed);
       `Not (`Status `Dead_because_of_dependencies);
-      `Not (`Status `Killed_by_garbage_collection);
+      `Not (`Status `Killed_from_passive);
     ])
     ~char:'D'
     ~log:Log.(s "Failed but not because of its depedencies \

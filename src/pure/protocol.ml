@@ -167,7 +167,10 @@ module Up_message = struct
           | `Killable
           | `Dead_because_of_dependencies
           | `Activated_by_user
-          | `Killed_by_garbage_collection            
+          | `Killed_from_passive
+          | `Failed_from_running
+          | `Failed_from_starting
+          | `Failed_from_condition
         ]
       | `Has_tag of string_predicate
       | `Name of string_predicate
@@ -233,7 +236,10 @@ module Up_message = struct
             | `Killable -> "killable"
             | `Dead_because_of_dependencies -> "dead-because-of-dependencies"
             | `Activated_by_user -> "activated-by-user"
-            | `Killed_by_garbage_collection -> "killed-by-garbage-collection"
+            | `Killed_from_passive -> "killed-from-passive"
+            | `Failed_from_running -> "failed-from-running"
+            | `Failed_from_starting -> "failed-from-starting"
+            | `Failed_from_condition -> "failed-from-condition"
             end;
           text ")";
         ]

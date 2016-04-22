@@ -737,14 +737,33 @@ type state = [
       |> Option.value ~default:false (* actually find should always
                                         find at least `Passive *)
 
-    let rec killed_by_garbage_collection (s : t) =
+    let rec killed_from_passive (s : t) =
       match s with
       | `Finished { previous_state = (`Killed _ as killed); _ } ->
-        killed_by_garbage_collection killed
+        killed_from_passive killed
       | `Killed {previous_state = (`Killing _ as killing); _ } ->
-        killed_by_garbage_collection killing
+        killed_from_passive killing
       | `Killing {previous_state = (`Passive _); _ } -> true
       | other -> false
+
+    let failed_from_running (s : t) =
+      match s with
+      | `Finished {previous_state = `Failed_running _; _} -> true
+      | `Failed_running _ -> true
+      | other -> false
+
+    let failed_from_starting (s : t) =
+      match s with
+      | `Finished {previous_state = `Failed_to_start _; _} -> true
+      | `Failed_to_start _ -> true
+      | other -> false
+
+    let failed_from_condition (s : t) =
+      match s with
+      | `Finished {previous_state = `Did_not_ensure_condition _; _} -> true
+      | `Did_not_ensure_condition _ -> true
+      | other -> false
+
   end
 
   module Count = struct
