@@ -383,7 +383,7 @@ module With_database = struct
           >>= fun fresh_target ->
           begin match Target.state fresh_target |> Target.State.simplify with
           | `Activable ->
-            log := Display_markup.("is-activatble", date_now ()) :: !log;
+            log := Display_markup.("is-activable", date_now ()) :: !log;
             active_targets t
             >>= fun current_living_targets ->
             log := Display_markup.("get-living-targets", date_now ()) :: !log;
@@ -412,7 +412,7 @@ module With_database = struct
           | `In_progress
           | `Successful
           | `Failed ->
-            log := Display_markup.("is-not-activatble", date_now ()) :: !log;
+            log := Display_markup.("is-not-activable", date_now ()) :: !log;
             return (Target.Stored_target.of_target fresh_target)
           end
         end
