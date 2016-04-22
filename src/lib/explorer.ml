@@ -177,9 +177,14 @@ let filters = [
   filter (`Status `Really_running) ~char:'R' ~log:Log.(s "Really running, not waiting");
   filter (`Status (`Simple `Successful)) ~char:'s' ~log:Log.(s "Successful");
   filter (`Status (`Simple `Failed)) ~char:'f' ~log:Log.(s "Failed");
-  filter (`And [`Status (`Simple `Failed);
-                `Not (`Status `Dead_because_of_dependencies)])
-    ~char:'D' ~log:Log.(s "Failed but not because of its depedencies");
+  filter (`And [
+      `Status (`Simple `Failed);
+      `Not (`Status `Dead_because_of_dependencies);
+      `Not (`Status `Killed_by_garbage_collection);
+    ])
+    ~char:'D'
+    ~log:Log.(s "Failed but not because of its depedencies \
+                 or garbage collection");
   filter `True ~char:'n' ~log:Log.(s "No-filter, see them all");
 ]
 let initial_ask_tags_content =
