@@ -206,7 +206,7 @@ module Filter = struct
           (* `Equals "workflow-examples"; *)
           `Matches "^in[0-9]*tegr[a-z]tion$";
         ]
-         },
+    },
     "Get all the targets that have tag matching the given 
      regular expression (POSIX syntax).";
     { ast = `And [
@@ -229,6 +229,16 @@ module Filter = struct
     "Get all the targets created in the past day that \
      are in-progress and not waiting for a dependency."
   ]
+  let defaults = [
+    `Status `Really_running;
+    `Status `Killable;
+    `Status `Activated_by_user;
+    `And [
+      `Status (`Simple `Failed);
+      `Not (`Status `Dead_because_of_dependencies);
+      `Not (`Status `Killed_by_garbage_collection);
+    ];
+  ] |> List.map ~f:(fun ast -> {ast})
 
   let to_server_query ast =
     let to_seconds =
@@ -456,7 +466,7 @@ let create () =
   let filter = Filter.create () |> Reactive.Source.create in
   let target_ids_last_updated = Reactive.Source.create None in
   let filter_interface_showing_help = Reactive.Source.create false in
-  let saved_filters = Reactive.Source.create [] in
+  let saved_filters = Reactive.Source.create Filter.defaults in
   let (_ : unit React.E.t) =
     let event = Reactive.Source.signal filter |> React.S.changes in
     React.E.map (fun _ ->
