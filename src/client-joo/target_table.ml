@@ -72,6 +72,7 @@ module Filter = struct
         | `Killable
         | `Dead_because_of_dependencies
         | `Activated_by_user
+        | `Killed_by_garbage_collection
       ]
     | `Has_tags of Protocol.Up_message.string_predicate list
     | `Name of  Protocol.Up_message.string_predicate
@@ -133,6 +134,8 @@ module Filter = struct
         | List [Atom "is-dependency-dead"] ->
           `Status `Dead_because_of_dependencies
         | List [Atom "is-activated-by-user"] -> `Status `Activated_by_user
+        | List [Atom "killed-by-garbage-collection"] ->
+          `Status `Killed_by_garbage_collection
         | List [Atom "created-in-the-past"; time] ->
           `Created_in_the_past (time_span time)
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
@@ -210,6 +213,7 @@ module Filter = struct
           `Created_in_the_past (`Weeks 4.2);
           `Status (`Simple `Failed);
           `Not (`Status `Dead_because_of_dependencies);
+          `Not (`Status `Killed_by_garbage_collection);
         ] },
     "Get all the targets created in the past 4.2 weeks that \
      died but not because of some their dependencies dying.";
@@ -337,6 +341,7 @@ module Filter = struct
         | `Killable -> "(is-killable)"
         | `Dead_because_of_dependencies -> "(is-dependency-dead)"
         | `Activated_by_user -> "(is-activated-by-user)"
+        | `Killed_by_garbage_collection -> "(killed-by-garbage-collection)"
         end
     in
     ast_to_lisp ast

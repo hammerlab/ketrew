@@ -521,6 +521,8 @@ let get_list_of_target_ids t query =
               Is.dependency_dead state
             | `Activated_by_user ->
               Is.activated_by_user state
+            | `Killed_by_garbage_collection ->
+              Is.killed_by_garbage_collection state
             end
           | `Has_tag pred ->
             let tags = Target.tags target in
