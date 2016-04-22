@@ -175,6 +175,7 @@ module State : sig
     val killable: t -> bool
     val dependency_dead: t -> bool
     val activated_by_user: t -> bool
+    val killed_by_garbage_collection: t -> bool
   end
 
   (** A module providing functions [t -> int] to provide counts. *)
