@@ -35,7 +35,7 @@ module Error = struct
   type fetching_node = [
     | `Get_stored_target
     | `Pointer_loop_max_depth of int
-    | `Target_to_add 
+    | `Target_to_add
   ] * [ `Id of string ]
 end
 
@@ -46,12 +46,32 @@ module With_database = struct
     database_parameters: string;
     archival_age_threshold: [ `Days of float ];
     activation_mutex : Lwt_mutex.t;
+    equivalence_checking_mode : [ `When_adding | `When_activating ];
   }
   let create ~database_parameters ~archival_age_threshold =
     let activation_mutex = Lwt_mutex.create () in
     return {
       database_handle = None; database_parameters; archival_age_threshold;
       activation_mutex;
+      equivalence_checking_mode =
+        begin try
+          (* This is an undocumented way of changing how Ketrew check for
+             equivalence of targets.
+
+             The default one “when-adding” is the “historical” one.
+
+             The other one only checks for equivalence while activating the
+             node against the other active nodes. It makes workflows show-up as
+             active quicker. In some use-cases, this may be faster, in some
+             others it will be slower.
+
+             Both modes do not cooperate; if Ketrew restarts while changing
+             mode, you'd better know what you're doing with your workflows.
+          *)
+          assert (Sys.getenv "KETREW_EQUIVALENCE_TEST" = "activating");
+          `When_activating
+        with _ -> `When_adding
+        end;
     }
 
   let database t =
@@ -316,7 +336,30 @@ module With_database = struct
     in
     Logger.(
       description_list [
-        "function", text "With_database.active_targets";
+        "module", text "With_database";
+        "function", text "active_targets";
+        "result", textf "%d targets, %d after filter"
+          (List.length targets) (List.length filtered);
+      ] |> log);
+    return filtered
+
+  (** Get the targets are alive, so activable or in_progress *)
+  let alive_targets t =
+    get_collections_of_targets t ~from:[passive_targets_collection;
+                                        active_targets_collection]
+    >>= fun targets ->
+    let filtered =
+      List.filter_map targets ~f:(fun target ->
+          match Target.State.simplify (Target.state target) with
+          | `Failed
+          | `Successful -> None
+          | `Activable
+          | `In_progress -> Some target)
+    in
+    Logger.(
+      description_list [
+        "module", text "With_database";
+        "function", text "alive_targets";
         "result", textf "%d targets, %d after filter"
           (List.length targets) (List.length filtered);
       ] |> log);
@@ -324,61 +367,75 @@ module With_database = struct
 
   let activate_target t ~target ~reason =
     let starts = Time.now () in
-    Lwt_mutex.with_lock t.activation_mutex begin fun () ->
-      let enters_mutex = Time.now () in
-      let log = ref [] in
-      begin
-        get_target t (Target.id target)
-        >>= fun fresh_target ->
-        begin match Target.state fresh_target |> Target.State.simplify with
-        | `Activable ->
-          log := Display_markup.("is-activatble", date_now ()) :: !log;
-          active_targets t
-          >>= fun current_living_targets ->
-          log := Display_markup.("get-living-targets", date_now ()) :: !log;
-          log := Display_markup.(
-              "living-targets",
-              textf "%d" (List.length current_living_targets)
-            ) :: !log;
-          begin match
-            List.find current_living_targets (Target.is_equivalent target)
-          with
-          | Some pointing_to ->
-            (* We found one, need to make a pointer *)
-            log := Display_markup.("equivalent-to",
-                                   textf "%s (%s)"
-                                     (Target.name pointing_to)
-                                     (Target.id pointing_to)) :: !log;
-            make_pointer_of_passive_target t ~target ~pointing_to
-          | None ->
-            log := Display_markup.("certified-fresh", date_now ()) :: !log;
-            let newone = Target.(activate_exn target ~reason) in
-            move_target t ~target:newone ~src:passive_targets_collection
-              ~dest:active_targets_collection
-            >>= fun () ->
-            return (Target.Stored_target.of_target newone)
+    let log = ref Display_markup.[
+        "module", text "With_database";
+        "function", text "activate_target";
+        "database_parameters", path t.database_parameters;
+        "target", textf "%s (%s)" (Target.name target) (Target.id target);
+        "starts", date starts;
+      ] in
+    begin match t.equivalence_checking_mode with
+    | `When_activating ->
+      Lwt_mutex.with_lock t.activation_mutex begin fun () ->
+        let enters_mutex = Time.now () in
+        begin
+          get_target t (Target.id target)
+          >>= fun fresh_target ->
+          begin match Target.state fresh_target |> Target.State.simplify with
+          | `Activable ->
+            log := Display_markup.("is-activatble", date_now ()) :: !log;
+            active_targets t
+            >>= fun current_living_targets ->
+            log := Display_markup.("get-living-targets", date_now ()) :: !log;
+            log := Display_markup.(
+                "living-targets",
+                textf "%d" (List.length current_living_targets)
+              ) :: !log;
+            begin match
+              List.find current_living_targets (Target.is_equivalent target)
+            with
+            | Some pointing_to ->
+              (* We found one, need to make a pointer *)
+              log := Display_markup.("equivalent-to",
+                                     textf "%s (%s)"
+                                       (Target.name pointing_to)
+                                       (Target.id pointing_to)) :: !log;
+              make_pointer_of_passive_target t ~target ~pointing_to
+            | None ->
+              log := Display_markup.("certified-fresh", date_now ()) :: !log;
+              let newone = Target.(activate_exn target ~reason) in
+              move_target t ~target:newone ~src:passive_targets_collection
+                ~dest:active_targets_collection
+              >>= fun () ->
+              return (Target.Stored_target.of_target newone)
+            end
+          | `In_progress
+          | `Successful
+          | `Failed ->
+            log := Display_markup.("is-not-activatble", date_now ()) :: !log;
+            return (Target.Stored_target.of_target fresh_target)
           end
-        | `In_progress
-        | `Successful
-        | `Failed ->
-          log := Display_markup.("is-not-activatble", date_now ()) :: !log;
-          return (Target.Stored_target.of_target fresh_target)
         end
+        |> Lwt.map (fun x ->
+            log := !log @ Display_markup.[
+                "enters_mutex", time_span (enters_mutex -. starts);
+                "exit_mutex", time_span (Time.now () -. enters_mutex);
+              ];
+            x)
       end
-      |> Lwt.map (fun x ->
-          let scenario = !log in
-          Logger.log Display_markup.(description_list [
-              "module", text "With_database";
-              "function", text "activate_target";
-              "database_parameters", path t.database_parameters;
-              "target", textf "%s (%s)" (Target.name target) (Target.id target);
-              "starts", date starts;
-              "enters_mutex", time_span (enters_mutex -. starts);
-              "returns", time_span (Time.now () -. enters_mutex);
-              "scenario", description_list scenario;
-            ]);
-          x)
+    | `When_adding ->
+      let newone = Target.(activate_exn target ~reason) in
+      move_target t ~target:newone ~src:passive_targets_collection
+        ~dest:active_targets_collection
+      >>= fun () ->
+      return (Target.Stored_target.of_target newone)
     end
+    >>= fun stored ->
+    log := !log @ Display_markup.[
+        "total-time", time_span (Time.now () -. starts);
+      ];
+    Logger.log (Display_markup.description_list !log);
+    return stored
 
 
   module Killing_targets = struct
@@ -493,9 +550,11 @@ module With_database = struct
       begin match tlist with
       | [] -> return []
       | _ :: _ ->
-        active_targets t
-        >>= fun current_living_targets ->
-        (* current targets are alive, so activable or in_progress *)
+        begin match t.equivalence_checking_mode with
+        | `When_activating -> active_targets t
+        | `When_adding -> alive_targets t
+        end
+        >>= fun current_interesting_targets ->
         let stuff_to_actually_add =
           List.fold ~init:[] tlist ~f:begin fun to_store_targets target ->
             let equivalences =
@@ -505,7 +564,7 @@ module With_database = struct
                       match Target.Stored_target.get_target st with
                       | `Target t -> Some t
                       | `Pointer _ -> None) in
-              List.filter (current_living_targets @ we_kept_so_far)
+              List.filter (current_interesting_targets @ we_kept_so_far)
                 ~f:(fun t -> Target.is_equivalent target t) in
             Log.(Target.log target % s " is "
                  % (match equivalences with
@@ -729,7 +788,7 @@ let create ~database_parameters ~archival_age_threshold =
   log_markup t Display_markup.[
       "function", text "create";
       "database_parameters", path database_parameters;
-      "archival_age_threshold", 
+      "archival_age_threshold",
       begin match archival_age_threshold with
       | `Days d -> time_span (Time.day *. d)
       end;
@@ -818,7 +877,7 @@ let rec should_garbage_collect ?(acc = []) t stored_target =
   end
 
 (** Go through the [to_gc] list and:
-    
+
     - remove them from the list-of-ids cache,
     - remove the corresponding stored-target from the cache-table,
     - and use {!With_database.get_stored_target} to make sure
@@ -843,7 +902,7 @@ let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
         (* This will trigger archival/clean-up in the database too: *)
         With_database.get_stored_target t.db id
         >>< function
-        | `Ok _ -> 
+        | `Ok _ ->
           begin match why with
           | `Points_to _ ->
             return (`P (p + 1), `Min mi, `Max ma, `Errors errors)
@@ -940,7 +999,7 @@ let target_strict_state trgt =
     The definition of active is here quite conservative, cf.
     {!target_strict_state}.
 
-    The function logs at the end; one can trace it with 
+    The function logs at the end; one can trace it with
     ["debug_log_functions=find_all_orphans"].
 
 *)
@@ -975,7 +1034,7 @@ let find_all_orphans t =
     ];
   (* To find all the reachable-passives, we use [to_check] as a stack of
      targets to explore; and [acc] as the accumulation of results.
-  
+
      The list [checked] is used to control against infinite loops (depending on
      the amount of equivalent targets, this may also be speeding up the
      search).
@@ -1059,7 +1118,7 @@ let fold_active_targets t ~init ~f =
         f previous ~target:t
       | `Pointer _ | `Target _ -> return previous
     )
-      
+
 let update_target t trgt =
   With_database.update_target t.db trgt
   >>= fun () ->
