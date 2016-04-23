@@ -426,7 +426,8 @@ module Filter = struct
       li [
         code [pcdata (fmt "(%s)" token)];
         pcdata ": "; pcdata description; pcdata "; alias of ";
-        code [pcdata (to_lisp ~match_aliases:false {ast = value })]
+        code [pcdata (to_lisp ~match_aliases:false {ast = value })];
+        pcdata ".";
       ]
     in
     div [
@@ -454,13 +455,14 @@ module Filter = struct
         describe_function "is-activated-by-user"
           "The targets that have been directly activated by the user.";
         describe_function "killed-from-passive"
-          "Killed directly after being passive (usually by garbage collection)";
+          "Killed directly after being passive (usually by garbage \
+           collection).";
         describe_function "failed-from-running"
-          "Failed from a backend running and reporting failure";
+          "Failed from a backend running and reporting failure.";
         describe_function "failed-from-starting"
-          "Failed because of a failure to start a process";
+          "Failed because of a failure to start a process.";
         describe_function "failed-from-condition"
-          "Failed because the job did not ensure the condition";
+          "Failed because the job did not ensure the condition.";
         describe_function "created-in-the-past <time-span>"
           "The targets that were created between now and “time-span ago.”";
         describe_function "or <...filters...>"
