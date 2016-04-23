@@ -422,6 +422,13 @@ module Filter = struct
     let open H5 in
     let describe_function name blob =
       li [code [pcdata (fmt "(%s)" name)]; pcdata ": "; pcdata blob] in
+    let describe_alias {token; value; description} =
+      li [
+        code [pcdata (fmt "(%s)" token)];
+        pcdata ": "; pcdata description; pcdata "; alias of ";
+        code [pcdata (to_lisp ~match_aliases:false {ast = value })]
+      ]
+    in
     div [
       p [
         pcdata "The language is based on S-Expressions \
@@ -446,6 +453,14 @@ module Filter = struct
                                                 dependencies died.";
         describe_function "is-activated-by-user"
           "The targets that have been directly activated by the user.";
+        describe_function "killed-from-passive"
+          "Killed directly after being passive (usually by garbage collection)";
+        describe_function "failed-from-running"
+          "Failed from a backend running and reporting failure";
+        describe_function "failed-from-starting"
+          "Failed because of a failure to start a process";
+        describe_function "failed-from-condition"
+          "Failed because the job did not ensure the condition";
         describe_function "created-in-the-past <time-span>"
           "The targets that were created between now and “time-span ago.”";
         describe_function "or <...filters...>"
@@ -477,6 +492,8 @@ module Filter = struct
            (the function `matches` is a valid alias); partial matches are \
            allowed use \"^...$\" to force the match of the full string.";
       ];
+      p [pcdata "There are also a few useful aliases:"];
+      ul (List.map aliases ~f:describe_alias);
     ]
 
   let create_new_url v =
