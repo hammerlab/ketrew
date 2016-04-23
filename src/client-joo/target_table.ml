@@ -86,6 +86,37 @@ module Filter = struct
     ast: ast;
   }
 
+  type alias = {
+    token: string;
+    value: ast;
+    description: string;
+  }
+  let alias token description value = {token; value; description}
+
+  let aliases = [
+    alias "passive" "Not (yet) activated" (`Status (`Simple `Activable));
+    alias "root" "Root node of a workflow" (`Status `Activated_by_user);
+    alias "dead-active" "Dead after something really happened" (
+      `And [
+        `Status (`Simple `Failed);
+        `Not (`Status `Dead_because_of_dependencies);
+        `Not (`Status `Killed_from_passive);
+      ]
+    );
+    alias "dead-alone" "Like dead-active but not even Killed" (
+      `Or [
+        `Status `Failed_from_running;
+        `Status `Failed_from_starting;
+        `Status `Failed_from_condition;
+      ]
+    );
+  ]
+  let compile_alias name =
+    List.find_map aliases ~f:(fun {token; value; _} ->
+        if token = name then Some value else None)
+  let match_alias ast =
+    List.find aliases ~f:(fun {value; _} -> value = ast)
+
 
   exception Syntax_error of string
   let of_lisp filter_string =
@@ -142,6 +173,11 @@ module Filter = struct
         | List [Atom "failed-from-running"] -> `Status `Failed_from_running
         | List [Atom "failed-from-starting"] -> `Status `Failed_from_starting
         | List [Atom "failed-from-condition"] -> `Status `Failed_from_condition
+        | List [Atom potential_alias] as sexp ->
+          begin match compile_alias potential_alias with
+          | Some v -> v
+          | None -> fail ~sexp "Can't recognize filter %S" potential_alias
+          end
         | List [Atom "created-in-the-past"; time] ->
           `Created_in_the_past (time_span time)
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
@@ -328,7 +364,7 @@ module Filter = struct
         Protocol.Up_message.time_constraint = `Status_changed_since t}
     | None -> query
 
-  let to_lisp { ast } =
+  let to_lisp ?(match_aliases = true) { ast } =
     let time_span =
       function
       | `Hours h -> fmt "(hours %g)" h
@@ -368,7 +404,19 @@ module Filter = struct
         | `Failed_from_condition -> "(failed-from-condition)"
         end
     in
-    ast_to_lisp ast
+    begin match match_aliases, match_alias ast with
+    | false, _ -> ast_to_lisp ast
+    | _, Some {token; _}  -> fmt "(%s)" token
+    | _, None -> ast_to_lisp ast
+    end
+
+  let describe {ast} =
+    begin match match_alias ast with
+    | Some {description; value; _} -> 
+      `Alias_of (to_lisp ~match_aliases:false {ast = value}, description)
+    | None -> `Nothing
+    end
+
 
   let lisp_help () =
     let open H5 in
@@ -745,9 +793,17 @@ module Html = struct
                           div ~a:[a_class ["alert"; "alert-success"]] [
                             h3 [pcdata "Saved Filters"];
                             ul (List.map more ~f:(fun fil ->
-                                li [
-                                  code [pcdata
-                                          (Filter.to_lisp fil)];
+                                let descr =
+                                  match Filter.describe fil with
+                                  | `Alias_of (lisp, descr) ->
+                                    [br (); pcdata "(alias of ";
+                                     code [pcdata lisp]; pcdata " → ";
+                                     i [pcdata descr]; pcdata ")"]
+                                  | `Nothing -> []
+                                in
+                                [ code [pcdata (Filter.to_lisp fil)] ]
+                                @ [small descr]
+                                @ [
                                   pcdata ": ";
                                   begin match filter = fil with
                                   | true ->
@@ -771,6 +827,7 @@ module Html = struct
                                     [pcdata "Remove"];
                                   pcdata "."
                                 ]
+                                |> li
                               ))
                           ]
                         )
