@@ -72,6 +72,10 @@ module Filter = struct
         | `Killable
         | `Dead_because_of_dependencies
         | `Activated_by_user
+        | `Killed_from_passive
+        | `Failed_from_running
+        | `Failed_from_starting
+        | `Failed_from_condition
       ]
     | `Has_tags of Protocol.Up_message.string_predicate list
     | `Name of  Protocol.Up_message.string_predicate
@@ -81,6 +85,37 @@ module Filter = struct
   type t = {
     ast: ast;
   }
+
+  type alias = {
+    token: string;
+    value: ast;
+    description: string;
+  }
+  let alias token description value = {token; value; description}
+
+  let aliases = [
+    alias "passive" "Not (yet) activated" (`Status (`Simple `Activable));
+    alias "root" "Root node of a workflow" (`Status `Activated_by_user);
+    alias "dead-active" "Dead after something really happened" (
+      `And [
+        `Status (`Simple `Failed);
+        `Not (`Status `Dead_because_of_dependencies);
+        `Not (`Status `Killed_from_passive);
+      ]
+    );
+    alias "dead-alone" "Like dead-active but not even Killed" (
+      `Or [
+        `Status `Failed_from_running;
+        `Status `Failed_from_starting;
+        `Status `Failed_from_condition;
+      ]
+    );
+  ]
+  let compile_alias name =
+    List.find_map aliases ~f:(fun {token; value; _} ->
+        if token = name then Some value else None)
+  let match_alias ast =
+    List.find aliases ~f:(fun {value; _} -> value = ast)
 
 
   exception Syntax_error of string
@@ -133,6 +168,16 @@ module Filter = struct
         | List [Atom "is-dependency-dead"] ->
           `Status `Dead_because_of_dependencies
         | List [Atom "is-activated-by-user"] -> `Status `Activated_by_user
+        | List [Atom "killed-from-passive"] ->
+          `Status `Killed_from_passive
+        | List [Atom "failed-from-running"] -> `Status `Failed_from_running
+        | List [Atom "failed-from-starting"] -> `Status `Failed_from_starting
+        | List [Atom "failed-from-condition"] -> `Status `Failed_from_condition
+        | List [Atom potential_alias] as sexp ->
+          begin match compile_alias potential_alias with
+          | Some v -> v
+          | None -> fail ~sexp "Can't recognize filter %S" potential_alias
+          end
         | List [Atom "created-in-the-past"; time] ->
           `Created_in_the_past (time_span time)
         | List (Atom "or" :: tl) -> `Or (List.map tl ~f:parse_sexp)
@@ -203,13 +248,14 @@ module Filter = struct
           (* `Equals "workflow-examples"; *)
           `Matches "^in[0-9]*tegr[a-z]tion$";
         ]
-         },
+    },
     "Get all the targets that have tag matching the given 
      regular expression (POSIX syntax).";
     { ast = `And [
           `Created_in_the_past (`Weeks 4.2);
           `Status (`Simple `Failed);
           `Not (`Status `Dead_because_of_dependencies);
+          `Not (`Status `Killed_from_passive);
         ] },
     "Get all the targets created in the past 4.2 weeks that \
      died but not because of some their dependencies dying.";
@@ -225,6 +271,21 @@ module Filter = struct
     "Get all the targets created in the past day that \
      are in-progress and not waiting for a dependency."
   ]
+  let defaults = [
+    `Status `Really_running;
+    `Status `Killable;
+    `Status `Activated_by_user;
+    `And [
+      `Status (`Simple `Failed);
+      `Not (`Status `Dead_because_of_dependencies);
+      `Not (`Status `Killed_from_passive);
+    ];
+    `Or [
+      `Status `Failed_from_running;
+      `Status `Failed_from_starting;
+      `Status `Failed_from_condition;
+    ];
+  ] |> List.map ~f:(fun ast -> {ast})
 
   let to_server_query ast =
     let to_seconds =
@@ -303,7 +364,7 @@ module Filter = struct
         Protocol.Up_message.time_constraint = `Status_changed_since t}
     | None -> query
 
-  let to_lisp { ast } =
+  let to_lisp ?(match_aliases = true) { ast } =
     let time_span =
       function
       | `Hours h -> fmt "(hours %g)" h
@@ -337,14 +398,38 @@ module Filter = struct
         | `Killable -> "(is-killable)"
         | `Dead_because_of_dependencies -> "(is-dependency-dead)"
         | `Activated_by_user -> "(is-activated-by-user)"
+        | `Killed_from_passive -> "(killed-from-passive)"
+        | `Failed_from_running -> "(failed-from-running)"
+        | `Failed_from_starting -> "(failed-from-starting)"
+        | `Failed_from_condition -> "(failed-from-condition)"
         end
     in
-    ast_to_lisp ast
+    begin match match_aliases, match_alias ast with
+    | false, _ -> ast_to_lisp ast
+    | _, Some {token; _}  -> fmt "(%s)" token
+    | _, None -> ast_to_lisp ast
+    end
+
+  let describe {ast} =
+    begin match match_alias ast with
+    | Some {description; value; _} -> 
+      `Alias_of (to_lisp ~match_aliases:false {ast = value}, description)
+    | None -> `Nothing
+    end
+
 
   let lisp_help () =
     let open H5 in
     let describe_function name blob =
       li [code [pcdata (fmt "(%s)" name)]; pcdata ": "; pcdata blob] in
+    let describe_alias {token; value; description} =
+      li [
+        code [pcdata (fmt "(%s)" token)];
+        pcdata ": "; pcdata description; pcdata "; alias of ";
+        code [pcdata (to_lisp ~match_aliases:false {ast = value })];
+        pcdata ".";
+      ]
+    in
     div [
       p [
         pcdata "The language is based on S-Expressions \
@@ -369,6 +454,15 @@ module Filter = struct
                                                 dependencies died.";
         describe_function "is-activated-by-user"
           "The targets that have been directly activated by the user.";
+        describe_function "killed-from-passive"
+          "Killed directly after being passive (usually by garbage \
+           collection).";
+        describe_function "failed-from-running"
+          "Failed from a backend running and reporting failure.";
+        describe_function "failed-from-starting"
+          "Failed because of a failure to start a process.";
+        describe_function "failed-from-condition"
+          "Failed because the job did not ensure the condition.";
         describe_function "created-in-the-past <time-span>"
           "The targets that were created between now and “time-span ago.”";
         describe_function "or <...filters...>"
@@ -400,6 +494,8 @@ module Filter = struct
            (the function `matches` is a valid alias); partial matches are \
            allowed use \"^...$\" to force the match of the full string.";
       ];
+      p [pcdata "There are also a few useful aliases:"];
+      ul (List.map aliases ~f:describe_alias);
     ]
 
   let create_new_url v =
@@ -451,7 +547,7 @@ let create () =
   let filter = Filter.create () |> Reactive.Source.create in
   let target_ids_last_updated = Reactive.Source.create None in
   let filter_interface_showing_help = Reactive.Source.create false in
-  let saved_filters = Reactive.Source.create [] in
+  let saved_filters = Reactive.Source.create Filter.defaults in
   let (_ : unit React.E.t) =
     let event = Reactive.Source.signal filter |> React.S.changes in
     React.E.map (fun _ ->
@@ -716,9 +812,17 @@ module Html = struct
                           div ~a:[a_class ["alert"; "alert-success"]] [
                             h3 [pcdata "Saved Filters"];
                             ul (List.map more ~f:(fun fil ->
-                                li [
-                                  code [pcdata
-                                          (Filter.to_lisp fil)];
+                                let descr =
+                                  match Filter.describe fil with
+                                  | `Alias_of (lisp, descr) ->
+                                    [br (); pcdata "(alias of ";
+                                     code [pcdata lisp]; pcdata " → ";
+                                     i [pcdata descr]; pcdata ")"]
+                                  | `Nothing -> []
+                                in
+                                [ code [pcdata (Filter.to_lisp fil)] ]
+                                @ [small descr]
+                                @ [
                                   pcdata ": ";
                                   begin match filter = fil with
                                   | true ->
@@ -742,6 +846,7 @@ module Html = struct
                                     [pcdata "Remove"];
                                   pcdata "."
                                 ]
+                                |> li
                               ))
                           ]
                         )

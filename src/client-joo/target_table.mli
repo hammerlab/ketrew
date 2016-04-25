@@ -7,7 +7,7 @@ module Filter: sig
   val target_query :
     ?last_updated:float -> t -> Ketrew_pure.Protocol.Up_message.target_query
 
-  val to_lisp: t -> string
+  val to_lisp: ?match_aliases : bool -> t -> string
 
 end
 

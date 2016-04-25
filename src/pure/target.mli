@@ -175,6 +175,10 @@ module State : sig
     val killable: t -> bool
     val dependency_dead: t -> bool
     val activated_by_user: t -> bool
+    val killed_from_passive: t -> bool
+    val failed_from_running: t -> bool
+    val failed_from_starting: t -> bool
+    val failed_from_condition: t -> bool
   end
 
   (** A module providing functions [t -> int] to provide counts. *)

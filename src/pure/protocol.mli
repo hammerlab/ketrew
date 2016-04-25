@@ -150,6 +150,10 @@ module Up_message : sig
         | `Killable
         | `Dead_because_of_dependencies
         | `Activated_by_user
+        | `Killed_from_passive
+        | `Failed_from_running
+        | `Failed_from_starting
+        | `Failed_from_condition
       ]
     | `Has_tag of string_predicate
     | `Name of string_predicate
