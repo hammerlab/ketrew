@@ -105,7 +105,7 @@ module Condition : sig
     {li with [`Volume_exists v] the target runs if the volume does not exist
     ([make]-like behavior).}
     {li with [`Volume_size_bigger_than (v, sz)] Ketrew will get the total size
-    of the volume (in bytes) and check that it is bigger.}
+    of the volume (in bytes) and check that it is {b bigger-or-equal}.}
     {li with [`Command_returns (c, v)] Ketrew will run the {!Command.t} and
     check its return value.}
     {li [`And list_of_conditions] is a conjunction of conditions.}
