@@ -301,18 +301,25 @@ let depends_on l =  Depends_on l
 let on_success_activate n = On_success_activate n
 let on_failure_activate n = On_failure_activate n
 
+type done_when_option = [
+  | `Dependencies_are
+  | `Is_verified of Condition.t
+  | `Product_is 
+]
+
 let workflow_node
     ?name
     ?active
-    ?make ?done_when ?metadata
+    ?make ?(done_when = `Product_is) ?metadata
     ?equivalence
     ?(tags=[]) ?(edges=[])
     (product: 'product) : 'product workflow_node =
   let target_to_submit =
     let done_when =
       match done_when with
-      | Some s -> Some s
-      | None -> product#is_done
+      | `Dependencies_are -> None
+      | `Is_verified c -> Some c
+      | `Product_is -> product#is_done
     in
     let depends_on =
       List.filter_map edges ~f:(function

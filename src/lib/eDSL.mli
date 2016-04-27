@@ -307,11 +307,17 @@ val on_failure_activate: 'any workflow_node -> workflow_edge
 (** Create an edge to a node that will be activated after a node {i
     fails}. *)
 
+type done_when_option = [
+  | `Dependencies_are
+  | `Is_verified of Condition.t
+  | `Product_is 
+]
+
 val workflow_node:
   ?name:string ->
   ?active:bool ->
   ?make:Build_process.t ->
-  ?done_when:Condition.t ->
+  ?done_when: done_when_option ->
   ?metadata:[ `String of string ] ->
   ?equivalence:Ketrew_pure.Target.Equivalence.t ->
   ?tags:string list ->
@@ -328,10 +334,15 @@ val workflow_node:
     will activate the toplevel node automatically.
     - [?make]: the build-process used to “run/build” the node; where the
     computation happens.
-    - [?done_when]: the condition that the node ensures (checked
-    before potentially running and after running, by default it is
-    provided by the product's [#is_done] method, this argument allows
-    to override it, for convenience).
+    - [?done_when]: decides which condition the node has to ensure (checked
+    before potentially running and after running): {ul
+      {- [`Dependencies_are]: no condition, i.e. only dependencies will be
+      activated and checked for success.}
+      {- [`Is_verified cond]: use the condition [cond] (overrides the one
+      potentially provided by the ['a product]).}
+      {- [`Product_is]: use the condition of the ['a product]; this is the
+      {b default}.}
+    }
     - [?metadata]: arbitrary metadata to attach to the node.
     - [?equivalence]: how to tell if two nodes are equivalent (and
     then will be merged by the engine). The default is
