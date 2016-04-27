@@ -91,7 +91,6 @@ type id = Unique_id.t
 
 module Condition : sig
   type t = [
-    | `Satisfied
     | `Never
     | `Volume_exists of Volume.t
     | `Volume_size_bigger_than of Volume.t * int
@@ -101,8 +100,8 @@ module Condition : sig
   (**
     An execution anti-condition; the condition defines when a target is
     ready and therefore should be run if the condition is {emph not} met: {ul
-    {li with [`Never] the target always runs (because never “ready”),}
-    {li with [`Satisfied] the target never runs (a bit useless),}
+    {li with [`Never] the target always runs and then fails
+                      (because never “ready”),}
     {li with [`Volume_exists v] the target runs if the volume does not exist
     ([make]-like behavior).}
     {li with [`Volume_size_bigger_than (v, sz)] Ketrew will get the total size

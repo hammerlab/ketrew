@@ -134,7 +134,6 @@ module Condition: sig
 
   val (&&): t -> t -> t
   val chain_and: t list -> t
-  val never : t
   val program: ?returns:int -> ?host:Host.t -> Program.t -> t
 
 end
