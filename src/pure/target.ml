@@ -118,7 +118,6 @@ end
 
 module Condition = struct
   type t = [
-    | `Satisfied
     | `Never
     | `Volume_exists of Volume.t
     | `Volume_size_bigger_than of (Volume.t * int)
