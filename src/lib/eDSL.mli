@@ -312,6 +312,8 @@ type done_when_option = [
   | `Is_verified of Condition.t
   | `Product_is 
 ]
+(** The specification of when a workflow-node is considered “ensured”; cf. the
+    [?done_when] argument of {!workflow_node}. *)
 
 val workflow_node:
   ?name:string ->
