@@ -1136,9 +1136,28 @@ module Html = struct
                         ] [pcdata "✖"];
               ]
           end
+          @ (
+            match
+              List.fold tabs ~init:0
+                ~f:(fun i -> function `Target_page _ -> i + 1 | _ -> i) > 1
+            with
+            | false -> []
+            | true ->
+              [
+                Bootstrap.tab_item
+                  ~active:Reactive.Source.(create false |> signal)
+                  ~on_click:Reactive.(fun _ ->
+                      Source.set client.current_tab `Target_table;
+                      Source.modify client.tabs ~f:(fun t -> 
+                          List.filter t ~f:(function `Target_page _ -> false | _-> true));
+                      false)
+                  [
+                    pcdata "Close ALL"
+                  ];
+              ]
+          )
         )
     in
-    (* div ~a:[ a_class ["container-fluid"]] [ *)
     Bootstrap.panel ~body:[
       Bootstrap.with_tab_bar ~tabs
         ~content:(
