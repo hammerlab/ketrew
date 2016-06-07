@@ -250,8 +250,8 @@ let update rp ~host_io =
           | Some (state, `Running) ->
             return (`Still_running run_parameters)
           | Some (state, `Completed) ->
-            (* We get the log again to ensure the job did not between the
-               previous check and the `qstat` one *)
+            (* We get the log again to check if the job succeeded between the
+               previous check and the `qstat` one: *)
             get_log_of_monitored_script ~host_io ~host:run.created.host
               ~script:run.script
             >>= fun log_opt ->
