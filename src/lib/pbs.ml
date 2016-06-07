@@ -84,7 +84,7 @@ let markup =
     end;
     "Wall-Limit",
     begin match wall_limit with
-    | `Hours f -> time_span f
+    | `Hours f -> time_span (f *. 3600.)
     end;
     "Processors", textf "%d" processors;
   ] in
