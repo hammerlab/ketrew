@@ -59,12 +59,12 @@ open Run_parameters
 let name = "PBS"
 let create
     ?(host=Host.tmp_on_localhost)
-    ?queue ?name ?(wall_limit=`Hours 24.) ?(processors=1) ?(email_user=`Never) 
+    ?queue ?name ?(wall_limit=`Hours 24.) ?(processors=1) ?(email_user=`Never)
     ?(shell="/usr/bin/env bash")
     program =
   `Long_running (
     "PBS",
-    `Created {host; program; queue; name; 
+    `Created {host; program; queue; name;
               email_user; shell; wall_limit; processors}
     |> serialize)
 
@@ -226,7 +226,7 @@ let update rp ~host_io =
           let job_state =
             String.split ~on:(`Character '\n') return_obj#stdout
             |> List.find_map ~f:(fun line ->
-                String.split line ~on:(`Character '=') 
+                String.split line ~on:(`Character '=')
                 |> List.map ~f:String.strip
                 |> (function
                   | ["job_state"; state] ->
@@ -239,7 +239,7 @@ let update rp ~host_io =
                     | "S" (* suspended *)
                     | "R" -> Some (state, `Running)
                     | "C" -> Some (state, `Completed)
-                    | other -> 
+                    | other ->
                       Log.(s "Can't understand job_state: " % s other @ warning);
                       None
                     end
@@ -250,12 +250,23 @@ let update rp ~host_io =
           | Some (state, `Running) ->
             return (`Still_running run_parameters)
           | Some (state, `Completed) ->
-            return (`Failed (run_parameters, fmt "PBS status: %S" state))
+            (* We get the log again to ensure the job did not between the
+               previous check and the `qstat` one *)
+            get_log_of_monitored_script ~host_io ~host:run.created.host
+              ~script:run.script
+            >>= fun log_opt ->
+            begin match Option.bind log_opt  List.last with
+            | Some (`Success date) ->
+              return (`Succeeded run_parameters)
+            | _ ->
+              return (`Failed (run_parameters,
+                               fmt "PBS status: %S + log: not success" state))
+            end
           | None ->
             return (`Failed (run_parameters, fmt "PBS status: None"))
           end
         | other ->
-          return (`Failed (run_parameters, 
+          return (`Failed (run_parameters,
                            fmt "log says not finished; qstat returned %d" other))
         end
       end
