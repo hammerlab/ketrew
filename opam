@@ -26,7 +26,7 @@ depends: [
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
   "ppx_deriving" "ppx_deriving_yojson" {>= "2.3"}
-  "cohttp" {>= "0.17.0" } "lwt"
+  "cohttp" {>= "0.21.0" } "lwt"
   "conduit"
   "js_of_ocaml" {>= "2.6" } "tyxml" "reactiveData" {>= "0.2"}
   ]
