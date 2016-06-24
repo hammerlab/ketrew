@@ -21,7 +21,7 @@
 open Ketrew_pure
 open Internal_pervasives
 
- 
+
 module Host = struct
   include Host
 
@@ -43,7 +43,7 @@ module Host = struct
       failwith (fmt "Error while parsing URI %S: %s" uri error)
     | `Ok u -> u
 
-  let cmdliner_term 
+  let cmdliner_term
       ?(doc="URI of the host (e.g. \
              ssh://user@example.com:42/tmp/ketrewplayground).") how =
     let open Cmdliner in
@@ -125,7 +125,7 @@ let user_target_internal
   object (self)
     val mutable active = active
     val mutable additional_tags = []
-    method name = 
+    method name =
       match name with
       | None -> id
       | Some s -> s
@@ -150,7 +150,7 @@ let user_target_internal
       |> (fun x ->
           if active then Target.activate_exn ~reason:`User x else x)
     method product =
-      Option.value_exn product 
+      Option.value_exn product
         ~msg:(fmt "Target %s has no known product" self#name)
     method add_recursive_tags _ =
       failwith "user_target_internal does not support recursive tags"
@@ -164,7 +164,7 @@ let target ?active ?depends_on ?make ?done_when ?metadata ?product
     ?equivalence ?on_failure_activate ?tags ?on_success_activate
     ?active ?depends_on ~name ?make ?metadata ?done_when ?product ()
 
-let file_target 
+let file_target
     ?depends_on ?make ?metadata ?name ?host ?equivalence ?on_failure_activate
     ?on_success_activate ?tags path =
   let product = file ?host path in
@@ -192,6 +192,20 @@ module Condition = struct
   let program ?(returns=0) ?host p =
     `Command_returns (Target.Command.program ?host p, returns)
 
+  module Volume = struct
+    (* We include the whole volume but hide functions in the .mli file: *)
+    include Target.Volume
+
+    let create ~host ~root structure =
+      let root = Ketrew_pure.Path.absolute_directory_exn root in
+      {host; root; structure}
+  end
+
+  let volume_exists v = (`Volume_exists v : t)
+
+  let volume_size_greater_of_equal v i : t =
+    `Volume_size_bigger_than (v, i)
+
 end
 
 module Build_process = struct
@@ -208,14 +222,14 @@ let yarn_application ?host ?daemonize_using ?daemon_start_timeout program =
     ?host ?daemonize_using ?daemon_start_timeout (`Yarn_application program)
 
 let yarn_distributed_shell
-    ?host ?daemonize_using ?daemon_start_timeout 
+    ?host ?daemonize_using ?daemon_start_timeout
     ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores
     ~container_memory ~timeout ~application_name program =
   Yarn.(
     create
       ?host ?daemonize_using ?daemon_start_timeout
       (distributed_shell_program
-         ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores 
+         ?hadoop_bin ?distributed_shell_shell_jar ?container_vcores
          ~container_memory ~timeout ~application_name program))
 
 (* The (chronologically) second API: *)
@@ -253,7 +267,7 @@ let target_to_submit
     val mutable active = active
     val mutable additional_tags = []
     val mutable recursive_tags = []
-    method name = 
+    method name =
       match name with
       | None -> id
       | Some s -> s
@@ -304,7 +318,7 @@ let on_failure_activate n = On_failure_activate n
 type done_when_option = [
   | `Dependencies_are
   | `Is_verified of Condition.t
-  | `Product_is 
+  | `Product_is
 ]
 
 let workflow_node
@@ -355,6 +369,7 @@ type single_file = <
   is_done: Ketrew_pure.Target.Condition.t option;
   path : string;
   is_bigger_than: int -> Ketrew_pure.Target.Condition.t;
+  host: Host.t
 > product
 let single_file ?(host= Host.tmp_on_localhost) path : single_file =
   let basename = Filename.basename path in
@@ -368,6 +383,7 @@ let single_file ?(host= Host.tmp_on_localhost) path : single_file =
     method exists = `Volume_exists vol
     method is_done = Some (`Volume_exists vol)
     method is_bigger_than n = `Volume_size_bigger_than (vol, n)
+    method host = host
   end
 
 let forget_product (node: _ workflow_node) =
