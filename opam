@@ -25,7 +25,7 @@ depends: [
   "trakeva" {>= "0.1.0" }
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
-  "ppx_deriving" "ppx_deriving_yojson" {>= "2.3"}
+  "ppx_deriving" "ppx_deriving_yojson" {>= "2.3" & <= "2.4"}
   "cohttp" {>= "0.21.0" } "lwt"
   "conduit"
   "js_of_ocaml" {>= "2.6" } "tyxml" {= "3.6.0"} "reactiveData" {>= "0.2"}
