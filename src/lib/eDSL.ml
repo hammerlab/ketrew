@@ -315,25 +315,25 @@ let depends_on l =  Depends_on l
 let on_success_activate n = On_success_activate n
 let on_failure_activate n = On_failure_activate n
 
-type done_when_option = [
-  | `Dependencies_are
+type ensures_option = [
+  | `Nothing
   | `Is_verified of Condition.t
-  | `Product_is
+  | `Product_is_done
 ]
 
 let workflow_node
     ?name
     ?active
-    ?make ?(done_when = `Product_is) ?metadata
+    ?make ?(ensures = `Product_is_done) ?metadata
     ?equivalence
     ?(tags=[]) ?(edges=[])
     (product: 'product) : 'product workflow_node =
   let target_to_submit =
     let done_when =
-      match done_when with
-      | `Dependencies_are -> None
+      match ensures with
+      | `Nothing -> None
       | `Is_verified c -> Some c
-      | `Product_is -> product#is_done
+      | `Product_is_done -> product#is_done
     in
     let depends_on =
       List.filter_map edges ~f:(function
