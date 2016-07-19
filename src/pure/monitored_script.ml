@@ -61,8 +61,10 @@ let to_string ?(write_pid=true) t  =
       fmt "exit $%s" ret_v;
       "fi";
     ] in
+  let playground_path = (Path.to_string t.playground) in
   let script =
-    [ fmt "mkdir -p %s" (Path.to_string t.playground); ]
+    [ fmt "mkdir -p %s" playground_path; ]
+    @ [ fmt "export KETREW_PLAYGROUND='%s'" playground_path; ]
     @ (if write_pid then
          [fmt "echo \"$$\" > %s" (pid_file t |> Path.to_string)]
        else
