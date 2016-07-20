@@ -167,6 +167,7 @@ module State : sig
     val failed_to_start : t -> bool
     val killing : t -> bool
     val tried_to_kill : t -> bool
+    val tried_to_eval_condition: t -> bool
     val did_not_ensure_condition : t -> bool
     val killed : t -> bool
     val finished : t -> bool
