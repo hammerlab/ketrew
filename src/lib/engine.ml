@@ -332,14 +332,26 @@ module Run_automaton = struct
         "concurrency_number", textf "%d" concurrency_number;
       ] in
     let transitions_log = ref [] in
+    let frozen_nodes = ref [] in
     let step_target target :
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
       (Ketrew_pure.Target.Automaton.progress list,
        [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
        | `Database_unavailable of string ]) Deferred_result.t =
+      let state_should_not_be_updated s =
+        match Target.State.Is.(still_running s || tried_to_eval_condition s) with
+        | false -> false
+        | true ->
+          let `Time time, _, _ = Target.State.summary s in
+          Time.now () -. time
+          < (Configuration.freeze_state_duration t.configuration)
+      in
       begin match Target.state target with
       | s when Target.State.Is.finished s ->
+        return []
+      | s when state_should_not_be_updated s ->
+        frozen_nodes := target :: !frozen_nodes;
         return []
       | other ->
         _process_automaton_transition t target
@@ -407,6 +419,14 @@ module Run_automaton = struct
               itemize !transitions_log
             | a_lot -> textf "%d" a_lot
           );
+          "frozen-nodes",
+          begin match List.length !frozen_nodes with
+          | 0 -> text "None"
+          | a_few when a_few < 8 ->
+            itemize (List.map !frozen_nodes ~f:(fun t ->
+                textf "%s (%s)" (Target.name t) (Target.id t)))
+          | a_lot -> textf "%d" a_lot
+          end;
           "has_progressed", bool has_progressed;
           "adding_did_something", bool adding_did_something;
           "killing_did_something", bool killing_did_something;

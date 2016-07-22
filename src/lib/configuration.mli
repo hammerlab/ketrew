@@ -93,6 +93,7 @@ val engine:
   ?maximum_successive_attempts: int ->
   ?concurrent_automaton_steps: int ->
   ?archival_age_threshold : [ `Days of float ] ->
+  ?freeze_state_duration : float ->
   unit -> engine
 (** Build an [engine] configuration:
 
@@ -114,6 +115,9 @@ val engine:
       is [4]).
     - [archival_age_threshold]: amount of for which a finished workflow-node is
       visible in the user-interface (default: 10 days).
+    - [freeze_state_duration]: the maximal amount of time the engine
+      can “freeze” the state of a node for optimizations purposes
+      (default: [30.] seconds).
 *)
 
 type authorized_tokens 
@@ -274,7 +278,11 @@ val host_timeout_upper_bound : engine -> float option
 (** Get the upper bound for the timeout of SSH calls, if any. *)
 
 val archival_age_threshold: engine -> [ `Days of float ]
-(** Get the maximal ago of easily visible workflow-nodes *)
+(** Get the maximal ago of easily visible workflow-nodes. *)
+
+val freeze_state_duration: engine -> float
+(** Get the maximal time workflow-nodes can get frozen by the engine. *)
+
 
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
