@@ -61,6 +61,12 @@ you can ensure with
 
 before `opam install conf-libev`.
 
+### Using Docker
+
+See the instructions at
+[hub.docker.com](https://hub.docker.com):
+[`hammerlab/ketrew-server`](https://hub.docker.com/r/hammerlab/ketrew-server/).
+
 ### Without Opam
 
 See the [development documentation](src/doc/Developer_Documentation.md) to find
