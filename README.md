@@ -101,41 +101,42 @@ returned by default) by using the `print-configuration` subcommand:
         Misc:
             Debug-level: 0
             Plugins: None
-
+            Tmp-dir: Not-specified (using /tmp/)
 
 For the server (using `pc`, a command alias for `print-configuration`):
 
     $ ketrew pc server
-    [ketrew]
-    Mode: Server
-    Engine:
-        Database: "/Users/leonidrozenberg/.ketrew/database"
-        Unix-failure: does not turn into target failure
-        Host-timeout-upper-bound:
-        Maximum-successive-attempts: 10
-        Concurrent-automaton-steps: 4
-    UI:
-        Colors: with colors
-        Get-key: uses `cbreak`
-        Explorer:
-            Default request: Targets younger than 1.5 days
-            Targets-per-page: 6
-            Targets-to-prefectch: 6
-    HTTP-server:
-        Authorized tokens:
-            Inline (Name: 755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=,
-            Value: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4=")
-            Path: "/Users/leonidrozenberg/.ketrew/authorized_tokens"
-        Daemonize: false
-        Command Pipe: Some "/Users/leonidrozenberg/.ketrew/command.pipe"
-        Log-path: Some "/Users/leonidrozenberg/.ketrew/server-log"
-        Return-error-messages: true
-        Max-blocking-time: 300.
-        Block-step-time: 3.
-        Listen: HTTP: 8756
-    Misc:
-        Debug-level: 0
-        Plugins: None
+    [ketrew] 
+        Mode: Server
+        Engine:
+            Database: "/home/hammerlab/.ketrew/database"
+            Unix-failure: does not turn into target failure
+            Host-timeout-upper-bound:
+            Maximum-successive-attempts: 10
+            Concurrent-automaton-steps: 4
+            Archival-age-threshold: 10.000000 days
+        UI:
+            Colors: with colors
+            Get-key: uses `cbreak`
+            Explorer:
+                Default request: Targets younger than 1.5 days
+                Targets-per-page: 6
+                Targets-to-prefectch: 6
+        HTTP-server:
+            Authorized tokens:
+                Inline (Name: l8Tm7Gv6veO1vYB9Fvc-ZnDwwsXXKbaKE4Vn5zcopOk=,
+                Value: "l8Tm7Gv6veO1vYB9Fvc-ZnDwwsXXKbaKE4Vn5zcopOk=")
+                Path: "/home/hammerlab/.ketrew/authorized_tokens"
+            Daemonize: false
+            Command Pipe: Some "/home/hammerlab/.ketrew/command.pipe"
+            Log-path: Some "/home/hammerlab/.ketrew/server-log"
+            Return-error-messages: true
+            Max-blocking-time: 300.
+            Listen: HTTP: 8756
+      Misc:
+          Debug-level: 0
+          Plugins: None
+          Tmp-dir: Not-specified (using /tmp/)
 
 Furthermore, `daemon` is a shortcut for starting the `server` in
 [daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
