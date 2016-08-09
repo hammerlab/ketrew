@@ -277,6 +277,13 @@ module Display_markup = struct
     | None -> textf "%S" s
     | Some substr -> textf "%S... %d Bytes" substr (String.length s)
 
+  let big_itemize ?(max_display = 10) ~render l =
+    match List.length l with
+    | small when small <= max_display ->
+      itemize (List.map l ~f:render)
+    | big ->
+      textf "%d items" big
+
   let rec log =
     function
     | Date f -> Time.log f

@@ -1027,9 +1027,8 @@ let find_all_orphans t =
     end
   >>= fun (`Passives passives, `Actives actives)->
   log_items := !log_items @ Display_markup.[
-      "actives", itemize (
-        List.map actives ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st))
-      );
+      "actives", big_itemize actives
+        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
       "passives", textf "%d targets" (List.length passives);
     ];
   (* To find all the reachable-passives, we use [to_check] as a stack of
@@ -1077,20 +1076,16 @@ let find_all_orphans t =
   >>| List.dedup ~compare:(fun a b -> compare (Target.id a) (Target.id b))
   >>= fun reachable ->
   log_items := !log_items @ Display_markup.[
-      "reachable", itemize (
-        List.map reachable
-          ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st))
-      );
+      "reachable", big_itemize reachable
+        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
     ];
   let unreachable_passives =
     List.filter passives ~f:(fun p ->
         List.for_all reachable ~f:(fun rp -> Target.id rp <> Target.id p))
   in
   log_items := !log_items @ Display_markup.[
-      "unreachable", itemize (
-        List.map unreachable_passives
-          ~f:Target.(fun st -> textf "%s (%s)" (id st) (name st));
-      );
+      "unreachable", big_itemize unreachable_passives
+        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
       "end", date_now ();
     ];
   Logger.log Display_markup.(description_list !log_items);
