@@ -107,11 +107,10 @@ git clone  git://github.com/smondet/trakeva
 cd trakeva
 make configure
 make
-# On OSX we start our own postgresql server, on linux we use the one of the box
+# On OSX we start our own postgresql server, on linux we don't run the tests
 case $TRAVIS_OS_NAME in
     osx) ./trakeva_tests ;;
-    linux)
-        POSTGRESQL_CONNECTION_INFO=postgresql://127.0.0.1/template1  ./trakeva_tests ;;
+    linux) echo "No trakeva tests" ;;
     *) echo "Unknown $TRAVIS_OS_NAME"; exit 1
 esac
 cd ..
