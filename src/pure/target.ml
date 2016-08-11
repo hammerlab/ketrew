@@ -1108,13 +1108,17 @@ module Automaton = struct
         from_killing_state killable_history c
       | `Killing history as c ->
         from_killing_state history c
-      | `Killed _
+      | `Killed _ as cur when State.Is.killed_from_passive cur ->
+        (* We consider that nodes killed just after being passive (i.e. orphans)
+           should not activate their `on_failure_activate` nodes. *)
+        `Do_nothing (fun ?log () ->
+            return_with_history t (`Finished (to_history ?log cur)))
+      | `Killed _ (* We put other killings in the class of “actual failures.” *)
       | `Failed_to_start _
       | `Failed_to_eval_condition _
       | `Failed_to_kill _ as c ->
-        (* what should we actually do? *)
         activate_failures c
-      end
+    end
 
 end
 
