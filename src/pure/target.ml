@@ -487,7 +487,7 @@ that the potential condition has been ensured.
       | true, _ -> "ies"
       | _, 1 ->  ""
       | _, _ -> "s" in
-    let rec dive (t: t) =
+    let rec dive ?(first_run = false) (t: t) =
       let continue history = dive (history.previous_state :> t) in
       match t with
       | `Building history -> continue history
@@ -503,6 +503,10 @@ that the potential condition has been ensured.
         fmt "non-fatal error %S (check-running)" error :: continue history
       | `Ran_successfully (history, book) -> continue history
       | `Successfully_did_nothing history -> continue history
+      | `Active (history, how) when first_run ->
+        fmt "Activated by %s"
+          (match how with `User -> "User" | `Dependency id -> id)
+        :: continue history
       | `Active (history, _) -> continue history
       | `Tried_to_eval_condition history -> continue history
       | `Tried_to_reeval_condition (error, history) ->
@@ -537,12 +541,12 @@ that the potential condition has been ensured.
     let history_opt, bookkeeping_opt = contents t in
     let time, message =
       Option.map history_opt ~f:(fun history ->
-        let { log = {time; message}; previous_state } = history in
-        (time, message))
+          let { log = {time; message}; previous_state } = history in
+          (time, message))
       |> function
       | None -> passive_time t, None
       | Some (time, m) -> time, m in
-    (`Time time, `Log message, `Info (dive t))
+    (`Time time, `Log message, `Info (dive ~first_run:true t))
 
   module Flat = struct
     (*
