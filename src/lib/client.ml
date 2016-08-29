@@ -349,7 +349,9 @@ let flatten_to_pure_targets ?add_tags t =
         with
         | true -> ()
         | false ->
-          x#add_recursive_tags more_tags;
+          if more_tags <> [] then (
+            x#add_recursive_tags more_tags
+          );
           todo := x :: !todo
       ) in
   let add_to_return ~more_tags t =
