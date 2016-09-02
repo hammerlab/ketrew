@@ -289,9 +289,6 @@ that the potential condition has been ensured.
     | finished
   ] [@@deriving yojson]
 
-  let of_yojson yj : (t, _) Result.t = of_yojson yj
-
-
   let make_log ?message () = 
     {time = Time.now (); message}
   let to_history ?log previous_state =

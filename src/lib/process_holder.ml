@@ -406,10 +406,11 @@ We need to comunicate with that process:
     IO.read_file t.json_log
     >>= fun logs ->
     begin match Yojson.Safe.from_string logs |> Display_markup.of_yojson with
-    | `Ok o -> return o
+    | Ppx_deriving_yojson_runtime.Result.Ok o -> return o
     | exception e ->
       fail (`Failure (fmt "parsing %s: %s" t.json_log (Printexc.to_string e)))
-    | `Error e -> fail (`Failure (fmt "parsing %s: %s" t.json_log e))
+    | Ppx_deriving_yojson_runtime.Result.Error e ->
+      fail (`Failure (fmt "parsing %s: %s" t.json_log e))
     end
 
   let ssh_options t =

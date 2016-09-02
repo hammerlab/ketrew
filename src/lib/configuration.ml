@@ -332,9 +332,10 @@ module File = struct
   ] [@@deriving yojson]
 
   let parse_string_exn s =
+    let open Ppx_deriving_yojson_runtime.Result in
     match Yojson.Safe.from_string s |> of_yojson with
-    | `Ok o -> o
-    | `Error e -> failwith (fmt "Configuration parsing error: %s" e)
+    | Ok o -> o
+    | Error e -> failwith (fmt "Configuration parsing error: %s" e)
 
   let to_string s = to_yojson s |> Yojson.Safe.pretty_to_string ~std:true
 
