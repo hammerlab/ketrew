@@ -364,15 +364,16 @@ let show_server_logs ~max_number ?(condition = `True) server_config =
                 (Typed_log.Item.show typed_item);
               go_through_list (count + 1) more
             in
+            let open Ppx_deriving_yojson_runtime.Result in
             begin match Typed_log.Item.of_yojson item  with
-            | `Error err ->
+            | Error err ->
               Log.(s "Error parsing JSON in " % quote file % s " → " % s err
                    @ warning);
               go_through_list count more
-            | `Ok typed_item
+            | Ok typed_item
               when Typed_log.Item.Condition.eval typed_item condition ->
               output typed_item
-            | `Ok typed_item -> go_through_list count more
+            | Ok typed_item -> go_through_list count more
             end
           in
           (* Logging.Log_store writes in order, so we reverse: *)

@@ -78,13 +78,14 @@ module Uri = struct
   let to_yojson u =
     `String (Uri.to_string u)
   let of_yojson =
+    let open Ppx_deriving_yojson_runtime.Result in
     function
     | `String u ->
       begin
-        try `Ok (Uri.of_string u)
-        with e -> `Error "Wrong URI string in Yojson input"
+        try Ok (Uri.of_string u)
+        with e -> Error "Wrong URI string in Yojson input"
       end
-    | other -> `Error "Wrong JSON for Uri.t"
+    | other -> Error "Wrong JSON for Uri.t"
 end
 
 (** Application of the functor [Docout.Make_logger] to write to [stderr]
@@ -142,7 +143,7 @@ module Json = struct
     module Of_v0 (T: sig
         type t
         val to_yojson : t -> Yojson.Safe.json
-        val of_yojson : Yojson.Safe.json -> [ `Error of string | `Ok of t ]
+        val of_yojson : Yojson.Safe.json -> t Ppx_deriving_yojson_runtime.error_or
       end) : WITH_VERSIONED_SERIALIZATION with type t := T.t = struct
       type 'a versioned = V0 of 'a [@@deriving yojson]
       let to_json t =
@@ -151,8 +152,8 @@ module Json = struct
         to_json t |> Yojson.Safe.pretty_to_string ~std:true
       let of_json_exn json : T.t =
         match versioned_of_yojson T.of_yojson json with
-        | `Ok (V0 t) -> t
-        | `Error str ->
+        | Ppx_deriving_yojson_runtime.Result.Ok (V0 t) -> t
+        | Ppx_deriving_yojson_runtime.Result.Error str ->
           failwith (fmt "deserialization error: %s" str)
 
       let deserialize_exn s =
