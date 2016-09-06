@@ -1,4 +1,4 @@
-FROM ocaml/opam:ubuntu-15.10_ocaml-4.02.3
+FROM ocaml/opam:ubuntu-16.04_ocaml-4.02.3
 RUN sudo apt-get install --yes libsqlite3-dev libev-dev libgmp-dev
 RUN opam install -y sqlite3 tls conf-libev
 RUN opam pin --yes add ketrew https://github.com/hammerlab/ketrew.git
