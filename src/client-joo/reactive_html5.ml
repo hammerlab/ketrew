@@ -3,13 +3,13 @@ open Internal_pervasives
 
 
 module H5 = struct
-  include Tyxml_js.Html5
-  module Reactive_node = Tyxml_js.R.Html5
+  include Tyxml_js.Html
+  module Reactive_node = Tyxml_js.R.Html
 
   let to_dom e = Tyxml_js.To_dom.of_node e
 
   let local_anchor ~on_click ?(a=[]) content =
-    Tyxml_js.Html5.a ~a:(
+    Tyxml_js.Html.a ~a:(
       [
         a_href "javascript:;";
         (* The `href` transforms the mouse like a link.
@@ -73,7 +73,7 @@ module H5 = struct
 
     type tab_item =
       bool React.signal * Xml.mouse_event_handler *
-      Html5_types.flow5_without_interactive elt list_wrap
+      Html_types.flow5_without_interactive elt list_wrap
 
     let tab_item ~active ~on_click content = (active, on_click, content)
     let with_tab_bar ~tabs ~content =
@@ -257,8 +257,8 @@ module H5 = struct
 
     module Input_group = struct
       type item =
-        | Addon:  [< Html5_types.div_content_fun ] elt list -> item
-        | Button_group: [< Html5_types.div_content_fun ] elt list -> item
+        | Addon:  [< Html_types.div_content_fun ] elt list -> item
+        | Button_group: [< Html_types.div_content_fun ] elt list -> item
         | Text_input: [ `Text | `Password ] * string * (string -> unit) * (int -> unit) -> item
 
       let addon l = Addon l
@@ -277,7 +277,7 @@ module H5 = struct
               a_class ["form-control"];
               a_input_type input_type;
               (* a_size 100; *)
-              a_autocomplete `Off;
+              a_autocomplete false;
               a_value value;
               a_oninput (fun ev ->
                   Js.Opt.iter ev##.target (fun input ->

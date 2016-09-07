@@ -21,6 +21,6 @@ val eq: t -> t -> bool
 val target_id: t -> string
 
 module Html: sig
-  val title: t -> [> Html5_types.span ] Reactive_html5.H5.elt
-  val render: t -> [> Html5_types.div ] Reactive_html5.H5.elt
+  val title: t -> [> Html_types.span ] Reactive_html5.H5.elt
+  val render: t -> [> Html_types.div ] Reactive_html5.H5.elt
 end

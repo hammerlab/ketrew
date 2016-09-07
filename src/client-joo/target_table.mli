@@ -32,7 +32,7 @@ val filter: t -> Filter.t Reactive.Signal.t
 module Html: sig
 
 
-  val title: t -> [> Html5_types.span ] Reactive_html5.H5.elt
+  val title: t -> [> Html_types.span ] Reactive_html5.H5.elt
 
   val render :
     kill_targets:(
@@ -45,5 +45,5 @@ module Html: sig
     target_link_on_click:(string -> unit) ->
     get_target_status:(string ->
                        Ketrew_pure.Target.State.Flat.t Reactive.signal) ->
-    t -> [> Html5_types.div ] Reactive_html5.H5.elt
+    t -> [> Html_types.div ] Reactive_html5.H5.elt
 end
