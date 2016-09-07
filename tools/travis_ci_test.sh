@@ -88,7 +88,8 @@ echo "Sqlite version"
 sqlite3 -version
 
 echo "Setting Warn-Error for the Travis test"
-export OCAMLPARAM="warn-error=Ad,_"
+export OCAMLPARAM="warn-error=Ad-58,_"
+# we disabled warning 58: https://gitlab.camlcity.org/gerd/lib-findlib/issues/3
 
 echo "Test-trakeva"
 git clone  git://github.com/smondet/trakeva
