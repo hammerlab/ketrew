@@ -18,6 +18,6 @@ val start_updating: t -> unit
 (** Generate HTML elements from a client. *)
 module Html: sig
   val status_icon: t ->
-    Html5_types.flow5_without_interactive Reactive_html5.H5.elt
-  val render: t -> Html5_types.div_content_fun  Reactive_html5.H5.elt
+    Html_types.flow5_without_interactive Reactive_html5.H5.elt
+  val render: t -> Html_types.div_content_fun  Reactive_html5.H5.elt
 end
