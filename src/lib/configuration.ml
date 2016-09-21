@@ -552,7 +552,7 @@ let load_exn ?(and_apply=true) ?profile how =
          % s "Details: " % n % indent (separate n !potential_error_log) % n
          % s "Environment: " % n
          % indent (separate n environment_variables) % n
-         % s "See also: http://seb.mondet.org/software/ketrew/\
+         % s "See also: http://www.hammerlab.org/docs/ketrew/master/\
               The_Configuration_File.html" % n
          @ error);
     raise e
