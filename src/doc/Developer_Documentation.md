@@ -195,25 +195,21 @@ documentation, issues that went into the “next release”
 release workflow:
 
 - Release dependencies for which we are using unreleased features
-(e.g. [`trakeva`](https://github.com/smondet/trakeva),
-[`sosa`](https://github.com/smondet/sosa), etc.).
+  (e.g. [`trakeva`](https://github.com/smondet/trakeva),
+  [`sosa`](https://github.com/smondet/sosa), etc.).
 - Set version string in `OMakeroot`
 - Update the introductory paragraph of the `README.md` file for the particular
-version.
+  version.
 - Write a human-friendly change-log (go through git history and write important
-changes).
+  changes).
 - Create the release/tag `ketrew.x.y.z` (put the change-log there, see
-releases [documentation](https://github.com/blog/1547-release-your-software)).
-- Fork the
-[mothership opam-repository](https://github.com/ocaml/opam-repository).
-- Add a new package by modifying the repository's one (see `./opam`),
-fix the URL and the MD5 sum (from release), test the package (in a new
-opam-switch, or remove `ocamlfind`), create pull-request.
-- Add the tag as an “interesting checkout” in
-[`smondet/build-docs-workflow`](https://github.com/smondet/build-docs-workflow),
-then build and push the documentation (which is for now part of
-[`smondet/smondet.github.com`](https://github.com/smondet/smondet.github.com)).
+  releases [documentation](https://github.com/blog/1547-release-your-software)).
+- Follow the instructions at
+  [`OCamlPro/opam-publish`](https://github.com/OCamlPro/opam-publish)
+- Make sure the documentation for the version is available at
+  <http://hammerlab.org/docs/> (requires creating a `doc.x,y,z` long-living
+  branch).
 - Once the opam PR is merged, brag about it, write a blog post, start
-[hacking](https://github.com/hammerlab/ketrew/issues?q=is%3Aopen+is%3Aissue)
-on the next version.
+  [hacking](https://github.com/hammerlab/ketrew/issues?q=is%3Aopen+is%3Aissue)
+  on the next version.
 
