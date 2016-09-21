@@ -111,7 +111,7 @@ module Application_state = struct
                     ];
                     pcdata "See the ";
                     a ~a:[
-                      a_href "http://seb.mondet.org/software/ketrew/";
+                      a_href "http://www.hammerlab.org/docs/ketrew/master/index.html";
                     ] [pcdata "documentation"];
                     pcdata " for Ketrew."; br ();
                     pcdata "Report issues and ask questions on the Github ";

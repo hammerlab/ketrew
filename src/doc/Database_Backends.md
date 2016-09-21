@@ -1,8 +1,9 @@
 Database Backends
 =================
 
-Using the [Trakeva](http://seb.mondet.org/software/trakeva/index.html) library,
-Ketrew can happily work with both Sqlite or Postgresql database backends.
+Using the [Trakeva](http://www.hammerlab.org/docs/trakeva/master/index.html)
+library, Ketrew can happily work with both Sqlite or Postgresql database
+backends.
 
 Configuring Databases
 ---------------------

@@ -106,7 +106,7 @@ can set it to `Green to wake it up earlier and do things.
 
 For example, after adding targets, the server will be woken-up to start running
 the targets and not wait for the next “loop timeout.”
-See [Pvem_lwt_unix.LIGHT](http://seb.mondet.org/software/pvem_lwt_unix/api/Pvem_lwt_unix.LIGHT.html)
+See [Pvem_lwt_unix.LIGHT](http://www.hammerlab.org/docs/pvem_lwt_unix/master/api/Pvem_lwt_unix.LIGHT.html)
 for more details.
 M*)
   let create ~state ~process_holder ~authentication server_configuration =

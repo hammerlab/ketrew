@@ -62,7 +62,7 @@ let come_up_with_database_parameters ~config_path =
                 -use-database \
                 postgresql://pg.example.com:4242/database" % n
            % s "see also \
-                http://seb.mondet.org/software/ketrew/Database_Backends.html"
+                http://www.hammerlab.org/docs/ketrew/master/Database_Backends.html"
            @ error);
       fail (`Failure "Cannot create configuration")
     end

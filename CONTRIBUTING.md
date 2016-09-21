@@ -33,12 +33,12 @@ Please refer to our
 
 On top of that, for Ketrew:
 
-- We use a pervasive Error monad embedded in `Lwt`
-(see [`pvem_lwt_unix`](http://seb.mondet.org/software/pvem_lwt_unix/index.html))
-for all the *library* (i.e. internal) code. This makes type signatures scary as
-they ought to be, and forces self-documenting code discipline.
+- We use a pervasive Error monad embedded in `Lwt` (see
+  [`pvem_lwt_unix`](http://www.hammerlab.org/docs/pvem_lwt_unix/master/index.html))
+  for all the *library* (i.e. internal) code. This makes type signatures scary
+  as they ought to be, and forces self-documenting code discipline.
 - But *in contrast*, the EDSL should be much simpler, in order to be picked up
-by OCaml-beginners.
+  by OCaml-beginners.
 
 More information for developers is available in the
 [documentation](src/doc/Developer_Documentation.md).
