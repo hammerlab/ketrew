@@ -8,7 +8,7 @@ DefineCommandVars()
 ################################################################################
 # General Project Information
 PROJECT = ketrew
-VERSION = 2.0.0+master
+VERSION = 3.0.0
 DESCRIPTION = Workflow Engine For The Trenches
 
 if $(test -e .git)
