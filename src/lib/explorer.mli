@@ -29,7 +29,7 @@ val create : client:Client.t -> unit -> t
 
 val explore : t ->
   (unit, [> `Client of Client.Error.t 
-         | `Database of Trakeva.Error.t
+         | `Database of Persistent_data.Error.database
          | `Database_unavailable of string
          | `Failure of string
          | `IO of [> `Read_file_exn of string * exn

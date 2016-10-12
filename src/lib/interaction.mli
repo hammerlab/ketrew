@@ -70,7 +70,7 @@ val build_sublist_of_targets :
   filter:(Ketrew_pure.Target.t -> bool) ->
   ([> `Cancel | `Go of string list ],
    [> `Client of Client.Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of string
    | `Failure of string
    | `IO of [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]

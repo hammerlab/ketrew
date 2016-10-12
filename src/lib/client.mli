@@ -56,7 +56,7 @@ val as_client:
   configuration:Configuration.t ->
   f:(client:t ->
      ('result,
-      [> `Database of Trakeva.Error.t
+      [> `Database of Persistent_data.Error.database
       | `Database_unavailable of string
       | `Dyn_plugin of
            [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
@@ -85,7 +85,7 @@ val get_local_engine: t -> Engine.t option
 val all_visible_targets: t -> 
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of string
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
@@ -99,7 +99,7 @@ val get_list_of_target_ids : t ->
   query:Ketrew_pure.Protocol.Up_message.target_query ->
   (Ketrew_pure.Target.id list,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of string
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
@@ -111,7 +111,7 @@ val get_target: t ->
   (Ketrew_pure.Target.t,
    [> `Client of Error.t
    | `Database_unavailable of string
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
     Deferred_result.t
@@ -121,7 +121,7 @@ val get_targets: t ->
   id_list:Ketrew_pure.Target.id list ->
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of string
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
@@ -136,7 +136,7 @@ val kill: t ->
   Ketrew_pure.Target.id list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of Ketrew_pure.Target.id
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
@@ -147,7 +147,7 @@ val restart: t ->
   Ketrew_pure.Target.id list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of Ketrew_pure.Target.id
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])
@@ -158,7 +158,7 @@ val add_targets: t ->
   Ketrew_pure.Target.t list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Trakeva.Error.t
+   | `Database of Persistent_data.Error.database
    | `Database_unavailable of string
    | `Fetching_node of Persistent_data.Error.fetching_node
    | `Target of [> `Deserilization of string ] ])

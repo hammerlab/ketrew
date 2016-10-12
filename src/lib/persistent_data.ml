@@ -17,6 +17,21 @@
 (*  implied.  See the License for the specific language governing         *)
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
+(** 
+   
+   This module is the one and only interface to the PostgreSQL
+   database managed by Ketrew.
+
+   - {!SQL}: Generic, pure OCaml, “Better-Typed” construction API.
+   - {!DB}: Higher-lever wrapping of the `ocaml-postgresql` API.
+   - {!Schema}: Description of Ketrew's particular schema using th {!SQL} module.
+   - {!Event_source}: API to use Lwt/React to wait for interesting
+     events from this layer.
+   - {!Change}: Ketrew's actual interesting events (uses {!Event_source}).
+   - {!Error}: Usual error module.
+   - [type t] and the main Ketrew-specific operations
+
+*)
 
 open Ketrew_pure
 open Internal_pervasives
@@ -27,660 +42,708 @@ include Logging.Global.Make_module_error_and_info(struct
   end)
 open Logging.Global
 
-module Database = Trakeva_of_uri
-module Database_action = Trakeva.Action
-module Database_error = Trakeva.Error
 
-module Error = struct
-  type fetching_node = [
-    | `Get_stored_target
-    | `Pointer_loop_max_depth of int
-    | `Target_to_add
-  ] * [ `Id of string ]
-end
+let debug = ref false
 
-module With_database = struct
+let dbg fmt =
+  let open Printf in
+  ksprintf (eprintf "Persistend_data: %s\n%!") fmt
 
-  type t = {
-    mutable database_handle: Database.t option;
-    database_parameters: string;
-    archival_age_threshold: [ `Days of float ];
-    activation_mutex : Lwt_mutex.t;
-    equivalence_checking_mode : [ `When_adding | `When_activating ];
-  }
-  let create ~database_parameters ~archival_age_threshold =
-    let activation_mutex = Lwt_mutex.create () in
-    return {
-      database_handle = None; database_parameters; archival_age_threshold;
-      activation_mutex;
-      equivalence_checking_mode =
-        begin try
-          (* This is an undocumented way of changing how Ketrew check for
-             equivalence of targets.
 
-             The default one “when-adding” is the “historical” one.
+(** Experiment with Typed-SQL queries using GADTs all over the place. *)
+module SQL = struct
 
-             The other one only checks for equivalence while activating the
-             node against the other active nodes. It makes workflows show-up as
-             active quicker. In some use-cases, this may be faster, in some
-             others it will be slower.
+  type untyped_sql_field =
+    [ `Blob of string | `Null ]
+  [@@deriving show]
 
-             Both modes do not cooperate; if Ketrew restarts while changing
-             mode, you'd better know what you're doing with your workflows.
-          *)
-          assert (Sys.getenv "KETREW_EQUIVALENCE_TEST" = "activating");
-          `When_activating
-        with _ -> `When_adding
-        end;
+  (** Ugly/imperative implementation of a parameter counter.
+
+      The idea is to keep all arguments in a list and return $1, $2,
+      $3, … while building the query string; then we can render the
+      arguments into an [untyped_sql_field array] which respects the
+      order.
+  *)
+  module Positional_parameter = struct
+    type t = {
+      mutable rev_args: untyped_sql_field list;
     }
 
-  let database t =
-    match t.database_handle with
-    | Some db -> return db
-    | None ->
-      Database.load t.database_parameters
-      >>= fun db ->
-      t.database_handle <- Some db;
-      return db
+    let create () = {rev_args = []}
+    let next t arg =
+      t.rev_args <- arg :: t.rev_args; 
+      let c = List.length t.rev_args in
+      fmt "$%d" c
 
-  let unload t =
-    match t.database_handle with
-    | Some s ->
-      Database.close s
-    | None -> return ()
+    let render t =
+      Array.of_list (List.rev t.rev_args)
+  end
+
+  type query = {
+    query: string [@main ];
+    arguments: untyped_sql_field array;
+  } [@@deriving make, show]
+
+  let query s pos =
+    make_query s ~arguments:(Positional_parameter.render pos)
 
 
-  (* These are the names of the collections used for storing targets
-     with Trakeva: *)
-  let passive_targets_collection = "passive-targets"
-  let active_targets_collection = "active-targets"
-  let finished_targets_collection = "finished-targets"
-  let archived_targets_collection = "archived-targets"
+  (** High-level types of the query-building EDSL. *)
+  module Type = struct
 
-  let all_collections = [
-    passive_targets_collection;
-    active_targets_collection;
-    finished_targets_collection;
-    archived_targets_collection;
-  ]
-
-  let set_target_db_action target =
-    let key = Target.id target in
-    Database_action.(set ~collection:active_targets_collection ~key
-                       Target.Stored_target.(of_target target |> serialize))
-
-  let run_database_action ?(msg="NO INFO") t action =
-    database t
-    >>= fun db ->
-    Log.(s "Going to to run DB action: " % s msg @ very_verbose);
-    begin Database.(act db  action)
-      >>= function
-      | `Done ->
-        return ()
-      | `Not_done ->
-        (* TODO: try again a few times instead of error *)
-        fail (`Database_unavailable (fmt "running DB action: %s" msg))
+    module type STRINGABLE = sig
+      type t
+      val to_string : t -> string
+      val of_string : string -> t option
     end
 
-  let make_pointer_of_passive_target t ~target ~pointing_to =
-    let key = Target.id target in
-    let src = passive_targets_collection in
-    let dest = archived_targets_collection in
-    let pointer =
-      Target.Stored_target.make_pointer ~from:target ~pointing_to in
-    run_database_action ~msg:(fmt "pointerify-%s-from-%s-to-%s" key src dest) t
-      Database_action.(
-        seq [
-          unset ~collection:src key;
-          set ~collection:dest ~key Target.Stored_target.(serialize pointer)
-        ])
-    >>= fun () ->
-    return pointer
+    type _ t =
+      | Byte_array : string t
+      | Stringable: (module STRINGABLE with type t = 'a) -> 'a t
+
+    let to_sql: type a. a t -> string =
+      function
+      | Byte_array -> "BYTEA NOT NULL"
+      | Stringable _ ->  "BYTEA NOT NULL"
+  end
 
 
-  let move_target t ~target ~src ~dest =
-    (* Caller will assume `target` is the new value; it may have changed *)
-    let key = Target.id target in
-    run_database_action ~msg:(fmt "move-%s-from-%s-to-%s" key src dest) t
-      Database_action.(
-        seq [
-          unset ~collection:src key;
-          set ~collection:dest ~key
-            Target.Stored_target.(of_target target |> serialize)
-        ])
+  (** Fields are types and names; they end up in ["CREATE TABLE"],
+      ["SELECT"], ["WHERE"], etc. constructs. *)
+  module Field = struct
+    type ('a, 'b) t = {
+      name: string;
+      sql_type: 'a Type.t;
+      tag: 'b;
+    }
 
-  let debug_archival =
-    try Sys.getenv "DEBUG_ARCHIVAL" = "true"
-    with _ -> false
+    (** A [Field.List.t] is an heterogeneous list that works like a
+        Printf/Scanf format type.
 
-  let get_archival_threshold t  =
-    match debug_archival, t.archival_age_threshold with
-    | true, _ -> 60. *. 2.
-    | false, `Days d -> Time.day *. d
+        See also {{:https://drup.github.io/2016/08/02/difflists/}}. *)
+    module List = struct
 
-  (* This will be called after an update and after fetching to
-     make sure it gets done even when there are crashes or weirdly sync-ed DBs
-  *)
-  let clean_up_finished t ~from target =
-    let archival_threshold = get_archival_threshold t in
-    let now = Time.now () in
-    begin match Target.(state target |> State.finished_time) with
-    | None -> return ()
-    | Some time when
-        (* finished, but not old enough to go to archive *)
-        time +. archival_threshold > now ->
-      if debug_archival then
-        Printf.eprintf "debug archival\n   target %s (from %s) is YOUNG\n   (%s + %f Vs %s)\n%!"
-          (Target.id target) from (Time.to_string_hum time) archival_threshold
-          (now |>Time.to_string_hum);
-      begin if from <> finished_targets_collection
-        then (
-          log_info Log.(Target.log target % s " moves to the finsihed collection");
-          move_target t ~target ~src:from ~dest:finished_targets_collection
-        ) else (
-          (* already in "finished" *)
-          return ()
-        )
-      end
-    | Some time
-      when time +. archival_threshold < Time.now ()
-        && from = finished_targets_collection ->
-      if debug_archival then
-        Printf.eprintf "debug archival target %s is OLD\n%!" (Target.id target);
-      (* old enough to be archived and not yet archived *)
-      move_target t ~target ~src:from ~dest:archived_targets_collection
-    | Some _ ->
-      return ()
-    end
+      type ('a, 'b) field = ('a, 'b) t
 
-  let add_or_update_targets t target_list =
-    run_database_action t
-      Database_action.(seq (List.map target_list ~f:set_target_db_action))
-      ~msg:(fmt "add_or_update_targets [%s]"
-              (List.map target_list ~f:Target.id |> String.concat ~sep:", "))
+      type (_, _) t =
+        | [] : ('a, 'a) t
+        | ( :: ) : ('c, 'd) field * ('a, 'b) t -> (('c * 'd) -> 'a, 'b) t
 
-  let update_target t trgt =
-    add_or_update_targets t [trgt]
-    >>= fun () ->
-    clean_up_finished t ~from:active_targets_collection trgt
+      let rec to_sql_name_type:
+        type a b. (a, b) t -> (string * string) list =
+          function
+          | [] -> []
+          | { name; sql_type; tag } :: more ->
+            (name, Type.to_sql sql_type) :: (to_sql_name_type more)
 
-  let raw_add_or_update_stored_target t ~collection ~stored_target =
-    let key = Target.Stored_target.id stored_target in
-    run_database_action t
-      Database_action.(
-        set ~collection  ~key (Target.Stored_target.serialize stored_target)
-      )
-      ~msg:(fmt "raw_add_or_update_stored_target: %s" key)
+      let to_sql_create l =
+        fmt "(%s)" (to_sql_name_type l
+                    |> List.map ~f:(fun (n, t) -> fmt "%s %s" n t)
+                    |> String.concat ~sep:", ")
 
-  let get_stored_target t key =
-    begin
-      database t >>= fun db ->
-      List.fold all_collections ~init:(return None) ~f:(fun prev_m collection ->
-          prev_m
-          >>= begin function
-          | Some s -> return (Some s)
-          | None ->
-            Database.get db ~collection ~key
-            >>= begin function
-            | Some serialized_stored ->
-              of_result (Target.Stored_target.deserialize serialized_stored)
-              >>= fun st ->
-              (* It may happen that finished targets are in the active collection,
-                 - the application may have been stopped between the
-                   Finished save and the move to the finsihed collection
-                 - the user may have played with `ketrew sync` and backup
-                   directories
-                 so when we come accross it, we clean up *)
-              begin match Target.Stored_target.get_target st with
-              | `Target target ->
-                clean_up_finished t target ~from:collection
-                >>= fun () ->
-                return (Some st)
-              | `Pointer _ ->
-                (* pointers are already archived *)
-                return (Some st)
+      let to_sql_select l =
+        fmt "%s" (to_sql_name_type l
+                    |> List.map ~f:(fun (n, t) -> n)
+                    |> String.concat ~sep:", ")
+
+      let to_sql_insert l =
+        fmt "(%s)" (to_sql_name_type l
+                    |> List.map ~f:(fun (n, t) -> n)
+                    |> String.concat ~sep:", ")
+
+      (** The equivalent of [Printf.scanf] for field-lists. *)
+      let parse_sql_fields_exn
+          fields (untyped : untyped_sql_field list) on_success =
+        let rec loop
+          : type a b.
+            a -> untyped_sql_field list -> (a, b) t -> b =
+          fun f unty fds ->
+            match fds, unty with
+            | [], [] ->
+              f
+            | [], _ ->
+              Printf.ksprintf failwith "Too many columns: %d"
+                (List.length untyped)
+            | _ :: _, [] ->
+              Printf.ksprintf failwith "Not enough columns: %d"
+                (List.length untyped)
+            | { name; sql_type = Type.Byte_array; tag } :: more,
+              untyfield :: rest ->
+              begin match untyfield with
+              | `Null ->
+                Printf.ksprintf failwith "%s is Null while expecting blob" name
+              |`Blob b ->
+                loop (f (b, tag)) rest more
               end
-            | None ->
-              return None
-            end
-          end
-        )
-      >>= function
-      | Some st -> return st
-      | None -> fail (`Fetching_node (`Get_stored_target, `Id key))
-    end
-
-  let get_target t id =
-    let rec get_following_pointers ~key ~count =
-      get_stored_target t key
-      >>= fun stored ->
-      begin match Target.Stored_target.get_target stored with
-      | `Pointer _ when count >= 30 ->
-        fail (`Fetching_node (`Pointer_loop_max_depth 30, `Id id))
-      | `Pointer key ->
-        get_following_pointers ~count:(count + 1) ~key
-      | `Target t -> return t
-      end
-    in
-    get_following_pointers ~key:id ~count:0
-
-  let get_collections_of_stored_targets t ~from =
-    database t
-    >>= fun db ->
-    Deferred_list.while_sequential from ~f:(fun collection ->
-        Database.get_all db ~collection
-        >>= fun ids ->
-        return (collection, ids))
-    >>= fun col_ids ->
-    log_info
-      Log.(s "Getting : "
-           % separate (s " + ")
-             (List.map col_ids ~f:(fun (col, ids) ->
-                  i (List.length ids) % sp % parens (quote col)
-                ))
-           % s " stored targets");
-    Deferred_list.while_sequential col_ids ~f:(fun (_, ids) ->
-        Deferred_list.while_sequential ids ~f:(fun key ->
-            get_stored_target t key
-          ))
-    >>| List.concat
-
-  let get_collections_of_targets t ~from =
-    database t
-    >>= fun db ->
-    Deferred_list.while_sequential from ~f:(fun collection ->
-        Database.get_all db ~collection
-        >>= fun ids ->
-        return (collection, ids))
-    >>= fun col_ids ->
-    log_info
-      Log.(s "Getting : "
-           % separate (s " + ")
-             (List.map col_ids ~f:(fun (col, ids) ->
-                  i (List.length ids) % sp % parens (quote col)
-                ))
-           % s " targets");
-    Deferred_list.while_sequential col_ids ~f:(fun (_, ids) ->
-        Deferred_list.while_sequential ids ~f:(fun key ->
-            get_stored_target t key
-            >>| Target.Stored_target.get_target
-            >>= fun topt ->
-            begin match topt with
-            | `Pointer _ ->
-              return None
-            | `Target target -> return (Some target)
-            end)
-        >>| List.filter_opt)
-    >>| List.concat
-
-  let alive_stored_targets t =
-    get_collections_of_stored_targets t ~from:[
-      passive_targets_collection;
-      active_targets_collection;
-    ]
-  let get_all_finished_ids t =
-    database t
-    >>= fun db ->
-    Database.get_all db ~collection:finished_targets_collection
-
-  let active_targets t =
-    get_collections_of_targets t ~from:[active_targets_collection]
-    >>= fun targets ->
-    let filtered =
-      List.filter_map targets ~f:(fun target ->
-          match Target.State.simplify (Target.state target) with
-          | `Failed
-          | `Successful
-          | `Activable -> None
-          | `In_progress -> Some target)
-    in
-    Logger.(
-      description_list [
-        "module", text "With_database";
-        "function", text "active_targets";
-        "result", textf "%d targets, %d after filter"
-          (List.length targets) (List.length filtered);
-      ] |> log);
-    return filtered
-
-  (** Get the targets are alive, so activable or in_progress *)
-  let alive_targets t =
-    get_collections_of_targets t ~from:[passive_targets_collection;
-                                        active_targets_collection]
-    >>= fun targets ->
-    let filtered =
-      List.filter_map targets ~f:(fun target ->
-          match Target.State.simplify (Target.state target) with
-          | `Failed
-          | `Successful -> None
-          | `Activable
-          | `In_progress -> Some target)
-    in
-    Logger.(
-      description_list [
-        "module", text "With_database";
-        "function", text "alive_targets";
-        "result", textf "%d targets, %d after filter"
-          (List.length targets) (List.length filtered);
-      ] |> log);
-    return filtered
-
-  let activate_target t ~target ~reason =
-    let starts = Time.now () in
-    let log = ref Display_markup.[
-        "module", text "With_database";
-        "function", text "activate_target";
-        "database_parameters", path t.database_parameters;
-        "target", textf "%s (%s)" (Target.name target) (Target.id target);
-        "starts", date starts;
-      ] in
-    begin match t.equivalence_checking_mode with
-    | `When_activating ->
-      Lwt_mutex.with_lock t.activation_mutex begin fun () ->
-        let enters_mutex = Time.now () in
-        begin
-          get_target t (Target.id target)
-          >>= fun fresh_target ->
-          begin match Target.state fresh_target |> Target.State.simplify with
-          | `Activable ->
-            log := Display_markup.("is-activable", date_now ()) :: !log;
-            active_targets t
-            >>= fun current_living_targets ->
-            log := Display_markup.("get-living-targets", date_now ()) :: !log;
-            log := Display_markup.(
-                "living-targets",
-                textf "%d" (List.length current_living_targets)
-              ) :: !log;
-            begin match
-              List.find current_living_targets (Target.is_equivalent target)
-            with
-            | Some pointing_to ->
-              (* We found one, need to make a pointer *)
-              log := Display_markup.("equivalent-to",
-                                     textf "%s (%s)"
-                                       (Target.name pointing_to)
-                                       (Target.id pointing_to)) :: !log;
-              make_pointer_of_passive_target t ~target ~pointing_to
-            | None ->
-              log := Display_markup.("certified-fresh", date_now ()) :: !log;
-              let newone = Target.(activate_exn target ~reason) in
-              move_target t ~target:newone ~src:passive_targets_collection
-                ~dest:active_targets_collection
-              >>= fun () ->
-              return (Target.Stored_target.of_target newone)
-            end
-          | `In_progress
-          | `Successful
-          | `Failed ->
-            log := Display_markup.("is-not-activable", date_now ()) :: !log;
-            return (Target.Stored_target.of_target fresh_target)
-          end
-        end
-        |> Lwt.map (fun x ->
-            log := !log @ Display_markup.[
-                "enters_mutex", time_span (enters_mutex -. starts);
-                "exit_mutex", time_span (Time.now () -. enters_mutex);
-              ];
-            x)
-      end
-    | `When_adding ->
-      let newone = Target.(activate_exn target ~reason) in
-      move_target t ~target:newone ~src:passive_targets_collection
-        ~dest:active_targets_collection
-      >>= fun () ->
-      return (Target.Stored_target.of_target newone)
-    end
-    >>= fun stored ->
-    log := !log @ Display_markup.[
-        "total-time", time_span (Time.now () -. starts);
-      ];
-    Logger.log (Display_markup.description_list !log);
-    return stored
-
-
-  module Killing_targets = struct
-    let targets_to_kill_collection = "targets-to-kill"
-    let add_target_ids_to_kill_list t id_list =
-      let action =
-        let open Database_action in
-        List.map id_list ~f:(fun id ->
-            set ~collection:targets_to_kill_collection ~key:id id)
-        |> seq in
-      run_database_action t action
-        ~msg:(fmt "add_target_ids_to_kill_list [%s]"
-                (String.concat ~sep:", " id_list))
-
-    let get_all_targets_to_kill t : (Target.id list, _) Deferred_result.t =
-      database t
-      >>= fun db ->
-      Database.get_all db ~collection:targets_to_kill_collection
-      >>= fun all_keys ->
-      (* Keys are equal to values, so we can take short cut *)
-      return all_keys
-
-    let remove_from_kill_list_action id =
-      Database_action.(unset ~collection:targets_to_kill_collection id)
-
-    let proceed_to_mass_killing t =
-      get_all_targets_to_kill t
-      >>= fun to_kill_list ->
-      log_info
-        Log.(s "Going to actually kill: " % OCaml.list quote to_kill_list);
-      List.fold to_kill_list ~init:(return []) ~f:(fun prev id ->
-          prev >>= fun prev_list ->
-          get_target t id
-          >>= fun target ->
-          let pull_out_from_passiveness =
-            if Target.state target |> Target.State.Is.passive then
-              [Database_action.unset ~collection:passive_targets_collection id]
-            else [] in
-          begin match Target.kill target with
-          | Some t ->
-            return (t, pull_out_from_passiveness @ [
-                remove_from_kill_list_action id;
-                set_target_db_action t;
-              ])
-          | None ->
-            return
-              (target,
-               pull_out_from_passiveness @ [remove_from_kill_list_action id])
-          end
-          >>= fun (target_actions) ->
-          return (target_actions :: prev_list)
-        )
-      >>= begin function
-      | [] -> return []
-      | target_actions ->
-        let actions =
-          List.rev_map target_actions ~f:(fun (trgt, act) -> act)
-          |> List.concat in
-        run_database_action t Database_action.(seq actions)
-          ~msg:(fmt "killing %d targets" (List.length to_kill_list))
-        >>= fun () ->
-        return (List.rev_map target_actions ~f:fst)
-      end
-
-  end
-
-
-
-  module Adding_targets = struct
-    let targets_to_add_collection = "targets-to-add"
-    let register_targets_to_add t t_list =
-      let action =
-        let open Database_action in
-        List.map t_list ~f:(fun trgt ->
-            let st = Target.Stored_target.of_target trgt in
-            let key = Target.Stored_target.id st in
-            set ~collection:targets_to_add_collection ~key
-              (Target.Stored_target.serialize st))
-        |> seq in
-      log_info
-        Log.(s "Storing " % i (List.length t_list)
-             % s " targets to be added at next step");
-      run_database_action t action
-        ~msg:(fmt "store_targets_to_add [%s]"
-                (List.map t_list ~f:Target.id
-                 |> String.concat ~sep:", "))
-
-    let get_all_targets_to_add t =
-      database t
-      >>= fun db ->
-      Database.get_all db ~collection:targets_to_add_collection
-      >>= fun keys ->
-      Deferred_list.while_sequential keys ~f:(fun key ->
-          Database.get db ~collection:targets_to_add_collection ~key
-          >>= begin function
-          | Some blob ->
-            of_result (Target.Stored_target.deserialize blob)
-          | None ->
-            fail (`Fetching_node (`Target_to_add, `Id key))
-          end
-          >>= fun st ->
-          begin match Target.Stored_target.get_target st with
-          | `Target t -> return t
-          | `Pointer p ->
-            get_target t p (* We don't use this case in practice maybe
-                              it would be better to fail there *)
-          end)
-
-    let check_and_really_add_targets t =
-      get_all_targets_to_add t
-      >>= fun tlist ->
-      begin match tlist with
-      | [] -> return []
-      | _ :: _ ->
-        begin match t.equivalence_checking_mode with
-        | `When_activating -> active_targets t
-        | `When_adding -> alive_targets t
-        end
-        >>= fun current_interesting_targets ->
-        let stuff_to_actually_add =
-          List.fold ~init:[] tlist ~f:begin fun to_store_targets target ->
-            let equivalences =
-              let we_kept_so_far =
-                List.filter_map to_store_targets
-                  ~f:(fun st ->
-                      match Target.Stored_target.get_target st with
-                      | `Target t -> Some t
-                      | `Pointer _ -> None) in
-              List.filter (current_interesting_targets @ we_kept_so_far)
-                ~f:(fun t -> Target.is_equivalent target t) in
-            Log.(Target.log target % s " is "
-                 % (match equivalences with
-                   | [] -> s "pretty fresh"
-                   | more ->
-                     s " equivalent to " % OCaml.list Target.log equivalences)
-                 @ very_verbose);
-            match equivalences with
-            | [] ->
-              (Target.Stored_target.of_target target :: to_store_targets)
-            | at_least_one :: _ ->
-              (
-                if Target.State.Is.activated_by_user (Target.state target)
-                then
-                  Logging.User_level_events.root_workflow_equivalent_to
-                    ~name:(Target.name target)
-                    ~id:(Target.id target)
-                    (List.map equivalences ~f:(fun st ->
-                         (Target.name st, Target.id st)))
-              );
-              (Target.Stored_target.make_pointer
-                 ~from:target ~pointing_to:at_least_one :: to_store_targets)
-          end
+            | { name; sql_type = Type.Stringable m; tag } :: more,
+              untyfield :: rest ->
+              begin match untyfield with
+              | `Null ->
+                Printf.ksprintf failwith "%s is Null while expecting blob" name
+              |`Blob b ->
+                let module M = (val m) in
+                begin match M.of_string b with
+                | None ->
+                  Printf.ksprintf failwith
+                    "%s is %S while expecting enumeration" name b
+                | Some v ->
+                    loop (f (v, tag)) rest more
+                end
+              end
         in
-        log_info
-          Log.(s "Adding new " % i (List.length stuff_to_actually_add)
-               % s " targets to the DB"
-               % (parens (i (List.length tlist) % s " were submitted")));
-        let action =
-          let open Database_action in
-          List.map tlist ~f:(fun trgt ->
-              let key = Target.id trgt in
-              unset ~collection:targets_to_add_collection key)
-          @ List.map stuff_to_actually_add ~f:(fun st ->
-              let key = Target.Stored_target.id st in
-              let collection =
-                match Target.Stored_target.get_target st with
-                | `Pointer _ -> archived_targets_collection
-                | `Target t when Target.state t |> Target.State.Is.passive ->
-                  passive_targets_collection
-                | `Target t -> active_targets_collection
-              in
-              set ~collection ~key (Target.Stored_target.serialize st))
-          |> seq in
-        run_database_action t action
-          ~msg:(fmt "check_and_really_add_targets [%s]"
-                  (List.map tlist ~f:Target.id |> String.concat ~sep:", "))
-        >>= fun () ->
-        return stuff_to_actually_add
-      end
+        loop on_success untyped fields
 
-    let force_add_passive_target t trgt =
-      let st = Target.Stored_target.of_target trgt in
-      let action =
-        let open Database_action in
-        let key = Target.id trgt in
-        set ~collection:passive_targets_collection
-          ~key (Target.Stored_target.serialize st)
+      (** The equivalent of [Printf.kprintf] for field-lists. *)
+      let rec kunparse_to_sql
+        : type ty v. ((string * untyped_sql_field) list -> v) -> (ty, v) t -> ty
+        = fun k -> function
+        | [] -> k []
+        | {name; sql_type = Type.Byte_array; _} :: more ->
+          let f (s, _) =
+            kunparse_to_sql (fun l -> k ((name, `Blob s) :: l)) more
+          in
+          f
+        | {name; sql_type = Type.Stringable m; _} :: more ->
+          let f (s, _) =
+            let module M = (val m) in
+            let converted = M.to_string s in
+            kunparse_to_sql (fun l -> k ((name, `Blob converted) :: l)) more
+          in
+          f
+
+    end
+
+    let make tag name sql_type = {name; sql_type; tag}
+
+    let byte_array tag name = make tag name Type.Byte_array
+
+    let stringable tag name m = make tag name Type.(Stringable m) 
+
+    let ex_s = make `S "string" Type.Byte_array
+    let ex_t = byte_array `T "t"
+    let ex_u = byte_array `U "u"
+
+    let to_sql_set pos l =
+      let f (name, untyped_sql_field) =
+        fmt "%s = %s"
+          name
+          (Positional_parameter.next pos untyped_sql_field)
       in
-      run_database_action t action
-        ~msg:(fmt "force_add_target: %s (%s)"
-                (Target.id trgt) (Target.name trgt))
-      >>= fun () ->
-      return st
+      Nonstd.List.map ~f l |> String.concat ~sep:", "
+
+    let to_sql_values pos l =
+      let f (name, untyped_sql_field) =
+        fmt "%s" (Positional_parameter.next pos untyped_sql_field) in
+      Nonstd.List.map ~f l |> String.concat ~sep:", " |> fmt "(%s)"
+
+    let ex_set =
+      let pos = Positional_parameter.create () in
+      List.(kunparse_to_sql
+              (to_sql_set pos)
+              [ex_s; ex_t])
+        ("SEtting S", `S) ("Seetttting T", `T)
+  end
+
+  (** A SQL table is a named reccord (i.e. [Field.List.t]). *)
+  module Table = struct
+
+    type ('a, 'b) t = {
+      fields: ('a, 'b) Field.List.t;
+      name: string;
+    }
+    let make name fields = {name; fields}
+
+    let to_sql_create {name; fields} =
+      fmt "CREATE TABLE IF NOT EXISTS %s %s"
+        name (Field.List.to_sql_create fields)
+      |> make_query ~arguments:[| |]
+
+    let ex1 () =
+      make "test" Field.(List.[ex_s; ex_t; ex_u])
 
 
   end
 
+  (** {!Logic} is how we construct ["WHERE"] clauses.  *)
+  module Logic = struct
+
+    type t =
+      (* | Equal_string: (string, _) Field.t * string -> t *)
+      | Equal: ('a, _) Field.t * 'a -> t
+      | Bin_op: [ `And | `Or ] * t * t -> t
+
+    module Infix = struct
+      let (===) a b = Equal (a, b) 
+      let (&&&) a b = Bin_op (`And, a, b)
+      let (|||) a b = Bin_op (`Or, a, b)
+    end
+
+    let ex1 () =
+      let open Infix in
+      (Field.ex_s === "some string")
+      &&& 
+      (Field.ex_u === "some other string")
+      
+
+    let rec to_sql_where pos =
+      function
+      | Equal ({Field. name; sql_type = Type.Byte_array; tag }, v) ->
+        let arg = Positional_parameter.next pos (`Blob v) in
+        fmt "%s = %s" name arg
+      | Equal ({Field. name; sql_type = Type.Stringable m; tag }, v) ->
+        let arg =
+          let module M = (val m) in
+          let blob = M.to_string v in
+          Positional_parameter.next pos (`Blob blob) in
+        fmt "%s = %s" name arg
+      | Bin_op (op, a, b) ->
+        fmt "(%s %s %s)"
+          (to_sql_where pos a)
+          (match op with `And -> "AND" | `Or -> "OR")
+          (to_sql_where pos b)
+
+  end
+
+  let select fields ~from ?where f =
+    let pos = Positional_parameter.create () in
+    let qst =
+      fmt "SELECT %s FROM %s %s"
+        (Field.List.to_sql_select fields)
+        from.Table.name
+        (match where with
+        | Some w -> "WHERE " ^ Logic.to_sql_where pos w
+        | None -> "")
+    in
+    let result_parser untyped =
+      Field.List.parse_sql_fields_exn fields untyped f
+    in
+    let q = query qst pos in
+    (* dbg "select qst: %s" qst; *)
+    q, result_parser
+
+  let update ~table ~where set =
+    let pos = Positional_parameter.create () in
+    Field.List.kunparse_to_sql (fun sets ->
+        let q =
+          fmt "UPDATE %s SET %s WHERE %s"
+            table.Table.name
+            (Field.to_sql_set pos sets)
+            (Logic.to_sql_where pos where)
+        in
+        query q pos
+      ) set
+
+  let insert into =
+    let pos = Positional_parameter.create () in
+    Field.List.kunparse_to_sql (fun sets ->
+        let q =
+          fmt "INSERT INTO %s %s VALUES %s"
+            into.Table.name
+            (Field.List.to_sql_insert into.Table.fields)
+            (Field.to_sql_values pos sets)
+        in
+        query q pos
+      ) into.Table.fields
+
+  let delete ?where ~from () =
+    let pos = Positional_parameter.create () in
+    let q =
+      fmt "DELETE FROM %s %s" 
+        from.Table.name
+        (Option.value_map ~default:"" where ~f:(fun w ->
+             "WHERE " ^ Logic.to_sql_where pos w))
+    in
+    query q pos
+
+
+  let ex_select () =
+    select
+      Field.List.[Field.ex_s]
+      ~from:(Table.ex1 ()) ~where:(Logic.ex1 ())
+      (fun (bs, `S) ->
+         dbg "%s" bs)
+
+
 end
 
-module Cache_table = struct
+(** Wrapping of the {!Postgresql} module:
 
-  type 'a t = (string, 'a) Hashtbl.t
+    - Inside {!Lwt_preemptive.detach} threads.
+    - With a mutex protecting the write accesses (function {!in_transaction}).
 
-  let create () = Hashtbl.create 42
+ *)
+module DB = struct
+  open Printf
 
-  let add_or_replace t id st =
-    Hashtbl.replace t id st;
-    return ()
+  module PG = Postgresql
 
-  let get t id =
-    try return (Some (Hashtbl.find t id))
-    with e ->
-      return None
+  type t = {
+    handle: PG.connection;
+    action_mutex: Lwt_mutex.t;
+  }
 
-  let fold t ~init ~f =
-    Hashtbl.fold (fun id elt previous -> f ~previous ~id elt) t init
 
-  let reset t = Hashtbl.reset t; return ()
+  let in_posix_thread ~on_exn f =
+    Lwt_preemptive.detach begin fun () ->
+      try `Ok (f ())
+      with e -> `Error (on_exn e)
+    end ()
 
-  let remove t id = Hashtbl.remove t id
+  let exn_to_string =
+    function
+    | PG.Error e -> sprintf "Postgres-Error: %s" (PG.string_of_error e)
+    | e -> (Printexc.to_string e)
+
+  let exn_error loc exn =`Database (loc, `Exn (exn_to_string exn))
+
+  let in_posix_thread_or_error ~loc f =
+    in_posix_thread f ~on_exn:(exn_error loc)
+
+  let dbg_handle handle fmt =
+    let open Printf in
+    ksprintf (fun s ->
+        eprintf "Handle-postgresql: %s\n" s;
+        eprintf "  db      = %s\n" handle#db;
+        eprintf "  user    = %s\n" handle#user;
+        eprintf "  pass    = %s\n" handle#pass;
+        eprintf "  host    = %s\n" handle#host;
+        eprintf "  port    = %s\n" handle#port;
+        eprintf "  tty     = %s\n" handle#tty;
+        eprintf "  option  = %s\n" handle#options;
+        eprintf "  pid     = %i\n" handle#backend_pid
+      ) fmt
+
+  let create conninfo =
+    let action_mutex = Lwt_mutex.create () in
+    in_posix_thread_or_error (`Load conninfo) begin fun () ->
+      {handle = new PG.connection ~conninfo ();
+       action_mutex}
+    end
+
+  let db_fail ?query ?(arguments = [| |]) fmt =
+    ksprintf
+      (fun s ->
+         ksprintf failwith "%s (QUERY: %s, ARGS: [%s])" s
+           (Option.value query ~default:"NONE")
+           (Array.to_list arguments
+            |> List.map ~f:(function
+              | `Blob b -> b
+              | `Null -> "NULL")
+            |> String.concat ~sep:", ")
+      ) fmt
+
+  let exec_sql_exn (t : t) ~query ~arguments =
+    let show_res query args res =
+      dbg "\n  %s\n  args: [%s]\n  status: %s | error: %s | tuples: %d × %d"
+        query
+        (Array.map args ~f:(function
+           | `Null -> "NULL"
+           | `Blob b -> sprintf "%S" b)
+         |> Array.to_list
+         |> String.concat ~sep:", ")
+        (PG.result_status res#status) res#error res#ntuples res#nfields;
+      for i = 0 to res#ntuples - 1 do
+        dbg "     (%s)"
+          (List.init res#nfields (fun j ->
+               if res#getisnull i j then "Null"
+               else sprintf "%S" (PG.unescape_bytea (res#getvalue i j)))
+           |> String.concat ~sep:", ");
+      done;
+    in
+    let res =
+      let params =
+        Array.map arguments ~f:(function | `Null -> PG.null | `Blob s -> s) in
+      let binary_params =
+        Array.map arguments ~f:(function `Null -> false | `Blob _ -> true) in
+      t.handle#exec query ~params ~binary_params
+    in
+    (if !debug then show_res query arguments res);
+    begin match res#status with
+    | PG.Command_ok -> `Unit
+    | PG.Tuples_ok ->
+      `Tuples
+        (List.init res#ntuples (fun i ->
+             (List.init res#nfields (fun j ->
+                  if res#getisnull i j then `Null
+                  else `Blob (PG.unescape_bytea (res#getvalue i j))))))
+    | PG.Empty_query
+    | PG.Copy_out
+    | PG.Copy_in
+    | PG.Bad_response
+    | PG.Nonfatal_error
+    | PG.Fatal_error
+    | PG.Copy_both
+    | PG.Single_tuple  ->
+      db_fail "SQL Query failed: status: %s, error: %s"
+          ~query ~arguments
+         (PG.result_status res#status) res#error
+    end
+
+  let exec_unit ?(arguments=[| |]) (t : t) ~query =
+    in_posix_thread_or_error ~loc:(`Exec (query, arguments)) begin fun () ->
+      begin match exec_sql_exn t ~query ~arguments with
+      | `Unit -> ()
+      | `Tuples other ->
+        db_fail "Unexpected return from unit-query: length: %d"
+          ~query ~arguments
+          (List.length other)
+      end
+    end
+
+  let exec_one ?(arguments=[| |]) (t : t) ~query =
+    in_posix_thread_or_error ~loc:(`Exec (query, arguments)) begin fun () ->
+      begin match exec_sql_exn t ~query ~arguments with
+      | `Unit ->
+        db_fail "Unexpected return from single-result-query: Unit"
+          ~query ~arguments
+      | `Tuples [one] -> one
+      | `Tuples other ->
+        db_fail "Unexpected return from single-result query: length: %d"
+          ~query ~arguments
+          (List.length other)
+      end
+    end
+
+  let exec_multi ?(arguments=[| |]) (t : t) ~query =
+    in_posix_thread_or_error ~loc:(`Exec (query, arguments)) begin fun () ->
+      begin match exec_sql_exn t ~query ~arguments with
+      | `Unit ->
+        db_fail "Unexpected return from multi-result-query: Unit"
+          ~query ~arguments
+      | `Tuples more -> more
+      end
+    end
+
+  let in_transaction t ~f =
+    Lwt_mutex.with_lock t.action_mutex begin fun () ->
+      exec_unit t ~query:"BEGIN"
+      >>= fun () ->
+      begin
+        f ()
+        >>< function
+        | `Ok o ->
+          exec_unit t ~query:"COMMIT"
+          >>= fun () ->
+          return o
+        | `Error e ->
+          exec_unit t ~query:"ROLLBACK"
+          >>= fun () ->
+          fail e
+      end
+    end
+
+  let close t =
+    in_posix_thread_or_error ~loc:`Close begin fun () ->
+      t.handle#finish
+    end
 
 end
 
-module String_mutable_set = struct
-  module String_set = Set.Make(String)
+(** Ketrew's 3-tables schema.
+    
+    - The main table is ["ketrew_main"], it contains all the
+      workflow-nodes in a “denormalized” way.
+    - The 2 other tables are staging areas for adding and killing sets
+      of nodes.
 
-  type t = String_set.t ref
-  let of_list l = ref (String_set.of_list l)
-  let add t s =
-    t := String_set.add s !t
-  let fold t ~init ~f =
-    String_set.fold (fun elt prev -> f prev elt) !t init
-  let length t = String_set.cardinal !t
+*)
+module Schema = struct
 
-  let remove_list t l =
-    t := String_set.diff !t (String_set.of_list l)
+  module Parameters = struct
+    type t = {
+      main_table_name: string;
+      kill_table_name: string;
+      add_table_name: string;
+    }
+    let default = {
+      main_table_name = "ketrew_main";
+      kill_table_name = "ketrew_kill_list";
+      add_table_name = "ketrew_add_list";
+    }
+  end
+  open Parameters
 
-  (*
-    let x = of_list ["a"; "b"; "c"; "d"; "e"]
-    let () = remove_list x ["b"; "d"]
-    let l = String_set.elements !x
-  *)
 
+  open SQL
+
+  type id = Id
+  let id = Field.byte_array Id "id"
+  type blob = Blob
+  let blob = Field.byte_array Blob "blob"
+
+  module Engine_status = struct
+    type t =
+      [ `Passive | `Active | `Finished ]
+    let to_string : t -> string =
+      function
+      | `Passive -> "passive"
+      | `Active -> "active"
+      | `Finished -> "finished"
+    let of_string =
+      function
+      |  "passive"  -> Some `Passive
+      |  "active"   -> Some `Active
+      |  "finished" -> Some `Finished
+      | _ -> None
+  end
+  type engine_status = Engine_status
+  let engine_status =
+    Field.stringable Engine_status "engine_status" (module Engine_status)
+
+  module Id_list = struct
+    type t = string list
+    let to_string : t -> string = String.concat ~sep:", "
+    let of_string s =
+      String.split ~on:(`Character ',') s
+      |> List.map ~f:String.strip
+      |> List.filter ~f:((<>) "") 
+      |> fun s -> Some s
+  end
+  type id_list = Id_list
+  let id_list name =
+    Field.stringable Id_list name (module Id_list)
+
+  module Node_list = struct
+    type t = Target.t list
+    let to_string : t -> string = fun tl ->
+      let yoj =
+        `List (List.map tl ~f:Target.to_yojson) in
+      Yojson.Safe.pretty_to_string yoj
+    let of_string s =
+      try
+        Some (
+          Yojson.Safe.from_string s
+          |> function
+          | `List l ->
+            List.map l ~f:(fun j ->
+                match Target.of_yojson j with
+                | Ok o -> o
+                | Error e -> failwith e)
+          | other ->
+            failwith ""
+              )
+      with _ ->
+        None
+  end
+  type node_list = Node_list
+  let node_list name =
+    Field.stringable Node_list name (module Node_list)
+
+  let main p =
+    Table.(
+      make p.main_table_name Field.List.[id; blob; engine_status]
+    )
+
+  let kill_list p =
+    Table.(
+      make p.kill_table_name Field.List.[id; id_list "ids_to_kill"]
+    )
+
+  let add_list p =
+    Table.(
+      make p.add_table_name Field.List.[id; node_list "nodes_to_add"]
+    )
+
+  let get_node p ~id:tid =
+    select
+      Field.List.[blob]
+      ~from:(main p)
+      ~where:Logic.Infix.(id === tid)
+      begin fun (blob, Blob) ->
+        match Target.Stored_target.deserialize blob with
+        | `Ok st ->  st
+        | `Error (`Target (`Deserilization msg)) ->
+          failwith (fmt "Node-deserialization: %s" msg)
+      end
+
+  let insert_stored_node p ~node =
+    insert (main p)
+      (Target.Stored_target.id node, Id)
+      (Target.Stored_target.serialize node, Blob)
+      (`Passive, Engine_status)
+
+  let update_node p ~engine_status:es ~node =
+    let tid = Target.id node in
+    update ~table:(main p)
+      ~where:Logic.Infix.(id === tid)
+      Field.List.[blob; engine_status]
+      Target.Stored_target.(serialize (of_target node), Blob)
+      (es, Engine_status)
+
+  let all_nodes ?where p =
+    select
+      Field.List.[blob]
+      ~from:(main p)
+      ?where
+      begin fun (blob, Blob) ->
+        match Target.Stored_target.deserialize blob with
+        | `Ok st ->  st
+        | `Error (`Target (`Deserilization msg)) ->
+          failwith (fmt "Node-deserialization: %s" msg)
+      end
+
+  let all_active_targets p =
+    all_nodes p ~where:Logic.Infix.(engine_status === `Active)
+
+  let all_active_and_passive_targets p =
+    all_nodes p ~where:Logic.Infix.((engine_status === `Active)
+                                    ||| (engine_status === `Passive))
+
+  let add_to_kill_list p id_list =
+    let kill_list_id = Unique_id.create () in
+    insert (kill_list p)
+      (kill_list_id, Id)
+      (id_list, Id_list)
+
+  let add_to_add_list p node_list =
+    let add_list_id = Unique_id.create () in
+    insert (add_list p)
+      (add_list_id, Id)
+      (node_list, Node_list)
+
+  let get_the_kill_list p =
+    let kl = kill_list p in
+    select kl.Table.fields ~from:kl begin fun (id, Id) (id_list, Id_list) ->
+      (`Kill_id id, `Ids_to_kill id_list)
+    end
+
+  let get_the_add_list p =
+    let add = add_list p in
+    select add.Table.fields ~from:add begin fun (id, Id) (list, Node_list) ->
+      (`Addition_id id, `Nodes_to_add list)
+    end
+
+  let remove_from_kill_list p kid =
+    delete ~from:(kill_list p) ~where:Logic.Infix.(id === kid) ()
+
+  let remove_from_add_list p aid =
+    delete ~from:(add_list p) ~where:Logic.Infix.(id === aid) ()
+
+  let test_pg () =
+    let p q =
+      Printf.printf "QUERY: %s\n%!" (show_query q)
+    in
+    let params = Parameters.default in
+    p (SQL.Table.to_sql_create (main params));
+    let node = Target.create ~name:"Test" () in
+    p (update_node params ~engine_status:`Passive ~node);
+    p (get_node params ~id:"kjdeij" |> fst);
+    p (insert_stored_node params ~node:(Target.Stored_target.of_target node));
+    p (get_the_kill_list params |> fst);
+    p (all_active_and_passive_targets params |> fst);
+    ()
+
+  let () =
+    dbg "TEST_PGSQL";
+    match Sys.getenv "TEST_PGSQL" with
+    | "true" ->
+      test_pg ()
+    | _ -> ()
+    | exception _ -> ()
 end
 
+
+(** Rate-limited stream of events using {!Lwt_react}. *)
 module Event_source = struct
   type 'a t = {
     stream: 'a list Lwt_stream.t;
@@ -733,249 +796,218 @@ module Event_source = struct
   let stream {stream; _} = stream
 end
 
+(** “Changes” are the particular events of Ketrew's persistence layer. *)
 module Change = struct
   type t = [ `Started | `New_nodes of string list | `Nodes_changed of string list ]
     [@@deriving show]
 end
 
+
 type t = {
-  db: With_database.t;
-  cache: Target.Stored_target.t Cache_table.t;
-  all_ids: String_mutable_set.t;
+  handle: DB.t;
+  schema_parameters: Schema.Parameters.t;
+  conninfo: string;
+  action_mutex: Lwt_mutex.t;
   changes : Change.t Event_source.t;
 }
 
-let log_markup t mu =
-  Logger.(
-    description_list (
-      ("Module", text "Persistent_data")
-      ::
-      ("Cache",
-       textf "%d targets"
-         (Cache_table.fold t.cache ~init:0
-            ~f:(fun ~previous ~id _ -> previous + 1)))
-      :: mu
-    ) |> log)
+module Error = struct
+  type fetching_node = [
+    | `Get_stored_target
+    | `Pointer_loop_max_depth of int
+    | `Target_to_add
+  ] * [ `Id of string ]
 
-let log_info t fmt =
-  Printf.ksprintf (fun msg ->
-      log_markup t ["Info", Logger.text msg]
-    ) fmt
+  type database =
+    [
+      | `Exec of string * [ `Blob of string | `Null ] array
+      | `Load of string
+      | `Parsing of string
+      | `Close
+    ]
+    * [ `Exn of string ]
 
-let create ~database_parameters ~archival_age_threshold =
-  let starts = Time.now () in
-  With_database.create ~database_parameters ~archival_age_threshold
-  >>= fun db ->
-  (* Heuristic: we cache the alive targets and all the finished IDs *)
-  With_database.alive_stored_targets db
-  >>= fun all ->
-  let cache = Cache_table.create () in
-  List.fold ~init:(return []) all  ~f:(fun prev_m st ->
-      prev_m >>= fun prev ->
-      let id = Target.Stored_target.id st in
-      Cache_table.add_or_replace cache id st
-      >>= fun () ->
-      return (id :: prev)
-    )
-  >>= fun active_ids ->
-  With_database.get_all_finished_ids db
-  >>= fun more_ids ->
-  let t = {
-    db; cache;
-    all_ids = String_mutable_set.of_list (List.rev_append active_ids more_ids);
-    changes = Event_source.create ();
-  } in
-  log_markup t Display_markup.[
-      "function", text "create";
-      "database_parameters", path database_parameters;
-      "archival_age_threshold",
-      begin match archival_age_threshold with
-      | `Days d -> time_span (Time.day *. d)
-      end;
-      "starts", date starts;
-      "returns", date (Time.now ());
-      "active_ids", textf "%d" (List.length active_ids);
-      "more_ids", textf "%d" (List.length more_ids);
-    ];
-  return t
+  let database_to_string (loc, err) =
+    fmt "Location: %s --- Error: %s"
+      (match loc with
+      | `Exec (s, _) -> fmt "executing %S" s
+      | `Close -> "Closing"
+      | `Parsing s -> fmt "Parsing (%s)" s
+      | `Load s -> fmt "loading the DB: %S" s)
+      (match err with
+      | `Exn s -> s)
 
-let next_changes t =
+  let make l r : [> `Database of database ] = `Database (l, r)
+
+  let wrap_parsing ~msg f =
+    match f () with
+    | some -> return some
+    | exception e -> fail (`Database (`Parsing msg, `Exn (Printexc.to_string e)))
+end
+
+let create :
+  database_parameters:string ->
+  (t,
+   [> `Database of Error.database ])
+    Deferred_result.t
+  = fun ~database_parameters ->
+    let action_mutex = Lwt_mutex.create () in
+    DB.create database_parameters
+    >>= fun handle ->
+    let schema_parameters = Schema.Parameters.default in
+    let create_table table =
+      let {SQL.query; arguments} =
+        SQL.Table.to_sql_create table in
+      DB.exec_unit handle ~query ~arguments
+    in
+    create_table Schema.(main schema_parameters) >>= fun () ->
+    create_table Schema.(kill_list schema_parameters) >>= fun () ->
+    create_table Schema.(add_list schema_parameters) >>= fun () ->
+    let changes = Event_source.create () in
+    return {handle; schema_parameters; action_mutex;
+            conninfo = database_parameters; changes}
+
+let unload: t ->
+  (unit, [> `Database of  Error.database ]) Deferred_result.t
+  = fun {handle; _} ->
+    DB.close handle
+
+let next_changes: t -> (Change.t list, 'a) Deferred_result.t = fun t ->
   Lwt.(
+    Printf.eprintf "next_changes called\n%!";
     Lwt_stream.next (Event_source.stream t.changes)
     >>= fun change ->
     return (`Ok change)
   )
 
-let unload t =
-  log_info t "unloading";
-  With_database.unload t.db
-  >>= fun () ->
-  Cache_table.reset t.cache
+let get_target:
+  t ->
+  Target.id ->
+  (Ketrew_pure.Target.t, [> `Database of Error.database]) Deferred_result.t
+  = fun t id ->
+    let rec get_following_pointers ~key ~count =
+      let {SQL.query; arguments}, parse_result =
+        Schema.get_node t.schema_parameters key in
+      DB.exec_one t.handle ~query ~arguments
+      >>= fun blist ->
+      let msg = fmt "get_node/target %s" key in
+      Error.wrap_parsing ~msg (fun () -> parse_result blist)
+      >>= fun stored_node ->
+      begin match Target.Stored_target.get_target stored_node with
+      | `Pointer _ when count >= 1000 ->
+        fail (`Fetching_node (`Pointer_loop_max_depth 1000, `Id id))
+      | `Pointer key ->
+        get_following_pointers ~count:(count + 1) ~key
+      | `Target t -> return t
+      end
+    in
+    get_following_pointers ~key:id ~count:0
 
-let get_stored_target t ~key =
-  Cache_table.get t.cache key
-  >>= function
-  | Some stored -> return stored
-  | None ->
-    With_database.get_stored_target t.db key
+let all_visible_targets :
+  t ->
+  (Ketrew_pure.Target.t list, [> `Database of Error.database]) Deferred_result.t
+  = fun t ->
+    (* TODO: should be removed and its dependencies too *)
+    Printf.eprintf "all_visible_targets called\n%!";
+    let {SQL.query; arguments}, parse_row =
+      Schema.all_nodes t.schema_parameters in
+    DB.exec_multi t.handle ~query ~arguments
+    >>= fun rows ->
+    Deferred_list.while_sequential rows ~f:begin fun row ->
+      Error.wrap_parsing ~msg:"all_visible_targets"
+        (fun () -> parse_row row)
+    end
     >>= fun stored ->
-    Cache_table.add_or_replace t.cache key stored
+    let only_targets =
+      List.filter_map stored ~f:(fun st ->
+          match Target.Stored_target.get_target st with
+          | `Pointer _ -> None
+          | `Target t -> Some t
+        ) in
+    return only_targets
+
+(** Update node while not in a transaction. *)
+let update_target_internal :
+  t ->
+  Target.t ->
+  (unit,
+   [> `Database of Error.database]) Deferred_result.t
+  = fun t node ->
+    let {SQL.query; arguments} =
+      let engine_status =
+        match Target.state node with
+        | p when Target.State.Is.passive p -> `Passive
+        | p when Target.State.Is.finished p -> `Finished
+        | p -> `Active in
+      Schema.update_node t.schema_parameters
+        ~engine_status ~node
+    in
+    DB.exec_unit t.handle ~query ~arguments
+
+(** This is the exported one; should not be reused inside a transaction. *)
+let update_target :
+  t ->
+  Target.t ->
+  (unit,
+   [> `Database of Error.database ])
+    Deferred_result.t
+  = fun t node ->
+    DB.in_transaction t.handle (fun () ->
+        update_target_internal t node
+      )
     >>= fun () ->
-    return stored
+    Event_source.trigger t.changes (`Nodes_changed [Target.id node]);
+    return ()
 
-let get_target t id =
-  let rec get_following_pointers ~key ~count =
-    get_stored_target t ~key
-    >>= fun stored ->
-    begin match Target.Stored_target.get_target stored with
-    | `Pointer _ when count >= 30 ->
-      fail (`Fetching_node (`Pointer_loop_max_depth 30, `Id  id))
-    | `Pointer key ->
-      String_mutable_set.add t.all_ids key;
-      get_following_pointers ~count:(count + 1) ~key
-    | `Target t -> return t
-    end
-  in
-  get_following_pointers ~key:id ~count:0
+let activate_target :
+  t ->
+  target:Target.t ->
+  reason:[ `Dependency of Target.id | `User ] ->
+  (unit, [> `Database of Error.database]) Deferred_result.t
+  = fun t ~target ~reason ->
+    let newone = Target.(activate_exn target ~reason) in
+    (* update_target already creates the transaction/action-mutex,
+       and calls the `Event_source.trigger` *)
+    update_target t newone
 
-(**
+let fold_active_targets :
+  t ->
+  init:'a ->
+  f:('a ->
+     target:Target.t ->
+     ('a,
+      [> `Database of Error.database ] as 'combined_errors)
+       Deferred_result.t) ->
+  ('a, 'combined_errors) Deferred_result.t
+  = fun t ~init ~f ->
+    let {SQL.query; arguments}, parse_result =
+      Schema.all_active_targets t.schema_parameters in
+    DB.exec_multi t.handle ~query ~arguments
+    >>= fun blist ->
+    List.fold blist ~init:(return init) ~f:(fun prev_m row ->
+        prev_m
+        >>= fun prev ->
+        let msg = fmt "fold_active_targets/target" in
+        Error.wrap_parsing ~msg (fun () -> parse_result row)
+        >>= fun stored_node ->
+        begin match Target.Stored_target.get_target stored_node with
+        | `Pointer key ->
+          let err = fmt "Database is inconsistent: pointer %s is active." key in
+          fail (Error.make (`Parsing msg) (`Exn err))
+        | `Target t ->
+          f prev ~target:t
+        end
+      )
 
-   [should_garbage_collect] returns {[
-     [
-       | `No
-       | `Yes of (target_id * justification) list
-     ]
-   ]}
-   where [justification] is {[
-     [
-       | `Points_to of target_id  (* poits to another target that should be
-                                     collected *)
-       | `Time of Time.t (* Has the given finished-time *)
-     ]
-   ]}
-*)
-let rec should_garbage_collect ?(acc = []) t stored_target =
-  let check_target trgt =
-    let threshold = With_database.get_archival_threshold t.db in
-    let now = Time.now () in
-    begin match Target.(state trgt |> State.finished_time) with
-    | None -> return `No
-    | Some time when time +. threshold > now ->
-      (* finished, but not old enough to be garbage collected *)
-      return `No
-    | Some time -> return (`Yes ((Target.id trgt, `Time time) :: acc))
-    end
-  in
-  begin match Target.Stored_target.get_target stored_target with
-  | `Pointer id ->
-    get_stored_target t id
-    >>= fun points_to ->
-    let item = id, `Points_to (Target.Stored_target.id points_to) in
-    should_garbage_collect ~acc:(item  :: acc) t points_to
-  | `Target t ->
-    check_target t
+let all_active_and_passive_nodes t =
+  let {SQL.query; arguments}, parse_row =
+    Schema.all_active_and_passive_targets t.schema_parameters in
+  DB.exec_multi t.handle ~query ~arguments
+  >>= fun rows ->
+  Deferred_list.while_sequential rows ~f:begin fun row ->
+    Error.wrap_parsing ~msg:"all_active_and_passive_targets"
+      (fun () -> parse_row row)
   end
-
-(** Go through the [to_gc] list and:
-
-    - remove them from the list-of-ids cache,
-    - remove the corresponding stored-target from the cache-table,
-    - and use {!With_database.get_stored_target} to make sure
-    {!With_database.clean_up_finished} is also called.
-
-    In the function {!all_visible_targets}, we call
-    {!perform_garbage_collection} inside a {!Lwt.async} call, so that garbage
-    collection does not block the UIs that depend on it.
-*)
-let perform_garbage_collection t to_gc : (unit, unit) Deferred_result.t =
-  let start_date = Time.now () in
-  let to_remove =
-    List.fold to_gc ~init:[] ~f:(fun prev (id, why) -> id :: prev) in
-  String_mutable_set.remove_list t.all_ids to_remove;
-  List.fold to_gc
-    ~init:(return (`P 0, `Min infinity, `Max 0., `Errors []))
-    ~f:begin fun prev_m (id, why) ->
-      prev_m
-      >>= fun (`P p, `Min mi, `Max ma, `Errors errors) ->
-      Cache_table.remove t.cache id;
-      begin
-        (* This will trigger archival/clean-up in the database too: *)
-        With_database.get_stored_target t.db id
-        >>< function
-        | `Ok _ ->
-          begin match why with
-          | `Points_to _ ->
-            return (`P (p + 1), `Min mi, `Max ma, `Errors errors)
-          | `Time t ->
-            return (`P p, `Min (min t mi), `Max (max t ma), `Errors errors)
-          end
-        | `Error e ->
-          return (`P p, `Min mi, `Max ma, `Errors (e :: errors))
-      end
-    end
-  >>= fun (`P pointers, `Min min_time, `Max max_time, `Errors errors) ->
-  log_markup t Display_markup.([
-      "function", text "perform_garbage_collection";
-      "to-garbage-collect", (
-        let lgth = List.length to_gc in
-        description_list [
-          "stored-targets", textf "%d" lgth;
-          "pointers", textf "%d" pointers;
-          "finished-min", textf "%f" min_time;
-          "finished-max", textf "%f" max_time;
-          "threshold", time_span (With_database.get_archival_threshold t.db);
-          "errors", textf "%d" (List.length errors);
-          "details", (
-            match lgth with
-            | 0 -> text "None"
-            | lgth when lgth > 20 -> text "HIDDEN"
-            | less ->
-              description_list (List.map to_gc ~f:(fun (id, why) ->
-                  id, (match why with
-                    | `Points_to id -> textf "-> %s" id
-                    | `Time t -> concat [textf "finsihed on "; date t]
-                    )))
-          );
-        ]
-      );
-      "start-date", date start_date;
-      "total-time", time_span (Time.now () -. start_date);
-    ]);
-  return ()
-
-let all_visible_targets t =
-  let start_date = Time.now () in
-  String_mutable_set.fold t.all_ids ~init:(return (`All [], `Gc []))
-    ~f:begin fun prev_m id ->
-      prev_m >>= fun (`All prev_list, `Gc prev_gc) ->
-      get_stored_target t ~key:id
-      >>= fun stored ->
-      should_garbage_collect t stored
-      >>= fun gc_result ->
-      let gc =
-        match gc_result with
-        | `No -> `Gc prev_gc
-        | `Yes l -> `Gc (prev_gc @ l)
-      in
-      begin match Target.Stored_target.get_target stored with
-      | `Pointer _ -> return (`All prev_list, gc)
-      | `Target t -> return (`All (t :: prev_list), gc)
-      end
-    end
-  >>= fun (`All all_targets, `Gc to_gc) ->
-  Lwt.async (fun () ->
-      perform_garbage_collection t to_gc
-    );
-  log_markup t Display_markup.([
-      "function", text "all_visible_targets";
-      "all_visible_targets", textf "%d targets" (List.length all_targets);
-      "all_ids", textf "%d ids" (String_mutable_set.length t.all_ids);
-      "to-garabage-collect", textf "%d" (List.length to_gc);
-      "start-date", date start_date;
-      (* "iterator", time_span (iterator_date -. start_date); *)
-      "total-time", time_span (Time.now () -. start_date);
-    ]);
-  return all_targets
 
 let target_strict_state trgt =
   let is_finished = Target.(state trgt |> State.Is.finished) in
@@ -987,12 +1019,13 @@ let target_strict_state trgt =
   | false, false -> `Active
   end
 
-(** [find_all_orphans] goes through the cache and returns all the targets that
-    are passive but not reachable, i.e. that can't be activated, ever.
+(** [find_all_orphans] goes through the DB and returns all the targets that
+    are passive but not reachable, i.e. that can't be activated any
+    more, ever.
 
     The implementation follows 3 steps:
 
-    - Go through [t.all_ids] and collect all the active and passive targets;
+    - Collect all the active and passive targets;
     - Follow all edges from the active ones, to find the reachable passives;
     - Substract the above from all the passives.
 
@@ -1003,284 +1036,441 @@ let target_strict_state trgt =
     ["debug_log_functions=find_all_orphans"].
 
 *)
-let find_all_orphans t =
-  let log_items = ref Display_markup.[
-      "function", text "find_all_orphans";
-      "start", date_now ();
-    ] in
-  String_mutable_set.fold t.all_ids
-    ~init:(return (`Passives [], `Actives []))
-    ~f:begin fun prev_m id ->
-      prev_m >>= fun ((`Passives pl, `Actives al) as prev) ->
-      get_stored_target t ~key:id
-      >>= fun stored ->
-      begin match Target.Stored_target.get_target stored with
-      | `Pointer id ->
-        return prev
-      | `Target trgt ->
-        begin match target_strict_state trgt with
-        | `Finished -> return prev
-        | `Passive -> return (`Passives (trgt :: pl), `Actives al)
-        | `Active -> return (`Passives pl, `Actives (trgt :: al))
-        end
-      end
-    end
-  >>= fun (`Passives passives, `Actives actives)->
-  log_items := !log_items @ Display_markup.[
-      "actives", big_itemize actives
-        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
-      "passives", textf "%d targets" (List.length passives);
-    ];
-  (* To find all the reachable-passives, we use [to_check] as a stack of
-     targets to explore; and [acc] as the accumulation of results.
-
-     The list [checked] is used to control against infinite loops (depending on
-     the amount of equivalent targets, this may also be speeding up the
-     search).
-  *)
-  let to_check = ref actives in
-  let checked = ref [] in
-  let rec reachable_passives acc () =
-    match !to_check with
-    | [] -> return acc
-    | one :: more when List.exists !checked ~f:Target.(fun c -> id c = id one) ->
-      to_check := more;
-      reachable_passives acc ()
-    | one :: more ->
-      checked := one :: !checked;
-      to_check := more;
-      let all_edges =
-        Target.depends_on one
-        @ Target.on_failure_activate one
-        @ Target.on_success_activate one
-      in
-      List.fold all_edges ~init:(return []) ~f:(fun prev_m id ->
-          prev_m >>= fun prev ->
-          get_target t id (* we actively want to follow pointers to find them
-                             all *)
-          >>= fun trgt ->
+let find_all_orphans:
+  t ->
+  (Ketrew_pure.Target.t list,
+   [> `Database of Error.database ]) Deferred_result.t
+  = fun t ->
+    let log_items = ref Display_markup.[
+        "function", text "find_all_orphans";
+        "start", date_now ();
+      ] in
+    all_active_and_passive_nodes t
+    >>= fun active_and_passive ->
+    log_items := !log_items @ Display_markup.[
+        "got-all-actives-passives", date_now ();
+      ];
+    List.fold active_and_passive
+      ~init:(return (`Passives [], `Actives []))
+      ~f:begin fun prev_m stored ->
+        prev_m >>= fun ((`Passives pl, `Actives al) as prev) ->
+        begin match Target.Stored_target.get_target stored with
+        | `Pointer id ->
+          return prev
+        | `Target trgt ->
           begin match target_strict_state trgt with
           | `Finished -> return prev
-          | `Passive ->
-            to_check := trgt :: !to_check;
-            return (trgt :: prev)
-          | `Active ->
-            to_check := trgt :: !to_check;
-            return prev
+          | `Passive -> return (`Passives (trgt :: pl), `Actives al)
+          | `Active -> return (`Passives pl, `Actives (trgt :: al))
           end
-        )
-      >>= fun passives ->
-      reachable_passives (acc @ passives) ()
-  in
-  reachable_passives [] ()
-  >>| List.dedup ~compare:(fun a b -> compare (Target.id a) (Target.id b))
-  >>= fun reachable ->
-  log_items := !log_items @ Display_markup.[
-      "reachable", big_itemize reachable
-        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
-    ];
-  let unreachable_passives =
-    List.filter passives ~f:(fun p ->
-        List.for_all reachable ~f:(fun rp -> Target.id rp <> Target.id p))
-  in
-  log_items := !log_items @ Display_markup.[
-      "unreachable", big_itemize unreachable_passives
-        ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
-      "end", date_now ();
-    ];
-  Logger.log Display_markup.(description_list !log_items);
-  return unreachable_passives
+        end
+      end
+    >>= fun (`Passives passives, `Actives actives)->
+    log_items := !log_items @ Display_markup.[
+        "actives", big_itemize actives
+          ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
+        "passives", textf "%d targets" (List.length passives);
+      ];
+    let to_check = ref actives in
+    let checked = ref [] in
+    let rec reachable_passives acc () =
+      match !to_check with
+      | [] -> return acc
+      | one :: more when List.exists !checked ~f:Target.(fun c -> id c = id one) ->
+        to_check := more;
+        reachable_passives acc ()
+      | one :: more ->
+        checked := one :: !checked;
+        to_check := more;
+        let all_edges =
+          Target.depends_on one
+          @ Target.on_failure_activate one
+          @ Target.on_success_activate one
+        in
+        List.fold all_edges ~init:(return []) ~f:(fun prev_m id ->
+            prev_m >>= fun prev ->
+            get_target t id (* we actively want to follow pointers to find them
+                               all *)
+            >>= fun trgt ->
+            begin match target_strict_state trgt with
+            | `Finished -> return prev
+            | `Passive ->
+              to_check := trgt :: !to_check;
+              return (trgt :: prev)
+            | `Active ->
+              to_check := trgt :: !to_check;
+              return prev
+            end
+          )
+        >>= fun passives ->
+        reachable_passives (acc @ passives) ()
+    in
+    reachable_passives [] ()
+    >>| List.dedup ~compare:(fun a b -> compare (Target.id a) (Target.id b))
+    >>= fun reachable ->
+    log_items := !log_items @ Display_markup.[
+        "reachable", big_itemize reachable
+          ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
+      ];
+    let unreachable_passives =
+      List.filter passives ~f:(fun p ->
+          List.for_all reachable ~f:(fun rp -> Target.id rp <> Target.id p))
+    in
+    log_items := !log_items @ Display_markup.[
+        "unreachable", big_itemize unreachable_passives
+          ~render:Target.(fun st -> textf "%s (%s)" (id st) (name st));
+        "end", date_now ();
+      ];
+    Logger.log Display_markup.(description_list !log_items);
+    return unreachable_passives
 
-
-
-let activate_target t ~target ~reason =
-  With_database.activate_target t.db ~target ~reason
-  >>= fun new_one ->
-  (* let stored = Target.Stored_target.of_target new_one in *)
-  Cache_table.add_or_replace t.cache (Target.Stored_target.id new_one) new_one
-  >>= fun () ->
-  Event_source.trigger t.changes (`Nodes_changed [Target.id target]);
-  return ()
-
-let fold_active_targets t ~init ~f =
-  Cache_table.fold t.cache ~init:(return init) ~f:(fun ~previous ~id st ->
-      previous >>= fun previous ->
-      let active t =
-        let s = Target.state t in
-        not Target.State.Is.(passive s || finished s) in
-      match Target.Stored_target.get_target st with
-      | `Target t when active t ->
-        f previous ~target:t
-      | `Pointer _ | `Target _ -> return previous
-    )
-
-let update_target t trgt =
-  With_database.update_target t.db trgt
-  >>= fun () ->
-  Cache_table.add_or_replace t.cache
-    (Target.id trgt) (Target.Stored_target.of_target trgt)
-  >>= fun () ->
-  String_mutable_set.add t.all_ids (Target.id trgt);
-  Event_source.trigger t.changes (`Nodes_changed [Target.id trgt]);
-  return ()
 
 module Killing_targets = struct
 
-  let add_target_ids_to_kill_list t ids =
-    With_database.Killing_targets.add_target_ids_to_kill_list t.db ids
+  let proceed_to_mass_killing :
+    t ->
+    (bool,
+     [> `Database of Error.database]) Deferred_result.t
+    = fun t ->
+      (*
+         - select all from kill-list
+         - create **transaction** per kill-list:
+             - make target active and then Target.kill -> update_target
+             - delete kill list entries
+      *)
+      let {SQL.query; arguments}, parse_row =
+        Schema.get_the_kill_list t.schema_parameters in
+      DB.exec_multi t.handle ~query ~arguments
+      >>= fun rows ->
+      List.fold rows ~init:(return false) ~f:begin fun prev_m row ->
+        prev_m
+        >>= fun prev ->
+        let msg = fmt "proceed_to_mass_killing" in
+        Error.wrap_parsing ~msg (fun () -> parse_row row)
+        >>= fun (`Kill_id kid, `Ids_to_kill ks) ->
+        DB.in_transaction t.handle ~f:begin fun () ->
+          Deferred_list.while_sequential ks ~f:begin fun id ->
+            get_target t id
+            >>= fun target ->
+            begin match Target.kill target with
+            | Some new_node ->
+              update_target_internal t new_node (* we are inside a transaction *)
+              >>= fun () ->
+              Event_source.trigger t.changes
+                (`Nodes_changed [Target.id target]);
+              return true
+            | None ->
+              return false
+            end
+            >>= fun something_changed ->
+            let {SQL.query; arguments} =
+              Schema.remove_from_kill_list t.schema_parameters kid in
+            DB.exec_unit t.handle ~query ~arguments
+            >>= fun () ->
+            return something_changed
+          end
+        end
+        >>= fun potential_changes ->
+        return (List.exists ~f:(fun x -> x) potential_changes || prev)
+      end
 
-  let proceed_to_mass_killing t =
-    With_database.Killing_targets.proceed_to_mass_killing t.db
-    >>= fun res ->
-    List.fold ~init:(return ()) res ~f:(fun unit_m trgt ->
-        unit_m >>= fun () ->
-        Cache_table.add_or_replace t.cache
-          (Target.id trgt) (Target.Stored_target.of_target trgt)
-      )
-    >>= fun () ->
-    begin match res with
-    | [] -> return false
-    | more ->
-      Event_source.trigger t.changes (`Nodes_changed (List.map ~f:Target.id more));
-      return true
-    end
-
+  let add_target_ids_to_kill_list :
+    t ->
+    string list ->
+    (unit,
+     [> `Database of Error.database ]) Deferred_result.t
+    = fun t id_list ->
+      let {SQL.query; arguments} =
+        Schema.add_to_kill_list t.schema_parameters id_list in
+      DB.in_transaction t.handle begin fun () ->
+        DB.exec_unit t.handle ~query ~arguments
+      end
 end
 
 module Adding_targets = struct
 
-  let force_add_passive_target t ts =
-    With_database.Adding_targets.force_add_passive_target t.db ts
-    >>= fun st ->
-    let id = Target.Stored_target.id st in
-    String_mutable_set.add t.all_ids id;
-    Cache_table.add_or_replace t.cache id st
+  (** Bypass the normal flow of target addition and put a target in the DB. *)
+  let force_add_passive_target: t ->
+    Ketrew_pure.Target.t ->
+    (unit,
+     [> `Database of Error.database ]) Deferred_result.t
+    = fun t trgt ->
+      let st = Target.Stored_target.of_target trgt in
+      let {SQL.query; arguments} =
+        Schema.insert_stored_node t.schema_parameters st in
+      DB.in_transaction t.handle begin fun () ->
+        DB.exec_unit t.handle ~query ~arguments
+      end
 
-  let register_targets_to_add t ts =
-    With_database.Adding_targets.register_targets_to_add t.db ts
-  let check_and_really_add_targets t =
-    With_database.Adding_targets.check_and_really_add_targets t.db
-    >>= fun res ->
-    List.fold ~init:(return ()) res ~f:(fun unit_m st ->
-        unit_m >>= fun () ->
-        let id = Target.Stored_target.id st in
-        String_mutable_set.add t.all_ids id;
-        Cache_table.add_or_replace t.cache id st
-      )
-    >>= fun () ->
-    begin match res with
-    | [] -> return false
-    | more ->
-      Event_source.trigger t.changes
-        (`New_nodes (List.map ~f:Target.Stored_target.id more));
-      return true
-    end
+  let register_targets_to_add :
+    t ->
+    Target.t list ->
+    (unit,
+     [> `Database of Error.database ])
+      Deferred_result.t
+    = fun t nodes ->
+      let {SQL.query; arguments} =
+        Schema.add_to_add_list t.schema_parameters nodes in
+      DB.in_transaction t.handle begin fun () ->
+        DB.exec_unit t.handle ~query ~arguments
+      end
 
+
+  (** Internal “pure” function: transforms [new_nodes] a list of
+      [Target.t]'s into a list of [Target.Stored_target.t]'s by
+      checking equivalence against [active_or_passive_nodes] and
+      “itself” (i.e. each non-equivalent node becomes part of the
+      equivalence checking for the following nodes).
+  *)
+  let compute_equivalence ~new_nodes ~active_or_passive_nodes =
+    let stuff_to_actually_add =
+      List.fold ~init:[] new_nodes ~f:begin fun to_store_targets target ->
+        let equivalences =
+          let we_kept_so_far =
+            List.filter_map to_store_targets
+              ~f:(fun st ->
+                  match Target.Stored_target.get_target st with
+                  | `Target t -> Some t
+                  | `Pointer _ -> None) in
+          List.filter (active_or_passive_nodes @ we_kept_so_far)
+            ~f:(fun t -> Target.is_equivalent target t) in
+        Log.(Target.log target % s " is "
+             % (match equivalences with
+               | [] -> s "pretty fresh"
+               | more ->
+                 s " equivalent to " % OCaml.list Target.log equivalences)
+             @ very_verbose);
+        match equivalences with
+        | [] ->
+          (Target.Stored_target.of_target target :: to_store_targets)
+        | at_least_one :: _ ->
+          (
+            if Target.State.Is.activated_by_user (Target.state target)
+            then
+              Logging.User_level_events.root_workflow_equivalent_to
+                ~name:(Target.name target)
+                ~id:(Target.id target)
+                (List.map equivalences ~f:(fun st ->
+                     (Target.name st, Target.id st)))
+          );
+          (Target.Stored_target.make_pointer
+             ~from:target ~pointing_to:at_least_one :: to_store_targets)
+      end
+    in
+    log_info
+      Log.(s "Going to add new " % i (List.length stuff_to_actually_add)
+           % s " targets to the DB"
+           % (parens (i (List.length new_nodes)
+                      % s " were submitted")));
+    stuff_to_actually_add
+
+
+  let check_and_really_add_targets :
+    t ->
+    (bool,
+     [> `Database of Error.database ]) Deferred_result.t
+    = fun t ->
+      (*
+      - get targets to add
+      - get all activable & active targets
+      - for each “batch”
+          - do equivalence dance
+          - transaction:
+              - add to the database
+              - remove from the add-list
+      *)
+      let {SQL.query; arguments}, parse_row =
+        Schema.get_the_add_list t.schema_parameters in
+      DB.exec_multi t.handle ~query ~arguments
+      >>= fun rows ->
+      List.fold rows ~init:(return false) ~f:begin fun prev_m row ->
+        prev_m
+        >>= fun prev ->
+        let msg = fmt "really_adding_nodes" in
+        Error.wrap_parsing ~msg (fun () -> parse_row row)
+        >>= fun (`Addition_id aid, `Nodes_to_add nodes_to_add) ->
+        all_active_and_passive_nodes t
+        >>= fun all_interesting_nodes ->
+        let nodes_to_really_add =
+          let active_or_passive_nodes =
+            List.filter_map all_interesting_nodes
+              ~f:(fun t ->
+                  match Target.Stored_target.get_target t with
+                  | `Target t -> Some t
+                  | `Pointer _ -> None) in
+          compute_equivalence
+            ~new_nodes:nodes_to_add
+            ~active_or_passive_nodes in
+        (* Now the writing in the DB: *)
+        DB.in_transaction t.handle ~f:begin fun () ->
+          Deferred_list.while_sequential nodes_to_really_add ~f:begin fun st ->
+            let {SQL.query; arguments} =
+              Schema.insert_stored_node t.schema_parameters st in
+            DB.exec_unit t.handle ~query ~arguments
+            >>= fun () ->
+            (* If not-a-pointer we force the update to catch all the things
+               to catch. TODO: should be done in one query. *)
+            begin match Target.Stored_target.get_target st with
+            | `Target trgt ->
+              update_target_internal t trgt
+            |`Pointer _ ->
+              return ()
+            end
+            >>= fun () ->
+            let {SQL.query; arguments} =
+              Schema.remove_from_add_list t.schema_parameters aid in
+            DB.exec_unit t.handle ~query ~arguments
+          end
+        end
+        >>= fun (_ : unit list) ->
+        begin match nodes_to_really_add with
+        | [] -> return prev
+        | more ->
+          Event_source.trigger t.changes
+            (`New_nodes (List.map ~f:Target.Stored_target.id more));
+          return true
+        end
+      end
 end
 
 module Synchronize = struct
 
-  let make_input spec =
+  let make_input spec ~f =
     let uri = Uri.of_string spec in
     match Uri.scheme uri with
     | Some "backup" ->
       let path  = Uri.path uri in
-      return (object
-        method get_collection collection =
-          let dir = path // collection in
-          System.file_info dir
-          >>= begin function
-          | `Symlink _
-          | `Socket
-          | `Fifo
-          | `Regular_file _
-          | `Block_device
-          | `Character_device -> fail (`Not_a_directory dir)
-          | `Absent -> return []
-          | `Directory ->
-            let `Stream next = System.list_directory dir in
-            let rec go acc =
-              next ()
-              >>= function
-              | None -> return acc
-              | Some s ->
-                let file = path // collection // s in
-                System.file_info file
-                >>= begin function
-                | `Regular_file _ ->
-                  IO.read_file file
-                  >>= fun d ->
-                  of_result (Target.Stored_target.deserialize d)
-                  >>= fun st ->
-                  go (st :: acc)
-                | _ -> go acc
-                end
-            in
-            go []
-          end
-        method close =
-          return ()
-      end)
-    | _ ->
-      With_database.create
-        ~database_parameters:spec
-        ~archival_age_threshold:(`Days infinity)
-      >>= fun src_db ->
-      return (object
-        method get_collection collection =
-          With_database.get_collections_of_stored_targets src_db ~from:[collection]
-        method close =
-          With_database.unload src_db
-      end)
+      let rec go ~path =
+        System.file_info path
+        >>= begin function
+        | `Symlink _
+        | `Socket
+        | `Fifo
+        | `Block_device
+        | `Character_device -> fail (`Weird_file path)
+        | `Absent -> fail (`Weird_file path)
+        | `Regular_file _ ->
+          IO.read_file path
+          >>= fun d ->
+          of_result (Target.Stored_target.deserialize d)
+          >>= fun st ->
+          f st
+        | `Directory ->
+          let `Stream next = System.list_directory path in
+          let rec go_inside () =
+            next ()
+            >>= function
+            | None -> return ()
+            | Some ".."
+            | Some "." ->
+              go_inside ()
+            | Some s ->
+              go ~path:(path // s)
+              >>= fun () ->
+              go_inside ()
+          in
+          go_inside ()
+        end
+      in
+      go ~path
+    | Some "postgresql" ->
+      create ~database_parameters:spec
+      >>= fun t ->
+      let {SQL.query; arguments}, parse_row =
+        Schema.all_nodes t.schema_parameters in
+      DB.exec_multi t.handle ~query ~arguments
+      >>= fun rows ->
+      Deferred_list.while_sequential rows ~f:begin fun row ->
+        Error.wrap_parsing ~msg:"Synchronize.make_input"
+          (fun () -> parse_row row)
+      end
+      >>= fun stored ->
+      Deferred_list.while_sequential stored ~f:(fun s -> f s)
+      >>= fun (_ : unit list) ->
+      unload t
+    | other ->
+      fail (`Unknown_uri_scheme (spec, other))
 
   let make_output spec =
     let uri = Uri.of_string spec in
     match Uri.scheme uri with
     | Some "backup" ->
       let path  = Uri.path uri in
-      System.ensure_directory_path path
-      >>= fun () ->
+      let in_directory = ref 0 in
+      let dir_name n = fmt "hecto_%06d" n in 
+      let current_directory = ref 0 in
+      let next_dir () =
+        if !in_directory >= 100 then (
+          in_directory := 0;
+          incr current_directory;
+        ) else (
+          incr in_directory;
+        );
+        dir_name !current_directory in
+      let store stored_target =
+        let save_path = path // next_dir () in
+        System.ensure_directory_path save_path
+        >>= fun () ->
+        IO.write_file (save_path
+                       // Target.Stored_target.id stored_target ^ ".json")
+          ~content:(Target.Stored_target.serialize stored_target)
+      in
       return (object
-        method store ~collection ~stored_target =
-          System.ensure_directory_path (path // collection)
+        method store st = store st
+        method close = return ()
+      end)
+    | Some "postgresql" ->
+      create ~database_parameters:spec
+      >>= fun t ->
+      let store st =
+        let {SQL.query; arguments} =
+          Schema.insert_stored_node t.schema_parameters st in
+        DB.in_transaction t.handle begin fun () ->
+          DB.exec_unit t.handle ~query ~arguments
           >>= fun () ->
-          IO.write_file (path // collection //
-                         Target.Stored_target.id stored_target ^ ".json")
-            ~content:(Target.Stored_target.serialize stored_target)
-        method close =
-          return ()
-      end)
-    | _ ->
-      With_database.create
-        ~database_parameters:spec
-        ~archival_age_threshold:(`Days infinity)
-      >>= fun dst_db ->
+          begin match Target.Stored_target.get_target st with
+          | `Target trgt ->
+            update_target_internal t trgt
+          |`Pointer _ ->
+            return ()
+          end
+        end
+      in
       return (object
-        method store ~collection ~stored_target =
-          With_database.raw_add_or_update_stored_target dst_db
-            ~collection ~stored_target
-        method close =
-          With_database.unload dst_db
+        method store st = store st
+        method close = unload t
       end)
+    | other ->
+      fail (`Unknown_uri_scheme (spec, other))
+
 
   let copy src dst =
-    make_input src
-    >>= fun input ->
-    make_output dst
-    >>= fun output ->
-    Deferred_list.while_sequential
-      With_database.all_collections ~f:(fun collection ->
-          input#get_collection collection
-          >>= fun all_for_collection ->
-          Deferred_list.while_sequential all_for_collection ~f:(fun stored_target ->
-              output#store  ~collection ~stored_target)
-          >>= fun _ ->
-          return ())
-    >>= fun _ ->
-    input#close
-    >>= fun () ->
-    output#close
+    begin
+      make_output dst
+      >>= fun output ->
+      make_input src ~f:(fun st -> output#store st)
+      >>= fun () ->
+      output#close
+    end >>< function
+    | `Ok () -> return ()
+    | `Error e -> fail (`Syncronize (src, dst, e))
 
+  module Error = struct
+    let to_string (src, dst, e) =
+      fmt "Sync: %s -> %s: %s" src dst @@
+      match e with
+      | `Database d -> Error.database_to_string d
+      | `IO _ as e ->
+        Pvem_lwt_unix.IO.error_to_string e
+      | `System _ as e ->
+        Pvem_lwt_unix.System.error_to_string e
+      | `Unknown_uri_scheme (url, sch) ->
+        fmt "Unknown URI scheme: %S" url
+      | `Weird_file path ->
+        fmt "Not a regular file or directory: %s" path
+      | `Target (`Deserilization s) ->
+        fmt "Target deserialization error: %S" s
 
-
+  end
 end
+

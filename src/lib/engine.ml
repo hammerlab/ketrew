@@ -37,7 +37,7 @@ include Make_module_error_and_info(struct
 let create configuration =
   Persistent_data.create
     (Configuration.database_parameters configuration)
-    (Configuration.archival_age_threshold configuration)
+    (* (Configuration.archival_age_threshold configuration) *)
   >>= fun data ->
   return {data; configuration; host_io = Host_io.create ()}
 
@@ -137,7 +137,7 @@ module Run_automaton = struct
         | `Error (`Database _ as e)
         | `Error (`Database_unavailable _ as e)
         | `Error (`Fetching_node _ as e) ->
-          log_error e
+          log_error Error.to_string e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
                  % OCaml.list quote ids);
@@ -282,7 +282,7 @@ module Run_automaton = struct
     end
 
   type step_allowed_errors = [
-    | `Database of Trakeva.Error.t
+    | `Database of Persistent_data.Error.database
     | `Database_unavailable of string
     | `Fetching_node of Persistent_data.Error.fetching_node
     | `Target of [ `Deserilization of string ]
@@ -337,7 +337,7 @@ module Run_automaton = struct
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
       (Ketrew_pure.Target.Automaton.progress list,
-       [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
+       [> `Database of  Persistent_data.Error.database
        | `Database_unavailable of string ]) Deferred_result.t =
       let state_should_not_be_updated s =
         match Target.State.Is.(still_running s || tried_to_eval_condition s) with

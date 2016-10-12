@@ -28,7 +28,7 @@ val sub_commands:
   unit ->
   ((unit,
     [> `Client of Client.Error.t
-    | `Database of Trakeva.Error.t
+    | `Database of Persistent_data.Error.database
     | `Database_unavailable of string
     | `Dyn_plugin of [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
     | `Failure of string

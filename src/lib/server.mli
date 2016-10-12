@@ -32,7 +32,7 @@ val start :
   just_before_listening:(
     unit ->
     (unit,
-     [> `Database of Trakeva.Error.t
+     [> `Database of Persistent_data.Error.database
      | `Database_unavailable of string
      | `Dyn_plugin of
           [> `Dynlink_error of Dynlink.error
