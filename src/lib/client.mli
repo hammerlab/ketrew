@@ -57,12 +57,9 @@ val as_client:
   f:(client:t ->
      ('result,
       [> `Database of Persistent_data.Error.database
-      | `Database_unavailable of string
       | `Dyn_plugin of
            [> `Dynlink_error of Dynlink.error | `Findlib of exn ]
       | `Failure of string
-      | `Fetching_node of Persistent_data.Error.fetching_node
-      | `Target of [> `Deserilization of string ]
       | `Wrong_configuration of
            [> `Found of string ] * [> `Exn of exn ] ]
       as 'a)
@@ -86,12 +83,9 @@ val all_visible_targets: t ->
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
    | `Database of Persistent_data.Error.database
-   | `Database_unavailable of string
    | `IO of
         [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `System of [> `File_info of string ] * [> `Exn of exn ]
-   | `Target of [> `Deserilization of string ] ])
+   | `System of [> `File_info of string ] * [> `Exn of exn ]])
     Deferred_result.t
 (** Get all the current targets. *)
 
@@ -99,10 +93,7 @@ val get_list_of_target_ids : t ->
   query:Ketrew_pure.Protocol.Up_message.target_query ->
   (Ketrew_pure.Target.id list,
    [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database])
     Deferred_result.t
 (** Get a list of target IDs given the [query]. *)
 
@@ -110,10 +101,7 @@ val get_target: t ->
   id:Ketrew_pure.Target.id ->
   (Ketrew_pure.Target.t,
    [> `Client of Error.t
-   | `Database_unavailable of string
-   | `Database of Persistent_data.Error.database
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** The latest contents of a given target.  *)
 
@@ -121,10 +109,7 @@ val get_targets: t ->
   id_list:Ketrew_pure.Target.id list ->
   (Ketrew_pure.Target.t list,
    [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** Same as {!get_target} but “in bulk.” *)
 
@@ -136,10 +121,7 @@ val kill: t ->
   Ketrew_pure.Target.id list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `Database_unavailable of Ketrew_pure.Target.id
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** Kill a set of targets. *)
     
@@ -147,10 +129,7 @@ val restart: t ->
   Ketrew_pure.Target.id list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `Database_unavailable of Ketrew_pure.Target.id
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** Restart a set of targets. *)
 
@@ -158,10 +137,7 @@ val add_targets: t ->
   Ketrew_pure.Target.t list ->
   (unit,
    [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Persistent_data.Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** Submit a list of targets to the server/engine. This is the low-level API
     dealing with {!Ketrew_pure.Target.t} values; for use in the EDSL please

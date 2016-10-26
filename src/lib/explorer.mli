@@ -30,12 +30,10 @@ val create : client:Client.t -> unit -> t
 val explore : t ->
   (unit, [> `Client of Client.Error.t 
          | `Database of Persistent_data.Error.database
-         | `Database_unavailable of string
          | `Failure of string
          | `IO of [> `Read_file_exn of string * exn
                   | `Write_file_exn of string * exn ]
-         | `Fetching_node of Persistent_data.Error.fetching_node
-         | `System of [> `File_info of string ] * [> `Exn of exn ]
-         | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+         | `System of [> `File_info of string ] * [> `Exn of exn ]])
+    Deferred_result.t
 (** [explore ~client exploration_states] runs a read-eval loop to explore and
     interact with targets.*)

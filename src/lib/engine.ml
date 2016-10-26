@@ -134,15 +134,13 @@ module Run_automaton = struct
           | `Failed as c ->
             return (dep, c)
           end
-        | `Error (`Database _ as e)
-        | `Error (`Database_unavailable _ as e)
-        | `Error (`Fetching_node _ as e) ->
+        | `Error (`Database _ as e) ->
           log_error Error.to_string e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
                  % OCaml.list quote ids);
           fail e
-        | `Error (`Target _ as e) -> fail e)
+      )
     >>= fun (oks, errors) ->
     let is a b =
       match b with
@@ -283,23 +281,12 @@ module Run_automaton = struct
 
   type step_allowed_errors = [
     | `Database of Persistent_data.Error.database
-    | `Database_unavailable of string
-    | `Fetching_node of Persistent_data.Error.fetching_node
-    | `Target of [ `Deserilization of string ]
     | `List of step_allowed_errors list
   ]
 
   let rec try_to_fix_step_error t ~info (e: step_allowed_errors) =
     match e with
-    | `Database _
-    | `Database_unavailable _
-    | `Target _ -> fail (`Not_fixable e)
-    | `List l ->
-      Deferred_list.while_sequential l ~f:(fun e ->
-          try_to_fix_step_error t ~info e)
-      >>= fun _ ->
-      return ()
-    | `Fetching_node (how, `Id id) ->
+    | `Database (`Fetching_node id, how) ->
       let name =
         fmt "Placeholder-node created to fix the Engine; always fails. \
              Error: %s, Info: %s" (Error.to_string e) info in
@@ -312,6 +299,12 @@ module Run_automaton = struct
       Printf.eprintf "Adding  %s (%s) for E: %s\n%!"
         id name (Error.to_string e);
       Persistent_data.Adding_targets.force_add_passive_target t.data new_node
+    | `Database _ -> fail (`Not_fixable e)
+    | `List l ->
+      Deferred_list.while_sequential l ~f:(fun e ->
+          try_to_fix_step_error t ~info e)
+      >>= fun _ ->
+      return ()
 
 
 
@@ -337,8 +330,7 @@ module Run_automaton = struct
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
       (Ketrew_pure.Target.Automaton.progress list,
-       [> `Database of  Persistent_data.Error.database
-       | `Database_unavailable of string ]) Deferred_result.t =
+       [< step_allowed_errors ]) Deferred_result.t =
       let state_should_not_be_updated s =
         match Target.State.Is.(still_running s || tried_to_eval_condition s) with
         | false -> false

@@ -25,11 +25,6 @@ open Unix_io
 type t
 
 module Error : sig
-  type fetching_node = [
-    | `Get_stored_target
-    | `Pointer_loop_max_depth of int
-    | `Target_to_add 
-  ] * [ `Id of string ]
 
   type database =
     [
@@ -37,8 +32,12 @@ module Error : sig
       | `Load of string
       | `Parsing of string
       | `Close
+      | `Fetching_node of string
     ]
-    * [ `Exn of string ]
+    * [
+      | `Exn of string
+      | `Pointer_loop_max_depth of int
+    ]
 
   val database_to_string: database -> string
 end
@@ -46,10 +45,7 @@ end
 val create :
   database_parameters:string ->
   (t,
-   [> `Database of Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Error.fetching_node
-   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+   [> `Database of Error.database ]) Deferred_result.t
 (** Connect to the Postgresql database and initialize it (if needed). *) 
 
 val unload: t ->
@@ -60,10 +56,7 @@ val get_target:
   t ->
   Target.id ->
   (Ketrew_pure.Target.t,
-   [> `Database of Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Error.fetching_node
-   | `Target of [> `Deserilization of string ] ]) Deferred_result.t
+   [> `Database of Error.database ]) Deferred_result.t
 (** Get the node at a given ID, the function actually “follows
     pointers” i.e.  it gets the node considered by Ketrew after
     equivalence matching.  *)
@@ -71,10 +64,7 @@ val get_target:
 val all_visible_targets :
   t ->
   (Ketrew_pure.Target.t list,
-   [>  `Database of Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   [>  `Database of Error.database ])
     Deferred_result.t
 
 
@@ -83,10 +73,7 @@ val activate_target :
   target:Target.t ->
   reason:[ `Dependency of Target.id | `User ] ->
   (unit,
-   [> `Database of Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   [> `Database of Error.database ])
     Deferred_result.t
 (** Register a node as “Active” (i.e. to be picked-up by the engine at
     the next step, using {!fold_active_targets}). *)
@@ -97,9 +84,7 @@ val fold_active_targets :
   f:('a ->
      target:Target.t ->
      ('a,
-      [> `Database of Error.database
-      | `Fetching_node of Error.fetching_node
-      | `Target of [> `Deserilization of string ] ]
+      [> `Database of Error.database ]
       as 'combined_errors)
        Deferred_result.t) ->
   ('a, 'combined_errors) Deferred_result.t
@@ -109,17 +94,13 @@ val update_target :
   t ->
   Target.t ->
   (unit,
-   [> `Database of Error.database
-   | `Database_unavailable of string ])
+   [> `Database of Error.database ])
     Deferred_result.t
 
 val find_all_orphans: 
   t ->
   (Ketrew_pure.Target.t list,
-   [> `Database of Error.database
-   | `Database_unavailable of string
-   | `Fetching_node of Error.fetching_node
-   | `Target of [> `Deserilization of string ] ])
+   [> `Database of Error.database ])
     Deferred_result.t
 (** [find_all_orphans] goes through the cache and returns all the targets that
     are passive but not reachable, i.e. that can't be activated, ever. *)
@@ -135,43 +116,34 @@ module Killing_targets: sig
   val proceed_to_mass_killing :
     t ->
     (bool,
-     [> `Database of Error.database
-     | `Database_unavailable of string
-     | `Fetching_node of Error.fetching_node
-     | `Target of [> `Deserilization of string ] ])
+     [> `Database of Error.database ])
       Deferred_result.t
   val add_target_ids_to_kill_list :
     t ->
     string list ->
     (unit,
-     [> `Database of Error.database
-     | `Database_unavailable of string ])
+     [> `Database of Error.database ])
       Deferred_result.t
 end
 
 module Adding_targets: sig
+
   val register_targets_to_add :
     t ->
     Target.t list ->
-    (unit,
-     [> `Database of Error.database
-     | `Database_unavailable of string ])
-      Deferred_result.t
+    (unit, [> `Database of Error.database ]) Deferred_result.t
+
   val check_and_really_add_targets :
     t ->
     (bool,
-     [> `Database of Error.database
-     | `Database_unavailable of string
-     | `Fetching_node of Error.fetching_node
-     | `Target of [> `Deserilization of string ] ])
+     [> `Database of Error.database ])
       Deferred_result.t
 
   (** Bypass the normal flow of target addition and put a target in the DB. *)
   val force_add_passive_target: t ->
     Ketrew_pure.Target.Stored_target.target ->
     (unit,
-     [> `Database of Error.database
-     | `Database_unavailable of string ]) Deferred_result.t
+     [> `Database of Error.database ]) Deferred_result.t
 
 end
 
@@ -195,6 +167,7 @@ module Synchronize: sig
           | `Unknown_uri_scheme of string * string option
           | `Weird_file of string ] ])
       Deferred_result.t
+
   module Error: sig
     val to_string :
       string * string *

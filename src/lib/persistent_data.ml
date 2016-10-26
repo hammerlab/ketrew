@@ -812,11 +812,6 @@ type t = {
 }
 
 module Error = struct
-  type fetching_node = [
-    | `Get_stored_target
-    | `Pointer_loop_max_depth of int
-    | `Target_to_add
-  ] * [ `Id of string ]
 
   type database =
     [
@@ -824,8 +819,13 @@ module Error = struct
       | `Load of string
       | `Parsing of string
       | `Close
+      | `Fetching_node of string
     ]
-    * [ `Exn of string ]
+    * [
+      | `Exn of string
+      | `Pointer_loop_max_depth of int
+    ]
+
 
   let database_to_string (loc, err) =
     fmt "Location: %s --- Error: %s"
@@ -833,9 +833,11 @@ module Error = struct
       | `Exec (s, _) -> fmt "executing %S" s
       | `Close -> "Closing"
       | `Parsing s -> fmt "Parsing (%s)" s
+      | `Fetching_node id -> fmt "Fetching %s" id
       | `Load s -> fmt "loading the DB: %S" s)
       (match err with
-      | `Exn s -> s)
+      | `Exn s -> s
+      | `Pointer_loop_max_depth d -> fmt "Max depth reached: %d" d)
 
   let make l r : [> `Database of database ] = `Database (l, r)
 
@@ -895,7 +897,7 @@ let get_target:
       >>= fun stored_node ->
       begin match Target.Stored_target.get_target stored_node with
       | `Pointer _ when count >= 1000 ->
-        fail (`Fetching_node (`Pointer_loop_max_depth 1000, `Id id))
+        fail (`Database (`Fetching_node id, `Pointer_loop_max_depth 1000))
       | `Pointer key ->
         get_following_pointers ~count:(count + 1) ~key
       | `Target t -> return t
