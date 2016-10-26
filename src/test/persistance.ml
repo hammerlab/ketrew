@@ -9,7 +9,7 @@ module P = Persistent_data
 (*
    Cf. https://hub.docker.com/_/postgres/
 
-   docker run --name ketrew-postgres -p 5432:5432 -e POSTGRES_PASSWORD=ketrewpostrespw -d postgres
+   docker run --name ketrew-postgres -p 5432:5432 -e POSTGRES_PASSWORD=kpass -d postgres
 
    docker kill ketrew-postgres
    docker rm ketrew-postgres
@@ -25,7 +25,7 @@ module P = Persistent_data
        SET bytea_output = 'escape';
 
 
-   ./ketrew-persistance-test "postgresql://127.0.0.1/?user=postgres&password=ketrewpostrespw"
+   ./ketrew-persistance-test "postgresql://127.0.0.1/?user=postgres&password=kpass"
    
 
    rm -fr /tmp/kbackup

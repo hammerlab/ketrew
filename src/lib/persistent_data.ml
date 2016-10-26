@@ -54,7 +54,7 @@ let dbg fmt =
 module SQL = struct
 
   type untyped_sql_field =
-    [ `Blob of string | `Null ]
+    [ `Blob of string | `Null | `Timestamp of float ]
   [@@deriving show]
 
   (** Ugly/imperative implementation of a parameter counter.
@@ -100,11 +100,19 @@ module SQL = struct
     type _ t =
       | Byte_array : string t
       | Stringable: (module STRINGABLE with type t = 'a) -> 'a t
+      | Timestamp: float t
+      | Option: 'a t -> 'a option t
 
     let to_sql: type a. a t -> string =
       function
+      | Option Byte_array -> "BYTEA"
+      | Option (Stringable _) -> "BYTEA"
+      | Option Timestamp -> "DOUBLE PRECISION"
       | Byte_array -> "BYTEA NOT NULL"
       | Stringable _ ->  "BYTEA NOT NULL"
+      | Timestamp -> "DOUBLE PRECISION NOT NULL"
+      | Option (Option other) ->
+        failwith "SQL.Type.to_sql: (Optino (Option _)) not supported"
   end
 
 
@@ -167,19 +175,45 @@ module SQL = struct
             | _ :: _, [] ->
               Printf.ksprintf failwith "Not enough columns: %d"
                 (List.length untyped)
-            | { name; sql_type = Type.Byte_array; tag } :: more,
+            | { name; sql_type = Type.Option Type.Timestamp; tag } :: more,
               untyfield :: rest ->
               begin match untyfield with
               | `Null ->
-                Printf.ksprintf failwith "%s is Null while expecting blob" name
+                loop (f (None, tag)) rest more
+              | `Timestamp t ->
+                loop (f (Some t, tag)) rest more
+              | other ->
+                Printf.ksprintf failwith "%s is %s while expecting a blob"
+                  (show_untyped_sql_field other)
+                  name
+              end
+            | { name; sql_type = Type.Option other; tag } :: more,
+              untyfield :: rest ->
+              failwith "parse_sql_fields_exn: (Option x) when x != Timestamp: \
+                        NOT IMPLEMENTED"
+            | { name; sql_type = Type.Timestamp; tag } :: more,
+              untyfield :: rest ->
+              begin match untyfield with
+              | `Timestamp t ->
+                loop (f (t, tag)) rest more
+              | other ->
+                Printf.ksprintf failwith "%s is %s while expecting a blob"
+                  (show_untyped_sql_field other)
+                  name
+              end
+            | { name; sql_type = Type.Byte_array; tag } :: more,
+              untyfield :: rest ->
+              begin match untyfield with
               |`Blob b ->
                 loop (f (b, tag)) rest more
+              | other ->
+                Printf.ksprintf failwith "%s is %s while expecting a blob"
+                  (show_untyped_sql_field other)
+                  name
               end
             | { name; sql_type = Type.Stringable m; tag } :: more,
               untyfield :: rest ->
               begin match untyfield with
-              | `Null ->
-                Printf.ksprintf failwith "%s is Null while expecting blob" name
               |`Blob b ->
                 let module M = (val m) in
                 begin match M.of_string b with
@@ -189,6 +223,10 @@ module SQL = struct
                 | Some v ->
                     loop (f (v, tag)) rest more
                 end
+              | other ->
+                Printf.ksprintf failwith "%s is %s while expecting a blob"
+                  (show_untyped_sql_field other)
+                  name
               end
         in
         loop on_success untyped fields
@@ -198,6 +236,23 @@ module SQL = struct
         : type ty v. ((string * untyped_sql_field) list -> v) -> (ty, v) t -> ty
         = fun k -> function
         | [] -> k []
+        | {name; sql_type = Type.Option Type.Timestamp; _} :: more ->
+          let f (s, _) =
+            let conti =
+              match s with
+              | None -> `Null
+              | Some t -> `Timestamp t in
+            kunparse_to_sql (fun l -> k ((name, conti) :: l)) more
+          in
+          f
+        | {name; sql_type = Type.Option _; _} :: more ->
+          failwith "kunparse_to_sql: (Option x) when x != Timestamp: \
+                    NOT IMPLEMENTED"
+        | {name; sql_type = Type.Timestamp; _} :: more ->
+          let f (s, _) =
+            kunparse_to_sql (fun l -> k ((name, `Timestamp s) :: l)) more
+          in
+          f
         | {name; sql_type = Type.Byte_array; _} :: more ->
           let f (s, _) =
             kunparse_to_sql (fun l -> k ((name, `Blob s) :: l)) more
@@ -218,6 +273,10 @@ module SQL = struct
     let byte_array tag name = make tag name Type.Byte_array
 
     let stringable tag name m = make tag name Type.(Stringable m) 
+
+    let timestamp tag name = make tag name Type.Timestamp
+
+    let optional_timestamp tag name = make tag name Type.(Option Timestamp)
 
     let to_sql_set pos l =
       let f (name, untyped_sql_field) =
@@ -257,18 +316,43 @@ module SQL = struct
       (* | Equal_string: (string, _) Field.t * string -> t *)
       | Equal: ('a, _) Field.t * 'a -> t
       | Bin_op: [ `And | `Or ] * t * t -> t
+      | Timestamp_compare:
+          [ `Lt | `Le | `Gt | `Ge ] * (float, _) Field.t * float -> t
+      | Option_timestamp_compare:
+          [ `Lt | `Le | `Gt | `Ge ]
+          * (float option, _) Field.t * float option -> t
 
     module Infix = struct
       let (===) a b = Equal (a, b) 
       let (&&&) a b = Bin_op (`And, a, b)
       let (|||) a b = Bin_op (`Or, a, b)
+      let compare_timestamp field op v = Timestamp_compare (op, field, v)
+      let compare_timestamp_option field op v =
+        Option_timestamp_compare (op, field, v)
     end
 
+    let comparison_op_to_string op =
+      match op with
+      | `Ge -> ">="
+      | `Lt -> "<"
+      | `Le -> "<="
+      | `Gt -> ">"
 
-    let rec to_sql_where pos =
-      function
+    let rec to_sql_where pos
+      = function
       | Equal ({Field. name; sql_type = Type.Byte_array; tag }, v) ->
         let arg = Positional_parameter.next pos (`Blob v) in
+        fmt "%s = %s" name arg
+      | Equal ({Field. name; sql_type = Type.Option Type.Timestamp; tag }, v) ->
+        let value =
+          Option.value_map v ~default:`Null ~f:(fun t -> `Timestamp t) in
+        let arg = Positional_parameter.next pos value in
+        fmt "%s = %s or (%s is null AND %s is null)"
+          name arg name arg
+      | Equal ({Field. name; sql_type = Type.Option _; tag }, v) ->
+        failwith "to_sql_where: Option non-timestamp: NOT IMPLEMENTED"
+      | Equal ({Field. name; sql_type = Type.Timestamp; tag }, v) ->
+        let arg = Positional_parameter.next pos (`Timestamp v) in
         fmt "%s = %s" name arg
       | Equal ({Field. name; sql_type = Type.Stringable m; tag }, v) ->
         let arg =
@@ -276,8 +360,22 @@ module SQL = struct
           let blob = M.to_string v in
           Positional_parameter.next pos (`Blob blob) in
         fmt "%s = %s" name arg
+      | Timestamp_compare
+          (op, {Field. name; sql_type; tag }, v) ->
+        let arg = Positional_parameter.next pos (`Timestamp v) in
+        let op_str = comparison_op_to_string op in
+        fmt "%s %s %s" name op_str arg
+      | Option_timestamp_compare
+          (op, {Field. name; sql_type; tag }, v) ->
+        let arg =
+          let value =
+            Option.value_map v ~default:`Null ~f:(fun x -> `Timestamp x) in
+          Positional_parameter.next pos value in
+        let op_str = comparison_op_to_string op in
+        fmt "%s %s %s or (%s is null and %s is null)"
+          name op_str arg name arg
       | Bin_op (op, a, b) ->
-        fmt "(%s %s %s)"
+        fmt "(%s) %s (%s)"
           (to_sql_where pos a)
           (match op with `And -> "AND" | `Or -> "OR")
           (to_sql_where pos b)
@@ -397,9 +495,7 @@ module DB = struct
          ksprintf failwith "%s (QUERY: %s, ARGS: [%s])" s
            (Option.value query ~default:"NONE")
            (Array.to_list arguments
-            |> List.map ~f:(function
-              | `Blob b -> b
-              | `Null -> "NULL")
+            |> List.map ~f:SQL.show_untyped_sql_field
             |> String.concat ~sep:", ")
       ) fmt
 
@@ -407,9 +503,7 @@ module DB = struct
     let show_res query args res =
       dbg "\n  %s\n  args: [%s]\n  status: %s | error: %s | tuples: %d × %d"
         query
-        (Array.map args ~f:(function
-           | `Null -> "NULL"
-           | `Blob b -> sprintf "%S" b)
+        (Array.map args ~f:SQL.show_untyped_sql_field
          |> Array.to_list
          |> String.concat ~sep:", ")
         (PG.result_status res#status) res#error res#ntuples res#nfields;
@@ -423,9 +517,17 @@ module DB = struct
     in
     let res =
       let params =
-        Array.map arguments ~f:(function | `Null -> PG.null | `Blob s -> s) in
+        Array.map arguments ~f:begin function
+        | `Null -> PG.null
+        | `Blob s -> s
+        | `Timestamp t -> sprintf "%f" t
+        end in
       let binary_params =
-        Array.map arguments ~f:(function `Null -> false | `Blob _ -> true) in
+        Array.map arguments ~f:begin function
+        | `Null -> false
+        | `Timestamp _ -> false
+        | `Blob _ -> true
+        end in
       t.handle#exec query ~params ~binary_params
     in
     (if !debug then show_res query arguments res);
@@ -435,8 +537,25 @@ module DB = struct
       `Tuples
         (List.init res#ntuples (fun i ->
              (List.init res#nfields (fun j ->
-                  if res#getisnull i j then `Null
-                  else `Blob (PG.unescape_bytea (res#getvalue i j))))))
+                  if res#getisnull i j
+                  then `Null
+                  else
+                    match res#ftype j with
+                    | PG.BYTEA ->
+                      `Blob (PG.unescape_bytea (res#getvalue i j))
+                    | PG.FLOAT8 ->
+                      let t =
+                        Float.of_string (res#getvalue i j)
+                        |> Option.value_exn ~msg:"timestamp is not a float?" 
+                      in
+                      `Timestamp t
+                    | other ->
+                      ksprintf failwith "Got unhandled type back from PG: %s"
+                        (PG.string_of_ftype other)
+                )
+             )
+           )
+        )
     | PG.Empty_query
     | PG.Copy_out
     | PG.Copy_in
@@ -446,8 +565,8 @@ module DB = struct
     | PG.Copy_both
     | PG.Single_tuple  ->
       db_fail "SQL Query failed: status: %s, error: %s"
-          ~query ~arguments
-         (PG.result_status res#status) res#error
+        ~query ~arguments
+        (PG.result_status res#status) res#error
     end
 
   let exec_unit ?(arguments=[| |]) (t : t) ~query =
@@ -561,6 +680,18 @@ module Schema = struct
   let engine_status =
     Field.stringable Engine_status "engine_status" (module Engine_status)
 
+  type creation_date = Creation_date
+  let creation_date =
+    Field.timestamp Creation_date "creation_date"
+
+  type last_status_change_date = Last_status_change_date
+  let last_status_change_date =
+    Field.timestamp Last_status_change_date "last_status_change_date"
+
+  type finished_date = Finished_date
+  let finished_date =
+    Field.optional_timestamp Finished_date "finished_date"
+
   module Id_list = struct
     type t = string list
     let to_string : t -> string = String.concat ~sep:", "
@@ -602,7 +733,12 @@ module Schema = struct
 
   let main p =
     Table.(
-      make p.main_table_name Field.List.[id; blob; engine_status]
+      make p.main_table_name Field.List.[
+          id; blob; engine_status;
+          creation_date;
+          last_status_change_date;
+          finished_date;
+        ]
     )
 
   let kill_list p =
@@ -627,19 +763,33 @@ module Schema = struct
           failwith (fmt "Node-deserialization: %s" msg)
       end
 
-  let insert_stored_node p ~node =
+  let insert_stored_node p ~node : SQL.query =
     insert (main p)
       (Target.Stored_target.id node, Id)
       (Target.Stored_target.serialize node, Blob)
       (`Passive, Engine_status)
+      (Time.now (), Creation_date)
+      (Time.now (), Last_status_change_date)
+      (None, Finished_date)
 
-  let update_node p ~engine_status:es ~node =
+  let update_node p ~engine_status:es ~node : SQL.query =
     let tid = Target.id node in
+    let finished =
+      Target.state node |> Target.State.finished_time
+    in
     update ~table:(main p)
       ~where:Logic.Infix.(id === tid)
-      Field.List.[blob; engine_status]
+      Field.List.[
+        blob;
+        engine_status;
+        last_status_change_date;
+        finished_date;
+      ]
       Target.Stored_target.(serialize (of_target node), Blob)
       (es, Engine_status)
+      (Time.now (), Last_status_change_date)
+      (finished, Finished_date)
+
 
   let all_nodes ?where p =
     select
@@ -765,7 +915,11 @@ module Error = struct
 
   type database =
     [
-      | `Exec of string * [ `Blob of string | `Null ] array
+      | `Exec of string * [
+          | `Blob of string
+          | `Null
+          | `Timestamp of float
+        ] array
       | `Load of string
       | `Parsing of string
       | `Close
@@ -876,17 +1030,62 @@ let all_visible_targets :
         ) in
     return only_targets
 
-let query_nodes t query : (_, _) Deferred_result.t =
+(** 
+   [query_nodes] takes a {!Protocol.Up_message.target_query}
+   and returns the list of nodes matching it.
+
+   It's done in 2 major steps:
+
+   - Compile the query down to a {!SQL.Logic.t} [?where] argument
+     (potentially defining a superset of the results).
+     Use it to run as a {!SQL.query} against the database.
+   - Re-run the protocol-query in-memory against the above results;
+     this time filtering down to the exact set of nodes matching the
+     query.
+*)
+let query_nodes t protocol_query : (_, _) Deferred_result.t =
   let start_time = Time.now () in
-  all_visible_targets t
+  let open Protocol.Up_message in
+  let where =
+    match protocol_query.time_constraint with
+    | `All -> None
+    | `Not_finished_before time ->
+      Some SQL.Logic.Infix.(
+          compare_timestamp_option Schema.finished_date `Ge (Some time)
+        )
+    | `Created_after time ->
+      Some SQL.Logic.Infix.(
+          compare_timestamp Schema.creation_date `Ge time
+        )
+    | `Status_changed_since time ->
+      Some SQL.Logic.Infix.(
+          compare_timestamp Schema.last_status_change_date `Gt time
+        )
+  in
+  let {SQL.query; arguments}, parse_row =
+    Schema.all_nodes ?where t.schema_parameters in
+  DB.exec_multi t.handle ~query ~arguments
+  >>= fun rows ->
+  Deferred_list.while_sequential rows ~f:begin fun row ->
+    Error.wrap_parsing ~msg:"query_nodes"
+      (fun () -> parse_row row)
+  end
+  >>= fun stored ->
+  let only_targets =
+    List.filter_map stored ~f:(fun st ->
+        match Target.Stored_target.get_target st with
+        | `Pointer _ -> None
+        | `Target t -> Some t
+      ) in
+  return only_targets
   >>= fun targets ->
   let all_targets_time = Time.now () in
-  let list_of_ids =
+  let filtered_further =
     let open Protocol.Up_message in
     List.filter_map targets ~f:(fun target ->
         let wins () = Some target in
         let open Option in
-        begin match query.time_constraint with
+        begin match protocol_query.time_constraint with
         | `All -> wins ()
         | `Not_finished_before time ->
           begin
@@ -956,7 +1155,7 @@ let query_nodes t query : (_, _) Deferred_result.t =
           | `Id p ->
             Target.id target |> string_predicate ~p
         in
-        if apply_filter query.filter then wins () else None
+        if apply_filter protocol_query.filter then wins () else None
       )
   in
   let list_of_ids_time = Time.now () in
@@ -968,9 +1167,10 @@ let query_nodes t query : (_, _) Deferred_result.t =
         "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
         "total", time_span (list_of_ids_time -. start_time);
       ];
-      "list_of_ids", textf "length: %d" (List.length list_of_ids);
+      "before-filter", textf "%d nodes" (List.length targets);
+      "after-filter", textf "%d nodes" (List.length filtered_further);
     ]);
-  return list_of_ids
+  return filtered_further
 
 (** Update node while not in a transaction. *)
 let update_target_internal :
