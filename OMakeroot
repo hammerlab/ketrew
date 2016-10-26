@@ -31,7 +31,7 @@ else
 PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp \
    ppx_deriving_yojson ppx_deriving.std $(BISECT_PACKAGE) react reactiveData
 
-LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads trakeva_of_uri \
+LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads postgresql \
          pvem_lwt_unix cmdliner cohttp.lwt conduit dynlink findlib lwt.react
 
 JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml
