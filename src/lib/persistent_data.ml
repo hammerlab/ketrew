@@ -219,10 +219,6 @@ module SQL = struct
 
     let stringable tag name m = make tag name Type.(Stringable m) 
 
-    let ex_s = make `S "string" Type.Byte_array
-    let ex_t = byte_array `T "t"
-    let ex_u = byte_array `U "u"
-
     let to_sql_set pos l =
       let f (name, untyped_sql_field) =
         fmt "%s = %s"
@@ -236,12 +232,6 @@ module SQL = struct
         fmt "%s" (Positional_parameter.next pos untyped_sql_field) in
       Nonstd.List.map ~f l |> String.concat ~sep:", " |> fmt "(%s)"
 
-    let ex_set =
-      let pos = Positional_parameter.create () in
-      List.(kunparse_to_sql
-              (to_sql_set pos)
-              [ex_s; ex_t])
-        ("SEtting S", `S) ("Seetttting T", `T)
   end
 
   (** A SQL table is a named reccord (i.e. [Field.List.t]). *)
@@ -257,10 +247,6 @@ module SQL = struct
       fmt "CREATE TABLE IF NOT EXISTS %s %s"
         name (Field.List.to_sql_create fields)
       |> make_query ~arguments:[| |]
-
-    let ex1 () =
-      make "test" Field.(List.[ex_s; ex_t; ex_u])
-
 
   end
 
@@ -278,12 +264,6 @@ module SQL = struct
       let (|||) a b = Bin_op (`Or, a, b)
     end
 
-    let ex1 () =
-      let open Infix in
-      (Field.ex_s === "some string")
-      &&& 
-      (Field.ex_u === "some other string")
-      
 
     let rec to_sql_where pos =
       function
@@ -354,15 +334,6 @@ module SQL = struct
              "WHERE " ^ Logic.to_sql_where pos w))
     in
     query q pos
-
-
-  let ex_select () =
-    select
-      Field.List.[Field.ex_s]
-      ~from:(Table.ex1 ()) ~where:(Logic.ex1 ())
-      (fun (bs, `S) ->
-         dbg "%s" bs)
-
 
 end
 
@@ -719,27 +690,6 @@ module Schema = struct
   let remove_from_add_list p aid =
     delete ~from:(add_list p) ~where:Logic.Infix.(id === aid) ()
 
-  let test_pg () =
-    let p q =
-      Printf.printf "QUERY: %s\n%!" (show_query q)
-    in
-    let params = Parameters.default in
-    p (SQL.Table.to_sql_create (main params));
-    let node = Target.create ~name:"Test" () in
-    p (update_node params ~engine_status:`Passive ~node);
-    p (get_node params ~id:"kjdeij" |> fst);
-    p (insert_stored_node params ~node:(Target.Stored_target.of_target node));
-    p (get_the_kill_list params |> fst);
-    p (all_active_and_passive_targets params |> fst);
-    ()
-
-  let () =
-    dbg "TEST_PGSQL";
-    match Sys.getenv "TEST_PGSQL" with
-    | "true" ->
-      test_pg ()
-    | _ -> ()
-    | exception _ -> ()
 end
 
 
@@ -876,7 +826,6 @@ let unload: t ->
 
 let next_changes: t -> (Change.t list, 'a) Deferred_result.t = fun t ->
   Lwt.(
-    Printf.eprintf "next_changes called\n%!";
     Lwt_stream.next (Event_source.stream t.changes)
     >>= fun change ->
     return (`Ok change)
@@ -910,7 +859,6 @@ let all_visible_targets :
   (Ketrew_pure.Target.t list, [> `Database of Error.database]) Deferred_result.t
   = fun t ->
     (* TODO: should be removed and its dependencies too *)
-    Printf.eprintf "all_visible_targets called\n%!";
     let {SQL.query; arguments}, parse_row =
       Schema.all_nodes t.schema_parameters in
     DB.exec_multi t.handle ~query ~arguments
