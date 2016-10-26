@@ -67,6 +67,11 @@ val all_visible_targets :
    [>  `Database of Error.database ])
     Deferred_result.t
 
+val query_nodes:
+  t ->
+  Ketrew_pure.Protocol.Up_message.target_query ->
+  (Ketrew_pure.Target.t list, [> `Database of Error.database ])
+    Deferred_result.t
 
 val activate_target :
   t ->

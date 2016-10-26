@@ -876,6 +876,102 @@ let all_visible_targets :
         ) in
     return only_targets
 
+let query_nodes t query : (_, _) Deferred_result.t =
+  let start_time = Time.now () in
+  all_visible_targets t
+  >>= fun targets ->
+  let all_targets_time = Time.now () in
+  let list_of_ids =
+    let open Protocol.Up_message in
+    List.filter_map targets ~f:(fun target ->
+        let wins () = Some target in
+        let open Option in
+        begin match query.time_constraint with
+        | `All -> wins ()
+        | `Not_finished_before time ->
+          begin
+            let st = Target.state target in
+            match Target.State.finished_time st with
+            | Some t when t < time -> None
+            | _ -> wins ()
+          end
+        | `Created_after time ->
+          begin
+            let pt = Target.(state target |> State.passive_time) in
+            match pt < time with
+            | true -> None
+            | false -> wins ()
+          end
+        | `Status_changed_since time ->
+          let (`Time t, _, _) = Target.(state target |> State.summary) in
+          begin match time <= t with
+          | true -> wins ()
+          | false -> None
+          end
+        end
+        >>= fun _ ->
+        let string_predicate ~p string =
+          match p with
+          | `Equals s -> String.compare s string = 0
+          | `Matches rex_str ->
+            begin match Re_posix.compile_pat rex_str with
+            | rex -> Re.execp rex string
+            | exception _ -> false
+            end
+        in
+        let rec apply_filter =
+          function
+          | `True -> true
+          | `False -> false
+          | `And l -> List.for_all l ~f:apply_filter
+          | `Or l -> List.exists l ~f:apply_filter
+          | `Not f -> not (apply_filter f)
+          | `Status status ->
+            let state = Target.state target in
+            let open Target.State in
+            begin match status with
+            | `Simple s -> simplify state = s
+            | `Really_running ->
+              Is.started_running state || Is.still_running state
+              || Is.ran_successfully state
+            | `Killable -> Is.killable state
+            | `Dead_because_of_dependencies ->
+              Is.dependency_dead state
+            | `Activated_by_user ->
+              Is.activated_by_user state
+            | `Killed_from_passive ->
+              Is.killed_from_passive state
+            | `Failed_from_running ->
+              Is.failed_from_running state
+            | `Failed_from_starting ->
+              Is.failed_from_starting state
+            | `Failed_from_condition ->
+              Is.failed_from_condition state
+            end
+          | `Has_tag pred ->
+            let tags = Target.tags target in
+            List.exists tags ~f:(string_predicate ~p:pred)
+          | `Name p ->
+            Target.name target |> string_predicate ~p
+          | `Id p ->
+            Target.id target |> string_predicate ~p
+        in
+        if apply_filter query.filter then wins () else None
+      )
+  in
+  let list_of_ids_time = Time.now () in
+  log_markup Display_markup.([
+      "function", text "query_nodes";
+      "timing", description_list [
+        "start", date start_time;
+        "all-targets", time_span (all_targets_time -. start_time);
+        "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
+        "total", time_span (list_of_ids_time -. start_time);
+      ];
+      "list_of_ids", textf "length: %d" (List.length list_of_ids);
+    ]);
+  return list_of_ids
+
 (** Update node while not in a transaction. *)
 let update_target_internal :
   t ->
