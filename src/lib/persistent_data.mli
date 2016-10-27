@@ -28,11 +28,7 @@ module Error : sig
 
   type database =
     [
-      | `Exec of string * [
-          | `Blob of string
-          | `Null
-          | `Timestamp of float
-        ] array
+      | `Exec of string * string list
       | `Load of string
       | `Parsing of string
       | `Close
