@@ -353,6 +353,10 @@ module Stored_target : sig
 
   val id: t -> id
 
+  (** Get the name of the target, or the name of the name of the
+      “original” target if it has been made into a pointer. *)
+  val name: t -> string
+
   val make_pointer: from:target -> pointing_to:target -> t
 end
 
