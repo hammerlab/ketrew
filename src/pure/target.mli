@@ -357,6 +357,9 @@ module Stored_target : sig
       “original” target if it has been made into a pointer. *)
   val name: t -> string
 
+  (** Get the tag-cloud of the target, similarly as {!name}. *)
+  val tags: t -> string list
+
   val make_pointer: from:target -> pointing_to:target -> t
 end
 
