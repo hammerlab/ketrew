@@ -69,7 +69,7 @@ let rec to_string = function
     (String.concat ~sep:"; " (List.map l ~f:to_string))
 | `Not_a_directory dir ->
   fmt "%S is not a directory" dir
-| `Syncronize s ->
+| `Synchronize s ->
   Persistent_data.Synchronize.Error.to_string s
 | `Wrong_command_line sl ->
   fmt "Wrong command line: %s" 

@@ -1952,7 +1952,7 @@ module Synchronize = struct
       output#close
     end >>< function
     | `Ok () -> return ()
-    | `Error e -> fail (`Syncronize (src, dst, e))
+    | `Error e -> fail (`Synchronize (src, dst, e))
 
   module Error = struct
     let to_string (src, dst, e) =

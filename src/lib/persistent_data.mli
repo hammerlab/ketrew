@@ -157,7 +157,7 @@ module Synchronize: sig
     string ->
     string ->
     (unit,
-     [> `Syncronize of
+     [> `Synchronize of
           string * string *
           [> `Database of Error.database
           | `IO of
