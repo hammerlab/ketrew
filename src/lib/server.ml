@@ -293,7 +293,8 @@ module Engine_instructions = struct
           >>< function
           | `Ok t -> return (Some (id, t))
           | `Error e ->
-            log_error e Log.(s "Error while getting the target " % s id);
+            log_error Error.to_string e
+              Log.(s "Error while getting the target " % s id);
             return None)
       >>| List.filter_opt
 
@@ -586,7 +587,8 @@ let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
     Engine.unload server_state.state
     >>< fun engine_unload_result ->
     let display_errors_and_exit e =
-      log_error e Log.(s "Could not shut down the server properly");
+      log_error Error.to_string e
+        Log.(s "Could not shut down the server properly");
       Log.(s "Errors while shutting down the server:" %n
            % a Error.to_string e @ error);
       exit 10 in
@@ -635,7 +637,7 @@ module Commands = struct
         server_state.authentication <- authentication;
         return ()
       | `Error e ->
-        log_error e Log.(s "Could not reload Authentication: "
+        log_error Error.to_string e Log.(s "Could not reload Authentication: "
           % Authentication.log server_state.authentication);
         return ()
 
@@ -645,7 +647,7 @@ module Commands = struct
       begin function
       | `Ok () -> return ()
       | `Error e ->
-        log_error e Log.(s "get_log");
+        log_error Error.to_string e Log.(s "get_log");
         return ()
       end
 
@@ -683,7 +685,7 @@ let read_loop ~server_state ~file_path pipe =
         | `GetLog (format, path) ->
           Commands.get_log format path
         | `UnrecognizedFormat format ->
-          log_error (`Failure (fmt "wrong format: %S" format))
+          log_error Error.to_string (`Failure (fmt "wrong format: %S" format))
             Log.(s "get_log:unrecognized format");
           return ()
         | `WrongGetLog msg ->
@@ -894,7 +896,7 @@ let start_listening_on_connections ~server_state =
               ];
             Cohttp_lwt_unix.Server.respond_string ~status:`OK  ~body ()
           | `Error e ->
-            log_error e
+            log_error Error.to_string e
               Log.(s "Error while handling the request: conn_id: "
                    % s id % s ", request: "
                    % Request.log req);

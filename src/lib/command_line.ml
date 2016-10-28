@@ -650,9 +650,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               $
               let doc =
                 fmt "Use the given URI for the database configuration \
-                     (the default being a Sqlite DB in the configuration \
-                     directory, available backends: %s)."
-                  (String.concat ~sep:", " Trakeva_of_uri.available_backends) in
+                     (pstgresql://...)." in
               info ["use-database"] ~docv:"URI" ~doc
               |> opt (some string) None |> value
             )

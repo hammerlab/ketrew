@@ -120,12 +120,12 @@ module Global = struct
 
   end
   module Make_module_error_and_info(M: sig val module_name : string end) = struct
-    let log_error e lo =
+    let log_error error_to_string e lo =
       let open Logger in
       let open Typed_log.Item in
       description_list [
         Constants.word_module, text M.module_name;
-        Constants.word_error, text (Error.to_string e);
+        Constants.word_error, text (error_to_string e);
         Constants.word_info, text (Log.to_long_string lo);
       ] |> log
     let log_info lo =

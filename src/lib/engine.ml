@@ -37,7 +37,6 @@ include Make_module_error_and_info(struct
 let create configuration =
   Persistent_data.create
     (Configuration.database_parameters configuration)
-    (Configuration.archival_age_threshold configuration)
   >>= fun data ->
   return {data; configuration; host_io = Host_io.create ()}
 
@@ -134,15 +133,13 @@ module Run_automaton = struct
           | `Failed as c ->
             return (dep, c)
           end
-        | `Error (`Database _ as e)
-        | `Error (`Database_unavailable _ as e)
-        | `Error (`Fetching_node _ as e) ->
-          log_error e
+        | `Error (`Database _ as e) ->
+          log_error Error.to_string e
             Log.(s "Error while activating dependencies of " %
                  quote dependency_of % s " → "
                  % OCaml.list quote ids);
           fail e
-        | `Error (`Target _ as e) -> fail e)
+      )
     >>= fun (oks, errors) ->
     let is a b =
       match b with
@@ -282,24 +279,13 @@ module Run_automaton = struct
     end
 
   type step_allowed_errors = [
-    | `Database of Trakeva.Error.t
-    | `Database_unavailable of string
-    | `Fetching_node of Persistent_data.Error.fetching_node
-    | `Target of [ `Deserilization of string ]
+    | `Database of Persistent_data.Error.database
     | `List of step_allowed_errors list
   ]
 
   let rec try_to_fix_step_error t ~info (e: step_allowed_errors) =
     match e with
-    | `Database _
-    | `Database_unavailable _
-    | `Target _ -> fail (`Not_fixable e)
-    | `List l ->
-      Deferred_list.while_sequential l ~f:(fun e ->
-          try_to_fix_step_error t ~info e)
-      >>= fun _ ->
-      return ()
-    | `Fetching_node (how, `Id id) ->
+    | `Database (`Fetching_node id, how) ->
       let name =
         fmt "Placeholder-node created to fix the Engine; always fails. \
              Error: %s, Info: %s" (Error.to_string e) info in
@@ -312,6 +298,12 @@ module Run_automaton = struct
       Printf.eprintf "Adding  %s (%s) for E: %s\n%!"
         id name (Error.to_string e);
       Persistent_data.Adding_targets.force_add_passive_target t.data new_node
+    | `Database _ -> fail (`Not_fixable e)
+    | `List l ->
+      Deferred_list.while_sequential l ~f:(fun e ->
+          try_to_fix_step_error t ~info e)
+      >>= fun _ ->
+      return ()
 
 
 
@@ -337,8 +329,7 @@ module Run_automaton = struct
       (* This type annotation is for safety, we want to know if a
          new kind of error appears here: *)
       (Ketrew_pure.Target.Automaton.progress list,
-       [> `Database of [> `Act of Trakeva.Action.t | `Load of string ] * string
-       | `Database_unavailable of string ]) Deferred_result.t =
+       [< step_allowed_errors ]) Deferred_result.t =
       let state_should_not_be_updated s =
         match Target.State.Is.(still_running s || tried_to_eval_condition s) with
         | false -> false
@@ -479,100 +470,9 @@ let get_status t id =
   return (Target.state target)
 
 let get_list_of_target_ids t query =
-  let start_time = Time.now () in
-  Persistent_data.all_visible_targets t.data
+  Persistent_data.query_nodes t.data query
   >>= fun targets ->
-  let all_targets_time = Time.now () in
-  let list_of_ids =
-    let open Protocol.Up_message in
-    List.filter_map targets ~f:(fun target ->
-        let wins () = Some (Target.id target) in
-        let open Option in
-        begin match query.time_constraint with
-        | `All -> wins ()
-        | `Not_finished_before time ->
-          begin
-            let st = Target.state target in
-            match Target.State.finished_time st with
-            | Some t when t < time -> None
-            | _ -> wins ()
-          end
-        | `Created_after time ->
-          begin
-            let pt = Target.(state target |> State.passive_time) in
-            match pt < time with
-            | true -> None
-            | false -> wins ()
-          end
-        | `Status_changed_since time ->
-          let (`Time t, _, _) = Target.(state target |> State.summary) in
-          begin match time <= t with
-          | true -> wins ()
-          | false -> None
-          end
-        end
-        >>= fun _ ->
-        let string_predicate ~p string =
-          match p with
-          | `Equals s -> String.compare s string = 0
-          | `Matches rex_str ->
-            begin match Re_posix.compile_pat rex_str with
-            | rex -> Re.execp rex string
-            | exception _ -> false
-            end
-        in
-        let rec apply_filter =
-          function
-          | `True -> true
-          | `False -> false
-          | `And l -> List.for_all l ~f:apply_filter
-          | `Or l -> List.exists l ~f:apply_filter
-          | `Not f -> not (apply_filter f)
-          | `Status status ->
-            let state = Target.state target in
-            let open Target.State in
-            begin match status with
-            | `Simple s -> simplify state = s
-            | `Really_running ->
-              Is.started_running state || Is.still_running state
-              || Is.ran_successfully state
-            | `Killable -> Is.killable state
-            | `Dead_because_of_dependencies ->
-              Is.dependency_dead state
-            | `Activated_by_user ->
-              Is.activated_by_user state
-            | `Killed_from_passive ->
-              Is.killed_from_passive state
-            | `Failed_from_running ->
-              Is.failed_from_running state
-            | `Failed_from_starting ->
-              Is.failed_from_starting state
-            | `Failed_from_condition ->
-              Is.failed_from_condition state
-            end
-          | `Has_tag pred ->
-            let tags = Target.tags target in
-            List.exists tags ~f:(string_predicate ~p:pred)
-          | `Name p ->
-            Target.name target |> string_predicate ~p
-          | `Id p ->
-            Target.id target |> string_predicate ~p
-        in
-        if apply_filter query.filter then wins () else None
-      )
-  in
-  let list_of_ids_time = Time.now () in
-  log_markup Display_markup.([
-      "function", text "get_list_of_target_ids";
-      "timing", description_list [
-        "start", date start_time;
-        "all-targets", time_span (all_targets_time -. start_time);
-        "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
-        "total", time_span (list_of_ids_time -. start_time);
-      ];
-      "list_of_ids", textf "length: %d" (List.length list_of_ids);
-    ]);
-  return list_of_ids
+  return (List.map targets ~f:Target.id)
 
 let kill t ~id =
   Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data [id]

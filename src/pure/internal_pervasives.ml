@@ -22,7 +22,7 @@
 
 module Result = Pvem.Result
 module String = struct
-  let legacy_lowercase = String.lowercase
+  let legacy_lowercase = String.lowercase[@ocaml.warning "-3"]
   include Sosa.Native_string
 end
 

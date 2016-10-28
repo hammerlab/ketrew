@@ -48,24 +48,7 @@ let debug_level = %d
 let come_up_with_database_parameters ~config_path =
   begin function
   | `Default_database ->
-    let default = "sqlite" in
-    let set = Trakeva_of_uri.available_backends in
-    begin match List.mem default ~set with
-    | true ->
-      return (config_path // "database")
-    | false ->
-      Log.(s "The " % quote default % s " backend was not available at \
-                                         Trakeva's compile time" %sp
-           % parens (s "available backends: "
-                     % OCaml.list quote set) % n
-           % s "Please use for example: \
-                -use-database \
-                postgresql://pg.example.com:4242/database" % n
-           % s "see also \
-                http://www.hammerlab.org/docs/ketrew/master/Database_Backends.html"
-           @ error);
-      fail (`Failure "Cannot create configuration")
-    end
+    fail (`Failure "Cannot create configuration: automatic DB not implemented")
   | `User_set_database s -> return s
   end
 

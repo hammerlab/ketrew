@@ -1163,6 +1163,14 @@ module Stored_target = struct
   | `Target t -> t.id
   | `Pointer { Target_pointer. original; _ } -> original.id
 
+  let name = function
+  | `Target t -> t.name
+  | `Pointer { Target_pointer. original; _ } -> original.name
+
+  let tags = function
+  | `Target t -> t.tags
+  | `Pointer { Target_pointer. original; _ } -> original.tags
+
   let make_pointer ~from ~pointing_to =
     `Pointer { Target_pointer.
                original = from;

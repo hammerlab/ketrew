@@ -69,6 +69,8 @@ let rec to_string = function
     (String.concat ~sep:"; " (List.map l ~f:to_string))
 | `Not_a_directory dir ->
   fmt "%S is not a directory" dir
+| `Synchronize s ->
+  Persistent_data.Synchronize.Error.to_string s
 | `Wrong_command_line sl ->
   fmt "Wrong command line: %s" 
     (String.concat ~sep:", " (List.map sl ~f:(fmt "%S")))
@@ -81,7 +83,7 @@ let rec to_string = function
     (match got with
      | `Expected s -> fmt "expected %s" s
      | `Exn e -> fmt "exception: %S" (Printexc.to_string e))
-| `Database e -> (Trakeva.Error.to_string e)
+| `Database e -> (Persistent_data.Error.database_to_string e)
 | `Host e ->
   fmt "Host: %s" (Host_io.Error.log e |> Log.to_long_string)
 | `Target (`Deserilization s) -> fmt "target-deserialization: %s" s

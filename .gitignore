@@ -26,3 +26,4 @@ gen/
 /ketrew-workflow-examples
 /.merlin
 /.ocamlinit
+/ketrew-persistance-test

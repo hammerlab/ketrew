@@ -32,15 +32,13 @@ val start :
   just_before_listening:(
     unit ->
     (unit,
-     [> `Database of Trakeva.Error.t
-     | `Database_unavailable of string
+     [> `Database of Persistent_data.Error.database
      | `Dyn_plugin of
           [> `Dynlink_error of Dynlink.error
           | `Findlib of exn ]
      | `Failure of string
      | `IO of
           [> `Read_file_exn of string * exn ]
-     | `Fetching_node of Persistent_data.Error.fetching_node
      | `Server_status_error of string
      | `Start_server_error of string
      | `System of
@@ -48,8 +46,7 @@ val start :
           | `List_directory of string
           | `Remove of string ] *
           [> `Exn of exn ]
-     | `Target of
-          [> `Deserilization of string ] ]
+     ]
      as 'propagated_error) Unix_io.t) ->
   configuration:Configuration.server ->
   (unit, 'propagated_error) Unix_io.t
