@@ -84,7 +84,7 @@ val ui:
 
 type engine
 (** The configuration of the engine, the component that orchestrates
-    the run of the targets (used both for standalone and server modes). *)
+    the run of the targets (used both for the server mode). *)
 
 val engine: 
   ?database_parameters:string ->
@@ -195,9 +195,6 @@ val server:
       server to listen on [port].
 *)
 
-type standalone
-val standalone: ?ui:ui -> ?engine:engine -> unit -> [> `Standalone of standalone]
-
 type client
 (** Configuration of the client (as in HTTP client). *)
 
@@ -214,7 +211,6 @@ val client: ?ui:ui -> token:string -> string -> [> `Client of client]
 *)
 
 type mode = [
-  | `Standalone of standalone
   | `Server of server
   | `Client of client
 ]
@@ -229,7 +225,7 @@ val create :
       extremely verbose —- [~debug_level:2] will slow down the engine
       noticeably).
     - [plugins]: cf. {!type:plugin}.
-    - [mode]: cf. {!standalone}, {!client}, and {!server}.
+    - [mode]: cf. {!client}, and {!server}.
     - [tmp_dir]: Temporary directory to use (the default is
       [Filename.get_temp_dir_name ()]).
 
@@ -282,7 +278,6 @@ val plugins: t ->  plugin list
 
 val mode: t -> mode
 
-val standalone_engine: standalone -> engine
 val server_engine: server -> engine
 
 val server_configuration: t -> server option
@@ -312,8 +307,6 @@ val log: t -> Log.t
 
 val connection: client -> string
 val token: client -> string
-
-val standalone_of_server: server -> standalone
 
 val with_color: t -> bool
 val request_targets_ids: t -> [ `All | `Younger_than of [ `Days of float ] ]

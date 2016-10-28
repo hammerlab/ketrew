@@ -84,8 +84,8 @@ let engine =
   in
   let server =
     fmt {ocaml|
-let server ~daemon =
-  server ~daemon ~engine
+let server =
+  server ~engine
     ~authorized_tokens:[
        %s
        authorized_tokens_path %S
@@ -109,10 +109,7 @@ let ocaml_let_unit_output_profiles () =
   {ocaml|
 let () =
   output [
-    profile "standalone"
-      (create ~debug_level (standalone () ~engine));
-    profile "server" (create ~debug_level (server ~daemon:false));
-    profile "daemon" (create ~debug_level (server ~daemon:true));
+    profile "server" (create ~debug_level server);
     profile "default" (create ~debug_level client);
     profile "client" (create ~debug_level client);
   ]

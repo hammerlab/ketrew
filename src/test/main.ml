@@ -81,7 +81,7 @@ let test_0 () =
       | `Error e ->
         Log.(s "Error while running the engine: " % s (Ketrew.Error.to_string e)
              @ error);
-        fail (`Failure "Standalone engine broken")
+        fail (`Failure "Engine broken")
     in
     Ketrew.Engine.with_engine ~configuration (fun ~engine ->
         wrap_engine_error Ketrew.Engine.Run_automaton.step engine

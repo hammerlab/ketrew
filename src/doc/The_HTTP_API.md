@@ -22,7 +22,7 @@ Let's add some targets to the database (cf. the
 
     kdtest two-py /tmp "du -sh $HOME" "du -sh $PWD"
 
-You can always browse with the client working like in standalone mode:
+You can always browse with the client:
 
     kdclient interact
 

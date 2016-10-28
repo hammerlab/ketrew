@@ -131,27 +131,16 @@ Creating _test_env/env.env
 
 The command creates the directory `_test_env/` with a preconfigured
 test-environment (a self-signed SSL certificate/key pair,
-client/server/standalone configuration file, an “authorization-tokens”
+client/server configuration file, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
 Sourcing `_test_env/env.env` will give a few aliases to run the tests.
-Aliases which start with `ks` mean “with a *standalone-mode* configuration file;”
-those which start with `kd` are in *client-server* mode (`'d'` for “distributed”).
 
-- `kscli`: the standalone `ketrew` application.
 - `kdserver`: the server `ketrew` application.
 - `kdroserver`: the server `ketrew` application but running in “read-only” mode.
-- `kddaemon`: the same as `kdserver` but quiting the current terminal (`daemon`
-  option).
 - `kdclient`: the client `ketrew` application (talking to a `kdserver` or
   `kddaemon` instance).
-- `kstest`: the [`cli` test](../test/Workflow_Examples.ml) with a “standalone-mode” configuration file.
-- `kdtest`: the same `cli` test but as a client (again, talking to a `kdserver`
-  or `kddaemon` instance).
-- `ksintegration`, and `kdintegration`: the
-  [integration](../test/integration.ml) test in standalone and client modes.
-- `ksplugin_user`, and `kdplugin_user`: the mini-workflow
-  [using the plugin](src/test/dummy_plugin_user.ml).
+- `kdtest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
 
 ### Coverage
 
