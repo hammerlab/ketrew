@@ -453,15 +453,21 @@ module SQL = struct
 
   end
 
-  let select fields ~from ?where f =
+  let select fields ~from ?order_by ?limit ?where f =
     let pos = Positional_parameter.create () in
     let qst =
-      fmt "SELECT %s FROM %s %s"
+      fmt "SELECT %s FROM %s %s %s %s"
         (Field.List.to_sql_select fields)
         from.Table.name
         (match where with
         | Some w -> "WHERE " ^ Logic.to_sql_where pos w
         | None -> "")
+        (match order_by with
+        | Some (f, how) ->
+          "ORDER BY " ^ (Field.List.to_sql_select f)
+          ^ (match how with `Ascending -> " ASC" | `Descending -> " DESC")
+        | None -> "")
+        (Option.value_map ~default:"" limit ~f:(fmt " LIMIT %d"))
     in
     let result_parser untyped =
       Field.List.parse_sql_fields_exn fields untyped f
@@ -999,8 +1005,8 @@ module Schema = struct
       (state |> Target.State.Is.failed_from_condition, Failed_from_condition)
 
 
-  let all_nodes ?where p =
-    select
+  let all_nodes ?where ?order_by ?limit p =
+    select ?order_by ?limit
       Field.List.[blob]
       ~from:(main p)
       ?where
@@ -1246,7 +1252,7 @@ let all_visible_targets :
      this time filtering down to the exact set of nodes matching the
      query.
 *)
-let query_nodes t protocol_query : (_, _) Deferred_result.t =
+let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t =
   let start_time = Time.now () in
   let open Protocol.Up_message in
   let where =
@@ -1310,7 +1316,9 @@ let query_nodes t protocol_query : (_, _) Deferred_result.t =
     L.(time_part &&& compile_filter protocol_query.filter)
   in
   let {SQL.query; arguments}, parse_row =
-    Schema.all_nodes ~where t.schema_parameters in
+    let limit = max_nodes in
+    let order_by = SQL.Field.List.[Schema.creation_date], `Descending in
+    Schema.all_nodes ~where ~limit ~order_by t.schema_parameters in
   DB.exec_multi t.handle ~query ~arguments
   >>= fun rows ->
   Deferred_list.while_sequential rows ~f:begin fun row ->
