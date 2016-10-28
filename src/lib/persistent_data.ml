@@ -24,10 +24,11 @@
 
    - {!SQL}: Generic, pure OCaml, “Better-Typed” construction API.
    - {!DB}: Higher-lever wrapping of the `ocaml-postgresql` API.
-   - {!Schema}: Description of Ketrew's particular schema using th {!SQL} module.
+   - {!Schema}: Description of Ketrew's particular schema using the
+     {!SQL} module.
    - {!Event_source}: API to use Lwt/React to wait for interesting
      events from this layer.
-   - {!Change}: Ketrew's actual interesting events (uses {!Event_source}).
+   - {!Change}: Ketrew's interesting events (uses {!Event_source}).
    - {!Error}: Usual error module.
    - [type t] and the main Ketrew-specific operations
 
@@ -47,7 +48,7 @@ let debug = ref false
 
 let dbg fmt =
   let open Printf in
-  ksprintf (eprintf "Persistend_data: %s\n%!") fmt
+  ksprintf (eprintf "Persistent_data: %s\n%!") fmt
 
 
 (** Experiment with Typed-SQL queries using GADTs all over the place. *)
@@ -473,7 +474,6 @@ module SQL = struct
       Field.List.parse_sql_fields_exn fields untyped f
     in
     let q = query qst pos in
-    (* dbg "select qst: %s" qst; *)
     q, result_parser
 
   let update ~table ~where set =
