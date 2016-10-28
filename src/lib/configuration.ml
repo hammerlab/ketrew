@@ -66,7 +66,6 @@ type server = {
   ];
   return_error_messages: bool;
   command_pipe: string option;
-  daemon: bool;
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
@@ -181,7 +180,6 @@ let log t =
       item "HTTP-server" (sublist [
           item "Authorized tokens"
             (sublist (List.map ~f:authorized_tokens srv.authorized_tokens));
-          item "Daemonize" (OCaml.bool srv.daemon);
           item "Command Pipe" (OCaml.option quote srv.command_pipe);
           item "Log-path" (OCaml.option quote srv.log_path);
           item "Return-error-messages" (OCaml.bool srv.return_error_messages);
@@ -264,7 +262,7 @@ let ssh_processes_ui server = server.ssh_processes_ui
 let server
     ?ui ?engine
     ?(authorized_tokens=[]) ?(return_error_messages=false)
-    ?command_pipe ?(daemon=false) ?log_path
+    ?command_pipe ?log_path
     ?(max_blocking_time = 300.)
     ?(read_only_mode = false)
     ?(ssh_connections = [])
@@ -273,7 +271,7 @@ let server
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
-            return_error_messages; command_pipe; daemon; log_path;
+            return_error_messages; command_pipe; log_path;
             max_blocking_time; read_only_mode;
             ssh_connections; ssh_processes_ui})
 
@@ -288,7 +286,6 @@ let listen_to s = s.listen_to
 let return_error_messages s = s.return_error_messages
 let authorized_tokens s = s.authorized_tokens
 let command_pipe s = s.command_pipe
-let daemon       s = s.daemon
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let archival_age_threshold e = e.archival_age_threshold
