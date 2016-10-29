@@ -19,8 +19,8 @@
 (**************************************************************************)
 
 (**
-   The “client” is the frontend to either a standalone engine or an
-   HTTP client talking to a server/engine.
+   The “client” is the frontend to an HTTP client talking to a
+   server/engine.
 *)
 
 open Ketrew_pure
@@ -66,18 +66,10 @@ val as_client:
        Deferred_result.t) ->
   ('result, 'a) Deferred_result.t
 (** Run the function [f] with a fresh-client created with the [configuration].
-
-    If the configuration can be for an HTTP client, for a standalone
-    engine, or for a server (the client behaves like a local standalone
-    engine, using {!Configuration.standalone_of_server}).
 *)
 
 val configuration: t -> Configuration.t
 (** Retrieve the configuration used to create the client. *)
-
-val get_local_engine: t -> Engine.t option
-(** Get the handle to the engine (returns [None] if the client is
-    an HTTP one). *)
 
 val all_visible_targets: t -> 
   (Ketrew_pure.Target.t list,

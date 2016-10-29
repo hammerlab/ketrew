@@ -84,7 +84,7 @@ val ui:
 
 type engine
 (** The configuration of the engine, the component that orchestrates
-    the run of the targets (used both for standalone and server modes). *)
+    the run of the targets (used both for the server mode). *)
 
 val engine: 
   ?database_parameters:string ->
@@ -163,7 +163,6 @@ val server:
   ?authorized_tokens: authorized_tokens list ->
   ?return_error_messages: bool ->
   ?command_pipe: string ->
-  ?daemon: bool ->
   ?log_path: string ->
   ?max_blocking_time: float ->
   ?read_only_mode: bool ->
@@ -180,17 +179,11 @@ val server:
       messages to clients (default [false]).
     - [command_pipe]: path to a named-piped for the server to listen to
       commands (this is optional but highly recommended).
-    - [daemon]: whether to daemonize the server or not (default
-      [false]). If [true], the server will detach from the current
-      terminal and change the process directory to ["/"]; hence if you
-      use this option it is required to provide absolute paths for all
-      other parameters requiring paths.
-    - [log_path]: path to the server;s log directory; if present
+    - [log_path]: path to the server's log directory; if present
       (highly recommended), the server will dump JSON files containing
-      the logs periodically. Moreover, if set together with
-      [daemonize], the server redirect debug-style logs to a
-      ["debug.txt"] file in that directory (if not set, daemon debug
-      info goes to ["/dev/null"]).
+      the logs periodically. Moreover, the server redirect debug-style
+      logs to a ["debug.txt"] file in that directory (if not set,
+      debug info goes to ["/dev/null"] or [stdout] if available).
     - [max_blocking_time]: 
       upper bound on the request for blocking in the protocol (seconds,
       default [300.]).
@@ -201,9 +194,6 @@ val server:
     - [`Tls ("certificate.pem", "privatekey.pem", port)]: configure the OpenSSL
       server to listen on [port].
 *)
-
-type standalone
-val standalone: ?ui:ui -> ?engine:engine -> unit -> [> `Standalone of standalone]
 
 type client
 (** Configuration of the client (as in HTTP client). *)
@@ -221,7 +211,6 @@ val client: ?ui:ui -> token:string -> string -> [> `Client of client]
 *)
 
 type mode = [
-  | `Standalone of standalone
   | `Server of server
   | `Client of client
 ]
@@ -236,7 +225,7 @@ val create :
       extremely verbose —- [~debug_level:2] will slow down the engine
       noticeably).
     - [plugins]: cf. {!type:plugin}.
-    - [mode]: cf. {!standalone}, {!client}, and {!server}.
+    - [mode]: cf. {!client}, and {!server}.
     - [tmp_dir]: Temporary directory to use (the default is
       [Filename.get_temp_dir_name ()]).
 
@@ -289,7 +278,6 @@ val plugins: t ->  plugin list
 
 val mode: t -> mode
 
-val standalone_engine: standalone -> engine
 val server_engine: server -> engine
 
 val server_configuration: t -> server option
@@ -311,9 +299,6 @@ val return_error_messages: server -> bool
 val command_pipe: server -> string option
 (** Get the path to the “command” named pipe. *)
 
-val daemon: server -> bool
-(** Tell whether the server should detach. *)
-
 val log_path: server -> string option
 (** Get the path to the server's log directory. *)
 
@@ -322,8 +307,6 @@ val log: t -> Log.t
 
 val connection: client -> string
 val token: client -> string
-
-val standalone_of_server: server -> standalone
 
 val with_color: t -> bool
 val request_targets_ids: t -> [ `All | `Younger_than of [ `Days of float ] ]

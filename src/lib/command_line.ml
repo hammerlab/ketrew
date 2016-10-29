@@ -79,79 +79,6 @@ let rec display_status ~client ~loop  =
       end)
   end
 
-(** The function behind the [ketrew run <how>] sub-command (and the equivalent
-    command in [ketrew interactive]). *)
-let run_state ~client ~max_sleep ~how =
-  begin match Client.get_local_engine client with
-  | None ->
-    fail (`Failure "This client is not Standalone, it can not run stuff.")
-  | Some state ->
-    let wrap_engine_error f x =
-      f x >>< function
-      | `Ok o -> return o
-      | `Error e ->
-        Log.(s "Error while running the engine: " % s (Error.to_string e)
-             @ error);
-        fail (`Failure "Standalone engine broken")
-    in
-    begin match how with
-    | ["step"] ->
-      wrap_engine_error Engine.Run_automaton.step state
-      >>= fun (_ : bool) ->
-      return ()
-    | ["fix"] ->
-      wrap_engine_error Engine.Run_automaton.fix_point state
-      >>= fun (`Steps step_count) ->
-      Log.(i step_count % s " steps ran" @ normal);
-      return ()
-    | "loop" :: [] ->
-      let block, should_keep_going, stop_it =
-        let keep_going = ref true in
-        let traffic_light = Light.create () in
-        (fun () -> Light.try_to_pass traffic_light),
-        (fun () -> !keep_going),
-        (fun () ->
-           keep_going := false;
-           Light.green traffic_light ) in
-      let rec loop previous_sleep =
-        wrap_engine_error Engine.Run_automaton.fix_point state
-        >>= fun (`Steps step_count) ->
-        Log.(s "Getting new status" @ verbose);
-        get_status ~client
-        >>= begin function
-        | `In_progress 0 ->
-          Log.(s "Nothing left to do" @ verbose);
-          stop_it ();
-          return ()
-        | _ ->
-          let seconds =
-            match step_count with
-            | 1 -> 2.
-            | _ -> min (previous_sleep *. 2.) max_sleep
-          in
-          Log.(s "Sleeping " % f seconds % s " s" @ very_verbose);
-          begin Deferred_list.pick_and_cancel [
-              System.sleep seconds;
-              block ();
-            ] >>< function
-            | `Ok () when should_keep_going () ->
-              loop seconds
-            | `Ok () -> return ()
-            | `Error e ->
-              Log.(s "System.Sleep Error!!"  @ error);
-              fail (`Failure "System.sleep")
-          end
-        end
-      in
-      Interaction.run_with_quit_key
-        (object method start = loop 2. method stop = stop_it () end)
-    | sl ->
-      Log.(s "Unknown client-running command: " % OCaml.list (sf "%S") sl
-           @ error);
-      fail (`Wrong_command_line sl)
-    end
-  end
-
 (** Kill targets (command line, ["--interactive"], or within
     [ketrew interactive]. *)
 let kill ~client ~interactive ids =
@@ -180,9 +107,6 @@ let kill ~client ~interactive ids =
 
 (** The function behind [ketrew interact]. *)
 let interact ~client =
-  let can_run_stuff =
-    Client.get_local_engine client <> None
-  in
   let rec main_loop () =
     Interaction.(
       menu ~sentence:Log.(s "Main menu")
@@ -191,14 +115,10 @@ let interact ~client =
         (
           [ menu_item ~char:'s' ~log:Log.(s "Display current status")
               (`Status None); ]
-          @ (if can_run_stuff then [
-              menu_item ~char:'r' ~log:Log.(s "Run fix-point") (`Run ["fix"]);
-              menu_item ~char:'l' ~log:Log.(s "Run loop") (`Run ["loop"]);
-            ] else [
-               menu_item ~char:'l' ~log:Log.(s "Loop displaying the status")
-                 (`Status (Some 2.));
-             ])
           @ [
+            menu_item ~char:'l' ~log:Log.(s "Loop displaying the status")
+              (`Status (Some 2.));
+          ] @ [
             menu_item ~char:'k' ~log:Log.(s "Kill targets") `Kill;
             menu_item ~char:'e' ~log:Log.(s "The Target Explorer™") `Explore;
           ]
@@ -207,18 +127,14 @@ let interact ~client =
     >>= function
     | `Quit -> return ()
     | `Verbose ->
-        Interaction.toggle_verbose ();
-        main_loop ()
+      Interaction.toggle_verbose ();
+      main_loop ()
     | `Status loop ->
       display_status ~client ~loop
       >>= fun () ->
       main_loop ()
     | `Kill ->
       kill ~interactive:true ~client []
-      >>= fun () ->
-      main_loop ()
-    | `Run how ->
-      run_state ~client  ~max_sleep:120. ~how
       >>= fun () ->
       main_loop ()
     | `Explore ->
@@ -452,12 +368,10 @@ let redirect_log_output_exn_no_lwt path =
   end;
   ()
 
-let do_start_the_server ?say_hi_to configuration =
+let do_start_the_server configuration =
   let just_before_listening () =
-    match say_hi_to with
-    | None
-    | Some "none" -> return ()
-    | Some fifo -> IO.write_file fifo ~content:"hi\n"
+    Log.(s "The server is about to start listening..." @ normal);
+    return ()
   in
   begin match Configuration.log_path configuration with
   | None ->
@@ -480,66 +394,6 @@ let do_start_the_server ?say_hi_to configuration =
         >>= fun () ->
         fail e
     end
-  end
-
-let daemonize_start_server ~no_status srv =
-  let status_fifo =
-    if no_status then None
-    else Some (Filename.get_temp_dir_name () // Unique_id.create ()) in
-  let command =
-    global_executable_path ^ " " ^
-    (Sys.argv |> Array.to_list |> List.tl_exn
-     |> List.map ~f:Filename.quote
-     |> String.concat ~sep:" ")
-    ^ (match status_fifo with
-      | None  -> " --already-daemonized none"
-      | Some path -> " --already-daemonized " ^ Filename.quote path)
-  in
-  let of_lwt f =
-    wrap_deferred ~on_exn:(fun e -> `Failure (Printexc.to_string e)) f in
-  of_lwt (fun () ->
-      match status_fifo with
-      | None  -> Lwt.return ()
-      | Some path -> Lwt_unix.mkfifo path 0o600)
-  >>= fun () ->
-  let to_exec =
-    [global_executable_path; "daemonize-anything";
-     "--command"; command] in
-  Log.(s "Calling " % OCaml.list quote to_exec @ verbose);
-  Unix_process.succeed to_exec
-  >>= fun (_,_) ->
-  begin match status_fifo with
-  | Some fifopath ->
-    Log.(s "Started the daemon, now waiting for the \
-            server status." @ normal);
-    begin
-      System.with_timeout 10. ~f:(fun () ->
-          of_lwt (fun () ->
-              Lwt_io.open_file
-                ~flags:[Unix.O_RDWR; Unix.O_NONBLOCK; Unix.O_APPEND]
-                ~perm:0o660
-                ~mode:Lwt_io.input fifopath)
-          >>= fun pipe ->
-          of_lwt (fun () -> Lwt_io.read_line pipe)
-          >>= fun content ->
-          Log.(s "Read " % quote fifopath % s " and got "
-               % quote content @ verbose);
-          (System.sleep 1. >>< fun _ -> return ()))
-      >>< function
-      | `Ok () -> return ()
-      | `Error (`Failure _ as e)
-      | `Error (`IO _ as e) -> fail e
-      | `Error (`System _)
-      | `Error (`Timeout _) ->
-        Log.(s "Reading " % quote fifopath
-             % s " with timeout " % f 10.
-             % s " failed." @ error);
-        return ()
-    end
-    >>= fun () ->
-    display_server_status
-      ~configuration:srv ~while_starting:true
-  | None -> return ()
   end
 
 (** One {!Cmdliner} hack found in Opam codebase to create command aliases. *)
@@ -662,8 +516,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term: Term.(
           pure (fun configuration open_cmd  ->
               match Configuration.mode configuration  with
-              | `Server _
-              | `Standalone _ -> fail (`Failure "This not a client")
+              | `Server _ -> fail (`Failure "This not a client")
               | `Client c ->
                 let url = Configuration.connection c in
                 let token = Configuration.token c in
@@ -690,7 +543,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                   ]
                 ) in
               match Configuration.mode configuration  with
-              | `Client _ | `Standalone _ ->
+              | `Client _ ->
                 fail (`Failure "This is not a configured Ketrew server")
               | `Server s ->
                 show_server_logs ~max_number ~condition s)
@@ -720,7 +573,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       ~term: Term.(
           pure begin fun configuration loop  ->
             match Configuration.mode configuration  with
-            | `Client _ | `Standalone _ ->
+            | `Client _ ->
               let loop = if loop then Some 2. else None in
               Client.as_client ~configuration ~f:(display_status ~loop)
             | `Server s ->
@@ -731,33 +584,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  @@ info ["L"; "loop"]
                    ~doc:"(As client) loop until there is nothing left to do.")
         ) in
-  let run_cmd =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun configuration max_sleep how ->
-            Client.as_client ~configuration
-              ~f:(run_state ~max_sleep ~how))
-        $ configuration_arg
-        $ Arg.(value & opt float 60.
-               & info ["max-sleep"] ~docv:"SECONDS"
-                 ~doc:"Maximal sleep time between 2 steps (applies to `loop`)")
-        $ Arg.(non_empty @@ pos_all string [] @@
-               info [] ~docv:"HOW"
-                 ~doc:"Tell Ketrew to run in a given mode (see below)")
-      )
-      ~info:(
-        let man = [
-          `S "THE HOW ARGUMENT";
-          `P "The following $(i,“run”) methods are available:";
-          `I ("`step`", "run one single step"); `Noblank;
-          `I ("`fix`", "run  steps until nothing new happens"); `Noblank;
-          `I ("`loop`", "loop `fix` until pressing 'q' (there is a \
-                         timed-wait starting at 2 seconds until `--max-sleep`)")
-        ] in
-        info "run-engine" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Run steps of the engine."  ~man)
-  in
   let interactive_flag doc =
     Arg.(value & flag & info ["i"; "interactive"] ~doc) in
   let kill_cmd =
@@ -843,54 +669,16 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "explore" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Run the interactive Target Explorer." ~man:[])
   in
-  let daemonize_anything_cmd =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun command ->
-            Lwt_daemon.daemonize
-              ~syslog:false
-              ~stdin:`Dev_null ~stdout:`Dev_null ~stderr:`Dev_null
-              ~directory:"/"  ~umask:`Keep ();
-            Unix_process.succeed ["sh"; "-c"; command]
-            >>= fun (_, _) ->
-            return ()
-          )
-        $ Arg.(
-            info ["command"] ~docv:"CMD" ~doc:"The command to daemonize."
-            |> opt (some string) None |> required)
-      )
-      ~info:(
-        info "daemonize-anything" ~version
-          ~sdocs:"COMMON OPTIONS"
-          ~doc:"Daemnize Anything." ~man:[])
-  in
   let start_server_cmd =
     let open Term in
     sub_command
       ~term:(
-        pure (fun configuration already_a_daemon no_status ->
+        pure (fun configuration ->
             match Configuration.mode configuration with
-            | `Server srv ->
-              Configuration.(
-                match daemon srv, already_a_daemon  with
-                | false, _
-                | _, Some _ ->
-                  do_start_the_server srv ?say_hi_to:already_a_daemon
-                | true, None ->
-                  daemonize_start_server srv ~no_status
-              )
+            | `Server srv -> do_start_the_server srv
             | other -> fail (`Failure "not a server")
           )
         $ configuration_arg
-        $ Arg.(info ["already-daemonized"] ~docv:"FIFO"
-                 ~doc:"Tell the server that this is an already \
-                       daemonized process, and to potentiall write to the \
-                       pipe $(docv) "
-               |> opt (some string) None |> value)
-        $ Arg.(info ["no-status"]
-                 ~doc:"Don't try to get the server status after starting a \
-                       daemon" |> flag |> value)
       )
       ~info:(
         info "start-server" ~version ~sdocs:"COMMON OPTIONS"
@@ -1005,7 +793,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
               | `Ok o -> return o
               | `Error s -> fail (`Failure s)) $ t, i)
     @ [
-      init_cmd; status_cmd; start_gui; run_cmd; kill_cmd;
+      init_cmd; status_cmd; start_gui; kill_cmd;
       interact_cmd;
       submit_cmd;
       explore_cmd;
@@ -1014,7 +802,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
       internal_ssh_command;
-      daemonize_anything_cmd;
     ]
     @ Named_hosts_text_ui.sub_commands
       ~version ~prefix:"hosts" ~configuration_arg ()

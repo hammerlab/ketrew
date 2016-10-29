@@ -56,11 +56,7 @@ Ketrew's Engine
 
 Ketrew's **engine** is the process in charge of orchestrating and monitoring
 the run of the workflows.
-
-- In **standalone** mode, the command line application has to run the engine
-  manually.
-- In **client-server** mode, the engine is run by the server; the client
-  applications just “submit” workflows.
+The engine is run by the server; the client applications “submit” workflows.
 
 The engine runs long-running processes through **plugins**
 (see [documentation](src/doc/Long-Running_Plugins.md)).

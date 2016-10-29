@@ -66,7 +66,6 @@ type server = {
   ];
   return_error_messages: bool;
   command_pipe: string option;
-  daemon: bool;
   log_path: string option;
   server_engine: engine;
   server_ui: ui;
@@ -80,12 +79,7 @@ type client = {
   token: string;
   client_ui : ui [@key "ui"];
 } [@@deriving yojson]
-type standalone = {
-  standalone_engine : engine [@key "engine"];
-  standalone_ui : ui [@key "ui"];
-} [@@deriving yojson]
 type mode = [
-  | `Standalone of standalone
   | `Client of client
   | `Server of server
 ] [@@deriving yojson]
@@ -158,13 +152,6 @@ let log t =
     s "Inline " % parens (s "Name: " % s name % s ", Value: " % quote value)
   in
   match t.mode with
-  | `Standalone {standalone_engine; standalone_ui} ->
-    toplevel [
-      item "Mode" (s "Standalone");
-      item "Engine" (engine standalone_engine);
-      item "UI" (ui standalone_ui);
-      item "Misc" common;
-    ]
   | `Client client ->
     toplevel [
       item "Mode" (s "Client");
@@ -181,7 +168,6 @@ let log t =
       item "HTTP-server" (sublist [
           item "Authorized tokens"
             (sublist (List.map ~f:authorized_tokens srv.authorized_tokens));
-          item "Daemonize" (OCaml.bool srv.daemon);
           item "Command Pipe" (OCaml.option quote srv.command_pipe);
           item "Log-path" (OCaml.option quote srv.log_path);
           item "Return-error-messages" (OCaml.bool srv.return_error_messages);
@@ -246,10 +232,6 @@ let engine
 }
 let default_engine = engine ()
 
-let standalone ?(ui=default_ui) ?engine () =
-  let standalone_engine = Option.value engine ~default:default_engine in
-  (`Standalone {standalone_engine; standalone_ui = ui})
-
 let client ?(ui=default_ui) ~token connection =
   (`Client {client_ui = ui; connection; token})
 
@@ -264,7 +246,7 @@ let ssh_processes_ui server = server.ssh_processes_ui
 let server
     ?ui ?engine
     ?(authorized_tokens=[]) ?(return_error_messages=false)
-    ?command_pipe ?(daemon=false) ?log_path
+    ?command_pipe ?log_path
     ?(max_blocking_time = 300.)
     ?(read_only_mode = false)
     ?(ssh_connections = [])
@@ -273,7 +255,7 @@ let server
   let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
   (`Server {server_engine; authorized_tokens; listen_to; server_ui;
-            return_error_messages; command_pipe; daemon; log_path;
+            return_error_messages; command_pipe; log_path;
             max_blocking_time; read_only_mode;
             ssh_connections; ssh_processes_ui})
 
@@ -288,7 +270,6 @@ let listen_to s = s.listen_to
 let return_error_messages s = s.return_error_messages
 let authorized_tokens s = s.authorized_tokens
 let command_pipe s = s.command_pipe
-let daemon       s = s.daemon
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let archival_age_threshold e = e.archival_age_threshold
@@ -298,21 +279,15 @@ let maximum_successive_attempts e = e.maximum_successive_attempts
 let concurrent_automaton_steps e = e.concurrent_automaton_steps
 let host_timeout_upper_bound e = e.host_timeout_upper_bound
 let mode t = t.mode
-let standalone_engine st = st.standalone_engine
 let server_engine s = s.server_engine
 let connection c = c.connection
 let token c = c.token
 let max_blocking_time s = s.max_blocking_time
 let read_only_mode s = s.read_only_mode
 
-let standalone_of_server s =
-  {standalone_ui = s.server_ui;
-   standalone_engine = s.server_engine;}
-
 let get_ui (t: t) =
   match t.mode with
   | `Server { server_ui; _ } -> server_ui
-  | `Standalone { standalone_ui; _ } -> standalone_ui
   | `Client { client_ui; _ } -> client_ui
 
 let with_color t = get_ui t |> fun ui -> ui.with_color
@@ -481,9 +456,6 @@ let apply_globals t =
     match t.mode with
     | `Client {client_ui; connection; token} ->
       (client_ui.with_color, None, client_ui.with_cbreak)
-    | `Standalone {standalone_ui; standalone_engine} ->
-      (standalone_ui.with_color, standalone_engine.host_timeout_upper_bound,
-       standalone_ui.with_cbreak)
     | `Server {server_engine; server_ui; _} ->
       (server_ui.with_color, server_engine.host_timeout_upper_bound,
        server_ui.with_cbreak)

@@ -44,21 +44,6 @@ module Error = struct
 
 end
 
-module Standalone = struct
-  type t = {
-    configuration: Configuration.standalone;
-    engine: Engine.t;
-  }
-  let create configuration =
-    Engine.load 
-      ~configuration:(Configuration.standalone_engine configuration)
-    >>= fun engine ->
-    return { engine; configuration }
-
-  let release t =
-    Engine.unload t.engine
-
-end
 module Http_client = struct
   type t = {
     configuration: Configuration.client;
@@ -196,103 +181,72 @@ module Http_client = struct
 end
 
 type t = [
-  | `Standalone of Standalone.t
   | `Http_client of Http_client.t
 ]
 
-let create configuration =
-  match Configuration.mode configuration with
-  | `Standalone st -> 
-    Standalone.create st
-    >>= fun standalone ->
-    return (`Standalone standalone)
-  | `Client c ->
-    Http_client.create c
-    >>= fun client ->
-    return (`Http_client client)
-  | `Server s ->
-    Standalone.create (Configuration.standalone_of_server s)
-    >>= fun standalone ->
-    return (`Standalone standalone)
+let create config =
+  Http_client.create config
+  >>= fun client ->
+  return (`Http_client client)
 
 let release  = function
-| `Standalone s -> Standalone.release s
 | `Http_client c -> return ()
 
 let as_client ~configuration ~f =
-  create configuration
-  >>= fun client ->
-  begin try f ~client with
-  | e -> 
-    release client
-    >>= fun () ->
-    fail (`Failure (fmt "as_client: client function threw exception: %s" 
-                      (Printexc.to_string e)))
-  end
-  >>< begin function
-  | `Ok o ->
-    release client
-    >>= fun () ->
-    return o
-  | `Error e ->
-    release client >>< fun _ ->
-    fail e
-  end
+  match Configuration.mode configuration with
+  | `Server _ ->
+    fail (`Failure "This is a server configuration, not a client")
+  | `Client c ->
+    create c
+    >>= fun client ->
+    begin try f ~client with
+    | e -> 
+      release client
+      >>= fun () ->
+      fail (`Failure (fmt "as_client: client function threw exception: %s" 
+                        (Printexc.to_string e)))
+    end
+    >>< begin function
+    | `Ok o ->
+      release client
+      >>= fun () ->
+      return o
+    | `Error e ->
+      release client >>< fun _ ->
+      fail e
+    end
 
 let add_targets t tlist =
   match t with
-  | `Standalone s ->
-    let open Standalone in
-    Engine.add_targets s.engine tlist
   | `Http_client c ->
     Http_client.add_targets c tlist
 
 let all_visible_targets = function
-| `Standalone s ->
-  let open Standalone in
-  Engine.all_visible_targets s.engine
 | `Http_client c ->
   Http_client.get_current_targets c
 
 let kill t id_list =
   match t with
-  | `Standalone s ->
-    let open Standalone in
-    Deferred_list.while_sequential id_list (fun id -> Engine.kill s.engine ~id)
-    >>= fun (_ : unit list) ->
-    return ()
   | `Http_client c ->
     Http_client.kill c id_list
 
 let get_target t ~id =
   match t with
-  | `Standalone s ->
-    let open Standalone in
-    Engine.get_target s.engine id
   | `Http_client c ->
     Http_client.get_target c ~id
 
 let get_targets t ~id_list =
   match t with
-  | `Standalone s ->
-    let open Standalone in
-    Deferred_list.while_sequential id_list ~f:(fun id ->
-        Engine.get_target s.engine id)
   | `Http_client c ->
     Http_client.get_targets c ~id_list
 
 let get_list_of_target_ids t ~query =
   match t with
-  | `Standalone s ->
-    Engine.get_list_of_target_ids s.Standalone.engine query
   | `Http_client c ->
     Http_client.get_list_of_target_ids c (query, [])
 
 let call_query t ~target query =
   match t with
-  | `Standalone s ->
-    let host_io = Engine.host_io s.Standalone.engine in
-    Plugin.call_query ~target query ~host_io
   | `Http_client c ->
     Http_client.call_query c ~target query
     >>< begin function 
@@ -303,28 +257,15 @@ let call_query t ~target query =
 
 let restart t ids =
   match t with
-  | `Standalone s ->
-    let open Standalone in
-    Deferred_list.while_sequential ids (Engine.restart_target s.engine)
-    >>= fun (_ : Target.id list) ->
-    return ()
   | `Http_client c ->
     Http_client.restart c ids
 
-let get_local_engine = function
-| `Standalone s -> (Some s.Standalone.engine)
-| `Http_client _ -> None
-
 let configuration = function
-| `Standalone s ->
-  Configuration.create (`Standalone s.Standalone.configuration)
 | `Http_client h ->
   Configuration.create (`Client h.Http_client.configuration)
 
 let call_process_holder t message =
   match t with
-  | `Standalone _ ->
-    fail (`Failure "Cannot use process-holder in standalone mode")
   | `Http_client c ->
     Http_client.call_process_holder c message
 

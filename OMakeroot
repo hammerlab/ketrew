@@ -103,10 +103,9 @@ section # Test that uses the above plugin
 section # Executable tests
     OCAML_LOCAL_LIBS += src/pure/ketrew_pure src/lib/ketrew
     OCAMLPACKS[] = $(LWT_UNIX_LIB_PACKAGES)
-    .PHONY: main-test workflow-examples integration-test preconfigured-main-test persistance-test
+    .PHONY: main-test workflow-examples preconfigured-main-test persistance-test
     main-test: $(OCamlProgramOfFile ketrew-test, $(file src/test/main.ml))
     workflow-examples: $(OCamlProgramOfFile ketrew-workflow-examples, $(file src/test/Workflow_Examples.ml))
-    integration-test: $(OCamlProgramOfFile ketrew-integration-test, $(file src/test/integration.ml))
     preconfigured-main-test: $(OCamlProgramOfFile ketrew-preconfigured-test, $(file src/test/preconfigured_main.ml))
     persistance-test: $(OCamlProgramOfFile ketrew-persistance-test, $(file src/test/persistance.ml))
     .PHONY: synthetic-test
@@ -123,7 +122,7 @@ install: install-lib-ketrew_pure install-lib-ketrew install-app-ketrew
 uninstall: uninstall-lib-ketrew_pure uninstall-lib-ketrew uninstall-app-ketrew
 
 build-all: lib-ketrew_pure lib-ketrew app-ketrew app-ketrew-client-joo main-test \
-    workflow-examples integration-test test-plugin test-plugin-user \
+    workflow-examples test-plugin test-plugin-user \
     preconfigured-main-test synthetic-test process-holder-test \
     persistance-test
 
@@ -150,7 +149,6 @@ bisect-report: _report_dir
     bisect-ppx-report -I _build/src/pure/ -I _build/src/lib/ \
                       -I _build/src/app/ -I _build/src/test/  \
                       -I _build/ketrew-dummy-plugin-user \
-                      -I _build/ketrew-integration-test \
                       -I _build/ketrew-test \
                       -I _build/ketrew-workflow-examples \
                       -verbose -html _report_dir  bisect*.out

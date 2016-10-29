@@ -39,7 +39,5 @@ let () =
   (* Then, `Client.submit` is the only function that “does” something, it
      submits the workflow to the engine: *)
   Ketrew.Client.submit_workflow workflow
-  (* If Ketrew is in Standalone mode, this means writing the workflow in the
-     database (nothing runs yet, you need to run Ketrew's engine yourself).
-     If Ketrew is in Client-Server mode, this means sending the workflow to the
-     server over HTTPS. The server will start running the workflow right away.  *)
+  (* This means sending the workflow to the server over HTTP(S). The
+     server will start running the workflow right away.  *)

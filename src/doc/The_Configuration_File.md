@@ -99,10 +99,6 @@ let my_servers daemon =
 *)
 let () =
   output [
-    profile "standalone"
-      (create ~debug_level ~plugins
-         (standalone ~ui ()
-            ~engine:(engine ~database_parameters:"/path/to/sqlite-database-standalone" ())));
     profile "daemon"
       (create ~debug_level ~plugins (my_servers true));
     profile "server"

@@ -345,8 +345,6 @@ see [`src/test/Workflow_Examples.ml`](src/test/Workflow_Examples.ml) for
 examples and the [documentation of the EDSL API](src/lib/eDSL.mli).
 - To configure Ketrew use the configuration file
 [documentation](src/doc/The_Configuration_File.md).
-- If you don't want a server running and listening on HTTP(S), Ketrew can run a
-  *degraded* mode called [“standalone.”](src/doc/Standalone_Mode.md)
 - You may want to “extend” Ketrew with new ways of running “long-running"
 computations:  see the documentation on
 [plugins](src/doc/Long-Running_Plugins.md),
