@@ -1017,8 +1017,17 @@ module Schema = struct
           failwith (fmt "Node-deserialization: %s" msg)
       end
 
-  let all_active_targets p =
-    all_nodes p ~where:Logic.Infix.(engine_status === `Active)
+  let all_active_targets ~not_seen_for ~limit p =
+    let order_by =
+      SQL.Field.List.[last_status_change_date], `Ascending in
+    all_nodes p
+      ~where:Logic.Infix.(
+          engine_status === `Active
+          &&&
+          compare_timestamp
+            last_status_change_date `Lt Time.(now () -. not_seen_for)
+        )
+      ~limit ~order_by
 
   let all_active_and_passive_targets p =
     all_nodes p ~where:Logic.Infix.((engine_status === `Active)
@@ -1478,6 +1487,7 @@ let activate_target :
     update_target t newone
 
 let fold_active_targets :
+  limit : < items : int; not_seen_for : float > ->
   t ->
   init:'a ->
   f:('a ->
@@ -1486,11 +1496,19 @@ let fold_active_targets :
       [> `Database of Error.database ] as 'combined_errors)
        Deferred_result.t) ->
   ('a, 'combined_errors) Deferred_result.t
-  = fun t ~init ~f ->
+  = fun ~limit t ~init ~f ->
+    let start = Time.now () in
     let {SQL.query; arguments}, parse_result =
-      Schema.all_active_targets t.schema_parameters in
+      Schema.all_active_targets
+        ~not_seen_for:limit#not_seen_for
+        ~limit:limit#items t.schema_parameters in
     DB.exec_multi t.handle ~query ~arguments
     >>= fun blist ->
+    let got_sql_result = Time.now () in
+    dbg "fold_active_targets: PGSQL call: start: %s, got_sql_result: %s (%f)"
+          (Time.show start)
+          (Time.show got_sql_result)
+          (got_sql_result -. start);
     List.fold blist ~init:(return init) ~f:(fun prev_m row ->
         prev_m
         >>= fun prev ->
@@ -1505,6 +1523,7 @@ let fold_active_targets :
           f prev ~target:t
         end
       )
+
 
 let all_active_and_passive_nodes t =
   let {SQL.query; arguments}, parse_row =

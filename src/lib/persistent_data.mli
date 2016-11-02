@@ -85,6 +85,7 @@ val activate_target :
     the next step, using {!fold_active_targets}). *)
 
 val fold_active_targets :
+  limit : < items : int; not_seen_for : float > ->
   t ->
   init:'a ->
   f:('a ->
