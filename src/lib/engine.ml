@@ -356,11 +356,11 @@ module Run_automaton = struct
       | more -> fail (`List more)
       end
     in
-    let step_focus = 500 in
+    let step_focus = Configuration.engine_step_batch_size t.configuration in
     let limit =
       object
         method items = step_focus
-        method not_seen_for = 3.
+        method not_seen_for = 2.
       end in
     Persistent_data.fold_active_targets ~limit t.data
       ~init:(`Happenings [], `Targets [], `Count 0)
