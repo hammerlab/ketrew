@@ -27,7 +27,7 @@ type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson]
 
 let default_archival_age_threashold = `Days 10.
-let default_freeze_state_duration = 30.
+let default_engine_step_batch_size = 400
 
 type engine = {
   database_parameters: string;
@@ -37,7 +37,7 @@ type engine = {
   concurrent_automaton_steps: (int [@default 4]);
   archival_age_threshold:
     ([ `Days of float ] [@default default_archival_age_threashold]);
-  freeze_state_duration: (float [@default default_freeze_state_duration]);
+  engine_step_batch_size: (int [@default default_engine_step_batch_size]);
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -131,7 +131,7 @@ let log t =
   let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
                host_timeout_upper_bound; maximum_successive_attempts;
                concurrent_automaton_steps; archival_age_threshold;
-               freeze_state_duration} =
+               engine_step_batch_size} =
     sublist [
       item "Database" (quote database_parameters);
       item "Unix-failure"
@@ -144,7 +144,7 @@ let log t =
       item "Concurrent-automaton-steps" (i concurrent_automaton_steps);
       item "Archival-age-threshold"
         (match archival_age_threshold with `Days d -> sf "%f days" d);
-      item "Freeze-state-duration" (f freeze_state_duration);
+      item "Engine-step-batch-size" (i engine_step_batch_size);
     ] in
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
@@ -220,7 +220,7 @@ let engine
     ?(maximum_successive_attempts=10)
     ?(concurrent_automaton_steps = 4)
     ?(archival_age_threshold = default_archival_age_threashold)
-    ?(freeze_state_duration = default_freeze_state_duration)
+    ?(engine_step_batch_size = default_engine_step_batch_size)
     () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
@@ -228,7 +228,7 @@ let engine
   maximum_successive_attempts;
   concurrent_automaton_steps;
   archival_age_threshold;
-  freeze_state_duration;
+  engine_step_batch_size;
 }
 let default_engine = engine ()
 
@@ -273,7 +273,7 @@ let command_pipe s = s.command_pipe
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let archival_age_threshold e = e.archival_age_threshold
-let freeze_state_duration e = e.freeze_state_duration
+let engine_step_batch_size e = e.engine_step_batch_size
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
 let concurrent_automaton_steps e = e.concurrent_automaton_steps

@@ -87,7 +87,12 @@ let main () =
       && state t |> State.Is.activated_by_user
     ) "Node1 activation didn't work!"
   >>= fun () ->
-  P.fold_active_targets persist ~init:[] ~f:(fun l ~target ->
+  let limit =
+    object
+      method items = 2000
+      method not_seen_for = 3.
+    end in
+  P.fold_active_targets ~limit persist ~init:[] ~f:(fun l ~target ->
       pr "Active: %s" (Target.id target);
       Test.assertf Target.(
           name t = name node1
