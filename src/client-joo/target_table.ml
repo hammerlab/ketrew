@@ -992,7 +992,7 @@ module Html = struct
                   ~content:[
                     pcdata (fmt "Showing %d per page" n_count)
                   ]
-                  (List.map [10; 25; 50] ~f:(fun new_count ->
+                  (List.map [10; 25; 50; 100; 200] ~f:(fun new_count ->
                        let content = [pcdata (fmt "Show %d" new_count)] in
                        if new_count = n_count
                        then `Disabled content
