@@ -94,7 +94,6 @@ module Server_state = struct
     mutable authentication: Authentication.t;
     loop_traffic_light: Light.t;
     deferred_queries: Deferred_queries.t;
-    process_holder: Process_holder.t;
     mutable status : [ `On | `Off ]; (* For now the status just tracks
                                         whetther `shut_down` has
                                         occured or not *)
@@ -109,10 +108,9 @@ the targets and not wait for the next “loop timeout.”
 See [Pvem_lwt_unix.LIGHT](http://www.hammerlab.org/docs/pvem_lwt_unix/master/api/Pvem_lwt_unix.LIGHT.html)
 for more details.
 M*)
-  let create ~state ~process_holder ~authentication server_configuration =
+  let create ~state ~authentication server_configuration =
     let loop_traffic_light = Light.create () in
     {state; authentication; server_configuration; loop_traffic_light;
-     process_holder;
      deferred_queries = Deferred_queries.create (); status = `On}
 
   let markup t =
@@ -440,8 +438,6 @@ let answer_get_server_status ~server_state =
       ~preemptive_queue:(Lwt_preemptive.get_max_number_of_threads_queued ())
       ~libev:(Lwt_sys.have `libev)
       ~gc:(Gc.quick_stat ())
-      ~enable_ssh_ui:
-        (Configuration.ssh_processes_ui server_state.server_configuration)
   in
   return (`Server_status status)
 
@@ -486,6 +482,7 @@ let answer_message ~server_state ?token msg =
         >>= fun notifications ->
         return (`Notifications notifications)
       )
+      (*
   | `Process p_msg ->
     with_capability `Play_with_process_holder (fun ~server_state ->
         let host_io = Engine.host_io server_state.state in
@@ -493,6 +490,7 @@ let answer_message ~server_state ?token msg =
           server_state.process_holder p_msg)
     >>= fun p_down ->
     return (`Process p_down)
+         *)
 
 (** Grab and deserialize a body (either in POST or in the "message" of a URI)
     into an up_message. *)
@@ -582,8 +580,6 @@ let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
   | `Off -> exit 0
   | `On ->
     Logging.User_level_events.server_shut_down ();
-    Process_holder.unload server_state.process_holder
-    >>< fun ph_unload_result ->
     Engine.unload server_state.state
     >>< fun engine_unload_result ->
     let display_errors_and_exit e =
@@ -593,11 +589,9 @@ let shut_down server_state : ([ `Never_returns ], 'a) Deferred_result.t =
            % a Error.to_string e @ error);
       exit 10 in
     server_state.status <- `Off;
-    begin match ph_unload_result, engine_unload_result with
-    | (`Ok (), `Ok ()) -> exit 0
-    | `Error e, `Ok ()
-    | `Ok (), `Error e -> display_errors_and_exit e
-    | `Error e1, `Error e2 -> display_errors_and_exit (`List [e1; e2])
+    begin match engine_unload_result with
+    | `Ok () -> exit 0
+    | `Error e -> display_errors_and_exit e
     end
   end
 
@@ -1041,9 +1035,6 @@ let start ~just_before_listening ~configuration  =
       return ()
   end
   >>= fun () ->
-  Process_holder.load
-    ~preconfigure:(Configuration.ssh_connections configuration) ()
-  >>= fun process_holder ->
   Log.(s "Start-Server: Loading the Engine" @ verbose);
   Engine.load (Configuration.server_engine configuration)
   >>= fun engine ->
@@ -1051,8 +1042,7 @@ let start ~just_before_listening ~configuration  =
   Authentication.load (Configuration.authorized_tokens configuration)
   >>= fun authentication ->
   let server_state =
-    Server_state.create
-      ~process_holder ~authentication ~state:engine configuration in
+    Server_state.create ~authentication ~state:engine configuration in
   log_info Log.(s "Start-Server: Setup “At-Exit” hooks");
   (* Set at-exit hooks. *)
   Lwt_main.at_exit Lwt.(fun () ->

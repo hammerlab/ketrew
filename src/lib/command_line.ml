@@ -729,6 +729,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
+  (*
   let internal_ssh_command =
     let open Term in
     sub_command
@@ -772,6 +773,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                 (for internal use)"
       )
   in
+     *)
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -801,10 +803,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
-      internal_ssh_command;
+      (* internal_ssh_command; *)
     ]
-    @ Named_hosts_text_ui.sub_commands
-      ~version ~prefix:"hosts" ~configuration_arg ()
   in
   match Term.eval_choice ?argv default_cmd cmds with
   | `Ok f -> f

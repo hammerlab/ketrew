@@ -48,9 +48,6 @@ module Host: sig
         Then you can add a user, a hostname, and a port number.
         You can aslo add options to pass to the SSH client through the
         URI's query parameters ["ssh-option=-K"].
-      - {b Named hosts}: use the scheme ["named://"] and the hostname
-        as a {i name}. Named hosts are dynamic connections managed by the
-        Ketrew server.
       - {b Engine's host}: if no scheme, and no host part are
         provided, Ketrew will create a host for the local-host (the
         host where the Engine is running).
@@ -71,9 +68,6 @@ module Host: sig
 
       - ["ssh://user@SomeHost:42/tmp/pg?shell=bash,-l,--init-file,bouh,-c&timeout=42&ssh-option=-K"]
         is an SSH host.
-      - ["named://TheNameOfTheHost/tmp/ketrew-playground/"] is a named
-        host: Ketrew will try to find its active connection called
-        ["TheNameOfTheHost"] and use it at every call.
       - ["/tmp/KT?shell=ksh,-c"] is the engine's host, using ["tmp/KT"]
         as a playground, and ["ksh"] as a shell.
 
