@@ -92,16 +92,6 @@ val ssh :
   ?port:int -> ?user:string -> ?name:string -> string -> t
 (** Create an SSH host. *)
 
-val named :
-  ?execution_timeout:Time.t ->
-  ?default_shell:default_shell ->
-  ?playground:Path.t ->
-  string -> t
-(** Create an "named" host, the actual connection will be resolved
-    form the name by the engine. *)
-
-val with_ssh_connection: t -> Ssh.t -> t
-
 val shell_of_default_shell: t -> string -> string list
 
 val of_uri :
@@ -149,5 +139,5 @@ val markup: t -> Display_markup.t
 val execution_timeout: t -> Time.t option
 (** The execution timeout configured for the host. *)
 
-val connection: t -> [ `Localhost | `Ssh of Ssh.t | `Named of string ]
+val connection: t -> [ `Localhost | `Ssh of Ssh.t ]
 val playground: t -> Path.t option

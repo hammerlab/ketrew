@@ -191,25 +191,12 @@ type timeout = [
 
 type host = Ketrew_pure.Host.t
 
-type t = {
-  named_hosts: (string, Ketrew_pure.Host.Ssh.t) Hashtbl.t;
-}
-let create () = {named_hosts = Hashtbl.create 42}
-
-let resolve_named_host t ~name ~host =
-  try
-    let ssh_connection = Hashtbl.find t.named_hosts name in
-    return (Ketrew_pure.Host.with_ssh_connection host ssh_connection)
-  with _ -> fail_host (`Named_host_not_found name)
-
-let set_named_host t ~name ssh =
-  Hashtbl.add t.named_hosts name ssh;
-  return ()
-
-let delete_named_host t ~name =
-  Hashtbl.remove t.named_hosts name;
-  return ()
-
+(* The type `t` is actually now useless.
+   It used to contain a hash-table for named-host resolving, having an
+   abstract type `t` for the `Host_io` module still seems like good
+   hygiene though. *)
+type t = unit
+let create () = ()
 
 (* TODO: put this in `t` *)
 let default_timeout_upper_bound = ref 60.
@@ -275,10 +262,6 @@ let execute ?timeout t ~host argl =
         | `Ok (out, err, exited) -> ret out err exited
         | `Error e -> fail (`Host e)
       end
-    | `Named name ->
-      resolve_named_host t ~name ~host
-      >>= fun host ->
-      run ~log ~host ()
   in
   begin run_with_timeout ?timeout t ~host ~run:(run ~host)
     >>< fun result ->
@@ -339,10 +322,6 @@ let ensure_directory ?timeout ?with_shell t ~host ~path =
 let rec put_file ?timeout t ~host ~path ~content =
   match Ketrew_pure.Host.connection host with
   | `Localhost -> IO.write_file ~content Ketrew_pure.Path.(to_string path)
-  | `Named name ->
-    resolve_named_host t ~name ~host
-    >>= fun host ->
-    put_file ?timeout t ~host ~path ~content
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_put_file" in
     let run ~log () =
@@ -380,10 +359,6 @@ let rec get_file ?timeout t ~host ~path =
         Log.(s "I/O, writing " % s path % s " → " % exn ex @ verbose);
         fail (`Cannot_read_file ("localhost", path))
     end
-  | `Named name ->
-    resolve_named_host t ~name ~host
-    >>= fun host ->
-    get_file ?timeout t ~host ~path
   | `Ssh ssh ->
     let temp = Filename.temp_file "ketrew" "ssh_get_file" in
     let scp_cmd = Ssh.(scp_pull ssh ~dest:temp ~src:[Path.to_string path]) in

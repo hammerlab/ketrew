@@ -50,7 +50,6 @@ end
 type connection = [
   | `Localhost
   | `Ssh of Ssh.t
-  | `Named of string
 ] [@@deriving yojson]
 type default_shell ={
   binary: string option;
@@ -87,7 +86,6 @@ let markup {name; connection; playground; default_shell; execution_timeout} =
     "Connection",
     begin match connection with
     | `Localhost -> Text "Local-host"
-    | `Named n -> textf "Named: %S" n
     | `Ssh {Ssh. address; port; user; add_ssh_options} ->
       concat [
         path (fmt "ssh://%s%s%s"
@@ -132,18 +130,10 @@ let ssh
     ~connection:(`Ssh {Ssh. address; port; user; add_ssh_options})
     ?execution_timeout
 
-let named ?execution_timeout ?default_shell ?playground name =
-  create ?playground ?default_shell name ~connection:(`Named name)
-    ?execution_timeout
-
-let with_ssh_connection named ssh_connection =
-  {named with connection = `Ssh ssh_connection}
-
 let of_uri_exn uri =
   let connection =
     match Uri.scheme uri, Uri.host uri with
     | None, None -> `Localhost
-    | Some "named", Some name -> `Named name
     | Some "ssh", Some address
     | None, Some address ->
         let add_ssh_options =
@@ -200,7 +190,6 @@ let to_uri t =
     | `Ssh {Ssh.address; port; user; add_ssh_options} ->
       Some "ssh", Some address, port, user, add_ssh_options
     | `Localhost -> None, None, None, None, []
-    | `Named n -> Some "named", Some n, None, None, []
   in
   let query =
     let {binary; command_name; options; command_option} =
