@@ -42,14 +42,12 @@ module Server_status = struct
     gc_compactions : int;
     gc_top_heap_words : int;
     gc_stack_size : int;
-    enable_ssh_ui: bool;
   } [@@deriving yojson]
   let create
       ~database
       ~host_timeout_upper_bound
       ~maximum_successive_attempts
       ~concurrent_automaton_steps
-      ~enable_ssh_ui
       ~time ~read_only ~tls ~preemptive_bounds ~preemptive_queue ~libev ~gc =
     {time; read_only; tls; preemptive_bounds; preemptive_queue; libev;
      database;
@@ -66,60 +64,9 @@ module Server_status = struct
      gc_compactions = gc.Gc.compactions;
      gc_top_heap_words = gc.Gc.top_heap_words;
      gc_stack_size = gc.Gc.stack_size;
-     enable_ssh_ui;
     }
 end
 
-module Process_sub_protocol = struct
-  module Command = struct
-    type t = {
-      connection: string;
-      id: string;
-      command: string;
-    } [@@deriving yojson]
-  end
-  type up = [
-    | `Start_ssh_connection of [
-        | `New of string * string (* name × connection-uri *)
-        | `Configured of string
-      ]
-    | `Get_all_ssh_ids of string (* client-id *)
-    | `Get_logs of string * [ `Full ]
-    | `Send_ssh_input of string * string
-    | `Send_command of Command.t
-    | `Kill of string
-  ] [@@deriving yojson]
-
-  module Ssh_connection = struct
-    type status = [
-      | `Alive of [ `Askpass_waiting_for_input of (float * string) list | `Idle ]
-      | `Dead of string
-      | `Configured
-      | `Unknown of string
-    ] [@@deriving yojson]
-    type t = {
-      id: string;
-      name: string;
-      uri: string;
-      status: status;
-    } [@@deriving yojson]
-  end
-  module Command_output = struct
-    type t = {
-      id: string;
-      stdout: string;
-      stderr: string;
-    } [@@deriving yojson]
-  end
-  type down = [
-    | `List_of_ssh_ids of Ssh_connection.t list
-    | `Logs of string * string (* id × serialized markup *)
-    | `Error of string
-    | `Command_output of Command_output.t
-    | `Ok
-  ] [@@deriving yojson]
-
-end
 
 module Down_message = struct
   module V0 = struct
@@ -136,7 +83,6 @@ module Down_message = struct
       | `Server_status of Server_status.t
       | `Ok
       | `Missing_deferred
-      | `Process of Process_sub_protocol.down
       | `Notifications of (float * string) list
     ] [@@deriving yojson]
   end
@@ -197,7 +143,6 @@ module Up_message = struct
       | `Get_target_ids of target_query * (query_option list)
       | `Get_server_status
       | `Get_deferred of string * int * int (* id × index × length *)
-      | `Process of Process_sub_protocol.up
       | `Get_notifications of float option
     ] [@@deriving yojson]
   end

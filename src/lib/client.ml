@@ -171,12 +171,6 @@ module Http_client = struct
     in
     call_up_msg (`Get_target_ids query)
 
-  let call_process_holder t message =
-    call_json t ~path:"/api" ~meta_meth:(`Post_message (`Process message))
-    >>= fun down ->
-    filter_down_message down ~loc:`Process_holder
-      ~f:(function `Process p -> Some p | other -> None)
-
 
 end
 
@@ -264,10 +258,6 @@ let configuration = function
 | `Http_client h ->
   Configuration.create (`Client h.Http_client.configuration)
 
-let call_process_holder t message =
-  match t with
-  | `Http_client c ->
-    Http_client.call_process_holder c message
 
 
 (*

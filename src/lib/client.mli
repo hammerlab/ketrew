@@ -135,10 +135,6 @@ val add_targets: t ->
     dealing with {!Ketrew_pure.Target.t} values; for use in the EDSL please
     see {!submit_workflow} below. *)
 
-val call_process_holder: t -> Protocol.Process_sub_protocol.up ->
-  (Protocol.Process_sub_protocol.down,
-   [> `Client of Error.t | `Failure of string ]) Deferred_result.t
-
 val submit_workflow:
   ?override_configuration:Configuration.t ->
   ?add_tags:string list ->

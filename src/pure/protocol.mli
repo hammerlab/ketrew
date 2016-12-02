@@ -41,70 +41,18 @@ module Server_status : sig
     gc_compactions : int;
     gc_top_heap_words : int;
     gc_stack_size : int;
-    enable_ssh_ui: bool;
   }
   val create:
     database: string ->
     host_timeout_upper_bound: float option ->
     maximum_successive_attempts: int ->
     concurrent_automaton_steps: int ->
-    enable_ssh_ui: bool ->
     time:float -> read_only:bool ->
     tls:[ `Native | `OpenSSL | `None ] ->
     preemptive_bounds:int * int ->
     preemptive_queue:int -> libev:bool -> gc:Gc.stat -> t
 end
 
-module Process_sub_protocol : sig
-
-  module Command : sig
-    type t = {
-      connection: string;
-      id: string;
-      command: string;
-    }
-  end
-  type up = [
-    | `Start_ssh_connection of [
-        | `New of string * string (* name × connection-uri *)
-        | `Configured of string (* id *)
-      ]
-    | `Get_all_ssh_ids of string (* client-id *)
-    | `Get_logs of string * [ `Full ] (* id *)
-    | `Send_ssh_input of string * string (* id × input-string *)
-    | `Send_command of Command.t
-    | `Kill of string (* id *)
-  ]
-  module Ssh_connection : sig
-    type status = [
-      | `Alive of [ `Askpass_waiting_for_input of (float * string) list | `Idle ]
-      | `Dead of string
-      | `Configured
-      | `Unknown of string
-    ]
-    type t = {
-      id: string;
-      name: string;
-      uri: string;
-      status: status;
-    }
-  end
-  module Command_output: sig
-    type t = {
-      id: string;
-      stdout: string;
-      stderr: string;
-    }
-  end
-  type down = [
-    | `List_of_ssh_ids of Ssh_connection.t list
-    | `Logs of string * string (* id × serialized markup *)
-    | `Error of string
-    | `Command_output of Command_output.t
-    | `Ok
-  ]
-
-end
 
 module Down_message : sig
 
@@ -123,7 +71,6 @@ module Down_message : sig
     | `Server_status of Server_status.t
     | `Ok
     | `Missing_deferred
-    | `Process of Process_sub_protocol.down
     | `Notifications of (float * string) list
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
@@ -180,7 +127,6 @@ module Up_message : sig
     | `Get_target_ids of target_query * (query_option list)
     | `Get_server_status
     | `Get_deferred of string * int * int (* id × index × length *)
-    | `Process of Process_sub_protocol.up
     | `Get_notifications of float option
   ]
   include Json.Versioned.WITH_VERSIONED_SERIALIZATION with type t := t
