@@ -61,12 +61,6 @@ val get_target:
     pointers” i.e.  it gets the node considered by Ketrew after
     equivalence matching.  *)
 
-val all_visible_targets :
-  t ->
-  (Ketrew_pure.Target.t list,
-   [>  `Database of Error.database ])
-    Deferred_result.t
-
 val query_nodes:
   ?max_nodes:int ->
   t ->

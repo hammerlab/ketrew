@@ -121,8 +121,6 @@ module Http_client = struct
         | `List_of_targets tl -> filter tl
         | _ -> None)
 
-  let get_current_targets t =
-    get_targets_and_filter t ~ids:[] ~filter:(fun s -> Some s)
   let get_target t ~id =
     get_targets_and_filter t ~ids:[id] ~filter:(function [one] -> Some one | _ -> None)
   let get_targets t ~id_list =
@@ -214,10 +212,6 @@ let add_targets t tlist =
   match t with
   | `Http_client c ->
     Http_client.add_targets c tlist
-
-let all_visible_targets = function
-| `Http_client c ->
-  Http_client.get_current_targets c
 
 let kill t id_list =
   match t with

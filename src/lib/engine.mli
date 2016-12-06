@@ -67,15 +67,6 @@ val get_target: t -> Unique_id.t ->
    [> `Database of Persistent_data.Error.database]) Deferred_result.t
 (** Get a target from its id. *)
 
-val all_visible_targets :
-  t ->
-  (Ketrew_pure.Target.t list,
-   [> `Database of Persistent_data.Error.database
-    | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-    | `System of [> `File_info of string ] * [> `Exn of exn ]])
-  Deferred_result.t
-(** Get the list of targets currently handled. *)
 
 val get_list_of_target_ids: t ->
   Ketrew_pure.Protocol.Up_message.target_query ->

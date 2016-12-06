@@ -1226,27 +1226,6 @@ let get_target:
     in
     get_following_pointers ~key:id ~count:0
 
-let all_visible_targets :
-  t ->
-  (Ketrew_pure.Target.t list, [> `Database of Error.database]) Deferred_result.t
-  = fun t ->
-    (* TODO: should be removed and its dependencies too *)
-    let {SQL.query; arguments}, parse_row =
-      Schema.all_nodes t.schema_parameters in
-    DB.exec_multi t.handle ~query ~arguments
-    >>= fun rows ->
-    Deferred_list.while_sequential rows ~f:begin fun row ->
-      Error.wrap_parsing ~msg:"all_visible_targets"
-        (fun () -> parse_row row)
-    end
-    >>= fun stored ->
-    let only_targets =
-      List.filter_map stored ~f:(fun st ->
-          match Target.Stored_target.get_target st with
-          | `Pointer _ -> None
-          | `Target t -> Some t
-        ) in
-    return only_targets
 
 (** 
    [query_nodes] takes a {!Protocol.Up_message.target_query}

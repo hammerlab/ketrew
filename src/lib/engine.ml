@@ -486,8 +486,6 @@ let restart_target engine target_id =
     ~old_id:target_id ~new_id:id ~name:(Target.name this_new_target);
   return id
 
-let all_visible_targets t =
-  Persistent_data.all_visible_targets t.data
 let get_target t id =
   Persistent_data.get_target t.data id
 let add_targets t l =
