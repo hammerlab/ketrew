@@ -122,9 +122,8 @@ let open_in_dollar_editor file =
 
 let view_in_dollar_editor ?(extension="txt") content =
   let tmp =
-    Filename.(concat (get_temp_dir_name ())
-                (fmt "%s.%s" (Unique_id.create ()) extension))
-  in
+    Filename.concat (Filename.get_temp_dir_name ())
+      (fmt "%s.%s" (Unique_id.create ()) extension) in
   IO.write_file ~content tmp
   >>= fun () ->
   open_in_dollar_editor tmp
