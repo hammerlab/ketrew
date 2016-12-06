@@ -67,7 +67,7 @@ val build_sublist_of_targets :
   list_name:string ->
   all_log:SmartPrint.t ->
   go_verb:SmartPrint.t ->
-  filter:(Ketrew_pure.Target.t -> bool) ->
+  filter:Ketrew_pure.Protocol.Up_message.filter ->
   ([> `Cancel | `Go of string list ],
    [> `Client of Client.Error.t
    | `Database of Persistent_data.Error.database

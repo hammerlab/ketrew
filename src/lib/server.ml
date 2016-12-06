@@ -281,20 +281,16 @@ let block_if_empty_at_most
    relate to targets. *)
 module Engine_instructions = struct
 
-  let from_ids ~server_state = function
-    | [] ->
-      Engine.all_visible_targets server_state.state
-      >>| List.map ~f:(fun trt -> (Target.id trt, trt))
-    | more ->
-      Deferred_list.while_sequential more ~f:(fun id ->
-          Engine.get_target server_state.state id
-          >>< function
-          | `Ok t -> return (Some (id, t))
-          | `Error e ->
-            log_error Error.to_string e
-              Log.(s "Error while getting the target " % s id);
-            return None)
-      >>| List.filter_opt
+  let from_ids ~server_state l =
+    Deferred_list.while_sequential l ~f:(fun id ->
+        Engine.get_target server_state.state id
+        >>< function
+        | `Ok t -> return (Some (id, t))
+        | `Error e ->
+          log_error Error.to_string e
+            Log.(s "Error while getting the target " % s id);
+          return None)
+    >>| List.filter_opt
 
   let get ~server_state target_ids =
     from_ids ~server_state target_ids

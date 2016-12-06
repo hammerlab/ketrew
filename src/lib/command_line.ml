@@ -39,18 +39,13 @@ module Return_code = struct
 end
 
 let get_status ~client =
-  Client.all_visible_targets client
-  >>= fun targets ->
-  let in_progress =
-    List.fold targets ~init:0 ~f:(fun prev t ->
-        let open Target in
-        match state t  |> State.simplify with
-        | `In_progress -> prev + 1
-        | `Failed
-        | `Activable
-        | `Successful -> prev)
-  in
-  return (`In_progress in_progress)
+  Client.get_list_of_target_ids client
+    ~query:Protocol.Up_message.{
+      time_constraint = `All;
+      filter = `Status (`Simple `In_progress)
+    }
+  >>= fun ids ->
+  return (`In_progress (List.length ids))
 
 (** The function behind the [ketrew status] sub-command (and the equivalent
     command in [ketrew interactive]). *)
@@ -86,7 +81,7 @@ let kill ~client ~interactive ids =
     begin if interactive then
         Interaction.build_sublist_of_targets ~client ~list_name:"Kill list"
           ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
-          ~filter:(fun t -> Target.(state t |> State.Is.killable))
+          ~filter:(`Status `Killable)
       else
         return (`Go [])
     end

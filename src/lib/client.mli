@@ -71,15 +71,6 @@ val as_client:
 val configuration: t -> Configuration.t
 (** Retrieve the configuration used to create the client. *)
 
-val all_visible_targets: t -> 
-  (Ketrew_pure.Target.t list,
-   [> `Client of Error.t
-   | `Database of Persistent_data.Error.database
-   | `IO of
-        [> `Read_file_exn of string * exn | `Write_file_exn of string * exn ]
-   | `System of [> `File_info of string ] * [> `Exn of exn ]])
-    Deferred_result.t
-(** Get all the current targets. *)
 
 val get_list_of_target_ids : t ->
   query:Ketrew_pure.Protocol.Up_message.target_query ->
