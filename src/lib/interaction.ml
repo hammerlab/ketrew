@@ -214,9 +214,15 @@ let sort_target_list =
   List.sort ~cmp:(fun ta tb -> compare (Ketrew_pure.Target.id tb) (Ketrew_pure.Target.id ta))
 
 let build_sublist_of_targets ~client ~list_name ~all_log ~go_verb ~filter =
-  Client.all_visible_targets client
-  >>| List.filter ~f:(fun target -> filter target)
-  >>| sort_target_list
+  Client.get_list_of_target_ids client
+    ~query:Protocol.Up_message.{time_constraint = `All; filter}
+  >>= fun id_list ->
+  begin match id_list with
+  | [] -> return []
+  | more ->
+    Client.get_targets client ~id_list
+    >>| sort_target_list
+  end
   >>= fun all_targets ->
   let to_process = ref [] in
   let all_valid_targets () =
@@ -236,14 +242,14 @@ let build_sublist_of_targets ~client ~list_name ~all_log ~go_verb ~filter =
         if !to_process = [] then []
         else
           let log = Log.(s "Go; " % if_color bold_red go_verb % s " the "
-                          % (match !to_process with
-                            | [one] -> s "target"
-                            | more -> i (List.length more) % s " targets")) in
+                         % (match !to_process with
+                           | [one] -> s "target"
+                           | more -> i (List.length more) % s " targets")) in
           [menu_item ~char:'G' ~log `Done]
       in
       go @ [ menu_item ~char:'q' ~log:Log.(s "Cancel") `Cancel ]
       @ (if all_valid_ids = [] then []
-          else [ menu_item ~char:'A' ~log:all_log `All; ])
+         else [ menu_item ~char:'A' ~log:all_log `All; ])
     in
     let sentence =
       if all_valid_ids = [] then Log.(s "Nothing to " % go_verb)

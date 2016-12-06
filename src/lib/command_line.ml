@@ -81,7 +81,7 @@ let kill ~client ~interactive ids =
     begin if interactive then
         Interaction.build_sublist_of_targets ~client ~list_name:"Kill list"
           ~all_log:Log.(s "Kill'em All") ~go_verb:Log.(s "kill")
-          ~filter:(fun t -> Target.(state t |> State.Is.killable))
+          ~filter:(`Status `Killable)
       else
         return (`Go [])
     end
