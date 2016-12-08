@@ -12,8 +12,7 @@ VERSION = 3.0.0+dev
 DESCRIPTION = Workflow Engine For The Trenches
 
 if $(test -e .git)
-    # this one works with quotes not the `None` one
-    GIT_COMMIT = 'Some "$(shell git rev-parse HEAD)"'
+    GIT_COMMIT = Some "$(shell git rev-parse HEAD)"
     export
 else
     GIT_COMMIT = None
