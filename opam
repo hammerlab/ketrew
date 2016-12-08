@@ -21,7 +21,7 @@ remove: [
   ["rm" "-f" "%{bin}%/ketrew"]
 ]
 depends: [
-  "omake" {= "0.9.8.6-0.rc1" }
+  "omake" {>= "0.9.8.6-0.rc1" }
   "ocamlfind" "ocamlify"
   "postgresql"
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
