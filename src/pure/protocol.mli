@@ -80,7 +80,6 @@ end
 module Up_message : sig
   type time_constraint = [
     | `All
-    | `Not_finished_before of float
     | `Created_after of float
     | `Status_changed_since of float
   ]

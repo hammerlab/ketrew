@@ -95,7 +95,6 @@ module Up_message = struct
   module V0 = struct
     type time_constraint = [
       | `All
-      | `Not_finished_before of float
       | `Created_after of float
       | `Status_changed_since of float
     ] [@@deriving yojson,show]
@@ -199,7 +198,6 @@ module Up_message = struct
       "Time-constraint",
       begin match time_constraint with
       | `All -> text "All"
-      | `Not_finished_before t -> description "Not-finished-before" (date t)
       | `Created_after t -> description "Created-after" (date t)
       | `Status_changed_since t -> description "Status-change-since" (date t)
       end;

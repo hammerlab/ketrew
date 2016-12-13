@@ -1248,8 +1248,6 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
     let time_part =
       match protocol_query.time_constraint with
       | `All -> L.t
-      | `Not_finished_before time ->
-        L.(compare_timestamp_option Schema.finished_date `Ge (Some time))
       | `Created_after time ->
         L.(compare_timestamp Schema.creation_date `Ge time)
       | `Status_changed_since time ->
@@ -1330,13 +1328,6 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
         let open Option in
         begin match protocol_query.time_constraint with
         | `All -> wins ()
-        | `Not_finished_before time ->
-          begin
-            let st = Target.state target in
-            match Target.State.finished_time st with
-            | Some t when t < time -> None
-            | _ -> wins ()
-          end
         | `Created_after time ->
           begin
             let pt = Target.(state target |> State.passive_time) in
