@@ -4,7 +4,7 @@ RUN opam install -y tls conf-libev
 RUN opam pin --yes add ketrew https://github.com/hammerlab/ketrew.git
 
 # We create a config directory:
-RUN eval `opam config env` ; ketrew init --conf /tmp/ketrew/ --self-signed
+RUN eval `opam config env` ; ketrew init --use-database=postgresql://example.com --conf /tmp/ketrew/ --self-signed
 
 # But we use a custom config file (That still points to "/tmp/ketrew"):
 COPY configuration.ml .
