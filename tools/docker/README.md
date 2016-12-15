@@ -12,14 +12,17 @@ Usage
 There is a public build of the image:
 <https://hub.docker.com/r/hammerlab/ketrew-server/>.
 
-    docker pull hammerlab/ketrew-server
+    DOCKER_TAG=latest  # Or any other tag
+    docker pull hammerlab/ketrew-server:$DOCKER_TAG
 
 Running the server (replace `-i` with `-d` to put it properly in the
 background):
 
     docker run -ti -p 443:8443 \
         --env PORT=8443 --env AUTH_TOKEN=blablabla \
-        hammerlab/ketrew-server ketrew start
+        --env "DB_URI=postgresql://pg.example.com/?user=uuuuuserr&password=passswwoooord" \
+        hammerlab/ketrew-server:$DOCKER_TAG \
+        ketrew start
 
 And the server is there: <https://127.0.0.1/gui?token=blablabla>
 
@@ -27,6 +30,32 @@ Of course, just run `bash` instead of `ketrew start` to get a configured
 environment.
 
 See also `docker ps`, `docker kill <id-prefix>`, etc.
+
+**Note:**
+There is an easy way of providing a PostgreSQL database server:
+
+    docker run --name ketrew-postgres -p 5432:5432 \
+        -e POSTGRES_PASSWORD=kpass -d postgres
+
+creates a (daemonized) container with a fresh DB server. Then one can use the
+`--link` option to make it visible from the Ketrew container:
+
+    docker run -ti -p 443:8443 \
+        --env PORT=8443 --env AUTH_TOKEN=blablabla \
+        --link ketrew-postgres:the_db \
+        --env "DB_URI=postgresql://the_db/?user=postgres&password=kpass" \
+        hammerlab/ketrew-server:$DOCKER_TAG ketrew start
+
+One can also inspect the database with `psql`:
+
+    docker run -it --rm --link ketrew-postgres:postgres \
+       -e PGPASSWORD=kpass postgres psql -x -h postgres -U postgres
+
+To stop/destroy the DB server:
+
+    docker kill ketrew-postgres
+    docker rm ketrew-postgres
+
 
 ### Building The Image Locally
 
