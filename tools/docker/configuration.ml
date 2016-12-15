@@ -9,11 +9,11 @@ open Nonstd
 open Ketrew.Configuration
 let debug_level = 1
 
-let engine =
-  engine ~database_parameters:"/tmp/ketrew/database" ()
-
 let env_exn s =
   try Sys.getenv s with _ -> ksprintf failwith "Missing environment variable: %S" s
+
+let engine =
+  engine ~database_parameters:(env_exn "DB_URI") ()
 
 let port =
   env_exn "PORT" |> Int.of_string
