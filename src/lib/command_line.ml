@@ -493,15 +493,13 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
           $ Arg.(
-              pure (function
-                | None -> `Default_database
-                | Some s -> `User_set_database s)
+              pure (fun s -> `User_set_database s)
               $
               let doc =
                 fmt "Use the given URI for the database configuration \
                      (pstgresql://...)." in
               info ["use-database"] ~docv:"URI" ~doc
-              |> opt (some string) None |> value
+              |> opt (some string) None |> required
             )
         ) in
   let start_gui =
