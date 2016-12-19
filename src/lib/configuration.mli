@@ -92,7 +92,6 @@ val engine:
   ?host_timeout_upper_bound: float ->
   ?maximum_successive_attempts: int ->
   ?concurrent_automaton_steps: int ->
-  ?archival_age_threshold : [ `Days of float ] ->
   ?engine_step_batch_size : int ->
   unit -> engine
 (** Build an [engine] configuration:
@@ -113,8 +112,6 @@ val engine:
     - [concurrent_automaton_steps]: maximum number of steps in the
       state machine that engine will try to run concurrently (default
       is [4]).
-    - [archival_age_threshold]: amount of for which a finished workflow-node is
-      visible in the user-interface (default: 10 days).
     - [engine_step_batch_size]: the maximal amount of nodes that the engine
       will process in a single “step” (default: [400] nodes).
 *)
@@ -253,9 +250,6 @@ val concurrent_automaton_steps: engine -> int
 
 val host_timeout_upper_bound : engine -> float option
 (** Get the upper bound for the timeout of SSH calls, if any. *)
-
-val archival_age_threshold: engine -> [ `Days of float ]
-(** Get the maximal ago of easily visible workflow-nodes. *)
 
 val engine_step_batch_size: engine -> int
 (** Get the amount of workflow-nodes treated by the engine in one
