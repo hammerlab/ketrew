@@ -35,8 +35,6 @@ type engine = {
   host_timeout_upper_bound: (float option [@default None]);
   maximum_successive_attempts: (int [@default 10]);
   concurrent_automaton_steps: (int [@default 4]);
-  archival_age_threshold:
-    ([ `Days of float ] [@default default_archival_age_threashold]);
   engine_step_batch_size: (int [@default default_engine_step_batch_size]);
 } [@@deriving yojson]
 type explorer_defaults = {
@@ -123,7 +121,7 @@ let log t =
     ] in
   let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
                host_timeout_upper_bound; maximum_successive_attempts;
-               concurrent_automaton_steps; archival_age_threshold;
+               concurrent_automaton_steps;
                engine_step_batch_size} =
     sublist [
       item "Database" (quote database_parameters);
@@ -135,8 +133,6 @@ let log t =
         (option f host_timeout_upper_bound);
       item "Maximum-successive-attempts" (i maximum_successive_attempts);
       item "Concurrent-automaton-steps" (i concurrent_automaton_steps);
-      item "Archival-age-threshold"
-        (match archival_age_threshold with `Days d -> sf "%f days" d);
       item "Engine-step-batch-size" (i engine_step_batch_size);
     ] in
   let authorized_tokens = function
@@ -212,7 +208,6 @@ let engine
     ?host_timeout_upper_bound
     ?(maximum_successive_attempts=10)
     ?(concurrent_automaton_steps = 4)
-    ?(archival_age_threshold = default_archival_age_threashold)
     ?(engine_step_batch_size = default_engine_step_batch_size)
     () = {
   database_parameters;
@@ -220,7 +215,6 @@ let engine
   host_timeout_upper_bound;
   maximum_successive_attempts;
   concurrent_automaton_steps;
-  archival_age_threshold;
   engine_step_batch_size;
 }
 let default_engine = engine ()
@@ -257,7 +251,6 @@ let authorized_tokens s = s.authorized_tokens
 let command_pipe s = s.command_pipe
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
-let archival_age_threshold e = e.archival_age_threshold
 let engine_step_batch_size e = e.engine_step_batch_size
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
