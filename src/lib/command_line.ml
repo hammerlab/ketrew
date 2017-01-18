@@ -457,8 +457,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                      Log.(s "Error: \
                              Cannot configure a full blown Ketrew without \
                              the `--use-database` option;" % n
-                          % s "Please use a database URI or configure just a \
-                               client with `--just-client`" @ error);
+                          % s "Please specify a database URI or configure just \
+                               a client with `--just-client`" @ error);
                      failwith "Invalid commandline"
                    | None, Some usedb ->
                      let tls =
