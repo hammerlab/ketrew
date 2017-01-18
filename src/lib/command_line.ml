@@ -452,16 +452,24 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  cert_key self_tls debug_level tokens port
                  config_path use_database ->
                  let how =
-                   match just_client with
-                   | None ->
+                   match just_client, use_database with
+                   | None, None ->
+                     Log.(s "Error: \
+                             Cannot configure a full blown Ketrew without \
+                             the `--use-database` option;" % n
+                          % s "Please use a database URI or configure just a \
+                               client with `--just-client`" @ error);
+                     failwith "Invalid commandline"
+                   | None, Some usedb ->
                      let tls =
                        match cert_key with
                        | Some (cert, key) -> `TLS_use (cert, key)
                        | None when self_tls -> `TLS_create_self_signed
                        | _ -> `TLS_disable
                      in
-                     (`Full (use_database, tls, `Port port, `Tokens tokens))
-                   | Some url ->
+                     (`Full (`User_set_database usedb,
+                             tls, `Port port, `Tokens tokens))
+                   | Some url, _ ->
                      (`Client_from_url url)
                  in
                  User_initialization.generate_configuration_directory
@@ -493,13 +501,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
                  & info ["configuration-path"] ~docv:"DIR"
                    ~doc:"Create the configuration in $(docv).")
           $ Arg.(
-              pure (fun s -> `User_set_database s)
-              $
               let doc =
                 fmt "Use the given URI for the database configuration \
                      (pstgresql://...)." in
               info ["use-database"] ~docv:"URI" ~doc
-              |> opt (some string) None |> required
+              |> opt (some string) None |> value
             )
         ) in
   let start_gui =
