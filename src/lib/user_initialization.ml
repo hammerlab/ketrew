@@ -117,6 +117,7 @@ let () =
 
 let ocaml_single_client_config url =
   let uri = Uri.of_string url in
+  let userinfo_opt = Uri.userinfo uri in
   let scheme =
     Uri.scheme uri |> Option.value_exn ~msg:"URL missing `scheme`" in
   let host =
@@ -131,13 +132,17 @@ let () =
    output [
      profile "default" (
        create ~debug_level (
-         client ~token:%S "%s://%s%s"
+         client ~token:%S
+           "%s://%s%s%s"
        )
      )
   ]
 |ocaml}
-    token scheme host
+    token scheme
+    (Option.value_map ~default:"" userinfo_opt ~f:(fmt "%s@"))
+    host
     (Option.value_map ~default:"" port_opt ~f:(fmt ":%d"))
+
 
 
 let generate_configuration_directory ~debug_level ~config_path how =
