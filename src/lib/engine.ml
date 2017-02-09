@@ -27,6 +27,8 @@ type t = {
   data: Persistent_data.t;
   configuration: Configuration.engine;
   host_io: Host_io.t;
+  (* Mutable fields: *)
+  mutable last_orphan_killing_spree: Time.t option;
 }
 
 open Logging.Global
@@ -38,7 +40,8 @@ let create configuration =
   Persistent_data.create
     (Configuration.database_parameters configuration)
   >>= fun data ->
-  return {data; configuration; host_io = Host_io.create ()}
+  return {data; configuration; host_io = Host_io.create ();
+          last_orphan_killing_spree = None}
 
 let host_io t = t.host_io
 
@@ -377,17 +380,31 @@ module Run_automaton = struct
     concurrent_step remmaining
     >>= fun more_hap ->
     step_log := !step_log @ [
-        "after-automaton-steps", Display_markup.date_now ()
+        "after-automaton-steps", Display_markup.date_now ();
+        "last_orphan_killing_spree-before",
+        Display_markup.(option t.last_orphan_killing_spree ~f:date);
       ];
     let has_progressed = List.exists ~f:((=) `Changed_state) (more_hap @ hap) in
-    Persistent_data.find_all_orphans t.data
+    begin match t.last_orphan_killing_spree with
+    | Some time when Time.(now ()) -. time
+                  <= Configuration.orphan_killing_wait t.configuration ->
+      return []
+    | None
+    | Some _ ->
+      Persistent_data.find_all_orphans t.data
+      >>= fun orphans ->
+      t.last_orphan_killing_spree <- Some Time.(now ());
+      Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data
+        (List.map orphans ~f:(fun tr -> Target.id tr))
+      >>= fun () ->
+      return orphans
+    end
     >>= fun orphans ->
     step_log := !step_log @ [
-        "after-find_all_orphans", Display_markup.date_now ()
+        "after-find_all_orphans", Display_markup.date_now ();
+        "last_orphan_killing_spree-after",
+        Display_markup.(option t.last_orphan_killing_spree ~f:date);
       ];
-    Persistent_data.Killing_targets.add_target_ids_to_kill_list t.data
-      (List.map orphans ~f:(fun tr -> Target.id tr))
-    >>= fun () ->
     Persistent_data.Killing_targets.proceed_to_mass_killing t.data
     >>= fun killing_did_something ->
     Persistent_data.Adding_targets.check_and_really_add_targets t.data

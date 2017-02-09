@@ -26,8 +26,9 @@ open Unix_io
 type plugin = [ `Compiled of string | `OCamlfind of string ]
               [@@deriving yojson]
 
-let default_archival_age_threashold = `Days 10.
 let default_engine_step_batch_size = 400
+
+let default_orphan_killing_wait = 600. (* 10 minutes *)
 
 type engine = {
   database_parameters: string;
@@ -36,6 +37,7 @@ type engine = {
   maximum_successive_attempts: (int [@default 10]);
   concurrent_automaton_steps: (int [@default 4]);
   engine_step_batch_size: (int [@default default_engine_step_batch_size]);
+  orphan_killing_wait: (float [@default default_orphan_killing_wait])
 } [@@deriving yojson]
 type explorer_defaults = {
   request_targets_ids: [ `All | `Younger_than of [ `Days of float ]];
@@ -122,7 +124,7 @@ let log t =
   let engine { database_parameters; turn_unix_ssh_failure_into_target_failure;
                host_timeout_upper_bound; maximum_successive_attempts;
                concurrent_automaton_steps;
-               engine_step_batch_size} =
+               engine_step_batch_size; orphan_killing_wait} =
     sublist [
       item "Database" (quote database_parameters);
       item "Unix-failure"
@@ -134,6 +136,7 @@ let log t =
       item "Maximum-successive-attempts" (i maximum_successive_attempts);
       item "Concurrent-automaton-steps" (i concurrent_automaton_steps);
       item "Engine-step-batch-size" (i engine_step_batch_size);
+      item "Orphan-node-wait" (f orphan_killing_wait);
     ] in
   let authorized_tokens = function
   | `Path path -> s "Path: " % quote path
@@ -209,6 +212,7 @@ let engine
     ?(maximum_successive_attempts=10)
     ?(concurrent_automaton_steps = 4)
     ?(engine_step_batch_size = default_engine_step_batch_size)
+    ?(orphan_killing_wait = default_orphan_killing_wait)
     () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
@@ -216,6 +220,7 @@ let engine
   maximum_successive_attempts;
   concurrent_automaton_steps;
   engine_step_batch_size;
+  orphan_killing_wait;
 }
 let default_engine = engine ()
 
@@ -252,6 +257,7 @@ let command_pipe s = s.command_pipe
 let log_path     s = s.log_path
 let database_parameters e = e.database_parameters
 let engine_step_batch_size e = e.engine_step_batch_size
+let orphan_killing_wait e = e.orphan_killing_wait
 let is_unix_ssh_failure_fatal e = e.turn_unix_ssh_failure_into_target_failure
 let maximum_successive_attempts e = e.maximum_successive_attempts
 let concurrent_automaton_steps e = e.concurrent_automaton_steps

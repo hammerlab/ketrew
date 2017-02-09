@@ -93,6 +93,7 @@ val engine:
   ?maximum_successive_attempts: int ->
   ?concurrent_automaton_steps: int ->
   ?engine_step_batch_size : int ->
+  ?orphan_killing_wait : float ->
   unit -> engine
 (** Build an [engine] configuration:
 
@@ -114,6 +115,9 @@ val engine:
       is [4]).
     - [engine_step_batch_size]: the maximal amount of nodes that the engine
       will process in a single “step” (default: [400] nodes).
+    - [orphan_killing_wait]: the minimal amount of time between 2
+      attempts at killing all “orphan nodes” (i.e. unreachable because
+      all dependees are finished).
 *)
 
 type authorized_tokens 
@@ -255,6 +259,8 @@ val engine_step_batch_size: engine -> int
 (** Get the amount of workflow-nodes treated by the engine in one
     automaton step. *)
 
+val orphan_killing_wait : engine -> float
+(** Get the minimal time between 2 “orphan-node killing sprees.” *)
 
 val plugins: t ->  plugin list
 (** Get the configured list of plugins. *)
