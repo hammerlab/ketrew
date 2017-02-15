@@ -33,7 +33,7 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
     protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
     .PHONY: $(targetname)
     .SUBDIRS: _build/$(directory)
-        OCAMLFLAGS += -for-pack $(packname)
+        OCAMLFLAGS += -bin-annot -for-pack $(packname)
         OCAMLINCLUDES += $(dirname $(local_deps))
         %.ml: $(local_deps)
         %.mli: $(local_deps)
@@ -47,15 +47,20 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
         protected.LIB_CMXS = $(addsuffix .cmx, $(LIB_MODULES))
         protected.LIB_OS = $(addsuffix .o, $(LIB_MODULES))
         echo "LIB $(libname) MODULES: $(LIB_MODULES)"
-        echo "$(LIB_CMXS)"
-        echo "$(LIB_CMIS)"
+        echo "      CMX:  $(LIB_CMXS)"
+        echo "      CMI:  $(LIB_CMIS)"
+        echo "      DEPS: $(local_deps)"
+        echo "      INCLUDES: $(OCAMLINCLUDES)"
         $(libname).cmo $(libname).cmi: $(LIB_CMOS) $(LIB_CMIS)
-            ocamlc -pack -o $(libname).cmo $(OCamlLinkSort $(LIB_CMOS))
+            ocamlc -bin-annot -pack -o $(libname).cmo $(OCamlLinkSort $(LIB_CMOS))
         $(libname).cmx $(libname).o: $(LIB_CMXS) $(LIB_OS) $(LIB_CMIS)
-            ocamlopt -pack -o $(libname).cmx $(OCamlLinkSort $(LIB_CMXS))
+            ocamlopt -bin-annot -pack -o $(libname).cmx $(OCamlLinkSort $(LIB_CMXS))
         $(libname).cmxs: $(libname).cmx
             ocamlopt -shared -o $@ $(libname).cmx
         $(targetname): $(OCamlLibrary $(libname), $(libname)) $(libname).cmxs $(libname).cma
+            if $(test $(getenv REMOVE_CMIS, "") = true)
+                echo "RM-ing CMIS: $(LIB_CMIS)"
+                rm $(LIB_CMIS)
         META:  :value: $(VERSION) :value: $(DESCRIPTION) :value: $(OCAMLPACKS) :value: $(OCAML_LOCAL_LIBS)
             echo "description = \"$(DESCRIPTION)\"" > $@
             echo "version = \"$(VERSION)\"" >> $@
@@ -64,8 +69,55 @@ public.OCamlPackedLibraryOfDir(libname, directory) =
             echo "archive(native) = \"$(libname).cmxa\"" >> $@
             echo "archive(native,plugin) = \"$(libname).cmxs\"" >> $@
         .PHONY: install-$(targetname) uninstall-$(targetname)
+        protected.ADD_TO_INSTALL=$(glob i, *.mli) $(glob i, *.ml) $(glob i, *.cmt) $(glob i, *.cmti)
         install-$(targetname): META $(targetname)
-            ocamlfind install $(libname) META $(libname).cm[aix] $(libname).cmx[as] $(libname).a
+            ocamlfind install $(libname) META $(libname).cm[taix] $(libname).cmx[as] $(libname).a \
+                               $(LIB_CMXS) $(LIB_OS) $(LIB_FILES) $(ADD_TO_INSTALL)
+        uninstall-$(targetname):
+            ocamlfind remove $(libname)
+    return $(targetname)
+
+public.OCamlSingleFileLibrary(libname, single_file) =
+    protected.directory = $(dirname $(single_file))
+    mkdir -p _build/$(directory)
+    vmount(-l, $(directory), _build/$(directory))
+    protected.LIB_FILES[] = $(file $(single_file))
+    protected.targetname = lib-$(libname)
+    protected.local_deps = $(file $(addprefix _build/,$(addsuffix .cmi, $(OCAML_LOCAL_LIBS))))
+    .PHONY: $(targetname)
+    .SUBDIRS: _build/$(directory)
+        OCAMLINCLUDES += $(dirname $(local_deps))
+        %.ml: $(local_deps)
+        %.mli: $(local_deps)
+        %.cmi: $(local_deps)
+        %.cmxa: $(local_deps)
+        protected.LIB_MODULES[] =
+            $(removesuffix $(removesuffix $(basename $(LIB_FILES))))
+            $(OCAML_GENERATED_MODULES)
+        protected.LIB_CMOS = $(addsuffix .cmo, $(LIB_MODULES))
+        protected.LIB_CMIS = $(addsuffix .cmi, $(LIB_MODULES))
+        protected.LIB_CMXS = $(addsuffix .cmx, $(LIB_MODULES))
+        protected.LIB_OS = $(addsuffix .o, $(LIB_MODULES))
+        echo "LIB $(libname) MODULES: $(LIB_MODULES)"
+        echo "      CMX:  $(LIB_CMXS)"
+        echo "      CMI:  $(LIB_CMIS)"
+        echo "      DEPS: $(local_deps)"
+        echo "      INCLUDES: $(OCAMLINCLUDES)"
+        $(libname).cmxs: $(libname).cmx
+            ocamlopt -shared -o $@ $(libname).cmx
+        $(targetname): $(OCamlLibrary $(libname), $(libname)) $(libname).cmxs $(libname).cma $(libname).a
+        META:  :value: $(VERSION) :value: $(DESCRIPTION) :value: $(OCAMLPACKS) :value: $(OCAML_LOCAL_LIBS)
+            echo "description = \"$(DESCRIPTION)\"" > $@
+            echo "version = \"$(VERSION)\"" >> $@
+            echo "requires = \"$(OCAMLPACKS) $(removesuffix $(basename $(local_deps)))\"" >> $@
+            echo "archive(byte) = \"$(libname).cma\"" >> $@
+            echo "archive(native) = \"$(libname).cmxa\"" >> $@
+            echo "archive(native,plugin) = \"$(libname).cmxs\"" >> $@
+        .PHONY: install-$(targetname) uninstall-$(targetname)
+        protected.ADD_TO_INSTALL=$(glob i, *.mli) $(glob i, *.ml) $(glob i, *.cmt) $(glob i, *.cmti)
+        install-$(targetname): META $(targetname)
+            ocamlfind install $(libname) META $(libname).cm[aix] $(libname).cmx[as] $(libname).a \
+                $(ADD_TO_INSTALL)
         uninstall-$(targetname):
             ocamlfind remove $(libname)
     return $(targetname)
