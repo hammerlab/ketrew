@@ -823,6 +823,9 @@ module Schema = struct
   let bool name t = 
     Field.stringable t name (module Boolean)
 
+  type a_pointer = A_pointer
+  let a_pointer = bool "a_pointer" A_pointer
+
   type really_running = Really_running
   let really_running =
     bool "really_running" Really_running
@@ -902,6 +905,7 @@ module Schema = struct
   let main_fields_to_update =
     Field.List.[
       blob;
+      a_pointer;
       engine_status;
       last_status_change_date;
       finished_date;
@@ -960,6 +964,7 @@ module Schema = struct
       (Target.Stored_target.tags node, Tags)
       (Time.now (), Creation_date)
       (Target.Stored_target.serialize node, Blob)
+      (Target.Stored_target.is_pointer node, A_pointer)
       (`Passive, Engine_status)
       (Time.now (), Last_status_change_date)
       (None, Finished_date)
@@ -988,6 +993,7 @@ module Schema = struct
       ~where:Logic.Infix.(id === tid)
       main_fields_to_update
       Target.Stored_target.(serialize (of_target node), Blob)
+      (false, A_pointer) (* If we update it, it's because it's not a pointer *)
       (es, Engine_status)
       (Time.now (), Last_status_change_date)
       (Target.State.finished_time state, Finished_date)
