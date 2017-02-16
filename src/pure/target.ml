@@ -1159,6 +1159,10 @@ module Stored_target = struct
 
   let of_target t = `Target t
 
+  let is_pointer = function
+  | `Target _ -> false
+  | `Pointer _ -> true
+
   let id = function
   | `Target t -> t.id
   | `Pointer { Target_pointer. original; _ } -> original.id

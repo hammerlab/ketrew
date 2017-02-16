@@ -351,6 +351,8 @@ module Stored_target : sig
   val get_target: t -> [ `Target of target | `Pointer of id ]
   val of_target: target -> t
 
+  val is_pointer: t -> bool
+
   val id: t -> id
 
   (** Get the name of the target, or the name of the name of the

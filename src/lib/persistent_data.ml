@@ -823,6 +823,9 @@ module Schema = struct
   let bool name t = 
     Field.stringable t name (module Boolean)
 
+  type a_pointer = A_pointer
+  let a_pointer = bool "a_pointer" A_pointer
+
   type really_running = Really_running
   let really_running =
     bool "really_running" Really_running
@@ -902,6 +905,7 @@ module Schema = struct
   let main_fields_to_update =
     Field.List.[
       blob;
+      a_pointer;
       engine_status;
       last_status_change_date;
       finished_date;
@@ -960,6 +964,7 @@ module Schema = struct
       (Target.Stored_target.tags node, Tags)
       (Time.now (), Creation_date)
       (Target.Stored_target.serialize node, Blob)
+      (Target.Stored_target.is_pointer node, A_pointer)
       (`Passive, Engine_status)
       (Time.now (), Last_status_change_date)
       (None, Finished_date)
@@ -988,6 +993,7 @@ module Schema = struct
       ~where:Logic.Infix.(id === tid)
       main_fields_to_update
       Target.Stored_target.(serialize (of_target node), Blob)
+      (false, A_pointer) (* If we update it, it's because it's not a pointer *)
       (es, Engine_status)
       (Time.now (), Last_status_change_date)
       (Target.State.finished_time state, Finished_date)
@@ -1299,7 +1305,9 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
       | `Has_tag _ ->
         L.t
     in
-    L.(time_part &&& compile_filter protocol_query.filter)
+    L.(time_part
+       &&& (Schema.a_pointer === false)
+       &&& compile_filter protocol_query.filter)
   in
   let {SQL.query; arguments}, parse_row =
     let limit = max_nodes in
@@ -1407,6 +1415,7 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
         "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
         "total", time_span (list_of_ids_time -. start_time);
       ];
+      "stored-targets", textf "%d nodes" (List.length stored);
       "before-filter", textf "%d nodes" (List.length targets);
       "after-filter", textf "%d nodes" (List.length filtered_further);
     ]);
