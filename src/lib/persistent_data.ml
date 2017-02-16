@@ -1305,7 +1305,9 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
       | `Has_tag _ ->
         L.t
     in
-    L.(time_part &&& compile_filter protocol_query.filter)
+    L.(time_part
+       &&& (Schema.a_pointer === false)
+       &&& compile_filter protocol_query.filter)
   in
   let {SQL.query; arguments}, parse_row =
     let limit = max_nodes in
@@ -1413,6 +1415,7 @@ let query_nodes ?(max_nodes = 1000) t protocol_query : (_, _) Deferred_result.t 
         "list-of-ids", time_span (list_of_ids_time -. all_targets_time);
         "total", time_span (list_of_ids_time -. start_time);
       ];
+      "stored-targets", textf "%d nodes" (List.length stored);
       "before-filter", textf "%d nodes" (List.length targets);
       "after-filter", textf "%d nodes" (List.length filtered_further);
     ]);
