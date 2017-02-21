@@ -49,21 +49,6 @@ let sprintf = `No
 let fmt = Printf.sprintf
 (** The only function dealing with “formats.” *)
 
-let global_executable_path =
-  begin match Filename.is_relative Sys.executable_name with
-  | false -> Sys.executable_name
-  | true -> Filename.concat (Sys.getcwd ()) Sys.executable_name
-  end
-(** Full path to the executable that is running (makes no sense in the
-    javascript backend).
-
-    This will be executed before the server has the chance to
-    daemonize (and hence change the current directory).
-    
-    When called from a shell that uses ["$PATH"],
-    [Sys.executable_name] should absolute.
-*)
-
 let global_debug_level = ref 0
 (** Global reference. *)
 
