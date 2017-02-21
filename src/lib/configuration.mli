@@ -87,19 +87,18 @@ type engine
     the run of the targets (used both for the server mode). *)
 
 val engine: 
-  ?database_parameters:string ->
   ?turn_unix_ssh_failure_into_target_failure: bool ->
   ?host_timeout_upper_bound: float ->
   ?maximum_successive_attempts: int ->
   ?concurrent_automaton_steps: int ->
   ?engine_step_batch_size : int ->
   ?orphan_killing_wait : float ->
+  database_parameters:string ->
   unit -> engine
 (** Build an [engine] configuration:
 
-    - [database_parameters]: the URI passed to the [trakeva_of_uri]
-      library to create the database
-      (the default is a Sqlite database: ["~/.ketrew/database"]).
+    - [database_parameters]: the URI used to connect to the database
+      (e.g. ["postgresql://example.com/db1"]).
     - [turn_unix_ssh_failure_into_target_failure]: when an
       SSH or system call fails it may not mean that the command in
       your workflow is wrong (could be an SSH configuration or
@@ -151,13 +150,13 @@ type server
 
 val server: 
   ?ui:ui ->
-  ?engine:engine ->
   ?authorized_tokens: authorized_tokens list ->
   ?return_error_messages: bool ->
   ?command_pipe: string ->
   ?log_path: string ->
   ?max_blocking_time: float ->
   ?read_only_mode: bool ->
+  engine: engine ->
   [ `Tcp of int | `Tls of string * string * int ] ->
   [> `Server of server]
 (** Create a server configuration (to pass as optional argument to the

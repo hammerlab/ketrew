@@ -710,10 +710,14 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         pure (fun src dst ->
             Persistent_data.Synchronize.copy src dst
           )
-        $ Arg.(info ["from"] ~docv:"SRC" ~doc:"The source to copy from"
+        $ Arg.(info ["from"] ~docv:"URI"
+                 ~doc:"The source to copy from"
+                 ~docs:"REQUIRED FLAGS"
                |> opt (some string) None
                |> required)
-        $ Arg.(info ["to"] ~docv:"DST" ~doc:"The destination to copy to"
+        $ Arg.(info ["to"] ~docv:"URI"
+                 ~doc:"The destination to copy to"
+                 ~docs:"REQUIRED FLAGS"
                |> opt (some string) None
                |> required)
       )
@@ -721,8 +725,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
         info "synchronize" ~version ~sdocs:"COMMON OPTIONS"
           ~doc:"Synchronize/copy a ketrew database."
           ~man:[
-            `P "The strings SRC and DST are URIs that the Trakeva library \
-                can accept (i.e. like in the configuration file) *or* \
+            `P "The strings SRC and DST are database URIs (`postgresql://...`  \
+                like in the configuration file) *or* \
                 a URI starting with `backup://` and indicating a path \
                 to a directory.";
           ]

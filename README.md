@@ -310,9 +310,6 @@ complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 Troubleshooting
 ---------------
 
-- Trying to use use Sqlite3 on MacOSX, and `opam` fail? These
-  [instructions](https://github.com/smondet/trakeva#sqlite3-on-macosx)
-  should be helpful.
 - `opam` and `ssl` errors when install `ketrew`? Please see this
   [issue](https://github.com/hammerlab/ketrew/issues/214).
 - When reconfiguring `Ketrew` between versions it may be helpful to delete old

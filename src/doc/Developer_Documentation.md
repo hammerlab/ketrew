@@ -22,8 +22,7 @@ Ketrew depends on
   parsing/printing and other code generation
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
-- `trakeva`, specifically the `trakeva_of_uri` library (with either the `sqlite`
-  or `postgresql` backends).
+- `postgresql`: Ketrew uses a PostgreSQL database.
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
 and uses the `omake` as a build system and the tool `ocamlify`.

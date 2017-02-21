@@ -31,7 +31,8 @@ There are many use cases,
 Trakeva Missing Backends
 ------------------------
 
-While configuring Ketrew and trying to start a server it may fail with:
+While configuring Ketrew **(≤ 3.0.0)** and trying to start a server it may fail
+with:
 
 ```
 [ketrew: ERROR]
