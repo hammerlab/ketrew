@@ -22,62 +22,23 @@ the authors on the public “Slack” channel of the Hammer Lab:
 Build & Install
 ---------------
 
-Ketrew requires at least OCaml **4.02.2** and should be able to build & work on
-any Unix platform.
-
-### From Opam
-
-If you have [opam](http://opam.ocaml.org/) up and running, just install Ketrew
-while choose a database backend (you may pick both and choose later in the
-config-file):
-
-    opam install  (sqlite3 | postgresql) [ssl | tls]  ketrew
-
-- you need to choose a database backend `sqlite` or `postgresql`
-  (you may install both and choose later in the config-file),
-- if you want Ketrew to use HTTPS you need to get it linked
-  with OpenSSL (package `ssl`) or [nqsb-TLS](https://nqsb.io/) (package
-  `tls`, *experimental*).
-
-This gets you
-
-- a `ketrew` executable that can be used to schedule and run workflows,
-- an OCaml library also called `ketrew` that handles the messy orchestration of
-  those tasks and exports the `Ketrew.EDSL` module used to write workflows.
-
-Remember that at runtime you'll need `ssh` in your `$PATH` to execute commands on
-foreign hosts.
-
-*Optional*: Ketrew, like any [Lwt](http://ocsigen.org/lwt/)-based piece of
-software, will be much faster and scalable when `libev` is detected and used
-as a backend. Use `opam install conf-libev` to tell opam that `libev` is
-[installed](http://opam.ocaml.org/packages/conf-libev/conf-libev.4-11/), which
-you can ensure with
-
-  - `brew install libev` on MacOSX
-  - `apt-get install libev-dev`on Debian/Ubuntu,
-  - `yum install libev-devel` on CentOS (which requires
-    `export C_INCLUDE_PATH=/usr/include/libev/` and `export LIBRARY_PATH=/usr/lib64/`
-
-before `opam install conf-libev`.
-
-### Using Docker
-
-See the instructions at
-[hub.docker.com](https://hub.docker.com):
-[`hammerlab/ketrew-server`](https://hub.docker.com/r/hammerlab/ketrew-server/).
-
-### Without Opam
-
-See the [development documentation](src/doc/Developer_Documentation.md) to find
-out how to build Ketrew (and its dependencies) from source.
-
+See the specific documentation
+on [building and installing](src/doc/Build_and_install.md).
+*TD;LR for OCaml hackers:*
+ 
+    opam switch 4.03.0
+    opam install tls ketrew
 
 Getting Started
 ---------------
 
-Ketrew is very flexible and hence may seem difficult to understand at first. 
+Ketrew is very flexible and hence may seem difficult to understand and setup at
+first.
 Let's get a minimal workflow running.
+
+
+
+
 
 Before you can use Ketrew, you need to configure it:
 
