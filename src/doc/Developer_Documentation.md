@@ -137,8 +137,7 @@ Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 
 - `kdserver`: the server `ketrew` application.
 - `kdroserver`: the server `ketrew` application but running in “read-only” mode.
-- `kdclient`: the client `ketrew` application (talking to a `kdserver` or
-  `kddaemon` instance).
+- `kdclient`: the client `ketrew` application (talking to a `kdserver` instance).
 - `kdtest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
 
 ### Coverage

@@ -79,7 +79,7 @@ let ui = ui ~with_color:true ~explorer ~with_cbreak:true ()
 
 (* A function that given a boolean value creates a “server
   configuration” that detaches or not from the shell. *)
-let my_servers daemon =
+let my_server =
   server ~ui
     ~engine:(engine ~database_parameters:"postgresql://example.com/db1" ())
     ~authorized_tokens:[
@@ -87,8 +87,7 @@ let my_servers daemon =
        authorized_token ~name:"The-inline-one" "inlinetoken";
      ]
     ~return_error_messages:true
-    ~log_path:"/path/to/logs-of-server.txt"
-    ~daemon
+    ~log_path:"/path/to/logs-of-server/"
     ~command_pipe:"/path/to/command.pipe"
     (`Tls ("/path/to/cert.pem", "/path/to/key.pem", 8443))
 
@@ -99,10 +98,8 @@ let my_servers daemon =
 *)
 let () =
   output [
-    profile "daemon"
-      (create ~debug_level ~plugins (my_servers true));
     profile "server"
-      (create ~debug_level ~plugins (my_servers false));
+      (create ~debug_level ~plugins my_server);
     profile "client"
       (create ~debug_level ~plugins (
           client ~ui ~token:"nekot" "https://127.0.0.1:8443"
