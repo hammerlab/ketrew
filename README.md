@@ -24,7 +24,7 @@ Build & Install
 
 See the specific documentation
 on [building and installing](src/doc/Build_and_Install.md).
-*TD;LR for OCaml hackers:*
+*TL;DR for OCaml hackers:*
  
     opam switch 4.03.0
     opam install tls ketrew
