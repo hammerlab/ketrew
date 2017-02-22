@@ -23,7 +23,7 @@ Build & Install
 ---------------
 
 See the specific documentation
-on [building and installing](src/doc/Build_and_install.md).
+on [building and installing](src/doc/Build_and_Install.md).
 *TD;LR for OCaml hackers:*
  
     opam switch 4.03.0
@@ -38,9 +38,10 @@ Let's get a minimal setup ready and a workflow running on it.
 
 ### Server-side Setup
 
-We use 
-[`hammerlab/secotrec`](https://github.com/hammerlab/secotrec),
-to get a practical Ketrew/Coclobas local setup.
+We use [`hammerlab/secotrec`](https://github.com/hammerlab/secotrec), to get a
+practical local setup (Ketrew, a PostgreSQL server, and
+a [Coclobas](https://github.com/hammerlab/coclobas) server in “local docker”
+mode).
 
 For this we'll require Docker installed (usable by a regular UNIX user, and its
 daemon running), to get a container environment with everything installed:
@@ -131,10 +132,97 @@ See the `Ketrew.EDSL.workflow_node` function documentation for details. Any
 OCaml program can use the EDSL (script, compiled, or even inside the
 toplevel). See the documentation of the EDSL API (`Ketrew.EDSL`).
 
-### Example
+### A Quick Taste
 
-The following script extends the previous shell-based example with the
-capability to send emails upon the success or failure of your command.
+You can run these commands for example in `utop` (`opam install utop`).
+
+Load the Ketrew library to build and submit workflows:
+
+```ocaml
+#use "topfind";;
+#thread;;
+#require "ketrew";;
+```
+
+Globally tell the Ketrew client to get its configuration from the file created
+[above](#Client):
+
+```ocaml
+let () =
+  Unix.putenv
+    "KETREW_CONFIGURATION"
+    (Sys.getenv "HOME" ^ "/kclient-config/configuration.ml");;
+```
+
+Submit an “empty” workflow-node to Ketrew (i.e. a node that does not do nor
+*ensure* anything):
+
+```ocaml
+let () =
+  let open Ketrew.EDSL in
+  workflow_node without_product
+    ~name:"Mostly Empty Node"
+  |> Ketrew.Client.submit_workflow;;
+```
+
+Submit a node mostly equivalent to the one submitted from the command-line
+(`ketrew submit --daemonize ...`):
+
+```ocaml
+let () =
+  let open Ketrew.EDSL in
+  workflow_node without_product
+    ~name:"Equivalent to the Command Line one"
+    ~make:(
+      daemonize
+        ~using:`Python_daemon
+        ~host:Host.(parse "/tmp/KT")
+        Program.(sh "du -sh $HOME")
+    )
+    ~tags:["not-1st-workflow"; "not-command-line"]
+  |> Ketrew.Client.submit_workflow;;
+```
+
+Run a command, in a docker container scheduler by the Coclobas server (also
+setup by Secotrec):
+
+```ocaml
+#require "coclobas.ketrew_backend";;
+
+let () =
+  let open Ketrew.EDSL in
+  workflow_node without_product
+    ~name:"Uses a docker image to run some commands"
+    ~make:(
+      (* We use a different “backend”: *)
+      Coclobas_ketrew_backend.Plugin.local_docker_program
+        ~tmp_dir:"/tmp/secotrec-local-shared-temp"
+        ~base_url:"http://coclo:8082"
+        ~image:"ubuntu"
+        Program.(
+          (* sh "sudo mkdir -m 777 -p /cloco-kube/playground" && *)
+          sh "echo User" && sh "whoami" &&
+          sh "echo Host" && sh "hostname" &&
+          sh "echo Machine" && sh "uname -a" &&
+          exec ["sleep"; "42"]
+        )
+    )
+    ~tags:["using-coclobas"; "from-utop"]
+  |> Ketrew.Client.submit_workflow;;
+```
+
+The Ketrew WebUI should look like this:
+
+<div>
+<img width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/23229136/259f6528-f90d-11e6-9215-ed15662364fc.png"
+>
+</div>
+
+### Bigger Example
+
+The following script extends the previous examples with the capability to send
+emails upon the success or failure of your command.
 
 ```ocaml
 #use "topfind"
@@ -143,43 +231,33 @@ capability to send emails upon the success or failure of your command.
 
 let run_command_with_daemonize ~cmd ~email =
   let module KEDSL = Ketrew.EDSL in
-
-  (* Where to run stuff *)
+  (* Where to run stuff: *)
   let host = KEDSL.Host.tmp_on_localhost in
-
-  (* A “program” is a datastructure representing an “extended shell script”. *)
-  let program = KEDSL.Program.sh cmd in
-
-  (* A “build process” is a method for making things.
-
-     In this case, `daemonize` creates a datastructure that represents a job
-     running our program on the host. *)
-  let build_process = KEDSL.daemonize ~host program in
-  (* If the Ketrew server (i.e. `host`) is running Mac OSX, please use:
-  let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
-  *)
-
-  (* A node that Ketrew will activate after cmd completes *)
+  (* A node that Ketrew will activate after cmd completes,
+     on its success or failure. *)
   let email_target ~success =
-    let sstring = if success then "succeeded" else "failed" in
+    let msg_string = if success then "succeeded" else "failed" in
     let e_program =
       KEDSL.Program.shf "echo \"'%s' %s\" | mail -s \"Status update\" %s"
-        cmd sstring
+        cmd msg_string
         email
     in
     let e_process =
       KEDSL.daemonize ~using:`Python_daemon ~host e_program in
     KEDSL.workflow_node KEDSL.without_product
-      ~name:("email result " ^ sstring)
+      ~name:("email result " ^ msg_string)
       ~make:e_process
   in
-
   (* The function `KEDSL.workflow_node` creates a node in the workflow graph.
      The value `KEDSL.without_product` means this node does not
      “produce” anything, it is like a `.PHONY` target in `make`. *)
   KEDSL.workflow_node KEDSL.without_product
-    ~name:"daemonize command"
-    ~make:build_process
+    ~name:"daemonized command with email notification"
+    ~make:(
+      (* A “program” is a datastructure representing an “extended shell script”. *)
+      let program = KEDSL.Program.sh cmd in
+      KEDSL.daemonize ~host ~using:`Python_daemon program
+    )
     ~edges:[
       KEDSL.on_success_activate (email_target true);
       KEDSL.on_failure_activate (email_target false);
@@ -189,30 +267,29 @@ let () =
   (* Grab the command line arguments. *)
   let cmd   = Sys.argv.(1) in
   let email = Sys.argv.(2) in
-
   (* Create the  workflow with the first argument of the command line: *)
   let workflow = run_command_with_daemonize ~cmd ~email in
-
   (* Then, `Client.submit_workflow` is the only function that “does”
-     something, it submits the workflow to the engine: *)
+     something, it submits the constructed workflow to the engine: *)
   Ketrew.Client.submit_workflow workflow
 ```
 
 You can run this [script](src/example_scripts/daemonize_workflow.ml) from the
 shell with
 
+    export KETREW_CONFIGURATION=$HOME/kclient-config/configuration.ml
     ocaml daemonize_workflow.ml 'du -sh $HOME' myaddress@email.com
-    
-Checking in with the gui, we'll have a couple of new targets:
+
+Checking in with the GUI, we'll have a few new nodes, here is an example of
+execution where the daemonized program does not know about the `mail` command:
 
 <div>
-<img width="100%"
-src="https://cloud.githubusercontent.com/assets/617111/11070354/32521fb2-87a9-11e5-993e-550db476cbd7.png"
+<a
+href="https://cloud.githubusercontent.com/assets/617111/23230735/1ad232e6-f913-11e6-9503-03c8aa3cb60c.png"
+><img width="100%"
+src="https://cloud.githubusercontent.com/assets/617111/23230735/1ad232e6-f913-11e6-9503-03c8aa3cb60c.png"
+></a>
 </div>
-
-
-To learn more about the EDSL, you can also explore [examples of more and more
-complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
 
 
 Where to Go Next
@@ -220,29 +297,30 @@ Where to Go Next
 
 From here:
 
-- To write workflows for Ketrew,
-see [`src/test/Workflow_Examples.ml`](src/test/Workflow_Examples.ml) for
-examples and the [documentation of the EDSL API](src/lib/eDSL.mli).
-- To configure Ketrew use the configuration file
-[documentation](src/doc/The_Configuration_File.md).
+- To write workflows for Ketrew see:
+    - examples of more and more complicated
+      workflows: [`src/test/Workflow_Examples.ml`](src/test/Workflow_Examples.ml) for
+      examples
+    - the documentation of the `Ketrew.EDSL` API.
+- To configure Ketrew use the configuration
+  file [documentation](src/doc/The_Configuration_File.md).
 - You may want to “extend” Ketrew with new ways of running “long-running"
-computations:  see the documentation on
-[plugins](src/doc/Long-Running_Plugins.md),
-and the examples in the library:
-like [`Ketrew.Lsf`](src/lib/lsf.mli) or in the tests:
-[`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml).
+  computations: see the documentation
+  on [plugins](src/doc/Long-Running_Plugins.md), and the examples in the
+  library: like [`Ketrew.Lsf`](src/lib/lsf.mli) or in the
+  tests: [`src/test/dummy_plugin.ml`](src/test/dummy_plugin.ml).
 - You may want to extend Ketrew, or preconfigure it, *without* configuration
-files or dynamically loaded libraries: just
-[create](src/doc/Alternative_CLI_Application.md) your own comand-line app.
-- If you are using Ketrew in server mode, you may want to know about the
-[commands](src/doc/Server_Commands.md) that the server can understand as it
-listens on a Unix-pipe.
+  files or dynamically loaded libraries:
+  just [create](src/doc/Alternative_CLI_Application.md) your own comand-line
+  app.
+- If you are using Ketrew in server mode, you may want to know about
+  the [commands](src/doc/Server_Commands.md) that the server can understand as
+  it listens on a Unix-pipe.
 - You may want to call out directly to the [HTTP API](src/doc/The_HTTP_API.md)
-(i.e. without `ketrew` as a client).
-- If you want to help or simply to understand Ketrew
-see the [development](src/doc/Developer_Documentation.md)
-documentation, and have a look at the modules
-like [`Ketrew.Engine`](src/lib/engine.mli).
+  (i.e. without `ketrew` as a client).
+- If you want to help or simply to understand Ketrew see
+  the [development](src/doc/Developer_Documentation.md) documentation, and have
+  a look at the modules like [`Ketrew.Engine`](src/lib/engine.mli).
 
 License
 -------
