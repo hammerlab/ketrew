@@ -34,104 +34,55 @@ Getting Started
 
 Ketrew is very flexible and hence may seem difficult to understand and setup at
 first.
-Let's get a minimal workflow running.
+Let's get a minimal setup ready and a workflow running on it.
 
+### Server-side Setup
 
+We use 
+[`hammerlab/secotrec`](https://github.com/hammerlab/secotrec),
+to get a practical Ketrew/Coclobas local setup.
 
+For this we'll require Docker installed (usable by a regular UNIX user, and its
+daemon running), to get a container environment with everything installed:
 
+    docker pull hammerlab/secotrec
+    docker run -v /var/run/docker.sock:/var/run/docker.sock -it hammerlab/secotrec bash
 
-Before you can use Ketrew, you need to configure it:
+Then from this new shell:
 
-    $ ketrew init
+    secotrec-local up
 
-By default this will write a configuration file & list of authorized tokens
-for the Ketrew server in
-
-    $ ls $HOME/.ketrew/
-    authorized_tokens	configuration.ml
-
-You can check that the client or the server are configured (the client is
-returned by default) by using the `print-configuration` subcommand:
-
-    $ ketrew print-configuration
-    [ketrew]
-        Mode: Client
-        Connection: "http://127.0.0.1:8756"
-        Auth-token: "755nRor8Q5z5nx7W22C6C078HF3YoY5PS29sEgNXxP4="
-        UI:
-            Colors: with colors
-            Get-key: uses `cbreak`
-            Explorer:
-                Default request: Targets younger than 1.5 days
-                Targets-per-page: 6
-                Targets-to-prefectch: 6
-        Misc:
-            Debug-level: 0
-            Plugins: None
-            Tmp-dir: Not-specified (using /tmp/)
-
-For the server (using `pc`, a command alias for `print-configuration`):
-
-    $ ketrew pc server
-    [ketrew] 
-        Mode: Server
-        Engine:
-            Database: "/home/hammerlab/.ketrew/database"
-            Unix-failure: does not turn into target failure
-            Host-timeout-upper-bound:
-            Maximum-successive-attempts: 10
-            Concurrent-automaton-steps: 4
-            Archival-age-threshold: 10.000000 days
-        UI:
-            Colors: with colors
-            Get-key: uses `cbreak`
-            Explorer:
-                Default request: Targets younger than 1.5 days
-                Targets-per-page: 6
-                Targets-to-prefectch: 6
-        HTTP-server:
-            Authorized tokens:
-                Inline (Name: l8Tm7Gv6veO1vYB9Fvc-ZnDwwsXXKbaKE4Vn5zcopOk=,
-                Value: "l8Tm7Gv6veO1vYB9Fvc-ZnDwwsXXKbaKE4Vn5zcopOk=")
-                Path: "/home/hammerlab/.ketrew/authorized_tokens"
-            Daemonize: false
-            Command Pipe: Some "/home/hammerlab/.ketrew/command.pipe"
-            Log-path: Some "/home/hammerlab/.ketrew/server-log"
-            Return-error-messages: true
-            Max-blocking-time: 300.
-            Listen: HTTP: 8756
-      Misc:
-          Debug-level: 0
-          Plugins: None
-          Tmp-dir: Not-specified (using /tmp/)
-
-Furthermore, `daemon` is a shortcut for starting the `server` in
-[daemon](https://en.wikipedia.org/wiki/Daemon_%28computing%29) mode. You may
-now start a server:
-
-    $ ketrew start-server --configuration-profile daemon
-
-Let's open the GUI:
-
-    $ ketrew gui
-
-Which should open your browser.
+After a few minutes you can check that everything is setup by visiting
+<http://127.0.0.1:8123/gui?token=nekot>:
 
 <div>
 <img  width="100%"
-src="https://cloud.githubusercontent.com/assets/617111/11070327/07e7f63e-87a9-11e5-9a55-1e5f1baedb29.png"
+src="https://cloud.githubusercontent.com/assets/617111/23189040/047945d4-f85f-11e6-9453-feb3515fb7ca.png"
 >
 </div>
 
-Back at the command line you can always check the server's status (using the
-shorter command line argument `-P`, instead of `--configuration-profile`):
+At any moment you can take everything down with:
 
-    $ ketrew status -P daemon
-    [ketrew] The server appears to be doing well.
+    secotrec-local down
 
-The `ketrew submit` sub-command can create tiny workflows:
+### Client
 
-    ketrew submit --wet-run --tag 1st-workflow --tag command-line --daemonize /tmp/KT,"du -sh $HOME"
+In this “demo” setup, we cannot access the Ketrew server from the current
+container (docker “limitation”), so we jump to another container which is in the
+right network:
+
+    secotrec-local docker-compose exec coclo opam config exec bash
+
+We can now create a Ketrew client configuration:
+
+    ketrew init --configuration-path $HOME/kclient-config/ \
+        --just-client http://kserver:8080/gui?token=nekot
+
+The `ketrew submit` sub-command can create one-command workflows:
+
+    ketrew submit --configuration-file $HOME/kclient-config/configuration.ml \
+         --wet-run --tag 1st-workflow --tag command-line \
+         --daemonize /tmp/KT,"du -sh $HOME"
 
 The job will appear on the WebUI and you can inspect/restart/kill it.
 
@@ -143,7 +94,7 @@ The job will appear on the WebUI and you can inspect/restart/kill it.
 
 If you don't like Web UI's you can use the text-based UI:
 
-    $ ketrew interact
+    $ ketrew interact --configuration-file $HOME/kclient-config/configuration.ml
     [ketrew]
         Main menu
         Press a single key:
@@ -154,13 +105,8 @@ If you don't like Web UI's you can use the text-based UI:
         * [k]: Kill targets
         * [e]: The Target Explorer™
 
-Finally to stop the server:
-
-    $ ketrew stop -P daemon
-    [ketrew] Server killed.
-
 As you can see, just from the command line, you can use `ketrew submit` to
-launch tasks. But to go further we need to use an EDSL.
+launch *daemonized* tasks. To go further we need to use Ketrew's EDSL.
 
 The EDSL: Defining Workflows
 ----------------------------
@@ -209,7 +155,7 @@ let run_command_with_daemonize ~cmd ~email =
      In this case, `daemonize` creates a datastructure that represents a job
      running our program on the host. *)
   let build_process = KEDSL.daemonize ~host program in
-  (* On Mac OSX
+  (* If the Ketrew server (i.e. `host`) is running Mac OSX, please use:
   let build_process = KEDSL.daemonize ~using:`Python_daemon ~host program in
   *)
 
@@ -267,30 +213,6 @@ src="https://cloud.githubusercontent.com/assets/617111/11070354/32521fb2-87a9-11
 
 To learn more about the EDSL, you can also explore [examples of more and more
 complicated workflows](src/test/Workflow_Examples.ml) (*work-in-progress*).
-
-Troubleshooting
----------------
-
-- `opam` and `ssl` errors when install `ketrew`? Please see this
-  [issue](https://github.com/hammerlab/ketrew/issues/214).
-- When reconfiguring `Ketrew` between versions it may be helpful to delete old
-  configurations:
-
-        $ rm -fr $HOME/.ketrew/
-
-- During configuration it is recommended that you pass an authentication token,
-  as opposed to having Ketrew generate one for you:
-
-        $ ketrew init --with-token my-secret-token
-
-- If you are trying the example workflow on a system that does not have Python
-  installed you can use another deamonization method (we use `` `Python_daemon``
-  by default above because
-  [setsid](http://man7.org/linux/man-pages/man1/setsid.1.html) is missing on
-  MacOSX):
-        
-        let build_process = KEDSL.daemonize ~using:`Nohup_setsid ~host program in
-
 
 
 Where to Go Next
