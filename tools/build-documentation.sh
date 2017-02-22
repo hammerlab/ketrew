@@ -50,6 +50,9 @@ make_doc () {
                   -I _build/src/lib/  -I _build/src/pure \
                   $out_pure $out_lib
     fi
+    if [ "$CSS" = "" ]; then
+        export CSS="https://maxcdn.bootstrapcdn.com/bootswatch/3.2.0/readable/bootstrap.min.css,https://cdn.rawgit.com/hammerlab/ketrew/2d1c430cca52caa71e363a765ff8775a6ae14ba9/src/doc/code_style.css";
+    fi
 
     INPUT=src/doc/,src/test/Workflow_Examples.ml,src/test/dummy_plugin_user.ml,src/test/dummy-plugin \
          INDEX=README.md \
