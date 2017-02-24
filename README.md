@@ -41,19 +41,12 @@ Let's get a minimal setup ready and a workflow running on it.
 We use [`hammerlab/secotrec`](https://github.com/hammerlab/secotrec), to get a
 practical local setup (Ketrew, a PostgreSQL server, and
 a [Coclobas](https://github.com/hammerlab/coclobas) server in “local docker”
-mode).
-
-For this we'll require Docker installed (usable by a regular UNIX user, and its
-daemon running), to get a container environment with everything installed:
-
-    docker pull hammerlab/secotrec
-    docker run -v /var/run/docker.sock:/var/run/docker.sock -it hammerlab/secotrec bash
-
-Then from this new shell:
+mode). Please [install](https://github.com/hammerlab/secotrec#with-opam)
+`secotrec` the package, then run:
 
     secotrec-local up
 
-After a few minutes you can check that everything is setup by visiting
+After a couple of minutes you can check that everything is setup by visiting
 <http://127.0.0.1:8123/gui?token=nekot>:
 
 <div>
@@ -66,22 +59,26 @@ At any moment you can take everything down with:
 
     secotrec-local down
 
+Or use the various inspection commands:
+
+    secotrec-local status
+    secotrec-local --help
+
 ### Client
 
-In this “demo” setup, we cannot access the Ketrew server from the current
-container (docker “limitation”), so we jump to another container which is in the
-right network:
+We can now create a Ketrew client configuration, please choose a directory:
 
-    secotrec-local docker-compose exec coclo opam config exec bash
+    export KETREW_ROOT=$HOME/tmp/kclient-config/
 
-We can now create a Ketrew client configuration:
+and initialize Ketrew there:
 
-    ketrew init --configuration-path $HOME/kclient-config/ \
-        --just-client http://kserver:8080/gui?token=nekot
+    ketrew init --configuration-path $KETREW_ROOT \
+        --just-client http://127.0.0.1:8123/gui?token=nekot
 
-The `ketrew submit` sub-command can create one-command workflows:
+The `ketrew submit` sub-command can create one-command workflows (uses the
+`$KETREW_ROOT` path):
 
-    ketrew submit --configuration-file $HOME/kclient-config/configuration.ml \
+    ketrew submit \
          --wet-run --tag 1st-workflow --tag command-line \
          --daemonize /tmp/KT,"du -sh $HOME"
 
@@ -95,7 +92,7 @@ The job will appear on the WebUI and you can inspect/restart/kill it.
 
 If you don't like Web UI's you can use the text-based UI:
 
-    $ ketrew interact --configuration-file $HOME/kclient-config/configuration.ml
+    $ ketrew interact
     [ketrew]
         Main menu
         Press a single key:
