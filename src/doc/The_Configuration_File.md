@@ -77,32 +77,27 @@ let explorer =
     ~targets_to_prefetch:10 ()
 let ui = ui ~with_color:true ~explorer ~with_cbreak:true ()
 
-(* A function that given a boolean value creates a “server
-  configuration” that detaches or not from the shell. *)
-let my_servers daemon =
+let my_server =
   server ~ui
-    ~engine:(engine ~database_parameters:"/path/to/sqlite-database-client-server" ())
+    ~engine:(engine ~database_parameters:"postgresql://example.com/db1" ())
     ~authorized_tokens:[
        authorized_tokens_path "/path/to/authorized-tokens";
        authorized_token ~name:"The-inline-one" "inlinetoken";
      ]
     ~return_error_messages:true
-    ~log_path:"/path/to/logs-of-server.txt"
-    ~daemon
+    ~log_path:"/path/to/logs-of-server/"
     ~command_pipe:"/path/to/command.pipe"
     (`Tls ("/path/to/cert.pem", "/path/to/key.pem", 8443))
 
-(* We put together 4 profiles in this configuration and “output” them
+(* We put together 2 profiles in this configuration and “output” them
    (literally, as Json, to `stdout`).
 
    `debug_level`, `plugins`, and `ui` are shared between configurations.
 *)
 let () =
   output [
-    profile "daemon"
-      (create ~debug_level ~plugins (my_servers true));
     profile "server"
-      (create ~debug_level ~plugins (my_servers false));
+      (create ~debug_level ~plugins my_server);
     profile "client"
       (create ~debug_level ~plugins (
           client ~ui ~token:"nekot" "https://127.0.0.1:8443"

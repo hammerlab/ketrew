@@ -22,8 +22,7 @@ Ketrew depends on
   parsing/printing and other code generation
 - `cohttp.lwt`, `ssl`, and `conduit`: HTTP server and client
 - `findlib` + `dynlink`: dynamic loading of plugins 
-- `trakeva`, specifically the `trakeva_of_uri` library (with either the `sqlite`
-  or `postgresql` backends).
+- `postgresql`: Ketrew uses a PostgreSQL database.
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
 and uses the `omake` as a build system and the tool `ocamlify`.
@@ -138,8 +137,7 @@ Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 
 - `kdserver`: the server `ketrew` application.
 - `kdroserver`: the server `ketrew` application but running in “read-only” mode.
-- `kdclient`: the client `ketrew` application (talking to a `kdserver` or
-  `kddaemon` instance).
+- `kdclient`: the client `ketrew` application (talking to a `kdserver` instance).
 - `kdtest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
 
 ### Coverage

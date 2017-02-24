@@ -183,8 +183,6 @@ let log t =
 let default_configuration_directory_path =
   Sys.getenv "HOME" ^ "/.ketrew/"
   
-let default_database_path =
-  default_configuration_directory_path // "database"
 
 let create ?(debug_level=0) ?(plugins=[]) ?tmp_dir mode =
   {debug_level; plugins; mode; tmp_dir}
@@ -206,13 +204,13 @@ let ui
 let default_ui = ui ()
 
 let engine
-    ?(database_parameters=default_database_path)
     ?(turn_unix_ssh_failure_into_target_failure=false)
     ?host_timeout_upper_bound
     ?(maximum_successive_attempts=10)
     ?(concurrent_automaton_steps = 4)
     ?(engine_step_batch_size = default_engine_step_batch_size)
     ?(orphan_killing_wait = default_orphan_killing_wait)
+    ~database_parameters
     () = {
   database_parameters;
   turn_unix_ssh_failure_into_target_failure;
@@ -222,7 +220,6 @@ let engine
   engine_step_batch_size;
   orphan_killing_wait;
 }
-let default_engine = engine ()
 
 let client ?(ui=default_ui) ~token connection =
   (`Client {client_ui = ui; connection; token})
@@ -231,15 +228,15 @@ let authorized_token ~name value = `Inline (name, value)
 let authorized_tokens_path p = `Path p
 
 let server
-    ?ui ?engine
+    ?ui
     ?(authorized_tokens=[]) ?(return_error_messages=false)
     ?command_pipe ?log_path
     ?(max_blocking_time = 300.)
     ?(read_only_mode = false)
+    ~engine
     listen_to =
-  let server_engine = Option.value engine ~default:default_engine in
   let server_ui = Option.value ui ~default:default_ui in
-  (`Server {server_engine; authorized_tokens; listen_to; server_ui;
+  (`Server {server_engine = engine; authorized_tokens; listen_to; server_ui;
             return_error_messages; command_pipe; log_path;
             max_blocking_time; read_only_mode;})
 

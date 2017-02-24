@@ -95,7 +95,6 @@ The new one succeeds:
     HTTP-server:
         Authorized tokens:
             Path: "/tmp/tokens"
-        Daemonize: false
         Command Pipe: None
         Log-path: None
         Return-error-messages: false
