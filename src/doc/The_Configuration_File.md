@@ -77,8 +77,6 @@ let explorer =
     ~targets_to_prefetch:10 ()
 let ui = ui ~with_color:true ~explorer ~with_cbreak:true ()
 
-(* A function that given a boolean value creates a “server
-  configuration” that detaches or not from the shell. *)
 let my_server =
   server ~ui
     ~engine:(engine ~database_parameters:"postgresql://example.com/db1" ())
@@ -91,7 +89,7 @@ let my_server =
     ~command_pipe:"/path/to/command.pipe"
     (`Tls ("/path/to/cert.pem", "/path/to/key.pem", 8443))
 
-(* We put together 4 profiles in this configuration and “output” them
+(* We put together 2 profiles in this configuration and “output” them
    (literally, as Json, to `stdout`).
 
    `debug_level`, `plugins`, and `ui` are shared between configurations.
