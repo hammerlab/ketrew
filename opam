@@ -22,6 +22,13 @@ remove: [
 ]
 depends: [
   "omake" {>= "0.9.8.6-0.rc1" }
+
+# The new OCamlbuild “breaks” `ppx_deriving.make`
+# While waiting for releases and merges:
+# cf. https://github.com/whitequark/ppx_deriving/issues/124
+# and https://github.com/ocaml/opam-repository/pull/8656
+  "ocamlbuild" {<= "0.9.3" }
+
   "ocamlfind" "ocamlify"
   "postgresql"
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
