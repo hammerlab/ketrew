@@ -36,4 +36,5 @@ depends: [
 
 conflicts: [
   "ppx_inline_test" { >= "v0.9.0" }
+  "ppx_sexp_conv" { >= "v0.9.0" }
 ]
