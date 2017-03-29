@@ -517,12 +517,64 @@ end
     - Inside {!Lwt_preemptive.detach} threads.
     - With a mutex protecting the write accesses (function {!in_transaction}).
 
- *)
-module DB = struct
+*)
+module DB : sig
+
+  type t
+
+  val create: string ->
+    (t,  [> `Database of [> `Load of string ] * [> `Exn of string ] ]) Deferred_result.t
+
+  val exec_unit:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (unit,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val exec_one:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (SQL.untyped_sql_field list,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val exec_multi:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (SQL.untyped_sql_field list list,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val in_transaction:
+    t ->
+    f:(unit ->
+       ('a,
+        [> `Database of
+             [> `Exec of string * Ppx_deriving_runtime.string list ] *
+             [> `Exn of string ] ]
+        as 'b)
+         Deferred_result.t) ->
+    ('a, 'b) Deferred_result.t
+
+  val close: t ->
+    (unit,
+     [> `Database of [> `Close ] * [> `Exn of string ] ]) Deferred_result.t
+
+end = struct
   open Printf
 
-  module PG = Postgresql
-
+  module PG  = Postgresql
+      
   type t = {
     handle: PG.connection;
     action_mutex: Lwt_mutex.t;
@@ -671,7 +723,7 @@ module DB = struct
     `Exec (query, Array.to_list args |> List.map ~f:SQL.show_untyped_sql_field)
 
 
-  let exec_unit ?(arguments=[| |]) (t : t) ~query =
+  let exec_unit ?(arguments=[| |]) (t : t) ~query : (unit, _) Deferred_result.t =
     in_posix_thread_or_error ~loc:(exec_error query arguments) begin fun () ->
       begin match exec_sql_exn t ~query ~arguments with
       | `Unit -> ()
