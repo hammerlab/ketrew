@@ -572,6 +572,18 @@ module DB : sig
 
 end = struct
 
+#ifndef WITH_POSTGRESQL
+
+  type t
+  let just_fail _ = failwith "Ketrew was compiled without PostgreSQL support"
+  let create = just_fail
+  let exec_unit ?arguments _ ~query = just_fail ()
+  let exec_one ?arguments _ ~query = just_fail ()
+  let exec_multi ?arguments _ ~query = just_fail ()
+  let in_transaction _ ~f = just_fail ()
+  let close t = just_fail ()
+
+#else
   open Printf
 
   module PG  = Postgresql
@@ -781,6 +793,8 @@ end = struct
     in_posix_thread_or_error ~loc:`Close begin fun () ->
       t.handle#finish
     end
+
+#endif
 
 end
 

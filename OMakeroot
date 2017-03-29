@@ -1,5 +1,6 @@
 open build/OCaml
 open tools/OMakeLibrary.om
+WITH_POSTGRESQL=true
 DefineCommandVars()
 
 .PHONY: build-all doc install uninstall
@@ -30,8 +31,17 @@ else
 PURE_LIB_PACKAGES = sosa nonstd docout pvem yojson uri cohttp \
    ppx_deriving_yojson ppx_deriving.std $(BISECT_PACKAGE) react reactiveData
 
-LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads postgresql \
+LWT_UNIX_LIB_PACKAGES = $(PURE_LIB_PACKAGES) threads \
          pvem_lwt_unix cmdliner cohttp.lwt conduit dynlink findlib lwt.react
+
+CPPO_ARGS=
+if $(equal $(WITH_POSTGRESQL), true)
+    LWT_UNIX_LIB_PACKAGES += postgresql
+    CPPO_ARGS += -D WITH_POSTGRESQL=true
+    export
+else
+    echo "Building without PostgreSQL support: $(WITH_POSTGRESQL)"
+
 
 JOO_PACKAGES = $(PURE_LIB_PACKAGES) js_of_ocaml js_of_ocaml.ppx js_of_ocaml.tyxml
 
@@ -79,6 +89,8 @@ section # Big Lwt/Unix library; server, EDSL, Text-UI
     DESCRIPTION = $(DESCRIPTION) -- Lwt/Unix library
     _build/src/lib/client_html.ml: _build/gui-page.html
         ocamlify --var-string gui_page _build/gui-page.html --output $@
+    _build/src/lib/persistent_data.ml: _build/src/lib/persistent_data.cppo.ml
+        cppo $(CPPO_ARGS) $< > $@
     OCAML_GENERATED_MODULES[] = client_html
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew, src/lib)
 
