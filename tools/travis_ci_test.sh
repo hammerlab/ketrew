@@ -59,7 +59,7 @@ opam update
 
 opam pin add ketrew .
 
-opam install --yes ketrew
+opam install --yes tls postgresql ketrew
 
 echo 'ocamlfind list | grep lwt'
 ocamlfind list | grep lwt
