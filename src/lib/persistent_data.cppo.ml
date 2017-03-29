@@ -17,8 +17,8 @@
 (*  implied.  See the License for the specific language governing         *)
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
-(** 
-   
+(**
+
    This module is the one and only interface to the PostgreSQL
    database managed by Ketrew.
 
@@ -76,7 +76,7 @@ module SQL = struct
 
     let create () = {rev_args = []}
     let next t arg =
-      t.rev_args <- arg :: t.rev_args; 
+      t.rev_args <- arg :: t.rev_args;
       let c = List.length t.rev_args in
       fmt "$%d" c
 
@@ -308,7 +308,7 @@ module SQL = struct
 
     let byte_array tag name = make tag name Type.Byte_array
 
-    let stringable tag name m = make tag name Type.(Stringable m) 
+    let stringable tag name m = make tag name Type.(Stringable m)
 
     let timestamp tag name = make tag name Type.Timestamp
 
@@ -366,7 +366,7 @@ module SQL = struct
       | List_contains:  (string list, _) Field.t * string list -> t
 
     module Infix = struct
-      let (===) a b = Equal (a, b) 
+      let (===) a b = Equal (a, b)
       let (&&&) a b = Bin_op (`And, a, b)
       let (|||) a b = Bin_op (`Or, a, b)
       let compare_timestamp field op v = Timestamp_compare (op, field, v)
@@ -402,7 +402,7 @@ module SQL = struct
       | Matches_posix_regexp
           ({Field. name; sql_type = Type.Byte_array; tag }, regex) ->
         let arg = Positional_parameter.next pos (`Blob regex) in
-        fmt "(encode(%s, 'escape') :: text) ~ %s " name arg 
+        fmt "(encode(%s, 'escape') :: text) ~ %s " name arg
       | Matches_posix_regexp ({Field. name; sql_type; tag }, regex) ->
         failwith "Matching on non-Byte_arrays: NOT IMPLEMENTED"
       | List_contains ({Field. name;
@@ -503,7 +503,7 @@ module SQL = struct
   let delete ?where ~from () =
     let pos = Positional_parameter.create () in
     let q =
-      fmt "DELETE FROM %s %s" 
+      fmt "DELETE FROM %s %s"
         from.Table.name
         (Option.value_map ~default:"" where ~f:(fun w ->
              "WHERE " ^ Logic.to_sql_where pos w))
@@ -517,11 +517,76 @@ end
     - Inside {!Lwt_preemptive.detach} threads.
     - With a mutex protecting the write accesses (function {!in_transaction}).
 
- *)
-module DB = struct
+*)
+module DB : sig
+
+  type t
+
+  val create: string ->
+    (t,  [> `Database of [> `Load of string ] * [> `Exn of string ] ]) Deferred_result.t
+
+  val exec_unit:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (unit,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val exec_one:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (SQL.untyped_sql_field list,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val exec_multi:
+    ?arguments:SQL.untyped_sql_field array ->
+    t ->
+    query:string ->
+    (SQL.untyped_sql_field list list,
+     [> `Database of
+          [> `Exec of string * Ppx_deriving_runtime.string list ] *
+          [> `Exn of string ] ])
+      Deferred_result.t
+
+  val in_transaction:
+    t ->
+    f:(unit ->
+       ('a,
+        [> `Database of
+             [> `Exec of string * Ppx_deriving_runtime.string list ] *
+             [> `Exn of string ] ]
+        as 'b)
+         Deferred_result.t) ->
+    ('a, 'b) Deferred_result.t
+
+  val close: t ->
+    (unit,
+     [> `Database of [> `Close ] * [> `Exn of string ] ]) Deferred_result.t
+
+end = struct
+
+#ifndef WITH_POSTGRESQL
+
+  type t
+  let just_fail _ = failwith "Ketrew was compiled without PostgreSQL support"
+  let create = just_fail
+  let exec_unit ?arguments _ ~query = just_fail ()
+  let exec_one ?arguments _ ~query = just_fail ()
+  let exec_multi ?arguments _ ~query = just_fail ()
+  let in_transaction _ ~f = just_fail ()
+  let close t = just_fail ()
+
+#else
   open Printf
 
-  module PG = Postgresql
+  module PG  = Postgresql
 
   type t = {
     handle: PG.connection;
@@ -644,7 +709,7 @@ module DB = struct
                     | PG.FLOAT8 ->
                       let t =
                         Float.of_string (res#getvalue i j)
-                        |> Option.value_exn ~msg:"timestamp is not a float?" 
+                        |> Option.value_exn ~msg:"timestamp is not a float?"
                       in
                       `Timestamp t
                     | other ->
@@ -671,7 +736,7 @@ module DB = struct
     `Exec (query, Array.to_list args |> List.map ~f:SQL.show_untyped_sql_field)
 
 
-  let exec_unit ?(arguments=[| |]) (t : t) ~query =
+  let exec_unit ?(arguments=[| |]) (t : t) ~query : (unit, _) Deferred_result.t =
     in_posix_thread_or_error ~loc:(exec_error query arguments) begin fun () ->
       begin match exec_sql_exn t ~query ~arguments with
       | `Unit -> ()
@@ -729,10 +794,12 @@ module DB = struct
       t.handle#finish
     end
 
+#endif
+
 end
 
 (** Ketrew's 3-tables schema.
-    
+
     - The main table is ["ketrew_main"], it contains all the
       workflow-nodes in a “denormalized” way.
     - The 2 other tables are staging areas for adding and killing sets
@@ -820,7 +887,7 @@ module Schema = struct
       | "False" -> Some false
       | _ -> None
   end
-  let bool name t = 
+  let bool name t =
     Field.stringable t name (module Boolean)
 
   type a_pointer = A_pointer
@@ -869,7 +936,7 @@ module Schema = struct
     let of_string s =
       String.split ~on:(`Character ',') s
       |> List.map ~f:String.strip
-      |> List.filter ~f:((<>) "") 
+      |> List.filter ~f:((<>) "")
       |> fun s -> Some s
   end
   type id_list = Id_list
@@ -1233,7 +1300,7 @@ let get_target:
     get_following_pointers ~key:id ~count:0
 
 
-(** 
+(**
    [query_nodes] takes a {!Protocol.Up_message.target_query}
    and returns the list of nodes matching it.
 
@@ -1902,7 +1969,7 @@ module Synchronize = struct
     | Some "backup" ->
       let path  = Uri.path uri in
       let in_directory = ref 0 in
-      let dir_name n = fmt "hecto_%06d" n in 
+      let dir_name n = fmt "hecto_%06d" n in
       let current_directory = ref 0 in
       let next_dir () =
         if !in_directory >= 100 then (
@@ -1978,4 +2045,3 @@ module Synchronize = struct
 
   end
 end
-

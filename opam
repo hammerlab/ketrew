@@ -12,8 +12,8 @@ dev-repo: "https://github.com/hammerlab/ketrew.git"
 bug-reports: "https://github.com/hammerlab/ketrew/issues"
 available : [ ocaml-version >= "4.03.0" ]
 install: [
-  ["omake"]
-  ["omake" "install" "BINDIR=%{bin}%"]
+  ["omake" "WITH_POSTGRESQL=%{postgresql:installed}%"]
+  ["omake" "install" "BINDIR=%{bin}%" "WITH_POSTGRESQL=%{postgresql:installed}%"]
 ]
 remove: [
   ["ocamlfind" "remove" "ketrew"]
@@ -24,7 +24,6 @@ depends: [
   "omake" {>= "0.9.8.6-0.rc1" }
 
   "ocamlfind" "ocamlify"
-  "postgresql"
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
   "cmdliner" "yojson" "uri"
   "ppx_deriving"
@@ -33,6 +32,9 @@ depends: [
   "conduit"
   "js_of_ocaml" {>= "2.6" } "tyxml" {>= "4.0.0"} "reactiveData" {>= "0.2"}
   ]
+depopts: [
+  "postgresql"
+]
 
 conflicts: [
   "ppx_inline_test" { >= "v0.9.0" }
