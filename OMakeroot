@@ -91,7 +91,7 @@ section # Big Lwt/Unix library; server, EDSL, Text-UI
         ocamlify --var-string gui_page _build/gui-page.html --output $@
     _build/src/lib/persistent_data.ml: _build/src/lib/persistent_data.cppo.ml
         cppo $(CPPO_ARGS) $< > $@
-    OCAML_GENERATED_MODULES[] = client_html
+    OCAML_GENERATED_MODULES[] = client_html persistent_data
     .DEFAULT: $(OCamlPackedLibraryOfDir ketrew, src/lib)
 
 section # 3-Lines "main" application ./ketrew
