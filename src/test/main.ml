@@ -47,19 +47,21 @@ module Test = struct
       | _ -> ()) fmt
 
 
-  let new_db_file () =
-    let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
-    begin System.Shell.do_or_fail (fmt "rm -rf %s" db_file)
-      >>< fun _ -> return ()
-    end
-    >>= fun () ->
-    return db_file
+  let db_uri () =
+    try Sys.getenv "KETREW_TEST_DB"
+    with _ ->
+      failwith "Missing environment variable KETREW_TEST_DB"
 
   module Target = struct
+    let history_matches t ~matches =
+      let state = Ketrew_pure.Target.(state t) in
+      let b = state |> matches in
+      b
+
     let check_history t ~matches fmt =
       Printf.ksprintf (fun msg ->
+          let b = history_matches t ~matches in
           let state = Ketrew_pure.Target.(state t) in
-          let b = state |> matches in
           if not b && over_verbose then
             Log.(s "Test: " % s msg % s ": unexpected history: "
                  % n % indent (Ketrew_pure.Target.State.log state) @ warning);
@@ -71,10 +73,9 @@ end
 
 let test_0 () =
   Lwt_main.run begin
-    Test.new_db_file ()
-    >>= fun db_file ->
     let configuration = 
-      Ketrew.Configuration.engine ~database_parameters:db_file () in
+      let database_parameters = Test.db_uri () in
+      Ketrew.Configuration.engine ~database_parameters () in
     let wrap_engine_error f x =
       f x >>< function
       | `Ok o -> return o
@@ -84,51 +85,67 @@ let test_0 () =
         fail (`Failure "Engine broken")
     in
     Ketrew.Engine.with_engine ~configuration (fun ~engine ->
-        wrap_engine_error Ketrew.Engine.Run_automaton.step engine
-        >>= fun v ->
-        Test.checkf (not v) "1st step, nothing to do";
+        let rec do_checks ~ret_from_server = 
+          function
+          | `Step_returns ret ->
+            return (ret = ret_from_server)
+          | `Target_is (id, matches) ->
+            Ketrew.Engine.get_target engine id
+            >>= fun target ->
+            return (Test.Target.history_matches target ~matches)
+          | `And l ->
+            Deferred_list.while_sequential l ~f:(do_checks ~ret_from_server)
+            >>= fun (rets : bool list) ->
+            return (List.for_all rets ~f:(fun x -> x))
+        in
+        let eventually msg check_logic =
+          let start = Time.now () in
+          let rec loop () =
+            if start +. 4. < Time.now () 
+            then
+              begin
+                Test.fail (fmt "%s took more than 4 seconds" msg);
+                return ()
+              end
+            else
+              begin
+                wrap_engine_error Ketrew.Engine.Run_automaton.step engine
+                >>= fun ret_from_server ->
+                do_checks ~ret_from_server check_logic
+                >>= begin function
+                | true -> return ()
+                | false ->
+                  (System.sleep 1. >>< fun _ -> return ())
+                  >>= fun () ->
+                  loop ()
+                end
+              end
+          in
+          loop ()
+        in
         let test_steps ~checks msg =
           List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
             prev >>= fun () ->
-            wrap_engine_error Ketrew.Engine.Run_automaton.step engine
-            >>= fun v ->
-            let rec do_checks = 
-              function
-              | `None -> return ()
-              | `Step_returns ret ->
-                Test.checkf (ret = v) "step %d of %s step-returned: %b" idx msg v;
-                return ()
-              | `Target_is (id, matches) ->
-                Ketrew.Engine.get_target engine id
-                >>= fun re_re_target_01 ->
-                Test.Target.check_history re_re_target_01 ~matches
-                  "step %d of %s target-matching %s" idx msg id;
-                return ()
-              | `And l ->
-                Deferred_list.while_sequential l ~f:do_checks
-                >>= fun (_ : unit list) ->
-                return ()
-            in
-            do_checks check_step
+            eventually (fmt "%s: step-%d" msg idx) check_step
           end 
         in
-        let target_01 = Ketrew.EDSL.target "01" in
-        target_01#activate;
-        Ketrew.Engine.add_targets engine [target_01#render]
+        let target_01 =
+          Ketrew_pure.Target.(create ~name:"01" ()
+                              |>  activate_exn ~reason:`User) in
+        let id = Ketrew_pure.Target.id in
+        Ketrew.Engine.add_targets engine [target_01]
         >>= fun () ->
         let open Ketrew_pure.Target.State.Is in
-        test_steps "almost empty target" ~checks:[
-          `Step_returns true;
+        test_steps "target_01: almost empty target" ~checks:[
           `And [
             `Step_returns true;
-            `Target_is (target_01#id, building);
+            `Target_is (id target_01, building);
           ];
-          `Target_is (target_01#id, starting);
-          `Target_is (target_01#id, successfully_did_nothing);
-          `Target_is (target_01#id, verified_success);
-          `Target_is (target_01#id, finished);
+          `Target_is (id target_01, starting);
+          `Target_is (id target_01, successfully_did_nothing);
+          `Target_is (id target_01, verified_success);
+          `Target_is (id target_01, finished);
           `Step_returns false;
-          `None;
         ]
         >>= fun () ->
         return ())

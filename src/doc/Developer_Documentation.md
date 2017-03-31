@@ -81,14 +81,15 @@ Tests
 Run the tests like this:
 
 ```bash
-    ./ketrew-test [-no-color] <Test-names>
+export KETREW_TEST_DB="postgresql://example.com/?password=somepassword"
+./ketrew-test [-no-color] <Test-names>
 ```
 
 where a `Test-names` is one or more of
 
 - `ALL` all of the following.
 - `basic-test`
-- `nohup-test`
+- `automaton-graph`
 
 
 ### The `cli` Test
@@ -136,6 +137,8 @@ Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 - `kclient`: the client `ketrew` application (talking to a `kdserver` instance).
 - `ktest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
 - See `_test_env/env.env` for more.
+
+The URL to the postgres DB is also stored in `KETREW_TEST_DB`.
 
 ### Coverage
 
