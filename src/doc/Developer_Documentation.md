@@ -96,15 +96,6 @@ where a `Test-names` is one or more of
 The workflow [examples](../test/Workflow_Examples.ml) in the documentation
 are actually interactive tests (cf. `./ketrew-workflow-examples-test`).
 
-### The `integration` Test
-
-The [integration](../test/integration.ml) test uses Ketrew to build
-[Vagrant](https://github.com/mitchellh/vagrant) virtual machines and uses them
-to test further features: we test the PBS, LSF, and YARN long-running backends
-by creating small “virtual clusters”.
-You can use the commands `prepare`, `go`, and `clean-up` separately, or try
-`./ketrew-test integration` (which does them all).
-
 ### Dynamically Loaded Plugins
 
 The build-system creates a plugin and a workflow which uses it:
