@@ -526,6 +526,8 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           $ configuration_arg
           $ Arg.(value @@ opt string "open"
                  @@ info ["O"; "open-command"]
+                   ~env:(env_info "BROWSER"
+                           ~doc:"Browser to use to open the URL.")
                    ~doc:"Command to use as browser.")
         ) in
   let logs_cmd =
