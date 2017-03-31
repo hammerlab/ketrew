@@ -115,7 +115,7 @@ let test_0 () =
                 >>= begin function
                 | true -> return ()
                 | false ->
-                  (System.sleep 1. >>< fun _ -> return ())
+                  (System.sleep 0.5 >>< fun _ -> return ())
                   >>= fun () ->
                   loop ()
                 end
@@ -129,24 +129,69 @@ let test_0 () =
             eventually (fmt "%s: step-%d" msg idx) check_step
           end 
         in
-        let target_01 =
-          Ketrew_pure.Target.(create ~name:"01" ()
-                              |>  activate_exn ~reason:`User) in
-        let id = Ketrew_pure.Target.id in
-        Ketrew.Engine.add_targets engine [target_01]
+        let test_target t checks =
+          let target =
+            Ketrew_pure.Target.(t |> activate_exn ~reason:`User) in
+          let id = Ketrew_pure.Target.id t in
+          Ketrew.Engine.add_targets engine [target]
+          >>= fun () ->
+          test_steps (Ketrew_pure.Target.name t) ~checks:(checks id)
+        in
+        let open Ketrew_pure.Target in
+        let open State.Is in
+        test_target (create ~name:"target_01: almost empty target" ())
+          begin fun id -> [
+              `And [
+                `Step_returns true;
+                `Target_is (id, building);
+              ];
+              `Target_is (id, starting);
+              `Target_is (id, successfully_did_nothing);
+              `Target_is (id, verified_success);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
         >>= fun () ->
-        let open Ketrew_pure.Target.State.Is in
-        test_steps "target_01: almost empty target" ~checks:[
-          `And [
-            `Step_returns true;
-            `Target_is (id target_01, building);
-          ];
-          `Target_is (id target_01, starting);
-          `Target_is (id target_01, successfully_did_nothing);
-          `Target_is (id target_01, verified_success);
-          `Target_is (id target_01, finished);
-          `Step_returns false;
-        ]
+        let make =
+          Ketrew.Daemonize.create (Ketrew.EDSL.Program.(sh "ls")) in
+        test_target (create ~name:"target_02: not so empty target" ~make ())
+          begin fun id -> [
+              `And [
+                `Step_returns true;
+                `Target_is (id, building);
+              ];
+              `Target_is (id, starting);
+              `Target_is (id, started_running);
+              `Target_is (id, ran_successfully);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
+        >>= fun () ->
+        let condition =
+          (Ketrew.EDSL.single_file "/etc/passwd")#is_done in
+        test_target (create ?condition ~name:"target_03: target with condition" ())
+          begin fun id -> [
+              `Target_is (id, active);
+              `Target_is (id, already_done);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
+        >>= fun () ->
+        let condition =
+          (Ketrew.EDSL.single_file "/diejdsjelidjaseldjaedealdelpwd")#is_done in
+        test_target (create ?condition
+                       ~name:"target_04: target with wrong condition" ())
+          begin fun id -> [
+              `Target_is (id, active);
+              `Target_is (id, building);
+              `Target_is (id, did_not_ensure_condition);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
         >>= fun () ->
         return ())
     >>= fun () ->
