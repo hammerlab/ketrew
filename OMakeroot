@@ -142,10 +142,8 @@ doc:
     ./tools/build-documentation.sh $(concat \,, $(LWT_UNIX_LIB_PACKAGES))
 
 test-env:
-    echo $(shell sh -c ". ./tools/test_environment.env   ; \
-             set_test_additional_findlib_plugin ; \
-             ssl_cert_key ; test_config_file $(concat \,, $(LWT_UNIX_LIB_PACKAGES)); test_environment")
-
+    echo $(shell-code sh -c ". ./tools/test_environment.env ; \
+             prepare_test_environment $(concat \,, $(LWT_UNIX_LIB_PACKAGES))")
 
 bisect-clean:
     rm -rf _report_dir bisect*.out

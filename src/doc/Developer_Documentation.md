@@ -121,6 +121,8 @@ use:
     omake test-env
 
 ```goodresult
+### Preparing Test Environment
+Docker ketrew_postgres already running
 Using package lwt.react as findlin-plugin
 Creating cert-key pair: _test_env/test-cert.pem, _test_env/test-key.pem
 Creating _test_env/configuration.ml
@@ -133,12 +135,16 @@ test-environment (a self-signed SSL certificate/key pair,
 client/server configuration file, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
+It also uses `docker` to start a PostgreSQL server daemon unless it is already
+running; to stop it use `docker kill ketrew_postgres`.
+
 Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 
-- `kdserver`: the server `ketrew` application.
-- `kdroserver`: the server `ketrew` application but running in “read-only” mode.
-- `kdclient`: the client `ketrew` application (talking to a `kdserver` instance).
-- `kdtest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
+- `kserver`: the server `ketrew` application.
+- `rokserver`: the server `ketrew` application but running in “read-only” mode.
+- `kclient`: the client `ketrew` application (talking to a `kdserver` instance).
+- `ktest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
+- See `_test_env/env.env` for more.
 
 ### Coverage
 
