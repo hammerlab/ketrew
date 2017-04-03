@@ -363,7 +363,7 @@ module Run_automaton = struct
     let limit =
       object
         method items = step_focus
-        method not_seen_for = 2.
+        method not_seen_for = 0.3
       end in
     Persistent_data.fold_active_targets ~limit t.data
       ~init:(`Happenings [], `Targets [], `Count 0)

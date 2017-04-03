@@ -47,19 +47,21 @@ module Test = struct
       | _ -> ()) fmt
 
 
-  let new_db_file () =
-    let db_file = Filename.concat (Sys.getcwd ()) "_kdb_test"  in
-    begin System.Shell.do_or_fail (fmt "rm -rf %s" db_file)
-      >>< fun _ -> return ()
-    end
-    >>= fun () ->
-    return db_file
+  let db_uri () =
+    try Sys.getenv "KETREW_TEST_DB"
+    with _ ->
+      failwith "Missing environment variable KETREW_TEST_DB"
 
   module Target = struct
+    let history_matches t ~matches =
+      let state = Ketrew_pure.Target.(state t) in
+      let b = state |> matches in
+      b
+
     let check_history t ~matches fmt =
       Printf.ksprintf (fun msg ->
+          let b = history_matches t ~matches in
           let state = Ketrew_pure.Target.(state t) in
-          let b = state |> matches in
           if not b && over_verbose then
             Log.(s "Test: " % s msg % s ": unexpected history: "
                  % n % indent (Ketrew_pure.Target.State.log state) @ warning);
@@ -71,10 +73,9 @@ end
 
 let test_0 () =
   Lwt_main.run begin
-    Test.new_db_file ()
-    >>= fun db_file ->
     let configuration = 
-      Ketrew.Configuration.engine ~database_parameters:db_file () in
+      let database_parameters = Test.db_uri () in
+      Ketrew.Configuration.engine ~database_parameters () in
     let wrap_engine_error f x =
       f x >>< function
       | `Ok o -> return o
@@ -84,52 +85,113 @@ let test_0 () =
         fail (`Failure "Engine broken")
     in
     Ketrew.Engine.with_engine ~configuration (fun ~engine ->
-        wrap_engine_error Ketrew.Engine.Run_automaton.step engine
-        >>= fun v ->
-        Test.checkf (not v) "1st step, nothing to do";
+        let rec do_checks ~ret_from_server = 
+          function
+          | `Step_returns ret ->
+            return (ret = ret_from_server)
+          | `Target_is (id, matches) ->
+            Ketrew.Engine.get_target engine id
+            >>= fun target ->
+            return (Test.Target.history_matches target ~matches)
+          | `And l ->
+            Deferred_list.while_sequential l ~f:(do_checks ~ret_from_server)
+            >>= fun (rets : bool list) ->
+            return (List.for_all rets ~f:(fun x -> x))
+        in
+        let eventually msg check_logic =
+          let start = Time.now () in
+          let rec loop () =
+            if start +. 4. < Time.now () 
+            then
+              begin
+                Test.fail (fmt "%s took more than 4 seconds" msg);
+                return ()
+              end
+            else
+              begin
+                wrap_engine_error Ketrew.Engine.Run_automaton.step engine
+                >>= fun ret_from_server ->
+                do_checks ~ret_from_server check_logic
+                >>= begin function
+                | true -> return ()
+                | false ->
+                  (System.sleep 0.5 >>< fun _ -> return ())
+                  >>= fun () ->
+                  loop ()
+                end
+              end
+          in
+          loop ()
+        in
         let test_steps ~checks msg =
           List.foldi checks ~init:(return ()) ~f:begin fun idx prev check_step ->
             prev >>= fun () ->
-            wrap_engine_error Ketrew.Engine.Run_automaton.step engine
-            >>= fun v ->
-            let rec do_checks = 
-              function
-              | `None -> return ()
-              | `Step_returns ret ->
-                Test.checkf (ret = v) "step %d of %s step-returned: %b" idx msg v;
-                return ()
-              | `Target_is (id, matches) ->
-                Ketrew.Engine.get_target engine id
-                >>= fun re_re_target_01 ->
-                Test.Target.check_history re_re_target_01 ~matches
-                  "step %d of %s target-matching %s" idx msg id;
-                return ()
-              | `And l ->
-                Deferred_list.while_sequential l ~f:do_checks
-                >>= fun (_ : unit list) ->
-                return ()
-            in
-            do_checks check_step
+            eventually (fmt "%s: step-%d" msg idx) check_step
           end 
         in
-        let target_01 = Ketrew.EDSL.target "01" in
-        target_01#activate;
-        Ketrew.Engine.add_targets engine [target_01#render]
+        let test_target t checks =
+          let target =
+            Ketrew_pure.Target.(t |> activate_exn ~reason:`User) in
+          let id = Ketrew_pure.Target.id t in
+          Ketrew.Engine.add_targets engine [target]
+          >>= fun () ->
+          test_steps (Ketrew_pure.Target.name t) ~checks:(checks id)
+        in
+        let open Ketrew_pure.Target in
+        let open State.Is in
+        test_target (create ~name:"target_01: almost empty target" ())
+          begin fun id -> [
+              `And [
+                `Step_returns true;
+                `Target_is (id, building);
+              ];
+              `Target_is (id, starting);
+              `Target_is (id, successfully_did_nothing);
+              `Target_is (id, verified_success);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
         >>= fun () ->
-        let open Ketrew_pure.Target.State.Is in
-        test_steps "almost empty target" ~checks:[
-          `Step_returns true;
-          `And [
-            `Step_returns true;
-            `Target_is (target_01#id, building);
-          ];
-          `Target_is (target_01#id, starting);
-          `Target_is (target_01#id, successfully_did_nothing);
-          `Target_is (target_01#id, verified_success);
-          `Target_is (target_01#id, finished);
-          `Step_returns false;
-          `None;
-        ]
+        let make =
+          Ketrew.Daemonize.create (Ketrew.EDSL.Program.(sh "ls")) in
+        test_target (create ~name:"target_02: not so empty target" ~make ())
+          begin fun id -> [
+              `And [
+                `Step_returns true;
+                `Target_is (id, building);
+              ];
+              `Target_is (id, starting);
+              `Target_is (id, started_running);
+              `Target_is (id, ran_successfully);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
+        >>= fun () ->
+        let condition =
+          (Ketrew.EDSL.single_file "/etc/passwd")#is_done in
+        test_target (create ?condition ~name:"target_03: target with condition" ())
+          begin fun id -> [
+              `Target_is (id, active);
+              `Target_is (id, already_done);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
+        >>= fun () ->
+        let condition =
+          (Ketrew.EDSL.single_file "/diejdsjelidjaseldjaedealdelpwd")#is_done in
+        test_target (create ?condition
+                       ~name:"target_04: target with wrong condition" ())
+          begin fun id -> [
+              `Target_is (id, active);
+              `Target_is (id, building);
+              `Target_is (id, did_not_ensure_condition);
+              `Target_is (id, finished);
+              `Step_returns false;
+            ]
+          end
         >>= fun () ->
         return ())
     >>= fun () ->
@@ -340,116 +402,6 @@ let make_automaton_graph () =
     Log.(s "Trrreeees: " % n % tree_to_log result_tree @ normal);
   ()
 
-let integration_meta_test options =
-  let say fmt =
-    Printf.(ksprintf (fun s ->
-        printf "=> %s\n%!"
-          (String.split s ~on:(`Character '\n') |> String.concat ~sep:"\n   ")
-      ) fmt) in
-  let phase fmt =
-    Printf.(ksprintf (fun s ->
-        let sep = String.make (String.length s) '#' in
-        printf "###%s###\n## %s ##\n###%s###\n%!" sep s sep
-      ) fmt)
-  in
-  let tmpdir = Sys.getenv "PWD" // "_integration_testing" in
-  let tmp fmt = Printf.ksprintf (fun s -> tmpdir // s) fmt in
-  let with_server = List.mem ~set:options "with-server" in
-  let verbose_commands = List.mem ~set:options "quiet-cmd" |> not in
-  let with_clean_up = List.mem ~set:options "no-clean-up" |> not in
-  (*
-  let write_file f ~content =
-    let o = open_out f in
-    output_string o content;
-    close_out o in
-     *)
-  let cmdf ?(returns=Some 0) fmt =
-    Printf.(ksprintf (fun s ->
-        if verbose_commands then printf " $ %s\n%!" s;
-        match Sys.command s, returns with
-        | n, Some m when n = m -> ()
-        | _, None -> ()
-        | other, Some m ->
-          failwith (sprintf "Command %S returned %d instead of %d" s other m)
-      ) fmt) in
-  let ketrew_configuration_prefix profile =
-    let config_file = Sys.getenv "PWD" // "_test_env" // "configuration.ml" in
-    Printf.sprintf "KETREW_CONFIGURATION=%s KETREW_PROFILE=%s"
-          Filename.(quote config_file) profile in
-  let ketrew ?(bin="./ketrew") profile fmt =
-    Printf.ksprintf (fun s ->
-        cmdf "%s %s %s" (ketrew_configuration_prefix profile) bin s
-      ) fmt in
-  phase "Preparing Integration Meta-Test";
-  cmdf "mkdir -p %s" tmpdir;
-
-  let server_out = tmp "server-out.txt" in
-  let server_output lines =
-    if with_server then (
-      say "Server output (%d lines)" lines;
-      cmdf "tail -n %d %s | sed 's/^/   /'" lines Filename.(quote server_out)
-    );
-  in
-  begin if with_server then (
-      phase "Starting Server";
-      ketrew "server" "start 2>&1 > %s &"
-        Filename.(quote server_out);
-      cmdf "sleep 3";
-    ) end;
-  server_output 10;
-
-  let wait_for_targets_to_complete () =
-    ketrew "client" "status --loop";
-    cmdf "sleep 2"; (* we “avoid” some kinds of race-conditions … *)
-    ketrew "client" "status --loop";
-  in
-  phase "Submit integration preparation";
-  ketrew ~bin:"./ketrew-integration-test" "client" "prepare";
-  wait_for_targets_to_complete ();
-
-  ketrew ~bin:"./ketrew-integration-test" "client" "is-running LSF";
-  ketrew ~bin:"./ketrew-integration-test" "client" "is-running PBS";
-  ketrew ~bin:"./ketrew-integration-test" "client" "is-running Hadoop";
-
-  phase "Submit integration tests";
-  ketrew ~bin:"./ketrew-integration-test" "client" "go";
-  wait_for_targets_to_complete ();
-
-  
-  phase "Start the targets-to-kill";
-  ketrew ~bin:"./ketrew-integration-test" "client" "start-jobs-to-kill";
-  (* We need to kill the targets-to-kill. *)
-  phase "Kill the targets-to-kill";
-  cmdf "sleep 300";
-  (* We hope it is enough for them to actually start; an observed
-     low-bound is 120 seconds (between application start and obtention of
-     an application ID from YARN!) *)
-  cmdf "for id in `./ketrew-integration-test to-kill` ; do \n\
-        echo \"Kill $i\"\n\
-        %s ./ketrew kill $id\n\
-        done" (ketrew_configuration_prefix "client");
-
-  wait_for_targets_to_complete ();
-
-  ketrew ~bin:"./ketrew-integration-test" "client" "check";
-
-  begin match with_clean_up with
-  | true  ->
-    phase "Submit integration clean-up";
-    ketrew ~bin:"./ketrew-integration-test" "client" "clean";
-    wait_for_targets_to_complete ();
-  | false ->
-    phase "NO integration clean-up";
-  end;
-
-  if with_server then begin
-    phase "Stopping server";
-    ketrew "server" "stop";
-    cmdf "sleep 3";
-  end;
-  cmdf "ps aux | grep ketrew";
-  ()
-
 let run_all_tests () =
   Log.(s "Starting ALL Tests" @ normal);
   Log.(s "Basic test:" @ normal);
@@ -469,7 +421,6 @@ let () =
     else begin
       if List.mem ~set:argl "basic-test" then test_0 ();
       if List.mem ~set:argl "automaton-graph" then make_automaton_graph ();
-      if List.mem ~set:argl "integration" then integration_meta_test argl;
     end
   end;
   begin match !Test.failed_tests with

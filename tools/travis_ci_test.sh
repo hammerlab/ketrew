@@ -74,9 +74,6 @@ echo "Now build Ketrew + tests"
 
 omake build-all
 
-echo "Mini-test:"
-./ketrew-test config-file
-
 echo "Graph-test:"
 ./ketrew-test automaton-graph
 
@@ -87,7 +84,7 @@ shopt -s expand_aliases
 . _test_env/env.env
 
 echo "Kdserver"
-kdserver --help=plain
+kserver --help=plain
 
 ## ksplugin_user "sleep 2"
 ## kscli run loop > kscli_01.out

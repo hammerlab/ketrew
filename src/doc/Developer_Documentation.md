@@ -81,29 +81,21 @@ Tests
 Run the tests like this:
 
 ```bash
-    ./ketrew-test [-no-color] <Test-names>
+export KETREW_TEST_DB="postgresql://example.com/?password=somepassword"
+./ketrew-test [-no-color] <Test-names>
 ```
 
 where a `Test-names` is one or more of
 
 - `ALL` all of the following.
 - `basic-test`
-- `nohup-test`
+- `automaton-graph`
 
 
 ### The `cli` Test
 
 The workflow [examples](../test/Workflow_Examples.ml) in the documentation
 are actually interactive tests (cf. `./ketrew-workflow-examples-test`).
-
-### The `integration` Test
-
-The [integration](../test/integration.ml) test uses Ketrew to build
-[Vagrant](https://github.com/mitchellh/vagrant) virtual machines and uses them
-to test further features: we test the PBS, LSF, and YARN long-running backends
-by creating small “virtual clusters”.
-You can use the commands `prepare`, `go`, and `clean-up` separately, or try
-`./ketrew-test integration` (which does them all).
 
 ### Dynamically Loaded Plugins
 
@@ -121,6 +113,8 @@ use:
     omake test-env
 
 ```goodresult
+### Preparing Test Environment
+Docker ketrew_postgres already running
 Using package lwt.react as findlin-plugin
 Creating cert-key pair: _test_env/test-cert.pem, _test_env/test-key.pem
 Creating _test_env/configuration.ml
@@ -133,12 +127,18 @@ test-environment (a self-signed SSL certificate/key pair,
 client/server configuration file, an “authorization-tokens”
 configuration, … which all work together harmoniously).
 
+It also uses `docker` to start a PostgreSQL server daemon unless it is already
+running; to stop it use `docker kill ketrew_postgres`.
+
 Sourcing `_test_env/env.env` will give a few aliases to run the tests.
 
-- `kdserver`: the server `ketrew` application.
-- `kdroserver`: the server `ketrew` application but running in “read-only” mode.
-- `kdclient`: the client `ketrew` application (talking to a `kdserver` instance).
-- `kdtest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
+- `kserver`: the server `ketrew` application.
+- `rokserver`: the server `ketrew` application but running in “read-only” mode.
+- `kclient`: the client `ketrew` application (talking to a `kdserver` instance).
+- `ktest`: the [`cli` test](../test/Workflow_Examples.ml) with a client configuration file.
+- See `_test_env/env.env` for more.
+
+The URL to the postgres DB is also stored in `KETREW_TEST_DB`.
 
 ### Coverage
 
