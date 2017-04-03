@@ -2,7 +2,13 @@ Docker Stuff
 ============
 
 This a Docker image/build for testing Ketrew server. It uses a self-signed TLS
-certificate and a local ephemeral Sqlite database.
+certificate with any PostgreSQL database (through the `$DB_URI` variable).
+
+This image is kept for the time being, but more up-to-date and flexible images
+are available at [`hammerlab/keredofi`](https://github.com/hammerlab/keredofi).
+
+The instructions below are still valid ☺.
+
 
 Usage
 -----
