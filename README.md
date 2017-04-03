@@ -193,7 +193,7 @@ let () =
 ```
 
 Run a command, in a docker container scheduler by the Coclobas server (also
-setup by Secotrec):
+setup by `docker-compose` above):
 
 ```ocaml
 #require "coclobas.ketrew_backend";;
