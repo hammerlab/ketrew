@@ -38,16 +38,29 @@ Let's get a minimal setup ready and a workflow running on it.
 
 ### Server-side Setup
 
-We use [`hammerlab/secotrec`](https://github.com/hammerlab/secotrec), to get a
-practical local setup (Ketrew, a PostgreSQL server, and
-a [Coclobas](https://github.com/hammerlab/coclobas) server in “local docker”
-mode). Please [install](https://github.com/hammerlab/secotrec#with-opam)
-`secotrec` the package, then run:
+This *tutorial* requires
+[`docker`](https://en.wikipedia.org/wiki/Docker_%28software%29)
+and [`docker-compose`](https://docs.docker.com/compose/):
 
-    secotrec-local up
+    alias kdc='./tools/docker-compose/kdc.sh'
+    kdc config --services
 
-After a couple of minutes you can check that everything is setup by visiting
-<http://127.0.0.1:8123/gui?token=nekot>:
+Let's get a Ketrew server with a PostgreSQL database and
+a [Coclobas](https://github.com/hammerlab/coclobas) scheduler talking to each
+other:
+
+    kdc up -d
+    
+Check that everything is running:
+
+    kdc ps
+
+Check the Ketrew server status:
+
+    curl http://127.0.0.1:8123/hello || echo 'Not ready'
+
+After a minute or two you can check that everything is setup by visiting the
+Ketrew UI: <http://127.0.0.1:8123/gui?token=nekot>:
 
 <div>
 <img  width="100%"
@@ -57,12 +70,11 @@ src="https://cloud.githubusercontent.com/assets/617111/23189040/047945d4-f85f-11
 
 At any moment you can take everything down with:
 
-    secotrec-local down
+    kdc down
 
-Or use the various inspection commands:
+Or use other inspection commands:
 
-    secotrec-local status
-    secotrec-local --help
+    kdc --help
 
 ### Client
 
@@ -80,7 +92,7 @@ The `ketrew submit` sub-command can create one-command workflows (uses the
 
     ketrew submit \
          --wet-run --tag 1st-workflow --tag command-line \
-         --daemonize /tmp/KT,"du -sh $HOME"
+         --daemonize /tmp/KT,'du -sh $HOME'
 
 The job will appear on the WebUI and you can inspect/restart/kill it.
 
@@ -148,7 +160,7 @@ Globally tell the Ketrew client to get its configuration from the file created
 let () =
   Unix.putenv
     "KETREW_CONFIGURATION"
-    (Sys.getenv "HOME" ^ "/kclient-config/configuration.ml");;
+    (Sys.getenv "HOME" ^ "/tmp/kclient-config/configuration.ml");;
 ```
 
 Submit an “empty” workflow-node to Ketrew (i.e. a node that does not do nor
@@ -181,7 +193,7 @@ let () =
 ```
 
 Run a command, in a docker container scheduler by the Coclobas server (also
-setup by Secotrec):
+setup by `docker-compose` above):
 
 ```ocaml
 #require "coclobas.ketrew_backend";;
