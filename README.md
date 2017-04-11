@@ -10,8 +10,9 @@ parameter variations, running on different hosts with various schedulers).
 The engine at heart of the server takes care of orchestrating workflows,
 and keeps track of everything that succeeds, fails, or gets lost.
 
-This is the `3.1.0` version of Ketrew, see also the development version
-on [Github](https://github.com/hammerlab/ketrew/).
+This is the `master` branch of Ketrew.
+See also the documentation for the latest release:
+[3.1.0](http://www.hammerlab.org/docs/ketrew/doc.3.1.0/index.html).
 
 If you have any questions, you may submit an
 [issue](https://github.com/hammerlab/ketrew/issues), or join
