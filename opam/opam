@@ -25,7 +25,8 @@ depends: [
   "ocamlfind"
   "ocamlify"
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"
-  "cmdliner" "yojson" "uri"
+  "cmdliner" {>= "1.0.0"}
+  "yojson" "uri"
   "ppx_deriving"
   "ppx_deriving_yojson" {>= "3.0"}
   "cohttp" {>= "0.21.0" } "lwt"
