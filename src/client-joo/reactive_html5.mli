@@ -3,6 +3,7 @@ Wrappers and additions around [ReactiveData], and [Tyxml_js].
 
 *)
 
+open Ketrew_pure
 
 module H5: sig
   (* include module type of Tyxml_js.Html *)

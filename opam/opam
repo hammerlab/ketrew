@@ -11,17 +11,15 @@ homepage: "http://www.hammerlab.org/docs/ketrew/master/index.html"
 dev-repo: "https://github.com/hammerlab/ketrew.git"
 bug-reports: "https://github.com/hammerlab/ketrew/issues"
 available : [ ocaml-version >= "4.03.0" ]
-install: [
-  ["omake" "WITH_POSTGRESQL=%{postgresql:installed}%"]
-  ["omake" "install" "BINDIR=%{bin}%" "WITH_POSTGRESQL=%{postgresql:installed}%"]
-]
-remove: [
-  ["ocamlfind" "remove" "ketrew"]
-  ["ocamlfind" "remove" "ketrew_pure"]
-  ["rm" "-f" "%{bin}%/ketrew"]
+build: [
+  [make "byte"]
+  [make "native"]
+  [make "META"]
+  [make "ketrew.install"]
 ]
 depends: [
-  "omake" {>= "0.9.8.6-0.rc1" }
+  "ocamlbuild" {build}
+  "solvuu-build" {build & >= "0.3.0"}
   "ocamlfind"
   "ocamlify"
   "sosa" "nonstd" "docout" "pvem" "pvem_lwt_unix"

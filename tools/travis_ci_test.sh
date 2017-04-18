@@ -70,15 +70,15 @@ echo "Setting Warn-Error for the Travis test"
 export OCAMLPARAM="warn-error=Ad-58,_"
 # we disabled warning 58: https://gitlab.camlcity.org/gerd/lib-findlib/issues/3
 
-echo "Now build Ketrew + tests"
-
-omake build-all
+echo "Now build Ketrew + tests:"
+export WITH_TESTS=true
+make
 
 echo "Graph-test:"
-./ketrew-test automaton-graph
+./ketrew-test.byte automaton-graph
 
 echo "Test-env:"
-omake test-env
+make test-env
 
 shopt -s expand_aliases
 . _test_env/env.env

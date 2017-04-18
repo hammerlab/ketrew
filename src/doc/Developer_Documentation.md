@@ -25,7 +25,8 @@ Ketrew depends on
 - `postgresql`: Ketrew uses a PostgreSQL database.
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
-and uses the `omake` as a build system and the tool `ocamlify`.
+and uses the `ocamlbuild` as a build system with the `solvuu-build` rule
+library, and the tool `ocamlify`.
 
 At runtime, Ketrew may use an `ssh` client (tested only with OpenSSH; but SSH
 calls are quite configurable).
@@ -36,22 +37,15 @@ calls are quite configurable).
 Then you may setup and build the libraries and `ketrew` the command line
 application:
 
-     omake
+     make
 
 to build also all the tests, use:
 
-    omake build-all
+    WITH_TESTS=true make
 
 ### Install
 
-Ketrew is installed with:
-
-     omake install BINDIR=/path/to/bin
-     
-(it will use `ocamlfind` to install the library and copy the executable to
-`BINDIR`).
-
-There is also an `opam` file in the repository:
+There is also an `opam` directory in the repository:
 
      opam pin add ketrew .
 
@@ -62,16 +56,15 @@ will pick it (Opam ≥ *1.2.0*).
 
 The documentation depends on [oredoc](https://github.com/smondet/oredoc):
 
-    omake doc
+    make doc
 
-and check-out `_doc/<branch>/index.html` (unless branch is `master`, then
-`_doc/index.html`).
+and check-out `_build/doc/index.html`.
 
 ### Merlin
 
 Simply,
 
-    omake .merlin
+    make merlin
 
 Tests
 -----
@@ -82,7 +75,7 @@ Run the tests like this:
 
 ```bash
 export KETREW_TEST_DB="postgresql://example.com/?password=somepassword"
-./ketrew-test [-no-color] <Test-names>
+./ketrew-test.byte [-no-color] <Test-names>
 ```
 
 where a `Test-names` is one or more of
@@ -110,7 +103,7 @@ The build-system creates a plugin and a workflow which uses it:
 In order to not impact a potential “global” installation of Ketrew, one can
 use:
 
-    omake test-env
+    make test-env
 
 ```goodresult
 ### Preparing Test Environment
@@ -146,17 +139,17 @@ To generate coverage reports you need to instrument the code by
 recompiling from scratch using the environment variable
 `WITH_BISECT` equal to `true`:
 
-    omake clean
-    WITH_BISECT=true omake
+    make clean
+    WITH_BISECT=true make
 
 Running the instrumented versions of the code will generate `bisect*.out` files
 when run.
 
-Then, `omake bisect-report` will take these files
-and generate an html file in `_report_dir/index.html`. `omake bisect-clean`
+Then, `make bisect-report` will take these files
+and generate an html file in `_report_dir/index.html`. `make bisect-clean`
 removes the reports and `_report_dir`.
 
-To remove the instrumentation just use `omake clean; omake` without
+To remove the instrumentation just use `make clean; make` without
 `WITH_BISECT` set to `true`.
 
 **Note** that the Web-UI does not work when the code has been instrumented with
@@ -184,7 +177,7 @@ release workflow:
 - Release dependencies for which we are using unreleased features
   (e.g. [`trakeva`](https://github.com/smondet/trakeva),
   [`sosa`](https://github.com/smondet/sosa), etc.).
-- Set version string in `OMakeroot`
+- Set version string in `myocamlbuild.ml`
 - Update the introductory paragraph of the `README.md` file for the particular
   version.
 - Write a human-friendly change-log (go through git history and write important

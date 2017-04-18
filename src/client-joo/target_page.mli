@@ -1,4 +1,6 @@
 
+open Ketrew_pure
+
 type t
 
 val create:
