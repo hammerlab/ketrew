@@ -182,7 +182,7 @@ let lwt_unix_lib : Project.item =
           not (Filename.check_suffix f ".mli")
           && not (Filename.check_suffix f ".cppo.ml"))
   in
-  project_lib (project_name ^ ".lwt_unix")
+  project_lib project_name
     ~thread:()
     ~findlib_deps:lwt_unix_lib_packages
     ~ml_files:(`Replace ml_files)
