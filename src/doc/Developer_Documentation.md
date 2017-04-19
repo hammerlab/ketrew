@@ -25,7 +25,7 @@ Ketrew depends on
 - `postgresql`: Ketrew uses a PostgreSQL database.
 - `js_of_ocaml`, `tyxml` (with `reactiveData`)
 
-and uses the `ocamlbuild` as a build system with the `solvuu-build` rule
+and uses `ocamlbuild` as a build system with the `solvuu-build` rule
 library, and the tool `ocamlify`.
 
 At runtime, Ketrew may use an `ssh` client (tested only with OpenSSH; but SSH
