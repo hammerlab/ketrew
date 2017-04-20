@@ -18,7 +18,7 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-open Internal_pervasives
+open Ketrew_pure.Internal_pervasives
 
 (** Transform complex Ketrew values into display-friendly {!Log.t} values. *)
 val build_process : ?with_details:bool ->

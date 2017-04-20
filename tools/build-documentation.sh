@@ -4,19 +4,15 @@
 # 
 # It expects 3 things in the environments:
 #
-# - `findlib_packages` (space separated)
+# - `findlib_packages` (comma-separated)
 # - optionally `KAPI_DOC`: if `no` then do not build the OCamlDoc part
 
 
 ocamlfind_packages=$1
 
 make_doc () {
-    local git_branch=`git symbolic-ref --short HEAD`
-    local outdir=_doc/
-    if [ "$git_branch" != "master" ]; then
-        outdir=_doc/$git_branch
-    fi
-    local apidoc=_apidoc/$git_branch
+    local outdir=doc/
+    local apidoc=apidoc/
     if [ "$KAPI_DOC" != "no" ] ; then
         mkdir -p $apidoc/src/
         #pure_files=`find src/pure -type f -name '*.mli'`
@@ -47,7 +43,7 @@ make_doc () {
         echo "end" >> $out_lib
         ocamlfind ocamldoc -html -d $apidoc -package $ocamlfind_packages  -thread \
                   -charset UTF-8 -t "Ketrew API" -keep-code -colorize-code \
-                  -I _build/src/lib/  -I _build/src/pure \
+                  -I ./src/lib/  -I ./src/pure/ -I src/ \
                   $out_pure $out_lib
     fi
     if [ "$CSS" = "" ]; then
