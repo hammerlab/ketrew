@@ -85,8 +85,7 @@ module Application_state = struct
                   Bootstrap.panel ~body:[
                     pcdata "This is Ketrew's GUI."; br ();
                     ul [
-                      li [pcdata "Version: ";
-                          code [pcdata (version |> Lazy.force)]];
+                      li [pcdata "Version: "; code [pcdata version]];
                       li [pcdata "Git-commit: ";
                           begin match git_commit with
                           | Some g ->

@@ -409,7 +409,7 @@ let make_command_alias cmd ?(options="") name =
 (** The configuration of the command line, using the [Cmdliner] library. *)
 let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let open Cmdliner in
-  let version = Lazy.force Metadata.version in
+  let version = Metadata.version in
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let configuration_file_arg =

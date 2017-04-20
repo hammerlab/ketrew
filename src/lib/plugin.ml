@@ -51,8 +51,7 @@ let dynlink path =
       )
 
 let ketrew_deep_ancestors () =
-  Findlib.package_deep_ancestors ["native"]
-    (Lazy.force Metadata.findlib_packages)
+  Findlib.package_deep_ancestors ["native"] Metadata.findlib_packages
 
 let files_to_load_from_package package =
   begin try
