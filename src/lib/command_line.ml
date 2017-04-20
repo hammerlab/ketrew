@@ -734,6 +734,30 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
+  let build_info_cmd =
+    let open Term in
+    sub_command ~term:(
+      pure (fun () ->
+          let item k v = Log.(sf "- %s: " k % v) in
+          let out b = if b then "" else "out" in
+          let built b desc = Log.sf "- With%s %s" (out b) desc in
+          Log.(s "Build-info:" % n
+               % separate n [
+                 item "Version" @@ s Metadata.version;
+                 item "Git-commit" (s (Option.value ~default:("Not available")
+                                         Metadata.git_commit));
+                 built Metadata.with_postgresql "PostgreSQL support";
+                 built Metadata.jsoo_debug "`js_of_ocaml` debug options";
+                 built Metadata.with_bisect "`bisect.ppx` instrumentation";
+               ]
+               @ normal);
+          return ()
+        )
+      $ pure ()
+    )
+      ~info:(info "build-info" ~version ~sdocs:"COMMON OPTIONS"
+               ~doc:"Get information from this Ketrew application build.")
+  in
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -763,6 +787,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
+      build_info_cmd;
     ]
   in
   match Term.eval_choice ?argv default_cmd cmds with
