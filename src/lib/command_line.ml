@@ -744,8 +744,11 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           Log.(s "Build-info:" % n
                % separate n [
                  item "Version" @@ s Metadata.version;
-                 item "Git-commit" (s (Option.value ~default:("Not available")
+                 item "Git-commit"(s (Option.value ~default:("Not available")
                                          Metadata.git_commit));
+                 item "Git-description"
+                   (s (Option.value ~default:("Not available")
+                         Metadata.git_description));
                  built Metadata.with_postgresql "PostgreSQL support";
                  built Metadata.jsoo_debug "`js_of_ocaml` debug options";
                  built Metadata.with_bisect "`bisect.ppx` instrumentation";
