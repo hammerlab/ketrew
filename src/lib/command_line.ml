@@ -734,51 +734,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
-  (*
-  let internal_ssh_command =
-    let open Term in
-    sub_command
-      ~term:(
-        pure (fun command pipe_in pipe_out
-               log_to control_path session_id_file temp_dir uri ->
-               Process_holder.Ssh_connection.setsid_ssh
-                 ~session_id_file ~log_to ~command ~pipe_in ~pipe_out
-                 ~control_path ~temp_dir uri
-             )
-        $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["pipe-in"; "fifo-in"] ~docv:"PATH" ~doc:"Use PATH to communicate"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["pipe-out"; "fifo-out"] ~docv:"PATH" ~doc:"Use PATH to communicate"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["control-path"] ~docv:"PATH" ~doc:"Set SSH ControlPath"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["write-session-id"] ~docv:"PATH"
-                 ~doc:"Write the session ID of the daemon to PATH"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["temp-dir"] ~docv:"PATH"
-                 ~doc:"Set tmp-dir with `Filename.set_tempt_dir_name`"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["to"] ~docv:"URI" ~doc:"The host in “URI form”"
-               |> opt (some string) None
-               |> required)
-      )
-      ~info:(
-        info "internal-ssh" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Call ssh in the background and talk to it with a named-pipe \
-                (for internal use)"
-      )
-  in
-     *)
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -808,7 +763,6 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
-      (* internal_ssh_command; *)
     ]
   in
   match Term.eval_choice ?argv default_cmd cmds with
