@@ -409,7 +409,7 @@ let make_command_alias cmd ?(options="") name =
 (** The configuration of the command line, using the [Cmdliner] library. *)
 let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
   let open Cmdliner in
-  let version = Lazy.force Metadata.version in
+  let version = Metadata.version in
   let common_options_section = "COMMON OPTIONS" in
   let sub_command ~info ~term = (term, info) in
   let configuration_file_arg =
@@ -734,51 +734,33 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
           ]
       )
   in
-  (*
-  let internal_ssh_command =
+  let build_info_cmd =
     let open Term in
-    sub_command
-      ~term:(
-        pure (fun command pipe_in pipe_out
-               log_to control_path session_id_file temp_dir uri ->
-               Process_holder.Ssh_connection.setsid_ssh
-                 ~session_id_file ~log_to ~command ~pipe_in ~pipe_out
-                 ~control_path ~temp_dir uri
-             )
-        $ Arg.(info ["command"; "c"] ~docv:"COMMAND" ~doc:"The command to run"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["pipe-in"; "fifo-in"] ~docv:"PATH" ~doc:"Use PATH to communicate"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["pipe-out"; "fifo-out"] ~docv:"PATH" ~doc:"Use PATH to communicate"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["log-to"] ~docv:"PATH" ~doc:"Log JSON blobs to PATH"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["control-path"] ~docv:"PATH" ~doc:"Set SSH ControlPath"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["write-session-id"] ~docv:"PATH"
-                 ~doc:"Write the session ID of the daemon to PATH"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["temp-dir"] ~docv:"PATH"
-                 ~doc:"Set tmp-dir with `Filename.set_tempt_dir_name`"
-               |> opt (some string) None
-               |> required)
-        $ Arg.(info ["to"] ~docv:"URI" ~doc:"The host in “URI form”"
-               |> opt (some string) None
-               |> required)
-      )
-      ~info:(
-        info "internal-ssh" ~version ~sdocs:"COMMON OPTIONS"
-          ~doc:"Call ssh in the background and talk to it with a named-pipe \
-                (for internal use)"
-      )
+    sub_command ~term:(
+      pure (fun () ->
+          let item k v = Log.(sf "- %s: " k % v) in
+          let out b = if b then "" else "out" in
+          let built b desc = Log.sf "- With%s %s" (out b) desc in
+          Log.(s "Build-info:" % n
+               % separate n [
+                 item "Version" @@ s Metadata.version;
+                 item "Git-commit"(s (Option.value ~default:("Not available")
+                                         Metadata.git_commit));
+                 item "Git-description"
+                   (s (Option.value ~default:("Not available")
+                         Metadata.git_description));
+                 built Metadata.with_postgresql "PostgreSQL support";
+                 built Metadata.jsoo_debug "`js_of_ocaml` debug options";
+                 built Metadata.with_bisect "`bisect.ppx` instrumentation";
+               ]
+               @ normal);
+          return ()
+        )
+      $ pure ()
+    )
+      ~info:(info "build-info" ~version ~sdocs:"COMMON OPTIONS"
+               ~doc:"Get information from this Ketrew application build.")
   in
-     *)
   let default_cmd =
     let doc = "A Workflow Engine for Complex Experimental Workflows" in
     let man = [
@@ -808,7 +790,7 @@ let cmdliner_main ?override_configuration ?argv ?(additional_commands=[]) () =
       start_server_cmd; stop_server_cmd;
       print_conf_cmd; make_command_alias print_conf_cmd "pc";
       sync_cmd;
-      (* internal_ssh_command; *)
+      build_info_cmd;
     ]
   in
   match Term.eval_choice ?argv default_cmd cmds with
