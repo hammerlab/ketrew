@@ -24,6 +24,8 @@ let pure_lib_packages = [
   "ppx_deriving_yojson"; "ppx_deriving.std"; "react"; "reactiveData";
 ] @ (if with_bisect then ["bisect_ppx.fast"] else [])
 
+(* Older versionso of Lwt build `lwt.react`, then Lwt ≥ 3.0.0 uses
+   `lwt_react` as a separate opam package. *)
 let lwt_react =
   if Findlib.installed "lwt_react"
   then "lwt_react"
