@@ -850,6 +850,17 @@ let create
     log = []; depends_on; make; condition; history; equivalence;
     on_failure_activate; on_success_activate; }
 
+let rekey ~prefix t = {
+  t with
+  id = Unique_id.add_prefix prefix t.id;
+  depends_on =
+    List.map t.depends_on ~f:(Unique_id.add_prefix prefix);
+  on_failure_activate =
+    List.map t.on_failure_activate ~f:(Unique_id.add_prefix prefix);
+  on_success_activate =
+    List.map t.on_success_activate ~f:(Unique_id.add_prefix prefix);
+}
+
 let to_serializable t = t
 let of_serializable t = t
 

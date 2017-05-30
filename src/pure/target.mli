@@ -254,6 +254,8 @@ val create :
 (** Create a target value (not stored in the DB yet). *)
 
 
+val rekey: prefix:string -> t -> t
+(** Change all the IDs with {!Unique_id.add_prefix}. *)
 
 val id : t -> Unique_id.t
 (** Get a target's id. *)
