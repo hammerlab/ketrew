@@ -300,9 +300,17 @@ let flatten_to_pure_targets ?add_tags t =
   go_through_deps ();
   !to_return
 
-let submit_generic
+let rekey_ids node_list =
+  let prefix =
+     Unique_id.(create () |> add_prefix "WF") in
+  List.map node_list ~f:(Ketrew_pure.Target.rekey ~prefix)
+
+let submit_generic ~safe_ids
     ?override_configuration ?add_tags (t : EDSL.Internal_representation.t) =
-  let targets = flatten_to_pure_targets t ?add_tags in
+  let targets =
+    flatten_to_pure_targets t ?add_tags
+    |> (fun tl -> if safe_ids then rekey_ids tl else tl)
+  in
   let configuration =
     Configuration.load_exn
       (match override_configuration with
@@ -316,8 +324,10 @@ let submit_generic
     failwith (Error.to_string e)
 
 let submit ?override_configuration ?add_tags (t : EDSL.user_target)  =
-  submit_generic ?override_configuration ?add_tags
+  submit_generic ~safe_ids:false ?override_configuration ?add_tags
     (t :> EDSL.Internal_representation.t)
 
-let submit_workflow ?override_configuration ?add_tags (t : _ EDSL.workflow_node) =
-  submit_generic ?override_configuration ?add_tags (t#render)
+let submit_workflow
+    ?(safe_ids = true)
+    ?override_configuration ?add_tags (t : _ EDSL.workflow_node) =
+  submit_generic ~safe_ids ?override_configuration ?add_tags (t#render)

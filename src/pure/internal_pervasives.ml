@@ -200,8 +200,12 @@ module Unique_id = struct
 
   (** Create a fresh filename-compliant identifier. *)
   let create () =
-    fmt "ketrew_%s_%09d"
+    fmt "%s_%09d"
       Time.(now () |> to_filename) (Random.int 1_000_000_000)
+
+  let add_prefix prefix t =
+    prefix ^ "_" ^ t
+
 end
 
 

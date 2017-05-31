@@ -107,7 +107,7 @@ val kill: t ->
    | `Database of Persistent_data.Error.database ])
     Deferred_result.t
 (** Kill a set of targets. *)
-    
+
 val restart: t ->
   Ketrew_pure.Target.id list ->
   (unit,
@@ -127,6 +127,7 @@ val add_targets: t ->
     see {!submit_workflow} below. *)
 
 val submit_workflow:
+  ?safe_ids: bool ->
   ?override_configuration:Configuration.t ->
   ?add_tags:string list ->
   'any EDSL.product EDSL.workflow_node ->
@@ -136,6 +137,10 @@ val submit_workflow:
 
     One can add tags to all the targets in the workflow before
     submitting with the [add_tags] option.
+
+    For experienced users: by default {!submit_workflow} makes IDs
+    unique within the workflow, one can override this by setting
+    [~safe_ids:false].
 *)
 
 val submit:
@@ -146,4 +151,3 @@ val submit:
 (** This is like {!submit_workflow} but for the deprecated/legacy API
     (i.e. created with calls to {!EDSL.user_target}).
 *)
-
