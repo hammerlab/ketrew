@@ -38,7 +38,14 @@ let all_columns = [
   `Tags;
   `Status;
 ]
-let default_columns = all_columns
+let default_columns = [
+  `Controls;
+  `Arbitrary_index;
+  `Name;
+  `Backend;
+  `Tags;
+  `Status;
+]
 let column_name : column -> _ =
   let open H5 in
   function
