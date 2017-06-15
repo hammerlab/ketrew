@@ -18,7 +18,7 @@ val create: unit -> t
 
 val add_target_ids:
   t ->
-  ?server_time:Ketrew_pure.Internal_pervasives.Time.t ->
+  server_time:Ketrew_pure.Internal_pervasives.Time.t ->
   string list -> unit
 
 val modify_filter_results_number: t -> (int -> int) -> unit
