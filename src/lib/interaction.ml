@@ -208,10 +208,11 @@ let menu ?(max_per_page=15) ?(always_there=[]) ~sentence items =
   menu_loop 0
 
 
-(** Sort a list of targets from the most recent to the oldest
-    (using the unique IDs which is hackish …). *)
+(** Sort a list of targets from the most recent to the oldest. *)
 let sort_target_list =
-  List.sort ~cmp:(fun ta tb -> compare (Ketrew_pure.Target.id tb) (Ketrew_pure.Target.id ta))
+  List.sort ~cmp:(fun ta tb ->
+      let f t = Ketrew_pure.Target.(state t |> State.passive_time) in
+      compare (f tb) (f ta))
 
 let build_sublist_of_targets ~client ~list_name ~all_log ~go_verb ~filter =
   Client.get_list_of_target_ids client

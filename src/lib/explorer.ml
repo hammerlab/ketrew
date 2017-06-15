@@ -105,7 +105,6 @@ let reload_list_of_ids explorer =
      filter = fst explorer.target_ids_filter}
   in
   Client.get_list_of_target_ids explorer.ketrew_client query 
-  >>| List.sort  ~cmp:(fun a b -> String.compare b a) (* reverse order *)
   >>= fun id_list ->
   Log.(s "Explorer.reload got " % i (List.length id_list) % s " ids"
        @ verbose);
