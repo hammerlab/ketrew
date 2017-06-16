@@ -360,6 +360,38 @@ module H5 = struct
          | 0 -> ""
          | n -> "." ^ string_of_int n)
 
+    let expandable_code_command str =
+      match String.sub str ~index:0 ~length:70 with
+      | None -> code [pcdata str]
+      | Some sub_str ->
+        let expanded = Reactive.Source.create false in
+        let content_signal =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map
+            ~f:(function true -> str | false -> sub_str ^ " […]") in
+        let expand_button =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map ~f:(fun expandedness ->
+              span [
+                a ~a:[
+                  a_onclick (fun _ ->
+                      Reactive.Source.set expanded (not expandedness);
+                      false);
+                ] [
+                  pcdata (if expandedness then "⊖" else "⊕");
+                ];
+                i [pcdata (if expandedness then ""
+                              else fmt " (%d bytes) " (String.length str))];
+              ]
+            )
+          |> Reactive.Signal.singleton
+        in
+        div ~a:[ a_inline () ] [
+          Reactive_node.span expand_button;
+          code [Reactive_node.pcdata content_signal];
+        ]
+
+
     let rec to_html ?(collapse_descriptions = []) ast =
       let open Display_markup in
       let continue ast = to_html ~collapse_descriptions ast in
@@ -380,7 +412,7 @@ module H5 = struct
       | Time_span s -> pcdata (time_span_to_string s)
       | Text s -> pcdata s
       | Path p
-      | Command p -> code [pcdata p]
+      | Command p -> expandable_code_command p
       | Code_block b -> pre [code [pcdata b]]
       | Uri u ->
         a ~a:[
