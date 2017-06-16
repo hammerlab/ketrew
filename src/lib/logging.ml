@@ -162,6 +162,7 @@ module User_level_events = struct
       | `Tried_to_fix_engine_error of
           [ `Info of string ] * [ `Error of string ]
           * [ `Ok | `Not_fixable | `Error_again of string ]
+      | `Async_error of string * string
     ]
     } [@@deriving yojson]
 
@@ -198,12 +199,14 @@ module User_level_events = struct
           in
           fmt "%d minutes and %d seconds" min sec
         end
-      | `Tried_to_fix_engine_error (`Info info, `Error err, result) ->
-        fmt "Tried to fix the engine: error %s %s → %s" err info
-          (match result with
-          | `Ok -> "Success!"
-          | `Not_fixable -> "Error is not considered fixable"
-          | `Error_again err -> fmt "New error: %s" err)
+    | `Tried_to_fix_engine_error (`Info info, `Error err, result) ->
+      fmt "Tried to fix the engine: error %s %s → %s" err info
+        (match result with
+        | `Ok -> "Success!"
+        | `Not_fixable -> "Error is not considered fixable"
+        | `Error_again err -> fmt "New error: %s" err)
+    | `Async_error (exn, backtrace) ->
+      fmt "Async fatal-error: %s (backtrace: %s)" exn backtrace
 
   type t = {
     ring: item Ring.t;
@@ -244,6 +247,8 @@ module User_level_events = struct
 
   let tried_to_fix_engine_error ~info err result =
     add_item (`Tried_to_fix_engine_error (`Info info, `Error err, result))
+
+  let async_error ~exn ~backtrace = add_item (`Async_error (exn, backtrace))
 
   let get_notifications_or_block ~query =
     begin match query with

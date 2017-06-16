@@ -983,16 +983,17 @@ let start ~just_before_listening ~configuration  =
   Lwt.async_exception_hook := begin fun e ->
     Log.(s " Lwt async error: " % exn e @ error);
     let backtrace = Printexc.get_backtrace () in
-    Printf.eprintf "Lwt-async-exn: %s\nBacktrace:\n%s\n%!"
-      (Printexc.to_string e) backtrace;
+    let exn = Printexc.to_string e in
+    Printf.eprintf "Lwt-async-exn: %s\nBacktrace:\n%s\n%!" exn backtrace;
     Logger.(
       log
         Display_markup.(
           description_list [
             "Location", text "Lwt.async_exception_hook";
-            "Exception", text (Printexc.to_string e);
+            "Exception", text exn;
             "Backtrace", code_block backtrace;
           ]));
+    Logging.User_level_events.async_error ~exn ~backtrace
   end;
   begin
     status ~configuration
@@ -1008,6 +1009,13 @@ let start ~just_before_listening ~configuration  =
       return ()
   end
   >>= fun () ->
+  (* Lwt.( *)
+  (*   async begin fun () -> *)
+  (*     Lwt_unix.sleep 4. *)
+  (*     >>= fun () -> *)
+  (*     fail_with "ASYNC TEST ERROR" *)
+  (*   end *)
+  (* ); *)
   Log.(s "Start-Server: Loading the Engine" @ verbose);
   Engine.load (Configuration.server_engine configuration)
   >>= fun engine ->
