@@ -1009,13 +1009,6 @@ let start ~just_before_listening ~configuration  =
       return ()
   end
   >>= fun () ->
-  (* Lwt.( *)
-  (*   async begin fun () -> *)
-  (*     Lwt_unix.sleep 4. *)
-  (*     >>= fun () -> *)
-  (*     fail_with "ASYNC TEST ERROR" *)
-  (*   end *)
-  (* ); *)
   Log.(s "Start-Server: Loading the Engine" @ verbose);
   Engine.load (Configuration.server_engine configuration)
   >>= fun engine ->
