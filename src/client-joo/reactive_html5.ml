@@ -255,6 +255,81 @@ module H5 = struct
            Reactive_node.pcdata content_signal;
          ])
 
+    let pageable_code_block the_code =
+      let page_length = 200 in
+      let line_nb, rev_page_indexes =
+        String.foldi the_code ~init:(0, [0])
+          ~f:begin fun idx (count, l) -> function
+          | '\n' ->
+            (count + 1,
+             if (count + 1) mod page_length = 0 then (idx + 1) :: l else l)
+          | _ -> (count, l)
+          end in
+      let page_indexes = List.rev rev_page_indexes in
+      let pick_slice page =
+        let nth_page_or p default =
+          List.nth page_indexes p |> Option.value ~default in
+        let start = nth_page_or page 0 in
+        let stop = nth_page_or (page + 1) (String.length the_code) in
+        (String.slice the_code ~start ~finish:stop
+         |> Option.value
+           ~default:(fmt "ERROR: pick_slice %d [%d %d]" page start stop),
+         start, stop - 1) in
+      let last_page = List.length page_indexes - 1 in
+      begin match line_nb with
+      | n when n <= page_length ->
+        div [
+          div [pcdata (fmt "%d bytes, %d lines" (String.length the_code) n)];
+          pre [code [pcdata the_code]];
+        ]
+      | more ->
+        let current_page = Reactive.Source.create 0 in
+        let navigation_link value ~active ~text =
+          let sp = [pcdata text] in
+          if active
+          then a ~a:[
+              a_onclick (fun _ ->
+                  Reactive.Source.set current_page value;
+                  false);
+              a_class ["btn"; "btn-default"; "btn-xs"]
+            ] [strong sp]
+          else i ~a:[
+              a_class ["btn"; "btn-default"; "btn-xs"; "disabled"]
+            ] sp
+        in
+        Reactive.Source.signal current_page
+        |> Reactive.Signal.map ~f:begin fun cur_page ->
+          let slice_of_code, index_begin, index_end = pick_slice cur_page in
+          let nav =
+            let nav_nb page =
+              navigation_link page ~active:(cur_page <> page)
+                ~text:(fmt " %d " (page + 1)) in
+            let page_buttons =
+              if last_page <= 30
+              then List.init (last_page + 1) ~f:(fun i -> nav_nb i)
+              else
+                List.init 10 ~f:(fun i -> nav_nb i)
+                @ [ span [pcdata "  "] ] @
+                (List.init 10 ~f:(fun i -> nav_nb (last_page - i)) |> List.rev)
+            in
+            [navigation_link 0 ~active:(cur_page <> 0) ~text:" << ";
+             navigation_link (cur_page - 1) ~active:(cur_page <> 0) ~text:" < "]
+            @ page_buttons @ [
+              navigation_link (cur_page + 1) ~active:(cur_page <> last_page) ~text:" > ";
+              navigation_link last_page ~active:(cur_page <> last_page) ~text:" >> ";
+            ] in
+          [
+            div [
+              strong [pcdata (fmt "Page %d/%d, Bytes [%d, %d]:"
+                                (cur_page + 1) (last_page + 1)
+                                index_begin index_end)];
+            ];
+            div nav;
+            pre [code [pcdata slice_of_code]];
+          ]
+        end |> Reactive.Signal.list |> Reactive_node.div 
+      end
+
     module Input_group = struct
       type item =
         | Addon:  [< Html_types.div_content_fun ] elt list -> item
@@ -360,6 +435,38 @@ module H5 = struct
          | 0 -> ""
          | n -> "." ^ string_of_int n)
 
+    let expandable_code_command str =
+      match String.sub str ~index:0 ~length:70 with
+      | None -> code [pcdata str]
+      | Some sub_str ->
+        let expanded = Reactive.Source.create false in
+        let content_signal =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map
+            ~f:(function true -> str | false -> sub_str ^ " […]") in
+        let expand_button =
+          Reactive.Source.signal expanded
+          |> Reactive.Signal.map ~f:(fun expandedness ->
+              span [
+                a ~a:[
+                  a_onclick (fun _ ->
+                      Reactive.Source.set expanded (not expandedness);
+                      false);
+                ] [
+                  pcdata (if expandedness then "⊖" else "⊕");
+                ];
+                i [pcdata (if expandedness then ""
+                              else fmt " (%d bytes) " (String.length str))];
+              ]
+            )
+          |> Reactive.Signal.singleton
+        in
+        div ~a:[ a_inline () ] [
+          Reactive_node.span expand_button;
+          code [Reactive_node.pcdata content_signal];
+        ]
+
+
     let rec to_html ?(collapse_descriptions = []) ast =
       let open Display_markup in
       let continue ast = to_html ~collapse_descriptions ast in
@@ -380,8 +487,8 @@ module H5 = struct
       | Time_span s -> pcdata (time_span_to_string s)
       | Text s -> pcdata s
       | Path p
-      | Command p -> code [pcdata p]
-      | Code_block b -> pre [code [pcdata b]]
+      | Command p -> expandable_code_command p
+      | Code_block b -> Bootstrap.pageable_code_block b
       | Uri u ->
         a ~a:[
           a_href u

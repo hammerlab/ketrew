@@ -390,7 +390,9 @@ module Html = struct
                                     begin match Markup_queries.discriminate query with
                                     | Some _ ->
                                       [Markup_queries.render r]
-                                    | None -> [pre [pcdata r]]
+                                    | None ->
+                                      [Bootstrap.pageable_code_block r]
+                                      (* [pre [pcdata r]] *)
                                     end;
                                 ]
                               ]

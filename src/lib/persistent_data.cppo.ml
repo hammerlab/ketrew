@@ -345,6 +345,11 @@ module SQL = struct
         name (Field.List.to_sql_create fields)
       |> make_query ~arguments:[| |]
 
+    let create_index {name; _} index_name field =
+      fmt "CREATE INDEX IF NOT EXISTS %s on %s (%s)"
+        index_name name field.Field.name
+      |> make_query ~arguments:[| |]
+
   end
 
   (** {!Logic} is how we construct ["WHERE"] clauses.  *)
@@ -1260,6 +1265,16 @@ let create :
     create_table Schema.(main schema_parameters) >>= fun () ->
     create_table Schema.(kill_list schema_parameters) >>= fun () ->
     create_table Schema.(add_list schema_parameters) >>= fun () ->
+    let create_main_index field =
+      let {SQL.query; arguments} =
+        let index_name = fmt "ketrew_main_index_%s" field.SQL.Field.name in
+        SQL.Table.create_index
+          Schema.(main schema_parameters) index_name field in
+      DB.exec_unit handle ~query ~arguments in
+    create_main_index Schema.id >>= fun () ->
+    create_main_index Schema.creation_date >>= fun () ->
+    create_main_index Schema.simplified_status >>= fun () ->
+    create_main_index Schema.last_status_change_date >>= fun () ->
     let changes = Event_source.create () in
     return {handle; schema_parameters; action_mutex;
             conninfo = database_parameters; changes}

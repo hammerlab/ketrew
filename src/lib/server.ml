@@ -974,29 +974,6 @@ let status ~configuration =
 (** This function starts running a query on the engine asynchronously so the
     cache starts getting filled before the user does the first query from a UI.
 *)
-let async_start_filling_cache server_state =
-  Lwt.async (fun () ->
-      let start = Time.now () in
-      Engine.get_list_of_target_ids server_state.state
-        Protocol.Up_message.{time_constraint = `All; filter = `True}
-      >>< begin function
-      | `Ok l -> return Display_markup.("Ok", textf "%d IDs" (List.length l))
-      | `Error e -> return Display_markup.("Error", text (Error.to_string e))
-      end
-      >>= fun item ->
-      Logger.log Display_markup.(description_list (
-          [
-            "module", text "Server";
-            "function", text "async_start_filling_cache";
-            "start", date start;
-            "end", date_now ();
-          ]
-          @ [item]
-        )
-        );
-      return ()
-    );
-  ()
 
 let start ~just_before_listening ~configuration  =
   Log.(s "Set preemptive bounds: 10, 52" @ verbose);
@@ -1006,16 +983,17 @@ let start ~just_before_listening ~configuration  =
   Lwt.async_exception_hook := begin fun e ->
     Log.(s " Lwt async error: " % exn e @ error);
     let backtrace = Printexc.get_backtrace () in
-    Printf.eprintf "Lwt-async-exn: %s\nBacktrace:\n%s\n%!"
-      (Printexc.to_string e) backtrace;
+    let exn = Printexc.to_string e in
+    Printf.eprintf "Lwt-async-exn: %s\nBacktrace:\n%s\n%!" exn backtrace;
     Logger.(
       log
         Display_markup.(
           description_list [
             "Location", text "Lwt.async_exception_hook";
-            "Exception", text (Printexc.to_string e);
+            "Exception", text exn;
             "Backtrace", code_block backtrace;
           ]));
+    Logging.User_level_events.async_error ~exn ~backtrace
   end;
   begin
     status ~configuration
@@ -1051,7 +1029,6 @@ let start ~just_before_listening ~configuration  =
         exit 0) in
   log_info Log.(s "Start-Server: Starting the Engine loop");
   start_engine_loop ~server_state;
-  async_start_filling_cache server_state;
   log_info Log.(s "Start-Server: Starting listening on command-pipe");
   start_listening_on_command_pipe ~server_state
   >>= fun () ->

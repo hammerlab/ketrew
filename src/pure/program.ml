@@ -26,10 +26,13 @@ type t = [
   | `Shell_command of string
 ] [@@deriving yojson]
 
+
+let exec_to_command sl =
+  fmt "%s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")
+
 let rec to_shell_commands = function
 | `Shell_command s -> [s]
-| `Exec sl -> 
-  [fmt "%s" (List.map sl ~f:Filename.quote |> String.concat ~sep:" ")]
+| `Exec sl -> [exec_to_command sl]
 | `And l -> List.concat_map l ~f:to_shell_commands
 
 let to_single_shell_command t = 
@@ -52,6 +55,7 @@ let flatten p =
   match p with
   | `And l -> `And (to_leaves p)
   | other -> other
+
 let rec markup =
   let open Display_markup in
   function
@@ -61,8 +65,9 @@ let rec markup =
     |> description "Chain (&&)"
   | `Shell_command c ->
     description "Sh" (command c)
-  | `Exec tl ->
-    description "Exec" (flat_list tl ~f:command)
+  | `Exec ex ->
+    description "Exec" (exec_to_command ex |> command)
+
 let flatten_program = flatten
 let markup ?(flatten = true) p =
   if flatten then markup (flatten_program p) else markup p

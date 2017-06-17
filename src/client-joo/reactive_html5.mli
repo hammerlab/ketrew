@@ -128,6 +128,8 @@ module H5: sig
       Ketrew_pure.Internal_pervasives.String.t ->
       [> Html_types.span ] Reactive_node.elt option * [> Html_types.pre ] elt
 
+    val pageable_code_block : uri -> [> Html_types.div ] elt
+
     module Input_group : sig
       type item
       val make :

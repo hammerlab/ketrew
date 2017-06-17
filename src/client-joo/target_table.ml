@@ -6,16 +6,35 @@ open Reactive_html5
 
 
 module Target_id_set = struct
-  include Set.Make(struct
-      type t = string
-      let compare a b = String.compare b a
+  module S = Set.Make(struct
+      type t = (float * int * string)
+      let compare (ta, ia, a) (tb, ib, b) =
+        match String.compare a b with
+        | 0 -> 0
+        | _ ->
+          begin match Float.compare ta tb with
+          | 0 -> (* arrived at the same time: *) Int.compare ib ia
+          | n -> n
+          end
     end)
-  let add_list t list =
-    List.fold ~init:t list ~f:(fun set elt ->
-        add elt set)
+  type t = {
+    length : int;
+    set : S.t;
+  }
+  (* New ones should always go in front *)
+  let add_list ~freshness t list =
+    let set =
+      List.foldi ~init:t.set list ~f:(fun index set elt ->
+          S.add (freshness, index, elt) set) in
+    { length = t.length + List.length list ; set }
   (* TODO: check whether (union (of_list list) t) is faster. *)
-  let length = cardinal
-  let to_list = elements
+  let empty = {length = 0; set = S.empty}
+  let is_empty t = t.length = 0
+  let length t = t.length
+  let to_list t =
+    let r = ref [] in
+    S.iter (fun (_, _, s) -> r := s :: !r) t.set;
+    !r
 end
 
 
@@ -38,7 +57,14 @@ let all_columns = [
   `Tags;
   `Status;
 ]
-let default_columns = all_columns
+let default_columns = [
+  `Controls;
+  `Arbitrary_index;
+  `Name;
+  `Backend;
+  `Tags;
+  `Status;
+]
 let column_name : column -> _ =
   let open H5 in
   function
@@ -588,16 +614,13 @@ let visible_target_ids t =
 let modify_filter_results_number t f =
   Reactive.Source.modify t.filter_results_number f
 
-let add_target_ids t ?server_time l =
+let add_target_ids t ~server_time l =
   let current =
     Reactive.(Source.signal t.target_ids |> Signal.value)
     |> Option.value ~default:Target_id_set.empty
   in
-  begin match server_time with
-  | Some s -> Reactive.Source.set t.target_ids_last_updated (Some s)
-  | None -> ()
-  end;
-  let new_one = Target_id_set.add_list current l in
+  Reactive.Source.set t.target_ids_last_updated (Some server_time);
+  let new_one = Target_id_set.add_list ~freshness:server_time current l in
   Reactive.Source.set t.target_ids (Some new_one);
   modify_filter_results_number t (fun current ->
       max current (Target_id_set.length new_one)
