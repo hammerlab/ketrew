@@ -257,6 +257,8 @@ module Display_markup = struct
 
   let date_now () = date (Time.now ())
 
+  let time_since f = time_span (Time.now () -. f)
+
   let of_pp pp a =
     ignore (Format.flush_str_formatter ());
     (pp Format.str_formatter a);

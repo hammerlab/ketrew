@@ -1866,18 +1866,39 @@ module Adding_targets = struct
               - add to the database
               - remove from the add-list
       *)
+      let start = Time.now () in
+      let step_log = ref Display_markup.[
+          Typed_log.Item.Constants.word_module, text "Persistent_data";
+          "function", text "check_and_really_add_targets";
+          "start-time", date_now ();
+        ] in
+      let add_to_log l = step_log := !step_log @ l in
       let {SQL.query; arguments}, parse_row =
         Schema.get_the_add_list t.schema_parameters in
       DB.exec_multi t.handle ~query ~arguments
       >>= fun rows ->
+      add_to_log Display_markup.[
+          "get_the_add_list-time", time_since start;
+          "get_the_add_list-length", textf "%d rows" @@ List.length rows;
+        ];
       List.fold rows ~init:(return false) ~f:begin fun prev_m row ->
         prev_m
         >>= fun prev ->
         let msg = fmt "really_adding_nodes" in
         Error.wrap_parsing ~msg (fun () -> parse_row row)
         >>= fun (`Addition_id aid, `Nodes_to_add nodes_to_add) ->
+        add_to_log Display_markup.[
+            "parsing-time", time_since start;
+            "addition", command aid;
+            "nodes_to_add", textf "%d" (List.length nodes_to_add);
+          ];
         all_active_and_passive_nodes t
         >>= fun all_interesting_nodes ->
+        add_to_log Display_markup.[
+            "all_interesting_nodes",
+            textf "%d" (List.length all_interesting_nodes);
+            "all_interesting_nodes-time", time_since start;
+          ];
         let nodes_to_really_add =
           let active_or_passive_nodes =
             List.filter_map all_interesting_nodes
@@ -1889,6 +1910,10 @@ module Adding_targets = struct
             ~new_nodes:nodes_to_add
             ~active_or_passive_nodes in
         (* Now the writing in the DB: *)
+        add_to_log Display_markup.[
+            "nodes_to_really_add", textf "%d" (List.length nodes_to_really_add);
+            "equivalence-computed", time_since start;
+          ];
         DB.in_transaction t.handle ~f:begin fun () ->
           Deferred_list.while_sequential nodes_to_really_add ~f:begin fun st ->
             let {SQL.query; arguments} =
@@ -1910,6 +1935,13 @@ module Adding_targets = struct
           end
         end
         >>= fun (_ : unit list) ->
+        step_log := 
+          Display_markup.(
+            !step_log @ [
+              "after-db-transaction", time_since start;
+              "end-time", date_now ();
+            ]
+          );
         begin match nodes_to_really_add with
         | [] -> return prev
         | more ->
@@ -1918,6 +1950,11 @@ module Adding_targets = struct
           return true
         end
       end
+      >>= fun (ret : bool) ->
+      Logger.(
+        description_list !step_log |> log
+      );
+      return ret
 end
 
 module Synchronize = struct
