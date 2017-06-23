@@ -44,6 +44,8 @@ module Error = struct
 
 end
 
+let dbg fmt = Printf.ksprintf (Printf.printf "DBG: %s\n    %s\n%!" Time.(now () |> to_string_hum)) fmt
+
 module Http_client = struct
   type t = {
     configuration: Configuration.client;
@@ -76,7 +78,10 @@ module Http_client = struct
       match meta_meth with
       | `Get -> `GET, `Empty
       | `Post_message m ->
-        `POST, `String (Protocol.Up_message.serialize m)
+        dbg "serializing message";
+        let s = Protocol.Up_message.serialize m in
+        dbg "serialized message: %d bytes" (String.length s);
+        `POST, `String s
     in
     let where = `Call (meth, uri) in
     wrap_deferred
@@ -128,6 +133,7 @@ module Http_client = struct
 
   let add_targets t ~targets =
     let msg = `Submit_targets targets in
+    dbg "add_targets";
     call_json t ~path:"/api" ~meta_meth:(`Post_message msg) 
     >>= fun (_: Json.t) ->
     return ()
@@ -297,24 +303,30 @@ let flatten_to_pure_targets ?add_tags t =
       todo := List.filter !todo ~f:(fun x -> x#id <> t#id);
       go_through_deps ();
     | [] -> () in
+  dbg "going to go_through_deps";
   go_through_deps ();
   !to_return
 
 let rekey_ids node_list =
   let prefix =
      Unique_id.(create () |> add_prefix "WF") in
+  dbg "rekey_ids %d" (List.length node_list);
   List.map node_list ~f:(Ketrew_pure.Target.rekey ~prefix)
 
 let submit_generic ~safe_ids
     ?override_configuration ?add_tags (t : EDSL.Internal_representation.t) =
   let targets =
     flatten_to_pure_targets t ?add_tags
-    |> (fun tl -> if safe_ids then rekey_ids tl else tl)
+    |> (fun tl ->
+        dbg "targets falttened";
+        if safe_ids then rekey_ids tl else tl)
   in
+  dbg "targets: %d" (List.length targets);
   let configuration =
     Configuration.load_exn
       (match override_configuration with
       | Some c -> `Override c | None -> `Guess) in
+  dbg "configuration loaded";
   match Lwt_main.run (
       as_client ~configuration ~f:(fun ~client -> add_targets client targets)
     ) with
@@ -330,4 +342,5 @@ let submit ?override_configuration ?add_tags (t : EDSL.user_target)  =
 let submit_workflow
     ?(safe_ids = true)
     ?override_configuration ?add_tags (t : _ EDSL.workflow_node) =
+  dbg "submit_workflow (safe_ids = %b)" safe_ids;
   submit_generic ~safe_ids ?override_configuration ?add_tags (t#render)
