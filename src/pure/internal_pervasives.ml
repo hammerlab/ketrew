@@ -134,7 +134,7 @@ module Json = struct
       let to_json t =
         versioned_to_yojson T.to_yojson (V0 t)
       let serialize t =
-        to_json t |> Yojson.Safe.pretty_to_string ~std:true
+        to_json t |> Yojson.Safe.to_string ~std:true
       let of_json_exn json : T.t =
         match versioned_of_yojson T.of_yojson json with
         | Ppx_deriving_yojson_runtime.Result.Ok (V0 t) -> t
