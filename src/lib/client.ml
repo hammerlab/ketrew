@@ -88,11 +88,14 @@ module Http_client = struct
       ~on_exn:(fun e -> client_error_exn where e) (fun () ->
           let uri_ = uri in
           Log.(s "HTTP call: " % uri uri_ @ very_verbose);
+          dbg "HTTP call";
           Cohttp_lwt_unix.Client.call ~body meth uri)
     >>= fun (response, body) ->
+    dbg "HTTP response";
     wrap_deferred ~on_exn:(fun e -> client_error ~where ~what:(`Exn e))
       (fun () -> Cohttp_lwt_body.to_string body)
     >>= fun body_str ->
+    dbg "HTTP body dowloaded: %d bytes" (String.length body_str);
     begin match Cohttp.Response.status response with
     | `OK ->
       begin try
