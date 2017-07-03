@@ -22,7 +22,7 @@ let with_postgresql =
 let pure_lib_packages = [
   "sosa"; "nonstd"; "docout"; "pvem"; "yojson"; "uri"; "cohttp";
   "ppx_deriving_yojson"; "ppx_deriving.std"; "react"; "reactiveData";
-] @ (if with_bisect then ["bisect_ppx.fast"] else [])
+] @ (if with_bisect then ["bisect_ppx"] else [])
 
 (* Older versionso of Lwt build `lwt.react`, then Lwt ≥ 3.0.0 uses
    `lwt_react` as a separate opam package. *)
