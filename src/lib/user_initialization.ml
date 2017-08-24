@@ -39,7 +39,9 @@ let () =
   with Not_found -> ();;
 #use "topfind"
 #thread
-#require "ketrew"
+(* See: https://caml.inria.fr/mantis/view.php?id=7555 *)
+#load "stdlib.cma";;
+#require "ketrew";;
 open Ketrew.Configuration
 let debug_level = %d
 |ocaml} debug_level
