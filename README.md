@@ -4,15 +4,15 @@ Ketrew: Keep Track of Experimental Workflows
 **Ketrew** is:
 
 1. An OCaml library providing an EDSL API to define complex and convoluted
-workflows (interdependent steps/programs using a lot of data, with many
-parameter variations, running on different hosts with various schedulers).
-2. A client-server application to interact with these workflows.
-The engine at heart of the server takes care of orchestrating workflows,
-and keeps track of everything that succeeds, fails, or gets lost.
+   workflows (interdependent steps/programs using a lot of data, with many
+   parameter variations, running on different hosts with various schedulers).
+2. A client-server application to interact with these workflows.  The engine at
+   heart of the server takes care of orchestrating workflows, and keeps track of
+   everything that succeeds, fails, or gets lost.
 
-This is the `master` branch of Ketrew.
-See also the documentation for the latest release:
-[3.1.0](http://www.hammerlab.org/docs/ketrew/doc.3.1.0/index.html).
+See also the
+[documentation](http://www.hammerlab.org/docs/ketrew/master/index.html)
+for various releases.
 
 If you have any questions, you may submit an
 [issue](https://github.com/hammerlab/ketrew/issues), or join
@@ -27,7 +27,7 @@ on [building and installing](src/doc/Build_and_Install.md).
 *TL;DR for OCaml hackers:*
  
     opam switch 4.03.0
-    opam install tls ketrew
+    opam install [postgresql] [tls] ketrew
 
 Getting Started
 ---------------
