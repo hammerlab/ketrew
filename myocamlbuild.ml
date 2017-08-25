@@ -4,7 +4,7 @@ let (//) = Filename.concat
 let failwithf fmt = ksprintf failwith fmt
 
 let project_name = "ketrew"
-let version = "3.2.0"
+let version = "3.2.0+dev"
 
 let build_tests =
   try Sys.getenv "WITH_TESTS" = "true" with _ -> false
