@@ -27,10 +27,16 @@ depends: [
   "yojson" "uri"
   "ppx_deriving"
   "ppx_deriving_yojson" {>= "3.0"}
-  "cohttp" {>= "0.21.0" & <= "0.22.0"} "lwt"
+  "cohttp-lwt-unix" {>= "0.99.0"}
+  "lwt"
   "conduit"
   "lwt_react"
-  "js_of_ocaml" {>= "2.6" & <= "2.8.4" } "tyxml" {>= "4.0.0"} "reactiveData" {>= "0.2"}
+  "js_of_ocaml" {>= "3.0"}
+  "js_of_ocaml-ppx" {>= "3.0"}
+  "js_of_ocaml-tyxml" {>= "3.0"}
+  "js_of_ocaml-lwt" {>= "3.0"}
+  "tyxml" {>= "4.0.0"}
+  "reactiveData" {>= "0.2"}
   ]
 depopts: [
   "postgresql"
