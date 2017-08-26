@@ -178,7 +178,7 @@ let call ?(timeout = 20.) t msg =
       Lwt.(fun () ->
           pick [
             begin
-              Jsonp.call_custom_url (jsonp_call url msg)
+              Lwt_jsonp.call_custom_url (jsonp_call url msg)
               >>= fun msg ->
               return (`String msg)
             end;

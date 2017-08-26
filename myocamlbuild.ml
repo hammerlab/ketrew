@@ -4,7 +4,7 @@ let (//) = Filename.concat
 let failwithf fmt = ksprintf failwith fmt
 
 let project_name = "ketrew"
-let version = "3.2.0"
+let version = "3.2.0+dev"
 
 let build_tests =
   try Sys.getenv "WITH_TESTS" = "true" with _ -> false
@@ -32,13 +32,13 @@ let lwt_react =
   else "lwt.react"
 
 let lwt_unix_lib_packages = pure_lib_packages @ [
-    "threads"; "pvem_lwt_unix"; "cmdliner"; "cohttp.lwt"; "conduit";
+    "threads"; "pvem_lwt_unix"; "cmdliner"; "cohttp-lwt-unix"; "conduit";
     "dynlink"; "findlib"; lwt_react;
   ]
   @ (if with_postgresql then ["postgresql"] else [])
 
 let joo_packages = pure_lib_packages @ [
-    "js_of_ocaml"; "js_of_ocaml.ppx"; "js_of_ocaml.tyxml";
+    "js_of_ocaml"; "js_of_ocaml-lwt"; "js_of_ocaml-ppx"; "js_of_ocaml-tyxml";
   ]
 
 let ocaml_options (f : _ Project.with_options) =
