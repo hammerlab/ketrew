@@ -290,7 +290,7 @@ let yarn_api_get_app_raw ~host_io rp =
     Lwt.(fun () ->
         Cohttp_lwt_unix.Client.get to_call
         >>= fun (resp, body) ->
-        Cohttp_lwt_body.to_string body)
+        Cohttp_lwt.Body.to_string body)
 
 let parse_yarn_api_app_json s =
   begin try
