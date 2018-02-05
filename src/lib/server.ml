@@ -131,7 +131,7 @@ type answer = [
 
 type 'error service =
   server_state:Server_state.t ->
-  body:Cohttp_lwt_body.t ->
+  body:Cohttp_lwt.Body.t ->
   Cohttp.Request.t ->
   (answer, 'error) Deferred_result.t
 (** A service is something that replies an [answer] on a ["/<path>"] URL. *)
@@ -142,7 +142,7 @@ module Request = struct
   type t = {
     id: string;
     cohttp_id: string;
-    body: Cohttp_lwt_body.t;
+    body: Cohttp_lwt.Body.t;
     req: Cohttp.Request.t;
     mutable log: (string * Display_markup.t) list;
   }
@@ -188,7 +188,7 @@ module Request = struct
     begin match Cohttp.Request.meth req with
     | `POST ->
       wrap_deferred ~on_exn:(fun e -> `IO (`Exn e))
-        (fun () -> Cohttp_lwt_body.to_string body)
+        (fun () -> Cohttp_lwt.Body.to_string body)
       >>= fun str ->
       add_log request Display_markup.[
           "body", big_string str;

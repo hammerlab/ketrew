@@ -27,6 +27,8 @@ depends: [
   "yojson" "uri"
   "ppx_deriving"
   "ppx_deriving_yojson" {>= "3.0"}
+  "cohttp"
+  "cohttp-lwt" {>= "0.99.0"}
   "cohttp-lwt-unix" {>= "0.99.0"}
   "lwt"
   "conduit"
